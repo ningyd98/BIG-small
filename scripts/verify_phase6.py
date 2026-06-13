@@ -470,7 +470,7 @@ def main() -> int:
         ok = r["passed"] is True
         results.append(_check(f"10. {script} no regression", ok))
         if not ok:
-            pass
+            _unused = False  # failure recorded in results, tracked via returncode
 
     # ── 11. Production config check ────────────────────────────────────
     try:
@@ -486,7 +486,7 @@ def main() -> int:
             failed_as_expected = False
             try:
                 AppConfig.from_env()
-            except ValueError, KeyError:
+            except (ValueError, KeyError):
                 failed_as_expected = True
             results.append(
                 _check("11. Production config fails without DATABASE_URL", failed_as_expected)
