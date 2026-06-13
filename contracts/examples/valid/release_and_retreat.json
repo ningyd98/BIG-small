@@ -1,0 +1,53 @@
+{
+  "task_id": "task-valid-004",
+  "plan_version": 1,
+  "command_seq": 4,
+  "timestamp": "2026-06-13T10:35:00+00:00",
+  "control_mode": "EVENT_TRIGGERED_EDGE_AUTONOMY",
+  "issued_at": "2026-06-13T10:35:00+00:00",
+  "valid_until": "2026-06-13T10:36:00+00:00",
+  "user_instruction": "release and retreat",
+  "scene_version": 4,
+  "expected_scene_version": 4,
+  "task_target": {
+    "object_id": "red_cube",
+    "object_class": "cube",
+    "target_region_id": "bin_a"
+  },
+  "steps": [
+    {
+      "step_id": "step-001",
+      "skill": "RELEASE",
+      "parameters": {},
+      "expected_duration_ms": 300,
+      "timeout_ms": 1000,
+      "retry_limit": 0,
+      "preconditions": ["object_inside_target_region"],
+      "success_conditions": ["gripper_open"]
+    },
+    {
+      "step_id": "step-002",
+      "skill": "RETREAT",
+      "parameters": {"distance_m": 0.1},
+      "expected_duration_ms": 400,
+      "timeout_ms": 1000,
+      "retry_limit": 0,
+      "preconditions": ["gripper_open"],
+      "success_conditions": ["robot_clear_of_object"]
+    }
+  ],
+  "safety_constraints": {
+    "max_joint_velocity": 0.45,
+    "max_tcp_velocity": 0.1,
+    "minimum_safe_height": 0.08,
+    "workspace_id": "workspace_a",
+    "collision_check_required": true
+  },
+  "failure_policy": {
+    "local_retry_limit": 0,
+    "on_timeout": "SAFE_STOP",
+    "on_safety_rejection": "PAUSE_AND_REPORT",
+    "on_network_loss": "SAFE_STOP"
+  },
+  "completion_criteria": ["gripper_open", "robot_clear_of_object"]
+}

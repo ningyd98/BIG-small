@@ -32,7 +32,7 @@
 python3 -m pytest -q
 ```
 
-结果：`10 passed`。
+结果：`30 passed`，并且 `python scripts/validate_contract_examples.py` 验证 5 个合法和 5 个非法契约示例均分类正确。
 
 ## 5. 尚未解决的问题
 
@@ -46,11 +46,15 @@ python3 -m pytest -q
 ## 7. 本地运行命令
 
 ```bash
-python3 -m pytest tests/test_phase0_contracts.py tests/test_phase0_config_logging.py -q
+python scripts/validate_contract_examples.py
+pytest tests/test_phase0_contracts.py tests/test_phase0_config_logging.py tests/test_phase0_acceptance.py -q
 ```
 
 ## 8. 验收命令
 
 ```bash
-python3 -m pytest -q
+ruff check .
+mypy .
+pytest -q
+python scripts/validate_contract_examples.py
 ```

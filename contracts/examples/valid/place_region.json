@@ -1,0 +1,53 @@
+{
+  "task_id": "task-valid-003",
+  "plan_version": 1,
+  "command_seq": 3,
+  "timestamp": "2026-06-13T10:33:00+00:00",
+  "control_mode": "EVENT_TRIGGERED_EDGE_AUTONOMY",
+  "issued_at": "2026-06-13T10:33:00+00:00",
+  "valid_until": "2026-06-13T10:34:00+00:00",
+  "user_instruction": "place object into region",
+  "scene_version": 3,
+  "expected_scene_version": 3,
+  "task_target": {
+    "object_id": "red_cube",
+    "object_class": "cube",
+    "target_region_id": "bin_a"
+  },
+  "steps": [
+    {
+      "step_id": "step-001",
+      "skill": "MOVE_TO_REGION",
+      "parameters": {"region_id": "bin_a"},
+      "expected_duration_ms": 900,
+      "timeout_ms": 1800,
+      "retry_limit": 0,
+      "preconditions": ["object_attached"],
+      "success_conditions": ["tcp_above_region"]
+    },
+    {
+      "step_id": "step-002",
+      "skill": "PLACE",
+      "parameters": {"region_id": "bin_a"},
+      "expected_duration_ms": 500,
+      "timeout_ms": 1200,
+      "retry_limit": 0,
+      "preconditions": ["tcp_above_region"],
+      "success_conditions": ["object_inside_target_region"]
+    }
+  ],
+  "safety_constraints": {
+    "max_joint_velocity": 0.45,
+    "max_tcp_velocity": 0.1,
+    "minimum_safe_height": 0.08,
+    "workspace_id": "workspace_a",
+    "collision_check_required": true
+  },
+  "failure_policy": {
+    "local_retry_limit": 0,
+    "on_timeout": "SAFE_STOP",
+    "on_safety_rejection": "PAUSE_AND_REPORT",
+    "on_network_loss": "SAFE_STOP"
+  },
+  "completion_criteria": ["object_inside_target_region"]
+}

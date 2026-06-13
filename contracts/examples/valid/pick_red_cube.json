@@ -1,0 +1,54 @@
+{
+  "task_id": "task-valid-001",
+  "plan_version": 1,
+  "command_seq": 1,
+  "timestamp": "2026-06-13T10:30:00+00:00",
+  "control_mode": "EVENT_TRIGGERED_EDGE_AUTONOMY",
+  "issued_at": "2026-06-13T10:30:00+00:00",
+  "valid_until": "2026-06-13T10:31:00+00:00",
+  "user_instruction": "place the red cube into bin a",
+  "scene_version": 1,
+  "expected_scene_version": 1,
+  "task_target": {
+    "object_id": "red_cube",
+    "object_class": "cube",
+    "target_region_id": "bin_a"
+  },
+  "current_step_id": "step-001",
+  "steps": [
+    {
+      "step_id": "step-001",
+      "skill": "HOME",
+      "parameters": {},
+      "expected_duration_ms": 500,
+      "timeout_ms": 1000,
+      "retry_limit": 0,
+      "preconditions": [],
+      "success_conditions": ["robot_in_safe_pose"]
+    },
+    {
+      "step_id": "step-002",
+      "skill": "MOVE_ABOVE",
+      "parameters": {"object_id": "red_cube", "z_offset_m": 0.12},
+      "expected_duration_ms": 800,
+      "timeout_ms": 1200,
+      "retry_limit": 1,
+      "preconditions": ["target_visible"],
+      "success_conditions": ["tcp_above_target"]
+    }
+  ],
+  "safety_constraints": {
+    "max_joint_velocity": 0.5,
+    "max_tcp_velocity": 0.15,
+    "minimum_safe_height": 0.08,
+    "workspace_id": "workspace_a",
+    "collision_check_required": true
+  },
+  "failure_policy": {
+    "local_retry_limit": 2,
+    "on_timeout": "SAFE_STOP",
+    "on_safety_rejection": "PAUSE_AND_REPORT",
+    "on_network_loss": "SAFE_STOP"
+  },
+  "completion_criteria": ["object_inside_target_region", "robot_in_safe_pose"]
+}

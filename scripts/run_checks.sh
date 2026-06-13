@@ -15,5 +15,9 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 python -m ruff format --check .
 python -m ruff check .
-python -m mypy src
+python -m mypy .
 python -m pytest -q
+python scripts/validate_contract_examples.py
+python scripts/run_fixed_pick_place.py --adapter mock
+python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
+python scripts/run_fault_injection_suite.py

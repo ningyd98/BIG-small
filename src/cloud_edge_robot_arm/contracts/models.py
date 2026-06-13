@@ -112,7 +112,10 @@ class RobotState(BaseModel):
     tcp_pose: Pose = Field(default_factory=lambda: Pose(x=0.0, y=0.0, z=0.18))
     gripper_open: bool = True
     holding_object_id: str | None = None
+    connected: bool = True
+    stopped: bool = False
     estop_engaged: bool = False
+    collision_detected: bool = False
 
 
 class TaskTarget(BaseModel):
@@ -242,11 +245,26 @@ class SkillTemplate(BaseModel):
 
 
 class ActionResult(BaseModel):
-    skill: str
     success: bool
+    action_id: str
+    action_type: str
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int = Field(ge=0)
+    error_code: str | None = None
+    error_message: str | None = None
+    state_before: dict[str, Any] = Field(default_factory=dict)
+    state_after: dict[str, Any] = Field(default_factory=dict)
     error: StructuredError | None = None
     details: dict[str, Any] = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=utc_now)
+
+    @property
+    def skill(self) -> str:
+        return self.action_type
+
+    @property
+    def timestamp(self) -> datetime:
+        return self.finished_at
 
 
 class SkillExecutionResult(TraceableMessage):
