@@ -1,6 +1,6 @@
 # BIG-small
 
-BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用”云端智能规划、边缘安全执行”架构。当前版本完成 Phase 0–4：仓库初始化、配置、数据契约、结构化错误/日志、MockRobotAdapter、技能注册表、边缘执行运行时、可追溯状态机、边缘安全盾（21 条规则）、安全意图解析、运行时安全数据接入、云端初始规划服务（3 种 PlannerAdapter）、规划流水线、FastAPI API、EdgeGateway 和 Prompt 版本追踪。
+BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用”云端智能规划、边缘安全执行”架构。当前版本完成 Phase 0–5：仓库初始化、配置、数据契约、结构化错误/日志、MockRobotAdapter、技能注册表、边缘执行运行时、可追溯状态机、边缘安全盾（21 条规则）、安全意图解析、运行时安全数据接入、云端初始规划服务（3 种 PlannerAdapter）、规划流水线、FastAPI API、EdgeGateway、Prompt 版本追踪和周期云端监督模式（PCSC）。
 
 ## 仓库现状
 
@@ -94,6 +94,7 @@ python scripts/verify_phase3.py
 python scripts/verify_phase3_1.py
 python scripts/verify_phase3_2.py
 python scripts/verify_phase4.py
+python scripts/verify_phase5.py
 ```
 
 ## 阶段状态
@@ -106,4 +107,5 @@ python scripts/verify_phase4.py
 - Phase 3.1：已完成，见 `docs/phase3_1_design.md`、`docs/phase3_1_acceptance.md` 和 `docs/phase3_1_report.md`。
 - Phase 3.2：已完成，见 `docs/phase3_2_design.md`、`docs/phase3_2_acceptance.md` 和 `docs/phase3_2_report.md`。
 - Phase 4：已完成，见 `docs/phase4_design.md`、`docs/phase4_acceptance.md` 和 `docs/phase4_report.md`。
-- Phase 5-9：尚未实现，见 `docs/repository_gap_analysis.md`。
+- Phase 5：已完成，见 `docs/phase5_report.md`。
+- Phase 6-9：尚未实现，见 `docs/repository_gap_analysis.md`。

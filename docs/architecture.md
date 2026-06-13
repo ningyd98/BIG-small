@@ -45,8 +45,11 @@ implementation, and comprehensive integration verification.
 Phase 4 implements the cloud initial planning service: PlannerAdapter Protocol (Mock,
 RuleBased, OpenAICompatible), planning pipeline with model untrusted boundary,
 FastAPI API, EdgeGateway (InProcess), PromptRegistry, and cloud repositories.
-Phase 4 does NOT implement MQTT, periodic supervision, event-triggered re-planning,
-or real robot control.
+
+Phase 5 implements periodic cloud supervisory control (PCSC): two-layer supervision
+(1 Hz deterministic + conditional planner invocation), injectable Clock/Scheduler,
+target displacement tracking, and full audit trail. Phase 5 does NOT implement
+MQTT, event-triggered re-planning, or real robot control.
 
 ## Phase 2 Runtime Flow
 

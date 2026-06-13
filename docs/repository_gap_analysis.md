@@ -26,7 +26,7 @@
 | Phase 3.1 | 已完成 | 见 `docs/phase3_1_report.md` |
 | Phase 3.2 | 已完成 | 见 `docs/phase3_2_report.md` |
 | Phase 4 | 已完成 | 见 `docs/phase4_report.md` |
-| Phase 5 | 未开始 | 周期云端监督、TTL ACK、乱序和网络降级集成测试未实现 |
+| Phase 5 | 已完成 | 见 `docs/phase5_report.md` |
 | Phase 6 | 未开始 | 事件触发边缘自治、事件检测和云端请求流程未实现 |
 | Phase 7 | 未开始 | 失败摘要、局部重规划、技能缓存和”已完成步骤不重复执行”约束未实现 |
 | Phase 8 | 未开始 | 故障注入、批量实验、指标采集和对比图未实现 |
