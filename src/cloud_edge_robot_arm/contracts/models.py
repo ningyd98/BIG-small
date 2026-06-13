@@ -95,6 +95,7 @@ class MessageStatus(StrEnum):
     SENDING = "SENDING"
     SENT = "SENT"
     FAILED = "FAILED"
+    DEAD_LETTER = "DEAD_LETTER"
 
 
 class CompletionResult(StrEnum):
