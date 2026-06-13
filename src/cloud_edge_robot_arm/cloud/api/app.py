@@ -307,7 +307,8 @@ def create_app(
             raise HTTPException(status_code=400, detail="event_id is required")
         existing = getattr(repo, "get_event", lambda eid: None)(event_id)
         if existing is not None:
-            if getattr(existing, "robot_id", "") and existing.robot_id != robot_id:
+            existing_rid = getattr(existing, "robot_id", None)
+            if existing_rid is not None and existing_rid != "" and existing_rid != robot_id:
                 raise HTTPException(status_code=403, detail="access_denied: robot_id mismatch")
             return EdgeEventResponse(
                 event_id=existing.event_id,
@@ -321,10 +322,16 @@ def create_app(
             )
         from cloud_edge_robot_arm.contracts.models import EdgeEvent as EE
         now = datetime.now(UTC)
+        from cloud_edge_robot_arm.contracts.models import EdgeEventType as EET
+        raw_type = str(body.get("event_type", "UNKNOWN"))
+        try:
+            event_type = EET(raw_type)
+        except ValueError:
+            event_type = EET.SKILL_EXECUTION_FAILED
         event = EE(
             event_id=event_id,
             task_id=str(body.get("task_id", "")),
-            event_type=str(body.get("event_type", "UNKNOWN")),
+            event_type=event_type,
             step_id=body.get("step_id"),
             severity=str(body.get("severity", "ERROR")),
             reason_code=str(body.get("reason_code", "")),
@@ -353,7 +360,7 @@ def create_app(
     )
     async def list_task_events(task_id: str) -> EdgeEventListResponse:
         repo = _require_event_repo()
-        events = getattr(repo, "list_events", lambda tid: [])(task_id)
+        events: Any = getattr(repo, "list_events", lambda tid: [])(task_id)
         return EdgeEventListResponse(
             task_id=task_id,
             events=[
@@ -473,14 +480,16 @@ def create_app(
         )
 
     @app.post(
-        "/api/v1/plans/{plan_id}/replan",
+        "/api/v1/robots/{robot_id}/plans/{plan_id}/replan",
         response_model=ReplanResponse,
         status_code=201,
     )
-    async def replan_plan(plan_id: str, body: ReplanRequest) -> ReplanResponse:
+    async def replan_plan(robot_id: str, plan_id: str, body: ReplanRequest) -> ReplanResponse:
         repo = _require_event_repo()
         if body.plan_id and body.plan_id != plan_id:
             raise HTTPException(status_code=409, detail="plan_id_mismatch")
+        if body.robot_id and body.robot_id != robot_id:
+            raise HTTPException(status_code=409, detail="robot_id_mismatch")
         request_id = body.idempotency_key or f"replan-{plan_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
         # Check idempotency
         existing = getattr(repo, "get_replan_result", lambda rid: None)(request_id)
@@ -581,6 +590,7 @@ def create_app(
         cs = CompletionSummary(
             summary_id=summary_id,
             task_id=task_id,
+            final_plan_version=0,
             completed_step_ids=list(body.completed_step_ids),
             result=str(body.result),
             local_retry_count=int(body.local_retry_count),

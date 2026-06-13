@@ -31,7 +31,7 @@ from cloud_edge_robot_arm.edge.events.composite import CompositeEventDetector
 from cloud_edge_robot_arm.edge.events.models import DetectionContext
 from cloud_edge_robot_arm.edge.outbox import PendingMessageRepository
 from cloud_edge_robot_arm.edge.recovery.manager import LocalRecoveryManager
-from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetManager
+from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetService
 from cloud_edge_robot_arm.edge.summaries.completion import CompletionSummaryBuilder
 from cloud_edge_robot_arm.edge.summaries.failure import FailureSummaryBuilder
 from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
@@ -76,7 +76,7 @@ class EventTriggeredModeController:
         *,
         detector: CompositeEventDetector | None = None,
         recovery_manager: LocalRecoveryManager | None = None,
-        budget_manager: RetryBudgetManager | None = None,
+        budget_manager: RetryBudgetService | None = None,
         failure_builder: FailureSummaryBuilder | None = None,
         completion_builder: CompletionSummaryBuilder | None = None,
         outbox: PendingMessageRepository | None = None,
@@ -84,7 +84,19 @@ class EventTriggeredModeController:
         runtime_profile: str = "test",
     ) -> None:
         self._detector = detector or CompositeEventDetector()
-        self._budget = budget_manager or RetryBudgetManager()
+        # Use provided budget_manager, or create a default that needs repository
+        if budget_manager is not None:
+            self._budget = budget_manager
+        elif repository is not None:
+            self._budget = RetryBudgetService(repository=repository)
+        else:
+            # Fallback for tests without repository — limited functionality
+            from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
+                InMemoryEventAutonomyRepository,
+            )
+            self._budget = RetryBudgetService(
+                repository=InMemoryEventAutonomyRepository()
+            )
         self._recovery = recovery_manager or LocalRecoveryManager(budget_manager=self._budget)
         self._failure_builder = failure_builder or FailureSummaryBuilder()
         self._completion_builder = completion_builder or CompletionSummaryBuilder()
@@ -151,7 +163,7 @@ class EventTriggeredModeController:
             # Execute decision
             if decision.action == RecoveryAction.RETRY_SAME_SKILL:
                 if decision.allowed:
-                    self._budget.consume(task_id)
+                    self._budget.consume_if_available(task_id, context.step.step_id if context.step else "", context.step.skill.value if context.step and hasattr(context.step, 'skill') else "")
                     return ControllerResult(
                         action=ControllerAction.RETRY_STEP,
                         event=event,

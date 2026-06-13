@@ -16,7 +16,15 @@ from cloud_edge_robot_arm.contracts.models import (
     RecoveryAction,
     TaskContract,
 )
-from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetManager
+from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetService
+from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
+    InMemoryEventAutonomyRepository,
+)
+
+
+def _default_repo() -> InMemoryEventAutonomyRepository:
+    return InMemoryEventAutonomyRepository()
+
 
 # Events that are eligible for local recovery
 _LOCALLY_RECOVERABLE: set[EdgeEventType] = {
@@ -49,9 +57,11 @@ class LocalRecoveryManager:
     def __init__(
         self,
         *,
-        budget_manager: RetryBudgetManager | None = None,
+        budget_manager: RetryBudgetService | None = None,
     ) -> None:
-        self._budget_manager = budget_manager or RetryBudgetManager()
+        self._budget_manager = budget_manager or RetryBudgetService(
+            repository=_default_repo(),
+        )
 
     def evaluate(
         self,

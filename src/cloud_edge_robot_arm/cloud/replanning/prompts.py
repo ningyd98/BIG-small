@@ -74,3 +74,61 @@ USER_PROMPT_TEMPLATE_REPLANNING = (
     "Return a JSON TaskContract with ONLY the steps that need to be executed "
     "(completed steps are already done).\n"
 )
+
+
+def build_replan_prompt(request: object) -> str:
+    """Build the full replan prompt from a LocalReplanningRequest."""
+    import json as _json
+
+    template = USER_PROMPT_TEMPLATE_REPLANNING
+    template = template.replace(
+        "{{USER_INSTRUCTION}}",
+        getattr(request, "failed_step_id", "unknown"),
+    )
+    template = template.replace(
+        "{{COMPLETED_STEP_IDS}}",
+        _json.dumps(getattr(request, "completed_step_ids", [])),
+    )
+    template = template.replace(
+        "{{LAST_SUCCESSFUL_STEP_ID}}",
+        getattr(request, "last_successful_step_id", ""),
+    )
+    template = template.replace(
+        "{{FAILED_STEP_ID}}",
+        getattr(request, "failed_step_id", ""),
+    )
+    template = template.replace(
+        "{{REPLAN_SCOPE}}",
+        getattr(request, "requested_replan_scope", "FAILED_STEP_AND_REMAINING"),
+    )
+    template = template.replace(
+        "{{SCENE_VERSION}}",
+        str(getattr(request, "current_scene_version", 0)),
+    )
+    template = template.replace(
+        "{{SCENE_CONFIDENCE}}",
+        str(getattr(request, "scene_confidence", 0.5)),
+    )
+    current_robot = getattr(request, "current_robot_state", {})
+    template = template.replace(
+        "{{ROBOT_STATE}}",
+        _json.dumps(current_robot) if isinstance(current_robot, dict)
+        else str(current_robot),
+    )
+    current_target = getattr(request, "current_target_state", {})
+    template = template.replace(
+        "{{TARGET_STATE}}",
+        _json.dumps(current_target) if isinstance(current_target, dict)
+        else str(current_target),
+    )
+    obstacle = getattr(request, "current_obstacle_state", {})
+    template = template.replace(
+        "{{OBSTACLE_STATE}}",
+        _json.dumps(obstacle) if isinstance(obstacle, dict)
+        else str(obstacle),
+    )
+    template = template.replace("{{FAILURE_SUMMARY}}", "")
+    template = template.replace("{{CURRENT_CONTRACT}}", "")
+    template = template.replace("{{ALLOWED_SKILLS}}", "")
+    template = template.replace("{{SAFETY_CONSTRAINTS}}", "")
+    return SYSTEM_PROMPT_REPLANNING + "\n\n" + template

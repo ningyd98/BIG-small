@@ -302,7 +302,6 @@ class OpenAICompatibleReplannerAdapter:
         from cloud_edge_robot_arm.cloud.replanning.prompts import (
             build_replan_prompt,
         )
-
         prompt = build_replan_prompt(request)
         payload = _json.dumps({
             "model": self._model,
@@ -310,9 +309,11 @@ class OpenAICompatibleReplannerAdapter:
             "temperature": 0.1,
             "max_tokens": 2048,
         })
-        # HTTP call placeholder — delegates to httpx in production
-        import httpx
-
+        # HTTP call — requires httpx in production
+        try:
+            import httpx  # type: ignore[import-not-found]
+        except ImportError:
+            raise RuntimeError("httpx is required for OpenAICompatibleReplannerAdapter")
         with httpx.Client(timeout=self._timeout_s) as client:
             response = client.post(
                 f"{self._base_url}/v1/chat/completions",
