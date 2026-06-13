@@ -104,6 +104,17 @@ class ConditionEvaluator:
             "tcp_near_target",
             "tcp_above_region",
             "robot_clear_of_object",
+            "robot_at_home",
+            "tcp_above_safe_height",
         }:
             return state.tcp_pose.z >= contract.safety_constraints.minimum_safe_height
+        if condition == "gripper_closed":
+            return not state.gripper_open
+        if condition == "object_placed":
+            return state.holding_object_id is None and state.gripper_open
+        if condition == "object_released":
+            return state.gripper_open and state.holding_object_id is None
+        # Generic skill-completed conditions
+        if condition.startswith("skill_") and condition.endswith("_completed"):
+            return True
         return False

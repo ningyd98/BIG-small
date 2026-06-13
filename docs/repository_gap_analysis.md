@@ -22,11 +22,13 @@
 | Phase 0 | 已完成 | 云端模型与真实机械臂按要求冻结，等待后续阶段 |
 | Phase 1 | 已完成 | MuJoCo 为可选适配层；真实机械臂 SDK 和 ROS 2 适配待 Phase 9 |
 | Phase 2 | 已完成 | 云端通信和安全盾仍按阶段边界留到 Phase 3+ |
-| Phase 3 | 未开始 | 安全盾的工作空间、速度、障碍物、急停、超时和场景版本检查未实现 |
-| Phase 4 | 未开始 | FastAPI 任务 API、初始规划、MockModelAdapter、prompt registry、contract repair 未实现 |
+| Phase 3 | 已完成 | 见 `docs/phase3_report.md` |
+| Phase 3.1 | 已完成 | 见 `docs/phase3_1_report.md` |
+| Phase 3.2 | 已完成 | 见 `docs/phase3_2_report.md` |
+| Phase 4 | 已完成 | 见 `docs/phase4_report.md` |
 | Phase 5 | 未开始 | 周期云端监督、TTL ACK、乱序和网络降级集成测试未实现 |
 | Phase 6 | 未开始 | 事件触发边缘自治、事件检测和云端请求流程未实现 |
-| Phase 7 | 未开始 | 失败摘要、局部重规划、技能缓存和“已完成步骤不重复执行”约束未实现 |
+| Phase 7 | 未开始 | 失败摘要、局部重规划、技能缓存和”已完成步骤不重复执行”约束未实现 |
 | Phase 8 | 未开始 | 故障注入、批量实验、指标采集和对比图未实现 |
 | Phase 9 | 未开始 | Docker Compose、部署脚本、验收脚本和真实机械臂接口未完成 |
 

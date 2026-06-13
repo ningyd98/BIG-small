@@ -131,7 +131,11 @@ class SafetySkillExecutor:
             task_started_at_mono=self._task_started_at_mono,
             requested_velocity=intent.requested_tcp_velocity,
             requested_joint_velocities=(
-                list(telemetry.joint_velocities) if telemetry is not None else []
+                list(telemetry.joint_velocities)
+                if telemetry is not None and telemetry.joint_velocities
+                else [intent.requested_joint_velocity]
+                if intent.requested_joint_velocity > 0
+                else []
             ),
             requested_acceleration=intent.requested_acceleration,
             obstacles=obstacles,
@@ -262,11 +266,13 @@ class SafetySkillExecutor:
                     telemetry_timestamp=telemetry.timestamp if telemetry is not None else None,
                     step_started_at_mono=self._step_started_at_mono,
                     task_started_at_mono=self._task_started_at_mono,
-                    requested_velocity=0.0,
+                    requested_velocity=telemetry.tcp_velocity if telemetry is not None else 0.0,
                     requested_joint_velocities=(
-                        list(telemetry.joint_velocities) if telemetry is not None else []
+                        list(telemetry.joint_velocities)
+                        if telemetry is not None and telemetry.joint_velocities
+                        else []
                     ),
-                    requested_acceleration=0.0,
+                    requested_acceleration=telemetry.acceleration if telemetry is not None else 0.0,
                     obstacles=scene.obstacles if scene is not None else [],
                     forbidden_zones=scene.forbidden_zones if scene is not None else [],
                 )

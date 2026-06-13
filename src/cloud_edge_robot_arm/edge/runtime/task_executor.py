@@ -60,6 +60,7 @@ class TaskExecutor:
         scene_version: int = 1,
         telemetry_provider: TelemetryProvider | None = None,
         scene_provider: SceneStateProvider | None = None,
+        runtime_profile: str = "test",
     ) -> None:
         if not isinstance(shield, SafetyShield):
             raise TypeError(
@@ -71,6 +72,20 @@ class TaskExecutor:
         self._registry = registry or SkillRegistry.default()
         self._min_plan_version = min_plan_version
         self._scene_version = scene_version
+        self._runtime_profile = runtime_profile.strip().lower()
+
+        if self._runtime_profile == "production":
+            if telemetry_provider is None:
+                raise ValueError(
+                    "telemetry_provider is required in production mode; "
+                    "MockTelemetryProvider is not allowed"
+                )
+            if scene_provider is None:
+                raise ValueError(
+                    "scene_provider is required in production mode; "
+                    "MockSceneStateProvider is not allowed"
+                )
+
         self._telemetry_provider = telemetry_provider or MockTelemetryProvider()
         self._scene_provider = scene_provider or MockSceneStateProvider(
             robot, initial_scene_version=self._scene_version

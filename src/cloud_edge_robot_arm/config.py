@@ -35,10 +35,16 @@ class AppConfig:
     mode_defaults: CoordinationModeDefaults
     safety_shield_enabled: bool
     log_level: str
+    runtime_profile: str = "test"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AppConfig:
         source = environ if env is None else env
+        runtime_profile = source.get("RUNTIME_PROFILE", "test").strip().lower()
+        if runtime_profile not in {"test", "simulation", "production"}:
+            raise ValueError(
+                f"RUNTIME_PROFILE must be test|simulation|production, got {runtime_profile!r}"
+            )
         return cls(
             app_name=source.get("APP_NAME", "BIG-small"),
             app_env=source.get("APP_ENV", "development"),
@@ -51,4 +57,5 @@ class AppConfig:
             ),
             safety_shield_enabled=_read_bool(source, "SAFETY_SHIELD_ENABLED", True),
             log_level=source.get("LOG_LEVEL", "INFO"),
+            runtime_profile=runtime_profile,
         )

@@ -32,6 +32,22 @@ Phase 0-2 do not implement cloud task planning, MQTT, periodic cloud supervision
 event-triggered cloud re-planning, LLM/VLM prompt calls, ROS 2, full safety shield, or
 real robot control.
 
+Phase 3 implements the independent edge safety shield (21 rules, StopController,
+Watchdog) and deterministic safety execution gate control.
+
+Phase 3.1 integrates SafetyShield into TaskExecutor as a mandatory dependency with
+fail-closed enforcement and real rule implementations using merged constraints.
+
+Phase 3.2 adds real intent resolution (SkillSafetyIntentResolver), runtime safety data
+providers (TelemetryProvider / SceneStateProvider Protocol), ALLOW_WITH_LIMITS
+implementation, and comprehensive integration verification.
+
+Phase 4 implements the cloud initial planning service: PlannerAdapter Protocol (Mock,
+RuleBased, OpenAICompatible), planning pipeline with model untrusted boundary,
+FastAPI API, EdgeGateway (InProcess), PromptRegistry, and cloud repositories.
+Phase 4 does NOT implement MQTT, periodic supervision, event-triggered re-planning,
+or real robot control.
+
 ## Phase 2 Runtime Flow
 
 ```text
