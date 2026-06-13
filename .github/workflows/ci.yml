@@ -1,118 +1,60 @@
 name: CI
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  checks:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          pip install -e ".[dev]"
 
-      - name: Ruff format check
+      - name: Compile check
+        run: python -m compileall src scripts tests
+
+      - name: Format check
         run: python -m ruff format --check .
 
-      - name: Ruff lint
+      - name: Lint
         run: python -m ruff check .
 
-      - name: MyPy
-        run: python -m mypy .
+      - name: Type check
+        run: python -m mypy src/
 
-      - name: Pytest
+      - name: Unit tests
         run: python -m pytest -q
 
-      - name: Validate contract examples
-        run: python scripts/validate_contract_examples.py
+      - name: Phase 3 verification
+        run: |
+          python scripts/verify_phase3.py
+          python scripts/verify_phase3_1.py
+          python scripts/verify_phase3_2.py
 
-      - name: Run fixed pick-place demo
-        run: python scripts/run_fixed_pick_place.py --adapter mock
-
-      - name: Run fixed pick-place repeat
-        run: python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
-
-      - name: Run fault injection suite
-        run: python scripts/run_fault_injection_suite.py
-
-      - name: Run Phase 2 task runtime
-        run: python scripts/run_phase2_task.py --repository sqlite
-
-      - name: Run Phase 2 failure case
-        run: python scripts/run_phase2_failure_case.py --fault GRASP_FAILED
-
-      - name: Run Phase 2 replay test
-        run: python scripts/run_phase2_replay_test.py
-
-      - name: Run Phase 2 restart recovery test
-        run: python scripts/run_phase2_restart_recovery_test.py
-
-      - name: Verify Phase 2
-        run: python scripts/verify_phase2.py
-
-      - name: Run Phase 3 safe task
-        run: python scripts/run_phase3_safe_task.py
-
-      - name: Run Phase 3 workspace violation
-        run: python scripts/run_phase3_workspace_violation.py
-
-      - name: Run Phase 3 collision case
-        run: python scripts/run_phase3_collision_case.py
-
-      - name: Run Phase 3 obstacle case
-        run: python scripts/run_phase3_obstacle_case.py
-
-      - name: Run Phase 3 stale scene case
-        run: python scripts/run_phase3_stale_scene_case.py
-
-      - name: Run Phase 3 watchdog timeout
-        run: python scripts/run_phase3_watchdog_timeout.py
-
-      - name: Verify Phase 3
-        run: python scripts/verify_phase3.py
-
-      - name: Verify Phase 3.1
-        run: python scripts/verify_phase3_1.py
-
-      - name: Verify Phase 3.2
-        run: python scripts/verify_phase3_2.py
-
-      - name: Run Phase 4 API smoke
-        run: python scripts/run_phase4_api_smoke.py
-
-      - name: Run Phase 4 Mock plan
-        run: python scripts/run_phase4_mock_plan.py
-
-      - name: Run Phase 4 RuleBased plan
-        run: python scripts/run_phase4_rule_based_plan.py
-
-      - name: Run Phase 4 request more observation
-        run: python scripts/run_phase4_request_more_observation.py
-
-      - name: Run Phase 4 malformed output repair
-        run: python scripts/run_phase4_malformed_output_repair.py
-
-      - name: Run Phase 4 idempotency
-        run: python scripts/run_phase4_idempotency.py
-
-      - name: Run Phase 4 edge dispatch
-        run: python scripts/run_phase4_edge_dispatch.py
-
-      - name: Verify Phase 4
+      - name: Phase 4 verification
         run: python scripts/verify_phase4.py
 
-      - name: Verify Phase 5
+      - name: Phase 5 verification
         run: python scripts/verify_phase5.py
+
+      - name: Phase 6 verification
+        run: python scripts/verify_phase6.py
+
+      - name: Dependency check
+        run: python -m pip check

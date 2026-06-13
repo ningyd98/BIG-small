@@ -358,11 +358,48 @@ class TaskExecutor:
                     state=final_state,
                 )
 
-        self._transition(context, TaskState.COMPLETED, reason="all steps completed")
+        # Run CompletionEvaluator before declaring success
+        from cloud_edge_robot_arm.edge.completion_evaluator import CompletionEvaluator
+
+        evaluator = CompletionEvaluator()
+        robot_state_dict = robot_state.model_dump() if hasattr(robot_state, 'model_dump') else {}
+        evaluation = evaluator.evaluate(
+            contract=contract,
+            completed_step_ids=list(context.completed_step_ids),
+            completion_criteria_results=dict(context.completion_criteria_results)
+            if hasattr(context, 'completion_criteria_results')
+            else {},
+            final_safety_decision="ALLOW",
+            final_robot_state=robot_state_dict,
+            scene_version=contract.scene_version,
+        )
+        if not evaluation.completed:
+            self._repository.record_audit_event(
+                task_id=task_id,
+                event_type="TASK_COMPLETION_EVALUATION_FAILED",
+                details={
+                    "failed_checks": evaluation.failed_checks,
+                    "reason_codes": evaluation.reason_codes,
+                },
+            )
+            return self._fail_task(
+                context=context,
+                error=runtime_error(
+                    "COMPLETION_EVALUATION_FAILED",
+                    f"Task did not pass completion evaluation: {'; '.join(evaluation.failed_checks)}",
+                    details={"failed_checks": evaluation.failed_checks},
+                ),
+                state=TaskState.FAILED,
+            )
+
+        self._transition(context, TaskState.COMPLETED, reason="all steps completed and evaluated")
         self._repository.record_audit_event(
             task_id=task_id,
             event_type="TASK_COMPLETED",
-            details={"completed_step_ids": list(context.completed_step_ids)},
+            details={
+                "completed_step_ids": list(context.completed_step_ids),
+                "evaluation_passed": True,
+            },
         )
         return TaskExecutionResult(
             success=True,
