@@ -89,7 +89,7 @@ class MockRobotAdapter:
         self,
         *,
         scene: MockScene,
-        auto_connect: bool = True,
+        auto_connect: bool = False,
         grasp_failures_remaining: int = 0,
         max_reach_m: float = 0.65,
         default_action_duration_ms: int = 10,

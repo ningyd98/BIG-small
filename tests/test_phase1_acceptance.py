@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_mock_robot_adapter_implements_unified_interface() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
 
     assert isinstance(robot, RobotAdapter)
     for method_name in (
@@ -35,7 +35,7 @@ def test_mock_robot_adapter_implements_unified_interface() -> None:
 
 
 def test_every_action_returns_required_structured_action_result_fields() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     result = robot.move_to_pose(Pose(x=0.1, y=0.1, z=0.15), timeout_ms=100)
 
     assert isinstance(result, ActionResult)
@@ -53,6 +53,7 @@ def test_every_action_returns_required_structured_action_result_fields() -> None
 def test_mock_robot_supports_action_duration_simulation_and_timeout() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         default_action_duration_ms=50,
     )
 
@@ -81,7 +82,7 @@ def test_all_required_fault_injections_return_structured_errors(
     fault: FaultCode,
     action_name: str,
 ) -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     robot.inject_fault(fault)
     if fault in {FaultCode.GRASP_FAILED, FaultCode.OBJECT_DROPPED}:
         robot.move_above("red_cube")
@@ -108,7 +109,7 @@ def test_all_required_fault_injections_return_structured_errors(
 
 
 def test_safe_stop_uses_emergency_stop_path() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
 
     result = robot.safe_stop()
 
@@ -119,7 +120,7 @@ def test_safe_stop_uses_emergency_stop_path() -> None:
 
 
 def test_fixed_pick_place_runs_exact_phase_one_sequence() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
 
     summary = run_fixed_pick_place(robot)
 
@@ -142,7 +143,7 @@ def test_fixed_pick_place_runs_exact_phase_one_sequence() -> None:
 def test_fixed_pick_place_can_run_twenty_times_deterministically() -> None:
     successes = 0
     for _ in range(20):
-        robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+        robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
         summary = run_fixed_pick_place(robot)
         successes += int(summary.success)
 

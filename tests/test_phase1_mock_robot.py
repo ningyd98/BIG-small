@@ -7,6 +7,7 @@ from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockSce
 def test_mock_robot_moves_grasps_places_and_records_history() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
     )
 
     assert robot.home().success is True
@@ -29,7 +30,7 @@ def test_mock_robot_moves_grasps_places_and_records_history() -> None:
 def test_mock_robot_reports_structured_failures_without_raising() -> None:
     scene = MockScene.with_default_pick_place_scene()
     scene.objects["red_cube"].pose = Pose(x=10.0, y=10.0, z=0.02)
-    robot = MockRobotAdapter(scene=scene, grasp_failures_remaining=1)
+    robot = MockRobotAdapter(scene=scene, auto_connect=True, grasp_failures_remaining=1)
 
     unreachable = robot.move_above("red_cube", z_offset_m=0.12)
     first_grasp = robot.grasp("red_cube")

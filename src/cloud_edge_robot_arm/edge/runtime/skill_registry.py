@@ -6,7 +6,7 @@ from typing import Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cloud_edge_robot_arm.contracts import ActionResult, SkillName
+from cloud_edge_robot_arm.contracts import ActionResult, RobotState, SkillName
 
 
 class RuntimeSkillRobot(Protocol):
@@ -50,7 +50,11 @@ class RuntimeSkillRobot(Protocol):
 
     def safe_stop(self, *, timeout_ms: int | None = None) -> ActionResult: ...
 
-    def get_state(self) -> object: ...
+    def stop(self, *, timeout_ms: int | None = None) -> ActionResult: ...
+
+    def emergency_stop(self, *, timeout_ms: int | None = None) -> ActionResult: ...
+
+    def get_state(self) -> RobotState: ...
 
     def object_region(self, object_id: str) -> str | None: ...
 

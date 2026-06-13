@@ -26,3 +26,11 @@ python scripts/run_phase2_failure_case.py --fault GRASP_FAILED
 python scripts/run_phase2_replay_test.py
 python scripts/run_phase2_restart_recovery_test.py
 python scripts/verify_phase2.py
+python scripts/run_phase3_safe_task.py
+python scripts/run_phase3_workspace_violation.py
+python scripts/run_phase3_velocity_limit.py
+python scripts/run_phase3_collision_case.py
+python scripts/run_phase3_obstacle_case.py
+python scripts/run_phase3_stale_scene_case.py
+python scripts/run_phase3_watchdog_timeout.py
+python scripts/verify_phase3.py

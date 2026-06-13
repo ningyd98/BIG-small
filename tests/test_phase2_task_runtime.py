@@ -14,7 +14,7 @@ def _executor(
 
 
 def test_complete_valid_task_reaches_completed_state_and_records_audit_log() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     repository = InMemoryRepository()
 
     result = _executor(robot, repository).submit_contract(contract().model_dump(mode="json"))
@@ -58,7 +58,7 @@ def test_complete_valid_task_reaches_completed_state_and_records_audit_log() -> 
 
 
 def test_invalid_contract_performs_zero_robot_actions() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     payload = contract().model_dump(mode="json")
     payload["steps"][0]["skill"] = "RUN_ARBITRARY_CODE"
 
@@ -73,6 +73,7 @@ def test_invalid_contract_performs_zero_robot_actions() -> None:
 def test_step_failure_short_circuits_remaining_steps() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         grasp_failures_remaining=3,
     )
     task = contract(local_retry_limit=0)
@@ -89,6 +90,7 @@ def test_step_failure_short_circuits_remaining_steps() -> None:
 def test_retry_budget_uses_minimum_of_step_and_failure_policy_limits() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         grasp_failures_remaining=1,
     )
     task = contract(local_retry_limit=1)
@@ -107,7 +109,7 @@ def test_retry_budget_uses_minimum_of_step_and_failure_policy_limits() -> None:
 
 
 def test_parameter_validation_failure_does_not_call_robot_action() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     task = contract(
         steps=[
             step(
@@ -128,7 +130,7 @@ def test_parameter_validation_failure_does_not_call_robot_action() -> None:
 
 
 def test_precondition_failure_does_not_call_action() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     task = contract(
         steps=[
             step(
@@ -152,6 +154,7 @@ def test_precondition_failure_does_not_call_action() -> None:
 def test_step_timeout_enters_failed_state_after_retry_budget_exhausted() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         default_action_duration_ms=100,
     )
     task = contract(
@@ -171,6 +174,7 @@ def test_step_timeout_enters_failed_state_after_retry_budget_exhausted() -> None
 def test_task_timeout_stops_execution() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         default_action_duration_ms=50,
     )
     task = contract(
@@ -193,7 +197,7 @@ def test_task_timeout_stops_execution() -> None:
 
 
 def test_non_retryable_failure_enters_safety_stopped() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     robot.inject_fault(FaultCode.COLLISION_DETECTED)
 
     result = _executor(robot).submit_contract(contract().model_dump(mode="json"))

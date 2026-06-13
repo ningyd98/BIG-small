@@ -23,17 +23,17 @@ def main() -> int:
     contract = build_pick_place_contract(task_id="phase2-replay-demo")
     payload = contract.model_dump(mode="json")
     first = TaskExecutor(
-        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene()),
+        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
         repository=repository,
     ).submit_contract(payload)
     replay = TaskExecutor(
-        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene()),
+        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
         repository=repository,
     ).submit_contract(payload)
     conflict_payload = dict(payload)
     conflict_payload["user_instruction"] = "changed payload with same command_seq"
     conflict = TaskExecutor(
-        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene()),
+        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
         repository=repository,
     ).submit_contract(conflict_payload)
 

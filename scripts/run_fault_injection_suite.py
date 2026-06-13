@@ -19,7 +19,7 @@ from cloud_edge_robot_arm.simulation.mock_robot import (  # noqa: E402
 
 
 def _execute_fault(fault: FaultCode) -> dict[str, object]:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     robot.inject_fault(fault)
     if fault in {FaultCode.GRASP_FAILED, FaultCode.OBJECT_DROPPED}:
         robot.move_above("red_cube")

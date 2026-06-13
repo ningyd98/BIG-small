@@ -14,8 +14,12 @@ from tests.phase2_helpers import contract
 def test_command_replay_is_rejected(repository_factory: type[InMemoryRepository]) -> None:
     repository = repository_factory()
     payload = contract().model_dump(mode="json")
-    first_robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
-    second_robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    first_robot = MockRobotAdapter(
+        scene=MockScene.with_default_pick_place_scene(), auto_connect=True
+    )
+    second_robot = MockRobotAdapter(
+        scene=MockScene.with_default_pick_place_scene(), auto_connect=True
+    )
 
     first = TaskExecutor(robot=first_robot, repository=repository).submit_contract(payload)
     second = TaskExecutor(robot=second_robot, repository=repository).submit_contract(payload)
@@ -33,13 +37,15 @@ def test_replay_is_rejected_after_sqlite_restart(tmp_path: object) -> None:
 
     first_repo = SQLiteRepository(db_path)
     first = TaskExecutor(
-        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene()),
+        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
         repository=first_repo,
     ).submit_contract(payload)
     first_repo.close()
 
     restarted_repo = SQLiteRepository(db_path)
-    second_robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    second_robot = MockRobotAdapter(
+        scene=MockScene.with_default_pick_place_scene(), auto_connect=True
+    )
     second = TaskExecutor(robot=second_robot, repository=restarted_repo).submit_contract(payload)
 
     assert first.success is True
@@ -56,11 +62,11 @@ def test_same_sequence_with_different_payload_is_conflict() -> None:
     changed_payload["user_instruction"] = "different instruction with same command_seq"
 
     first = TaskExecutor(
-        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene()),
+        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
         repository=repository,
     ).submit_contract(first_payload)
     conflict = TaskExecutor(
-        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene()),
+        robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
         repository=repository,
     ).submit_contract(changed_payload)
 

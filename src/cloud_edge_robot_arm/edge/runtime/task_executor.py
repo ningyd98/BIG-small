@@ -76,6 +76,29 @@ class TaskExecutor:
 
         contract = validation.contract
         task_id = contract.task_id
+
+        robot_state = self._robot.get_state()
+        from cloud_edge_robot_arm.contracts import RobotState
+
+        if not isinstance(robot_state, RobotState):
+            return TaskExecutionResult(
+                success=False,
+                repository=self._repository,
+                error=runtime_error(
+                    "ROBOT_STATE_INVALID",
+                    "robot adapter did not return a RobotState",
+                ),
+            )
+        if not robot_state.connected:
+            return TaskExecutionResult(
+                success=False,
+                repository=self._repository,
+                error=runtime_error(
+                    "ROBOT_DISCONNECTED",
+                    "robot is not connected; call connect() before submitting contracts",
+                ),
+            )
+
         command_decision = self._repository.accept_command(
             contract,
             payload_hash=self._payload_hash(payload),
@@ -131,6 +154,8 @@ class TaskExecutor:
                     if step_result.error_code in SAFETY_STOP_ERROR_CODES
                     else TaskState.FAILED
                 )
+                if final_state == TaskState.SAFETY_STOPPED:
+                    self._execute_safety_stop(context)
                 return self._fail_task(
                     context=context,
                     error=step_result.error
@@ -166,6 +191,64 @@ class TaskExecutor:
             context=context,
             error=None,
         )
+
+    def _execute_safety_stop(self, context: TaskRuntimeContext) -> None:
+        from cloud_edge_robot_arm.edge.safety.stop_controller import StopController
+
+        controller = StopController(self._robot)
+        result = controller.execute_stop()
+
+        self._repository.record_audit_event(
+            task_id=context.task_id,
+            event_type="STOP_REQUESTED",
+            details={"method": "stop"},
+        )
+
+        if result.verified_stopped:
+            self._repository.record_audit_event(
+                task_id=context.task_id,
+                event_type="STOP_CONFIRMED",
+                details={"method": result.method_used},
+            )
+        elif result.verified_estop:
+            self._repository.record_audit_event(
+                task_id=context.task_id,
+                event_type="EMERGENCY_STOP_CONFIRMED",
+                details={"method": result.method_used},
+            )
+        else:
+            self._repository.record_audit_event(
+                task_id=context.task_id,
+                event_type="SAFETY_STOP_FAILED",
+                details={"error": result.error.message if result.error else "unknown"},
+            )
+
+        if result.stop_action_result is not None:
+            self._repository.record_action_execution(
+                ActionExecutionRecord(
+                    task_id=context.task_id,
+                    step_id=context.current_step_id or "",
+                    action_id=result.stop_action_result.action_id,
+                    action_type="STOP",
+                    success=result.stop_action_result.success,
+                    error_code=result.stop_action_result.error_code,
+                    duration_ms=result.stop_action_result.duration_ms,
+                    timestamp=result.stop_action_result.finished_at,
+                )
+            )
+        if result.estop_action_result is not None:
+            self._repository.record_action_execution(
+                ActionExecutionRecord(
+                    task_id=context.task_id,
+                    step_id=context.current_step_id or "",
+                    action_id=result.estop_action_result.action_id,
+                    action_type="EMERGENCY_STOP",
+                    success=result.estop_action_result.success,
+                    error_code=result.estop_action_result.error_code,
+                    duration_ms=result.estop_action_result.duration_ms,
+                    timestamp=result.estop_action_result.finished_at,
+                )
+            )
 
     def _execute_step_with_retries(
         self,

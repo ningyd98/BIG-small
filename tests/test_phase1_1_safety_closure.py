@@ -71,6 +71,7 @@ def _contract_payload(now: datetime) -> dict[str, object]:
 def test_flow_stops_after_grasp_failure() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         grasp_failures_remaining=1,
     )
 
@@ -92,6 +93,7 @@ def test_flow_stops_after_grasp_failure() -> None:
 def test_flow_does_not_lift_after_grasp_failure() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         grasp_failures_remaining=1,
     )
 
@@ -104,6 +106,7 @@ def test_flow_does_not_lift_after_grasp_failure() -> None:
 def test_flow_invokes_safe_stop_after_failure() -> None:
     robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(),
+        auto_connect=True,
         grasp_failures_remaining=1,
     )
 

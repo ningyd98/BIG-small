@@ -29,7 +29,7 @@ def test_all_phase_one_atomic_skills_are_registered_as_enum_handlers() -> None:
 
 
 def test_skill_executor_runs_fixed_pick_and_place_sequence() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
     steps = [
         _step("step-001", SkillName.HOME),
@@ -63,7 +63,7 @@ def test_skill_executor_runs_fixed_pick_and_place_sequence() -> None:
 
 
 def test_skill_executor_safe_stop_closes_execution_path() -> None:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
+    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
 
     result = executor.execute_step(
