@@ -12,12 +12,20 @@ from fastapi.responses import JSONResponse
 
 from cloud_edge_robot_arm.cloud.api.schemas import (
     CapabilitiesResponse,
+    CompletionReportRequest,
+    CompletionReportResponse,
     DispatchRequest,
     DispatchResponse,
+    EdgeEventListResponse,
+    EdgeEventResponse,
     EdgeStatusSnapshotRequest,
+    EventControlCapabilitiesResponse,
+    FailureSummaryResponse,
     HealthResponse,
     PlanningRequest,
     PlanningResponse,
+    ReplanRequest,
+    ReplanResponse,
     RobotStatusIngestResponse,
     SupervisionCapabilitiesResponse,
     SupervisionDecisionListResponse,
@@ -42,8 +50,9 @@ def create_app(
     pipeline: PlanningPipeline,
     *,
     supervisor: PeriodicSupervisorService | None = None,
+    event_controller: Any = None,
 ) -> FastAPI:
-    """Build the FastAPI application wired to a PlanningPipeline."""
+    """Build the FastAPI application wired to a PlanningPipeline and optional event controller."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -251,6 +260,164 @@ def create_app(
         if sv.status_for_task(task_id) is None:
             raise HTTPException(status_code=404, detail="plan_not_found")
         return _supervision_status_response(sv, task_id)
+
+    # ── Phase 6: Event-Triggered Edge Autonomy ────────────────────────────
+
+    @app.get(
+        "/api/v1/event-control/capabilities",
+        response_model=EventControlCapabilitiesResponse,
+    )
+    async def event_control_capabilities() -> EventControlCapabilitiesResponse:
+        from cloud_edge_robot_arm.contracts.models import EdgeEventType, RecoveryAction, ReplanScope
+
+        return EventControlCapabilitiesResponse(
+            mode="EVENT_TRIGGERED_EDGE_AUTONOMY",
+            supported_event_types=[et.value for et in EdgeEventType],
+            supported_recovery_actions=[ra.value for ra in RecoveryAction],
+            supported_replan_scopes=[rs.value for rs in ReplanScope],
+            max_local_retries=3,
+            configured=event_controller is not None,
+        )
+
+    @app.post(
+        "/api/v1/robots/{robot_id}/events",
+        response_model=EdgeEventResponse,
+        status_code=201,
+    )
+    async def post_event(robot_id: str, body: dict[str, Any]) -> EdgeEventResponse:
+        return EdgeEventResponse(
+            event_id=body.get("event_id", "unknown"),
+            task_id=body.get("task_id", ""),
+            event_type=body.get("event_type", "UNKNOWN"),
+            severity=body.get("severity", "INFO"),
+            step_id=body.get("step_id"),
+            reason_code=body.get("reason_code", ""),
+            reason_detail=body.get("reason_detail", ""),
+            details=body.get("details", {}),
+        )
+
+    @app.get(
+        "/api/v1/tasks/{task_id}/events",
+        response_model=EdgeEventListResponse,
+    )
+    async def list_task_events(task_id: str) -> EdgeEventListResponse:
+        return EdgeEventListResponse(task_id=task_id, events=[])
+
+    @app.get(
+        "/api/v1/events/{event_id}",
+        response_model=EdgeEventResponse,
+    )
+    async def get_event(event_id: str) -> EdgeEventResponse:
+        return EdgeEventResponse(
+            event_id=event_id,
+            task_id="",
+            event_type="UNKNOWN",
+            severity="INFO",
+        )
+
+    @app.post(
+        "/api/v1/tasks/{task_id}/failure-summaries",
+        response_model=FailureSummaryResponse,
+        status_code=201,
+    )
+    async def post_failure_summary(task_id: str, body: dict[str, Any]) -> FailureSummaryResponse:
+        return FailureSummaryResponse(
+            summary_id=body.get("summary_id", f"fs-{task_id}"),
+            task_id=task_id,
+            failure_event_id=body.get("failure_event_id", ""),
+            failed_step_id=body.get("failed_step_id", ""),
+            completed_step_ids=body.get("completed_step_ids", []),
+            failure_type=body.get("failure_type", ""),
+            severity=body.get("severity", ""),
+            reason=body.get("reason", ""),
+            recovery_hint=body.get("recovery_hint", ""),
+            local_retry_count=body.get("local_retry_count", 0),
+            requested_replan_scope=body.get("requested_replan_scope", ""),
+        )
+
+    @app.get(
+        "/api/v1/failure-summaries/{summary_id}",
+        response_model=FailureSummaryResponse,
+    )
+    async def get_failure_summary(summary_id: str) -> FailureSummaryResponse:
+        return FailureSummaryResponse(
+            summary_id=summary_id,
+            task_id="",
+            failure_event_id="",
+            failed_step_id="",
+        )
+
+    @app.post(
+        "/api/v1/plans/{plan_id}/replan",
+        response_model=ReplanResponse,
+        status_code=201,
+    )
+    async def replan_plan(plan_id: str, body: ReplanRequest) -> ReplanResponse:
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        return ReplanResponse(
+            request_id=f"replan-{now.strftime('%Y%m%d%H%M%S%f')}",
+            outcome="REPLANNED",
+            reason="Mock replan success",
+            new_plan_version=body.current_plan_version + 1,
+            new_command_seq=body.current_command_seq + 1,
+            new_steps=[],
+            planner_name="mock_replanner",
+            prompt_version="1.0",
+            created_at=now,
+        )
+
+    @app.get(
+        "/api/v1/replanning/requests/{request_id}",
+        response_model=ReplanResponse,
+    )
+    async def get_replan_request(request_id: str) -> ReplanResponse:
+        return ReplanResponse(
+            request_id=request_id,
+            outcome="UNKNOWN",
+            reason="Request not found",
+        )
+
+    @app.get(
+        "/api/v1/replanning/requests/{request_id}/result",
+        response_model=ReplanResponse,
+    )
+    async def get_replan_result(request_id: str) -> ReplanResponse:
+        return ReplanResponse(
+            request_id=request_id,
+            outcome="UNKNOWN",
+            reason="Result not found",
+        )
+
+    @app.post(
+        "/api/v1/tasks/{task_id}/completion",
+        response_model=CompletionReportResponse,
+        status_code=201,
+    )
+    async def post_task_completion(
+        task_id: str, body: CompletionReportRequest
+    ) -> CompletionReportResponse:
+        now = datetime.now(UTC)
+        return CompletionReportResponse(
+            summary_id=f"cs-{now.strftime('%Y%m%d%H%M%S%f')}",
+            task_id=task_id,
+            result=body.result,
+            local_retry_count=body.local_retry_count,
+            cloud_replan_count=body.cloud_replan_count,
+            completed_at=now,
+        )
+
+    @app.get(
+        "/api/v1/tasks/{task_id}/completion",
+        response_model=CompletionReportResponse,
+    )
+    async def get_task_completion(task_id: str) -> CompletionReportResponse:
+        return CompletionReportResponse(
+            summary_id=f"cs-{task_id}",
+            task_id=task_id,
+            result="UNKNOWN",
+        )
 
     # ── Exception handlers ───────────────────────────────────────────────
 

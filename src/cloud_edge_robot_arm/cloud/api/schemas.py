@@ -131,3 +131,99 @@ class SupervisionStartRequest(BaseModel):
 
 class EdgeStatusSnapshotRequest(EdgeStatusSnapshot):
     pass
+
+
+# ── Phase 6: Event-Triggered Edge Autonomy ──────────────────────────────────
+
+
+class EventControlCapabilitiesResponse(BaseModel):
+    mode: str = "EVENT_TRIGGERED_EDGE_AUTONOMY"
+    supported_event_types: list[str] = Field(default_factory=list)
+    supported_recovery_actions: list[str] = Field(default_factory=list)
+    supported_replan_scopes: list[str] = Field(default_factory=list)
+    max_local_retries: int = 3
+    configured: bool = True
+
+
+class EdgeEventResponse(BaseModel):
+    event_id: str
+    task_id: str
+    event_type: str
+    severity: str
+    step_id: str | None = None
+    reason_code: str = ""
+    reason_detail: str = ""
+    detected_at: datetime | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class EdgeEventListResponse(BaseModel):
+    task_id: str
+    events: list[EdgeEventResponse] = Field(default_factory=list)
+
+
+class FailureSummaryResponse(BaseModel):
+    summary_id: str
+    task_id: str
+    failure_event_id: str
+    failed_step_id: str
+    completed_step_ids: list[str] = Field(default_factory=list)
+    failure_type: str = ""
+    severity: str = ""
+    reason: str = ""
+    recovery_hint: str = ""
+    local_retry_count: int = 0
+    requested_replan_scope: str = ""
+    generated_at: datetime | None = None
+
+
+class FailureSummaryListResponse(BaseModel):
+    task_id: str
+    summaries: list[FailureSummaryResponse] = Field(default_factory=list)
+
+
+class ReplanRequest(BaseModel):
+    trigger_event_id: str = Field(min_length=1)
+    failure_summary_id: str = Field(default="")
+    robot_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    plan_id: str = Field(default="")
+    current_plan_version: int = Field(ge=0)
+    current_command_seq: int = Field(ge=1)
+    requested_replan_scope: str = Field(default="FAILED_STEP_AND_REMAINING")
+    completed_step_ids: list[str] = Field(default_factory=list)
+    failed_step_id: str = Field(default="")
+    last_successful_step_id: str = Field(default="")
+    current_scene_version: int = Field(ge=0)
+    scene_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    idempotency_key: str = Field(default="")
+
+
+class ReplanResponse(BaseModel):
+    request_id: str
+    outcome: str
+    reason: str = ""
+    new_plan_version: int = 0
+    new_command_seq: int = 0
+    new_steps: list[dict[str, Any]] = Field(default_factory=list)
+    planner_name: str = ""
+    prompt_version: str = ""
+    created_at: datetime | None = None
+
+
+class CompletionReportRequest(BaseModel):
+    task_id: str = Field(min_length=1)
+    completed_step_ids: list[str] = Field(default_factory=list)
+    result: str = Field(default="SUCCESS")
+    local_retry_count: int = Field(default=0, ge=0)
+    cloud_replan_count: int = Field(default=0, ge=0)
+
+
+class CompletionReportResponse(BaseModel):
+    summary_id: str
+    task_id: str
+    result: str
+    total_duration_ms: int = 0
+    local_retry_count: int = 0
+    cloud_replan_count: int = 0
+    completed_at: datetime | None = None

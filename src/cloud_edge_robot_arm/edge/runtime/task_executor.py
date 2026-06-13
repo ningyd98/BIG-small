@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from cloud_edge_robot_arm.contracts import TaskState
+from cloud_edge_robot_arm.contracts import ControlMode, TaskState
 from cloud_edge_robot_arm.edge.contract_validator import EdgeContractValidator
 from cloud_edge_robot_arm.edge.runtime.errors import TASK_TIMEOUT, runtime_error
 from cloud_edge_robot_arm.edge.runtime.retry_policy import (
@@ -30,6 +30,9 @@ from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.repositories.models import ActionExecutionRecord, StepExecutionRecord
 
 if TYPE_CHECKING:
+    from cloud_edge_robot_arm.edge.event_mode.controller import (
+        EventTriggeredModeController,
+    )
     from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
 
 SAFETY_DECISION_ERROR_CODES: dict[str, str] = {
@@ -61,6 +64,7 @@ class TaskExecutor:
         telemetry_provider: TelemetryProvider | None = None,
         scene_provider: SceneStateProvider | None = None,
         runtime_profile: str = "test",
+        event_controller: EventTriggeredModeController | None = None,
     ) -> None:
         if not isinstance(shield, SafetyShield):
             raise TypeError(
@@ -92,6 +96,7 @@ class TaskExecutor:
         )
         self._state_machine = TaskStateMachine()
         self._retry_policy = RetryPolicy()
+        self._event_controller = event_controller
 
     def submit_contract(self, payload: dict[str, Any]) -> TaskExecutionResult:
         task_id = self._extract_task_id(payload)
@@ -206,6 +211,107 @@ class TaskExecutor:
             )
             if not step_result.success:
                 error_code = step_result.error_code or "STEP_FAILED"
+
+                # Phase 6: event-triggered edge autonomy recovery path
+                if (
+                    self._event_controller is not None
+                    and contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
+                ):
+                    from cloud_edge_robot_arm.edge.events.models import DetectionContext
+
+                    det_ctx = DetectionContext(
+                        task_id=task_id,
+                        plan_version=contract.plan_version,
+                        command_seq=contract.command_seq,
+                        robot_id="",
+                        step=step,
+                        step_result=step_result,
+                        robot_state=robot_state,
+                        contract=contract,
+                        elapsed_action_ms=context.elapsed_action_ms,
+                        step_attempts=dict(context.step_attempts),
+                        scene_version=contract.scene_version,
+                        completed_step_ids=list(context.completed_step_ids),
+                        completion_criteria=list(contract.completion_criteria),
+                    )
+
+                    ctrl_result = self._event_controller.on_step_result(
+                        result=step_result,
+                        context=det_ctx,
+                        contract=contract,
+                    )
+                    if ctrl_result.action.value in ("CONTINUE", "RETRY_STEP"):
+                        self._repository.record_audit_event(
+                            task_id=task_id,
+                            event_type="LOCAL_RECOVERY_APPLIED",
+                            details={
+                                "action": ctrl_result.action.value,
+                                "event_id": ctrl_result.event.event_id if ctrl_result.event else "",
+                            },
+                        )
+                        continue
+                    elif ctrl_result.action.value == "REPLAN_AND_CONTINUE":
+                        self._repository.record_audit_event(
+                            task_id=task_id,
+                            event_type="CLOUD_REPLAN_REQUESTED",
+                            details={"failed_step_id": step.step_id},
+                        )
+                        final_state = TaskState.WAITING_CLOUD_UPDATE
+                        return self._fail_task(
+                            context=context,
+                            error=runtime_error(
+                                "CLOUD_REPLAN_REQUIRED",
+                                (
+                                    f"Local recovery failed for step {step.step_id}, "
+                                    f"cloud replan needed"
+                                ),
+                                details={
+                                    "event_id": ctrl_result.event.event_id
+                                    if ctrl_result.event
+                                    else "",
+                                    "summary_id": ctrl_result.summary.summary_id
+                                    if ctrl_result.summary
+                                    else "",
+                                },
+                            ),
+                            state=final_state,
+                        )
+                    elif ctrl_result.action.value == "PAUSE":
+                        self._transition(
+                            context, TaskState.PAUSED, reason="Paused by event controller"
+                        )
+                        return TaskExecutionResult(
+                            success=False,
+                            repository=self._repository,
+                            context=context,
+                            error=runtime_error(
+                                "TASK_PAUSED_EVENT_CONTROLLER",
+                                "Task paused by event controller",
+                            ),
+                        )
+                    elif ctrl_result.action.value == "SAFETY_STOP":
+                        final_state = TaskState.SAFETY_STOPPED
+                        stop_ok = self._execute_safety_stop(context)
+                        if not stop_ok:
+                            return self._fail_task(
+                                context=context,
+                                error=runtime_error(
+                                    "SAFETY_STOP_FAILED",
+                                    "both stop and emergency_stop failed",
+                                ),
+                                state=TaskState.FAILED,
+                            )
+                        return self._fail_task(
+                            context=context,
+                            error=step_result.error
+                            or runtime_error(
+                                "SAFETY_STOP_EVENT", "Critical event triggered safety stop"
+                            ),
+                            state=final_state,
+                        )
+                    # Fall through to original failure handling for FAIL action
+
+                # Original Phase 0-5 failure handling
                 final_state = self._determine_failure_state(error_code, step_result)
                 if final_state == TaskState.SAFETY_STOPPED:
                     stop_ok = self._execute_safety_stop(context)
