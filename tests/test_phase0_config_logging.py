@@ -10,7 +10,7 @@ from cloud_edge_robot_arm.logging_utils import build_json_log_record
 def test_app_config_has_safe_phase_zero_defaults() -> None:
     config = AppConfig.from_env({})
 
-    assert config.app_name == "small-robot-arm-cloud-edge-control"
+    assert config.app_name == "BIG-small"
     assert config.mqtt_broker_url == "mqtt://localhost:1883"
     assert config.database_url == "sqlite:///./data/robot_control.db"
     assert config.mode_defaults == CoordinationModeDefaults(

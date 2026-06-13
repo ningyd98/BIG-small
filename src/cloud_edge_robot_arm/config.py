@@ -40,7 +40,7 @@ class AppConfig:
     def from_env(cls, env: Mapping[str, str] | None = None) -> AppConfig:
         source = environ if env is None else env
         return cls(
-            app_name=source.get("APP_NAME", "small-robot-arm-cloud-edge-control"),
+            app_name=source.get("APP_NAME", "BIG-small"),
             app_env=source.get("APP_ENV", "development"),
             database_url=source.get("DATABASE_URL", "sqlite:///./data/robot_control.db"),
             mqtt_broker_url=source.get("MQTT_BROKER_URL", "mqtt://localhost:1883"),
