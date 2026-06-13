@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from math import hypot
+from math import hypot, sqrt
 
 from cloud_edge_robot_arm.contracts import SafetyDecision
 from cloud_edge_robot_arm.edge.safety.errors import (
+    ACCELERATION_EXCEEDED,
+    CARRY_SAFETY_MARGIN,
     COLLISION_DETECTED,
     COMMAND_EXPIRED,
     CONTEXT_MISMATCH,
@@ -15,6 +17,7 @@ from cloud_edge_robot_arm.edge.safety.errors import (
     JOINT_VELOCITY_EXCEEDED,
     MINIMUM_HEIGHT_VIOLATION,
     OBSTACLE_DISTANCE_VIOLATION,
+    PATH_COLLISION,
     REACHABILITY_VIOLATION,
     SCENE_FRESHNESS_STALE,
     SCENE_VERSION_MISMATCH,
@@ -27,7 +30,6 @@ from cloud_edge_robot_arm.edge.safety.errors import (
 from cloud_edge_robot_arm.edge.safety.models import SafetyContext
 from cloud_edge_robot_arm.edge.safety.rule_registry import SafetyRuleEvaluator, SafetyRuleResult
 
-SKILLS_WITH_TARGET_POSE = {"MOVE_ABOVE", "APPROACH", "LIFT", "MOVE_TO_REGION", "PLACE", "RETREAT"}
 MOTION_SKILLS = {
     "HOME",
     "MOVE_ABOVE",
@@ -40,6 +42,97 @@ MOTION_SKILLS = {
     "RETREAT",
 }
 
+SKILLS_WITH_TARGET_POSE = {
+    "MOVE_ABOVE",
+    "APPROACH",
+    "LIFT",
+    "MOVE_TO_REGION",
+    "PLACE",
+    "RETREAT",
+}
+
+
+def _get_merged_max_tcp_vel(ctx: SafetyContext) -> float:
+    if ctx.merged_max_tcp_velocity is not None:
+        return ctx.merged_max_tcp_velocity
+    return ctx.contract.safety_constraints.max_tcp_velocity
+
+
+def _get_merged_max_joint_vel(ctx: SafetyContext) -> float:
+    if ctx.merged_max_joint_velocity is not None:
+        return ctx.merged_max_joint_velocity
+    return ctx.contract.safety_constraints.max_joint_velocity
+
+
+def _get_merged_max_accel(ctx: SafetyContext) -> float:
+    if ctx.merged_max_acceleration is not None:
+        return ctx.merged_max_acceleration
+    return 5.0
+
+
+def _get_merged_min_height(ctx: SafetyContext) -> float:
+    if ctx.merged_minimum_safe_height is not None:
+        return ctx.merged_minimum_safe_height
+    return ctx.contract.safety_constraints.minimum_safe_height
+
+
+def _get_merged_max_reach(ctx: SafetyContext) -> float:
+    if ctx.merged_max_reach_m is not None:
+        return ctx.merged_max_reach_m
+    return 0.65
+
+
+def _get_merged_obstacle_dist(ctx: SafetyContext) -> float:
+    if ctx.merged_obstacle_safety_distance is not None:
+        return ctx.merged_obstacle_safety_distance
+    return 0.05
+
+
+def _get_merged_carry_margin(ctx: SafetyContext) -> float:
+    if ctx.merged_carry_safety_margin is not None:
+        return ctx.merged_carry_safety_margin
+    return 0.02
+
+
+def _get_merged_scene_staleness(ctx: SafetyContext) -> int:
+    if ctx.merged_scene_staleness_ms is not None:
+        return ctx.merged_scene_staleness_ms
+    return 5_000
+
+
+def _get_merged_tel_staleness(ctx: SafetyContext) -> int:
+    if ctx.merged_telemetry_staleness_ms is not None:
+        return ctx.merged_telemetry_staleness_ms
+    return 5_000
+
+
+def _get_merged_watchdog_timeout(ctx: SafetyContext) -> int:
+    if ctx.merged_watchdog_timeout_ms is not None:
+        return ctx.merged_watchdog_timeout_ms
+    return 30_000
+
+
+def _point_segment_distance_sq(
+    px: float,
+    py: float,
+    pz: float,
+    ax: float,
+    ay: float,
+    az: float,
+    bx: float,
+    by: float,
+    bz: float,
+) -> float:
+    dx, dy, dz = bx - ax, by - ay, bz - az
+    len_sq = dx * dx + dy * dy + dz * dz
+    if len_sq < 1e-12:
+        return (px - ax) ** 2 + (py - ay) ** 2 + (pz - az) ** 2
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / len_sq))
+    proj_x = ax + t * dx
+    proj_y = ay + t * dy
+    proj_z = az + t * dz
+    return (px - proj_x) ** 2 + (py - proj_y) ** 2 + (pz - proj_z) ** 2
+
 
 class CommandExpiredRule(SafetyRuleEvaluator):
     rule_id = "CMD_EXPIRED"
@@ -49,9 +142,9 @@ class CommandExpiredRule(SafetyRuleEvaluator):
         if ctx.command_valid_until is None or ctx.wall_clock_now is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
+                decision=SafetyDecision.REJECT,
                 reason_code="NO_DEADLINE",
-                message="no command deadline set",
+                message="command deadline missing - fail closed",
             )
         if ctx.wall_clock_now > ctx.command_valid_until:
             return SafetyRuleResult(
@@ -76,13 +169,13 @@ class TelemetryFreshnessRule(SafetyRuleEvaluator):
         if ctx.telemetry_timestamp is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
-                reason_code="NO_TELEMETRY_TS",
-                message="no telemetry timestamp available",
+                decision=SafetyDecision.PAUSE,
+                reason_code="TEL_MISSING",
+                message="telemetry timestamp missing - fail closed",
             )
         now = ctx.wall_clock_now or datetime.now(UTC)
         staleness_ms = (now - ctx.telemetry_timestamp).total_seconds() * 1000
-        limit = 5_000.0
+        limit = float(_get_merged_tel_staleness(ctx))
         if staleness_ms > limit:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
@@ -108,13 +201,13 @@ class SceneFreshnessRule(SafetyRuleEvaluator):
         if ctx.scene_updated_at is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
-                reason_code="NO_SCENE_TS",
-                message="no scene timestamp available",
+                decision=SafetyDecision.PAUSE,
+                reason_code="SCENE_MISSING",
+                message="scene timestamp missing - fail closed",
             )
         now = ctx.wall_clock_now or datetime.now(UTC)
         staleness_ms = (now - ctx.scene_updated_at).total_seconds() * 1000
-        limit = 5_000.0
+        limit = float(_get_merged_scene_staleness(ctx))
         if staleness_ms > limit:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
@@ -245,6 +338,20 @@ class CollisionRule(SafetyRuleEvaluator):
         )
 
 
+def _in_workspace(
+    x: float,
+    y: float,
+    z: float,
+    ws_min_x: float,
+    ws_max_x: float,
+    ws_min_y: float,
+    ws_max_y: float,
+    ws_min_z: float,
+    ws_max_z: float,
+) -> bool:
+    return ws_min_x <= x <= ws_max_x and ws_min_y <= y <= ws_max_y and ws_min_z <= z <= ws_max_z
+
+
 class WorkspaceRule(SafetyRuleEvaluator):
     rule_id = "WORKSPACE"
 
@@ -258,20 +365,53 @@ class WorkspaceRule(SafetyRuleEvaluator):
                 message="skill is not a motion skill",
             )
         ws = ctx.contract.safety_constraints.workspace_id
-        x, y, z = ctx.tcp_x, ctx.tcp_y, ctx.tcp_z
-        if not (-0.5 <= x <= 0.5 and -0.5 <= y <= 0.5 and 0.0 <= z <= 0.6):
+        ws_x_min, ws_x_max = -0.5, 0.5
+        ws_y_min, ws_y_max = -0.5, 0.5
+        ws_z_min, ws_z_max = 0.0, 0.6
+
+        if not _in_workspace(
+            ctx.tcp_x,
+            ctx.tcp_y,
+            ctx.tcp_z,
+            ws_x_min,
+            ws_x_max,
+            ws_y_min,
+            ws_y_max,
+            ws_z_min,
+            ws_z_max,
+        ):
             return SafetyRuleResult(
                 rule_id=self.rule_id,
                 decision=SafetyDecision.REJECT,
                 reason_code=WORKSPACE_VIOLATION,
-                message=f"TCP ({x:.3f}, {y:.3f}, {z:.3f}) outside workspace",
-                details={"workspace_id": ws},
+                message=(
+                    f"current TCP ({ctx.tcp_x:.3f}, {ctx.tcp_y:.3f}, {ctx.tcp_z:.3f}) "
+                    f"outside workspace"
+                ),
+                details={"workspace_id": ws, "check": "current_pose"},
             )
+
+        target = ctx.parameters.get("target_pose")
+        if isinstance(target, dict):
+            tx = float(target.get("x", ctx.tcp_x))
+            ty = float(target.get("y", ctx.tcp_y))
+            tz = float(target.get("z", ctx.tcp_z))
+            if not _in_workspace(
+                tx, ty, tz, ws_x_min, ws_x_max, ws_y_min, ws_y_max, ws_z_min, ws_z_max
+            ):
+                return SafetyRuleResult(
+                    rule_id=self.rule_id,
+                    decision=SafetyDecision.REJECT,
+                    reason_code=WORKSPACE_VIOLATION,
+                    message=(f"target TCP ({tx:.3f}, {ty:.3f}, {tz:.3f}) outside workspace"),
+                    details={"workspace_id": ws, "check": "target_pose"},
+                )
+
         return SafetyRuleResult(
             rule_id=self.rule_id,
             decision=SafetyDecision.ALLOW,
             reason_code="WS_OK",
-            message="TCP is within workspace",
+            message="TCP and target within workspace",
         )
 
 
@@ -319,15 +459,23 @@ class ReachabilityRule(SafetyRuleEvaluator):
                 reason_code="NON_MOTION",
                 message="skill does not require reachability check",
             )
-        distance = hypot(ctx.tcp_x, ctx.tcp_y)
-        if distance > 0.65:
+        max_reach = _get_merged_max_reach(ctx)
+        target = ctx.parameters.get("target_pose")
+        if isinstance(target, dict):
+            tx = float(target.get("x", 0))
+            ty = float(target.get("y", 0))
+            distance = hypot(tx, ty)
+        else:
+            distance = hypot(ctx.tcp_x, ctx.tcp_y)
+
+        if distance > max_reach:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
                 decision=SafetyDecision.REJECT,
                 reason_code=REACHABILITY_VIOLATION,
-                message=f"target unreachable: distance {distance:.3f}m from origin",
+                message=f"target unreachable: distance {distance:.3f}m > max {max_reach:.3f}m",
                 measured_value=distance,
-                limit_value=0.65,
+                limit_value=max_reach,
             )
         return SafetyRuleResult(
             rule_id=self.rule_id,
@@ -349,7 +497,7 @@ class TcpVelocityRule(SafetyRuleEvaluator):
                 reason_code="NON_MOTION",
                 message="skill is not a motion skill",
             )
-        max_vel = ctx.contract.safety_constraints.max_tcp_velocity
+        max_vel = _get_merged_max_tcp_vel(ctx)
         if ctx.tcp_velocity > max_vel:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
@@ -379,7 +527,7 @@ class JointVelocityRule(SafetyRuleEvaluator):
                 reason_code="NON_MOTION",
                 message="skill is not a motion skill",
             )
-        max_vel = ctx.contract.safety_constraints.max_joint_velocity
+        max_vel = _get_merged_max_joint_vel(ctx)
         for i, vel in enumerate(ctx.joint_velocities):
             if vel > max_vel:
                 return SafetyRuleResult(
@@ -410,6 +558,17 @@ class AccelerationRule(SafetyRuleEvaluator):
                 reason_code="NON_MOTION",
                 message="skill is not a motion skill",
             )
+        max_accel = _get_merged_max_accel(ctx)
+        accel = ctx.requested_acceleration
+        if accel > max_accel:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.REJECT,
+                reason_code=ACCELERATION_EXCEEDED,
+                message=f"acceleration {accel:.3f} exceeds max {max_accel:.3f}",
+                measured_value=accel,
+                limit_value=max_accel,
+            )
         return SafetyRuleResult(
             rule_id=self.rule_id,
             decision=SafetyDecision.ALLOW,
@@ -430,9 +589,16 @@ class MinimumHeightRule(SafetyRuleEvaluator):
                 reason_code="NON_MOTION",
                 message="skill is not a motion skill",
             )
-        min_height = ctx.contract.safety_constraints.minimum_safe_height
+        min_height = _get_merged_min_height(ctx)
         low_height_skills = {"APPROACH", "GRASP", "PLACE", "RELEASE"}
         if ctx.skill in low_height_skills:
+            if ctx.scene_updated_at is None:
+                return SafetyRuleResult(
+                    rule_id=self.rule_id,
+                    decision=SafetyDecision.REJECT,
+                    reason_code=MINIMUM_HEIGHT_VIOLATION,
+                    message=(f"low-height exception for {ctx.skill} requires fresh scene data"),
+                )
             return SafetyRuleResult(
                 rule_id=self.rule_id,
                 decision=SafetyDecision.ALLOW,
@@ -468,10 +634,12 @@ class ObstacleDistanceRule(SafetyRuleEvaluator):
                 reason_code="NON_MOTION",
                 message="skill is not a motion skill",
             )
-        safety_dist = ctx.contract.safety_constraints.minimum_safe_height * 0.5
+        safety_dist = _get_merged_obstacle_dist(ctx)
+        carry_margin = _get_merged_carry_margin(ctx) if ctx.holding_object else 0.0
+        effective_dist = safety_dist + carry_margin
         for obs in ctx.obstacles:
             dist = hypot(ctx.tcp_x - obs.x, ctx.tcp_y - obs.y)
-            min_dist = obs.radius_m + safety_dist
+            min_dist = obs.radius_m + effective_dist
             if dist < min_dist:
                 return SafetyRuleResult(
                     rule_id=self.rule_id,
@@ -507,10 +675,48 @@ class PathCollisionRule(SafetyRuleEvaluator):
         if not ctx.contract.safety_constraints.collision_check_required:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
-                reason_code="COLLISION_CHECK_OFF",
-                message="collision check not required",
+                decision=SafetyDecision.REJECT,
+                reason_code=PATH_COLLISION,
+                message="collision check required but disabled in contract - fail closed",
             )
+        if not ctx.obstacles:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.ALLOW,
+                reason_code="NO_OBSTACLES",
+                message="no obstacles to check against",
+            )
+        tcp_radius = 0.02
+        carry_margin = _get_merged_carry_margin(ctx) if ctx.holding_object else 0.0
+        effective_radius = tcp_radius + carry_margin
+        safety_dist = _get_merged_obstacle_dist(ctx)
+        min_clearance = effective_radius + safety_dist
+
+        ax, ay, az = ctx.tcp_x, ctx.tcp_y, ctx.tcp_z
+        target = ctx.parameters.get("target_pose")
+        if isinstance(target, dict):
+            bx = float(target.get("x", ax))
+            by = float(target.get("y", ay))
+            bz = float(target.get("z", az))
+        else:
+            bx, by, bz = ax, ay, az
+
+        for obs in ctx.obstacles:
+            dist_sq = _point_segment_distance_sq(obs.x, obs.y, obs.z, ax, ay, az, bx, by, bz)
+            effective_min = obs.radius_m + min_clearance
+            if dist_sq < effective_min * effective_min:
+                dist = sqrt(dist_sq)
+                return SafetyRuleResult(
+                    rule_id=self.rule_id,
+                    decision=SafetyDecision.REJECT,
+                    reason_code=PATH_COLLISION,
+                    message=(
+                        f"path intersects obstacle {obs.obstacle_id}: "
+                        f"clearance {dist:.3f}m < {effective_min:.3f}m"
+                    ),
+                    measured_value=dist,
+                    limit_value=effective_min,
+                )
         return SafetyRuleResult(
             rule_id=self.rule_id,
             decision=SafetyDecision.ALLOW,
@@ -538,11 +744,25 @@ class CarrySafetyRule(SafetyRuleEvaluator):
                 reason_code="NON_MOTION",
                 message="skill is not a motion skill",
             )
+        carry_margin = _get_merged_carry_margin(ctx)
+        if carry_margin <= 0:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.REJECT,
+                reason_code=CARRY_SAFETY_MARGIN,
+                message="carrying object but carry_safety_margin is zero - fail closed",
+                measured_value=carry_margin,
+                limit_value=0.01,
+            )
+        obstacle_dist = _get_merged_obstacle_dist(ctx)
+        effective = obstacle_dist + carry_margin
         return SafetyRuleResult(
             rule_id=self.rule_id,
             decision=SafetyDecision.ALLOW,
             reason_code="CARRY_OK",
-            message="carrying object with safety margin",
+            message=f"carrying object with effective clearance {effective:.3f}m",
+            measured_value=carry_margin,
+            limit_value=obstacle_dist,
         )
 
 
@@ -554,9 +774,9 @@ class StepTimeoutRule(SafetyRuleEvaluator):
         if ctx.step_started_at is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
-                reason_code="NO_STEP_START",
-                message="step start time not set",
+                decision=SafetyDecision.REJECT,
+                reason_code="STEP_START_MISSING",
+                message="step start time missing - fail closed",
             )
         elapsed_ms = (time.monotonic() - ctx.step_started_at) * 1000
         step_obj = None
@@ -567,9 +787,9 @@ class StepTimeoutRule(SafetyRuleEvaluator):
         if step_obj is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
+                decision=SafetyDecision.REJECT,
                 reason_code="STEP_NOT_FOUND",
-                message="step not found in contract",
+                message=f"step {ctx.step_id!r} not found in contract - fail closed",
             )
         limit_ms = float(step_obj.timeout_ms)
         if elapsed_ms > limit_ms:
@@ -599,9 +819,9 @@ class TaskDeadlineRule(SafetyRuleEvaluator):
         if ctx.task_deadline_utc is None or ctx.wall_clock_now is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
-                reason_code="NO_DEADLINE",
-                message="no task deadline set",
+                decision=SafetyDecision.REJECT,
+                reason_code="DEADLINE_MISSING",
+                message="task deadline missing - fail closed",
             )
         remaining_ms = (ctx.task_deadline_utc - ctx.wall_clock_now).total_seconds() * 1000
         if remaining_ms <= 0:
@@ -629,12 +849,12 @@ class WatchdogRule(SafetyRuleEvaluator):
         if ctx.task_started_at_mono is None:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
-                decision=SafetyDecision.ALLOW,
-                reason_code="NO_WATCHDOG",
-                message="watchdog not started",
+                decision=SafetyDecision.REJECT,
+                reason_code="WATCHDOG_MISSING",
+                message="watchdog not started - fail closed",
             )
         elapsed_ms = (time.monotonic() - ctx.task_started_at_mono) * 1000
-        limit_ms = 30_000.0
+        limit_ms = float(_get_merged_watchdog_timeout(ctx))
         if elapsed_ms > limit_ms:
             return SafetyRuleResult(
                 rule_id=self.rule_id,

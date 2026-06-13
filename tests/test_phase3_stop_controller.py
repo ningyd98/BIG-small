@@ -129,6 +129,7 @@ def test_no_future_steps_after_safety_stop() -> None:
     )
     from cloud_edge_robot_arm.contracts import SkillName
     from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor
+    from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
     from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
     from tests.phase2_helpers import contract, step
 
@@ -147,9 +148,9 @@ def test_no_future_steps_after_safety_stop() -> None:
         local_retry_limit=0,
     )
 
-    result = TaskExecutor(robot=robot, repository=InMemoryRepository()).submit_contract(
-        task.model_dump(mode="json")
-    )
+    result = TaskExecutor(
+        robot=robot, shield=SafetyShield(), repository=InMemoryRepository()
+    ).submit_contract(task.model_dump(mode="json"))
 
     assert result.success is False
     assert result.context is not None
@@ -160,9 +161,12 @@ def test_no_future_steps_after_safety_stop() -> None:
 def test_task_executor_rejects_disconnected_robot() -> None:
     robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=False)
     from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor
+    from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
     from tests.phase2_helpers import contract
 
-    result = TaskExecutor(robot=robot).submit_contract(contract().model_dump(mode="json"))
+    result = TaskExecutor(robot=robot, shield=SafetyShield()).submit_contract(
+        contract().model_dump(mode="json")
+    )
 
     assert result.success is False
     assert result.error is not None

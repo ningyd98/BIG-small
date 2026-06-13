@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 from tests.phase2_helpers import contract  # noqa: E402
 
 from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor  # noqa: E402
+from cloud_edge_robot_arm.edge.safety.shield import SafetyShield  # noqa: E402
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository  # noqa: E402
 from cloud_edge_robot_arm.simulation.mock_robot import (  # noqa: E402
     FaultCode,
@@ -28,7 +29,9 @@ def main() -> int:
     robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
     robot.inject_fault(FaultCode.COLLISION_DETECTED)
 
-    result = TaskExecutor(robot=robot, repository=InMemoryRepository()).submit_contract(
+    result = TaskExecutor(
+        robot=robot, shield=SafetyShield(), repository=InMemoryRepository()
+    ).submit_contract(
         contract(task_id=f"phase3-collision-{uuid4().hex[:8]}").model_dump(mode="json")
     )
 

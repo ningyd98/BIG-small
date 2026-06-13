@@ -4,7 +4,10 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
 
 from cloud_edge_robot_arm.contracts import TaskState
 from cloud_edge_robot_arm.edge.contract_validator import EdgeContractValidator
@@ -13,10 +16,7 @@ from cloud_edge_robot_arm.edge.runtime.retry_policy import (
     SAFETY_STOP_ERROR_CODES,
     RetryPolicy,
 )
-from cloud_edge_robot_arm.edge.runtime.skill_executor import (
-    SkillExecutor,
-    StepExecutionResult,
-)
+from cloud_edge_robot_arm.edge.runtime.skill_executor import StepExecutionResult
 from cloud_edge_robot_arm.edge.runtime.skill_registry import RuntimeSkillRobot, SkillRegistry
 from cloud_edge_robot_arm.edge.runtime.state_machine import TaskStateMachine
 from cloud_edge_robot_arm.edge.runtime.task_context import TaskRuntimeContext
@@ -24,6 +24,13 @@ from cloud_edge_robot_arm.errors import StructuredError
 from cloud_edge_robot_arm.repositories.base import TaskRepository
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.repositories.models import ActionExecutionRecord, StepExecutionRecord
+
+SAFETY_DECISION_ERROR_CODES: dict[str, str] = {
+    "PAUSE": "SAFETY_PAUSE_REQUESTED",
+    "REJECT": "SAFETY_ACTION_REJECTED",
+    "REQUEST_CORRECTION": "SAFETY_REQUEST_CORRECTION",
+    "EMERGENCY_STOP": "SAFETY_EMERGENCY_STOP",
+}
 
 
 @dataclass(frozen=True)
@@ -39,14 +46,18 @@ class TaskExecutor:
         self,
         *,
         robot: RuntimeSkillRobot,
+        shield: Any,
         repository: TaskRepository | None = None,
         registry: SkillRegistry | None = None,
         min_plan_version: int = 1,
+        scene_version: int = 1,
     ) -> None:
         self._robot = robot
+        self._shield = shield
         self._repository = repository or InMemoryRepository()
         self._registry = registry or SkillRegistry.default()
         self._min_plan_version = min_plan_version
+        self._scene_version = scene_version
         self._state_machine = TaskStateMachine()
         self._retry_policy = RetryPolicy()
 
@@ -133,10 +144,21 @@ class TaskExecutor:
                     error=context.last_error,
                 )
 
-        skill_executor = SkillExecutor(robot=self._robot, registry=self._registry)
+        from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
+
+        safety_executor = SafetySkillExecutor(
+            robot=self._robot,
+            registry=self._registry,
+            shield=self._shield,
+            context_builder=self._shield.context_builder,
+            scene_version=self._scene_version,
+        )
+        safety_executor.start_task()
+
         for index, step in enumerate(contract.steps):
             context.current_step_index = index
             context.current_step_id = step.step_id
+            safety_executor.start_step()
             self._repository.record_audit_event(
                 task_id=task_id,
                 event_type="STEP_STARTED",
@@ -144,18 +166,24 @@ class TaskExecutor:
             )
 
             step_result = self._execute_step_with_retries(
-                skill_executor=skill_executor,
+                safety_executor=safety_executor,
                 context=context,
                 step_index=index,
             )
             if not step_result.success:
-                final_state = (
-                    TaskState.SAFETY_STOPPED
-                    if step_result.error_code in SAFETY_STOP_ERROR_CODES
-                    else TaskState.FAILED
-                )
+                error_code = step_result.error_code or "STEP_FAILED"
+                final_state = self._determine_failure_state(error_code, step_result)
                 if final_state == TaskState.SAFETY_STOPPED:
-                    self._execute_safety_stop(context)
+                    stop_ok = self._execute_safety_stop(context)
+                    if not stop_ok:
+                        return self._fail_task(
+                            context=context,
+                            error=runtime_error(
+                                "SAFETY_STOP_FAILED",
+                                "both stop and emergency_stop failed",
+                            ),
+                            state=TaskState.FAILED,
+                        )
                 return self._fail_task(
                     context=context,
                     error=step_result.error
@@ -192,17 +220,31 @@ class TaskExecutor:
             error=None,
         )
 
-    def _execute_safety_stop(self, context: TaskRuntimeContext) -> None:
+    def _determine_failure_state(self, error_code: str, result: StepExecutionResult) -> TaskState:
+        if error_code in SAFETY_STOP_ERROR_CODES:
+            return TaskState.SAFETY_STOPPED
+        if error_code == "SAFETY_EMERGENCY_STOP":
+            return TaskState.SAFETY_STOPPED
+        if result.error is not None and result.error.category == "SAFETY_SHIELD":
+            decision_code = result.error.details.get("safety_decision", "")
+            if decision_code == "EMERGENCY_STOP":
+                return TaskState.SAFETY_STOPPED
+            if decision_code == "PAUSE":
+                return TaskState.PAUSED
+            if decision_code in ("REJECT", "REQUEST_CORRECTION"):
+                return TaskState.FAILED
+        return TaskState.FAILED
+
+    def _execute_safety_stop(self, context: TaskRuntimeContext) -> bool:
         from cloud_edge_robot_arm.edge.safety.stop_controller import StopController
 
         controller = StopController(self._robot)
-        result = controller.execute_stop()
-
         self._repository.record_audit_event(
             task_id=context.task_id,
             event_type="STOP_REQUESTED",
             details={"method": "stop"},
         )
+        result = controller.execute_stop()
 
         if result.verified_stopped:
             self._repository.record_audit_event(
@@ -210,50 +252,63 @@ class TaskExecutor:
                 event_type="STOP_CONFIRMED",
                 details={"method": result.method_used},
             )
-        elif result.verified_estop:
+            self._record_stop_actions(context, result)
+            return True
+
+        if result.verified_estop:
             self._repository.record_audit_event(
                 task_id=context.task_id,
                 event_type="EMERGENCY_STOP_CONFIRMED",
                 details={"method": result.method_used},
             )
-        else:
-            self._repository.record_audit_event(
-                task_id=context.task_id,
-                event_type="SAFETY_STOP_FAILED",
-                details={"error": result.error.message if result.error else "unknown"},
-            )
+            self._record_stop_actions(context, result)
+            return True
 
-        if result.stop_action_result is not None:
+        self._repository.record_audit_event(
+            task_id=context.task_id,
+            event_type="SAFETY_STOP_FAILED",
+            details={
+                "error": result.error.message if result.error else "unknown",
+                "critical": True,
+            },
+        )
+        self._record_stop_actions(context, result)
+        return False
+
+    def _record_stop_actions(self, context: TaskRuntimeContext, result: object) -> None:
+        stop_result = getattr(result, "stop_action_result", None)
+        estop_result = getattr(result, "estop_action_result", None)
+        if stop_result is not None:
             self._repository.record_action_execution(
                 ActionExecutionRecord(
                     task_id=context.task_id,
                     step_id=context.current_step_id or "",
-                    action_id=result.stop_action_result.action_id,
+                    action_id=stop_result.action_id,
                     action_type="STOP",
-                    success=result.stop_action_result.success,
-                    error_code=result.stop_action_result.error_code,
-                    duration_ms=result.stop_action_result.duration_ms,
-                    timestamp=result.stop_action_result.finished_at,
+                    success=stop_result.success,
+                    error_code=stop_result.error_code,
+                    duration_ms=stop_result.duration_ms,
+                    timestamp=stop_result.finished_at,
                 )
             )
-        if result.estop_action_result is not None:
+        if estop_result is not None:
             self._repository.record_action_execution(
                 ActionExecutionRecord(
                     task_id=context.task_id,
                     step_id=context.current_step_id or "",
-                    action_id=result.estop_action_result.action_id,
+                    action_id=estop_result.action_id,
                     action_type="EMERGENCY_STOP",
-                    success=result.estop_action_result.success,
-                    error_code=result.estop_action_result.error_code,
-                    duration_ms=result.estop_action_result.duration_ms,
-                    timestamp=result.estop_action_result.finished_at,
+                    success=estop_result.success,
+                    error_code=estop_result.error_code,
+                    duration_ms=estop_result.duration_ms,
+                    timestamp=estop_result.finished_at,
                 )
             )
 
     def _execute_step_with_retries(
         self,
         *,
-        skill_executor: SkillExecutor,
+        safety_executor: SafetySkillExecutor,
         context: TaskRuntimeContext,
         step_index: int,
     ) -> StepExecutionResult:
@@ -262,7 +317,7 @@ class TaskExecutor:
         latest_result: StepExecutionResult | None = None
         for attempt in range(1, max_attempts + 1):
             context.step_attempts[step.step_id] = attempt
-            latest_result = skill_executor.execute_attempt(
+            latest_result = safety_executor.execute_attempt(
                 contract=context.contract,
                 step=step,
                 attempt=attempt,
@@ -275,6 +330,14 @@ class TaskExecutor:
             context.failed_step_id = step.step_id
             if latest_result.error is not None:
                 context.set_error(latest_result.error)
+
+            if latest_result.error_code in SAFETY_STOP_ERROR_CODES:
+                return latest_result
+            if latest_result.error and latest_result.error.category == "SAFETY_SHIELD":
+                decision = latest_result.error.details.get("safety_decision", "")
+                if decision in ("EMERGENCY_STOP", "PAUSE", "REJECT", "REQUEST_CORRECTION"):
+                    return latest_result
+
             retry = self._retry_policy.decide(
                 step=step,
                 failure_policy=context.contract.failure_policy,
@@ -292,6 +355,7 @@ class TaskExecutor:
                         "error_code": latest_result.error_code,
                     },
                 )
+                safety_executor.start_step()
                 continue
             self._repository.record_audit_event(
                 task_id=context.task_id,
@@ -304,7 +368,7 @@ class TaskExecutor:
             )
             return latest_result
 
-        return latest_result or skill_executor.execute_attempt(
+        return latest_result or safety_executor.execute_attempt(
             contract=context.contract,
             step=step,
             attempt=1,

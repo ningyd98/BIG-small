@@ -34,3 +34,9 @@ python scripts/run_phase3_obstacle_case.py
 python scripts/run_phase3_stale_scene_case.py
 python scripts/run_phase3_watchdog_timeout.py
 python scripts/verify_phase3.py
+python scripts/run_phase3_integrated_safe_task.py
+python scripts/run_phase3_integrated_workspace_reject.py
+python scripts/run_phase3_integrated_path_collision.py
+python scripts/run_phase3_integrated_pause.py
+python scripts/run_phase3_integrated_emergency_stop.py
+python scripts/verify_phase3_1.py

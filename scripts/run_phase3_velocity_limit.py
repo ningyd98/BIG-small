@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 
 from cloud_edge_robot_arm.edge.runtime.demo_contracts import build_pick_place_contract  # noqa: E402
 from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor  # noqa: E402
+from cloud_edge_robot_arm.edge.safety.shield import SafetyShield  # noqa: E402
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository  # noqa: E402
 from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockScene  # noqa: E402
 
@@ -27,9 +28,9 @@ def main() -> int:
         task_id=f"phase3-velocity-{uuid4().hex[:8]}",
         local_retry_limit=0,
     )
-    result = TaskExecutor(robot=robot, repository=InMemoryRepository()).submit_contract(
-        contract.model_dump(mode="json")
-    )
+    result = TaskExecutor(
+        robot=robot, shield=SafetyShield(), repository=InMemoryRepository()
+    ).submit_contract(contract.model_dump(mode="json"))
     payload = {
         "success": result.success,
         "task_id": contract.task_id,

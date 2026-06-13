@@ -4,6 +4,7 @@ import pytest
 
 from cloud_edge_robot_arm.edge.runtime.recovery import recover_interrupted_tasks
 from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor
+from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.repositories.sqlite import SQLiteRepository
 from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockScene
@@ -21,8 +22,12 @@ def test_command_replay_is_rejected(repository_factory: type[InMemoryRepository]
         scene=MockScene.with_default_pick_place_scene(), auto_connect=True
     )
 
-    first = TaskExecutor(robot=first_robot, repository=repository).submit_contract(payload)
-    second = TaskExecutor(robot=second_robot, repository=repository).submit_contract(payload)
+    first = TaskExecutor(
+        robot=first_robot, shield=SafetyShield(), repository=repository
+    ).submit_contract(payload)
+    second = TaskExecutor(
+        robot=second_robot, shield=SafetyShield(), repository=repository
+    ).submit_contract(payload)
 
     assert first.success is True
     assert second.success is False
@@ -38,6 +43,7 @@ def test_replay_is_rejected_after_sqlite_restart(tmp_path: object) -> None:
     first_repo = SQLiteRepository(db_path)
     first = TaskExecutor(
         robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
+        shield=SafetyShield(),
         repository=first_repo,
     ).submit_contract(payload)
     first_repo.close()
@@ -46,7 +52,9 @@ def test_replay_is_rejected_after_sqlite_restart(tmp_path: object) -> None:
     second_robot = MockRobotAdapter(
         scene=MockScene.with_default_pick_place_scene(), auto_connect=True
     )
-    second = TaskExecutor(robot=second_robot, repository=restarted_repo).submit_contract(payload)
+    second = TaskExecutor(
+        robot=second_robot, shield=SafetyShield(), repository=restarted_repo
+    ).submit_contract(payload)
 
     assert first.success is True
     assert second.success is False
@@ -63,10 +71,12 @@ def test_same_sequence_with_different_payload_is_conflict() -> None:
 
     first = TaskExecutor(
         robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
+        shield=SafetyShield(),
         repository=repository,
     ).submit_contract(first_payload)
     conflict = TaskExecutor(
         robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
+        shield=SafetyShield(),
         repository=repository,
     ).submit_contract(changed_payload)
 

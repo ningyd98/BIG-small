@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from cloud_edge_robot_arm.contracts import SkillName
 from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor
+from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.simulation.mock_robot import FaultCode, MockRobotAdapter, MockScene
 from tests.phase2_helpers import contract, step
@@ -10,7 +11,11 @@ from tests.phase2_helpers import contract, step
 def _executor(
     robot: MockRobotAdapter, repository: InMemoryRepository | None = None
 ) -> TaskExecutor:
-    return TaskExecutor(robot=robot, repository=repository or InMemoryRepository())
+    return TaskExecutor(
+        robot=robot,
+        shield=SafetyShield(),
+        repository=repository or InMemoryRepository(),
+    )
 
 
 def test_complete_valid_task_reaches_completed_state_and_records_audit_log() -> None:

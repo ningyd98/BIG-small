@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -51,7 +52,8 @@ def _base_context(**overrides: object) -> SafetyContext:
         command_valid_until=c.valid_until,
         wall_clock_now=now,
         task_deadline_utc=c.valid_until,
-        task_started_at_mono=None,
+        step_started_at=time.monotonic(),
+        task_started_at_mono=time.monotonic(),
     )
     for key, val in overrides.items():
         defaults[key] = val

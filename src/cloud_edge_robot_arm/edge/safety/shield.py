@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import yaml
 
 from cloud_edge_robot_arm.contracts import SafetyDecision
+from cloud_edge_robot_arm.edge.safety.context_builder import SafetyContextBuilder
 from cloud_edge_robot_arm.edge.safety.errors import SAFETY_BYPASS_REJECTED, safety_error
 from cloud_edge_robot_arm.edge.safety.models import (
     HardSafetyLimits,
@@ -82,6 +83,10 @@ class SafetyShield:
     @property
     def rule_count(self) -> int:
         return self._registry.rule_count
+
+    @property
+    def context_builder(self) -> SafetyContextBuilder:
+        return SafetyContextBuilder(merged=self._config.merged)
 
     def pre_check(self, context: SafetyContext) -> SafetyEvaluationResult:
         self._reject_bypass_fields(context)

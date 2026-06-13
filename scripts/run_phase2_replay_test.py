@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from cloud_edge_robot_arm.edge.runtime.demo_contracts import build_pick_place_contract  # noqa: E402
 from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor  # noqa: E402
+from cloud_edge_robot_arm.edge.safety.shield import SafetyShield  # noqa: E402
 from cloud_edge_robot_arm.repositories.sqlite import SQLiteRepository  # noqa: E402
 from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockScene  # noqa: E402
 
@@ -24,16 +25,19 @@ def main() -> int:
     payload = contract.model_dump(mode="json")
     first = TaskExecutor(
         robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
+        shield=SafetyShield(),
         repository=repository,
     ).submit_contract(payload)
     replay = TaskExecutor(
         robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
+        shield=SafetyShield(),
         repository=repository,
     ).submit_contract(payload)
     conflict_payload = dict(payload)
     conflict_payload["user_instruction"] = "changed payload with same command_seq"
     conflict = TaskExecutor(
         robot=MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True),
+        shield=SafetyShield(),
         repository=repository,
     ).submit_contract(conflict_payload)
 

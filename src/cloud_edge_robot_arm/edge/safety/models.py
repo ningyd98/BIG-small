@@ -82,6 +82,7 @@ class SafetyContext(BaseModel):
     tcp_y: float = 0.0
     tcp_z: float = 0.18
     tcp_velocity: float = 0.0
+    requested_acceleration: float = 0.0
     joint_velocities: list[float] = Field(default_factory=list)
     scene_version: int = 0
     scene_updated_at: datetime | None = None
@@ -95,6 +96,16 @@ class SafetyContext(BaseModel):
     task_started_at_mono: float | None = None
     task_deadline_utc: datetime | None = None
     wall_clock_now: datetime | None = None
+    merged_max_tcp_velocity: float | None = None
+    merged_max_joint_velocity: float | None = None
+    merged_max_acceleration: float | None = None
+    merged_minimum_safe_height: float | None = None
+    merged_max_reach_m: float | None = None
+    merged_obstacle_safety_distance: float | None = None
+    merged_carry_safety_margin: float | None = None
+    merged_scene_staleness_ms: int | None = None
+    merged_telemetry_staleness_ms: int | None = None
+    merged_watchdog_timeout_ms: int | None = None
 
 
 @dataclass(frozen=True)
