@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Ruff format check
+        run: python -m ruff format --check .
+
+      - name: Ruff lint
+        run: python -m ruff check .
+
+      - name: MyPy
+        run: python -m mypy .
+
+      - name: Pytest
+        run: python -m pytest -q
+
+      - name: Validate contract examples
+        run: python scripts/validate_contract_examples.py
+
+      - name: Run fixed pick-place demo
+        run: python scripts/run_fixed_pick_place.py --adapter mock
+
+      - name: Run fixed pick-place repeat
+        run: python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
+
+      - name: Run fault injection suite
+        run: python scripts/run_fault_injection_suite.py

@@ -89,6 +89,7 @@ class MockRobotAdapter:
         self,
         *,
         scene: MockScene,
+        auto_connect: bool = True,
         grasp_failures_remaining: int = 0,
         max_reach_m: float = 0.65,
         default_action_duration_ms: int = 10,
@@ -96,7 +97,7 @@ class MockRobotAdapter:
         fault_injections: dict[FaultCode | str, int] | None = None,
     ) -> None:
         self.scene = scene
-        self.state = RobotState()
+        self.state = RobotState(connected=auto_connect)
         self.history: list[ActionResult] = []
         self.grasp_failures_remaining = grasp_failures_remaining
         self.max_reach_m = max_reach_m

@@ -18,13 +18,23 @@ from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockSce
 def run_mock_repeat(repeat: int) -> dict[str, object]:
     successes = 0
     histories: list[list[str]] = []
+    lifecycle_histories: list[list[str]] = []
     final_regions: list[str | None] = []
     for _ in range(repeat):
         robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene())
-        summary = run_fixed_pick_place(robot)
-        successes += int(summary.success)
-        histories.append(summary.history)
-        final_regions.append(summary.final_region)
+        lifecycle_results = [robot.connect()]
+        summary = run_fixed_pick_place(robot) if lifecycle_results[0].success else None
+        lifecycle_results.append(robot.disconnect())
+        task_success = (
+            summary is not None
+            and lifecycle_results[0].success
+            and summary.success
+            and lifecycle_results[-1].success
+        )
+        successes += int(task_success)
+        histories.append(summary.history if summary is not None else [])
+        lifecycle_histories.append([result.action_type for result in lifecycle_results])
+        final_regions.append(summary.final_region if summary is not None else None)
     return {
         "adapter": "mock",
         "repeat": repeat,
@@ -33,6 +43,7 @@ def run_mock_repeat(repeat: int) -> dict[str, object]:
         "success_rate": successes / repeat if repeat else 0.0,
         "final_regions": final_regions,
         "history": histories[-1] if histories else [],
+        "lifecycle_history": lifecycle_histories[-1] if lifecycle_histories else [],
     }
 
 

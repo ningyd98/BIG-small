@@ -113,7 +113,14 @@ class EdgeContractValidator:
         if isinstance(raw_valid_until, datetime):
             valid_until = raw_valid_until
         elif isinstance(raw_valid_until, str):
-            valid_until = datetime.fromisoformat(raw_valid_until)
+            try:
+                valid_until = datetime.fromisoformat(raw_valid_until)
+            except ValueError:
+                return self._reject(
+                    "CONTRACT_SCHEMA_INVALID",
+                    "task contract does not match the required schema",
+                    {"errors": [{"loc": ["valid_until"], "msg": "invalid datetime format"}]},
+                )
         else:
             return None
         if valid_until.tzinfo is None:

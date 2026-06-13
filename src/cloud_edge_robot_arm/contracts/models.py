@@ -112,7 +112,7 @@ class RobotState(BaseModel):
     tcp_pose: Pose = Field(default_factory=lambda: Pose(x=0.0, y=0.0, z=0.18))
     gripper_open: bool = True
     holding_object_id: str | None = None
-    connected: bool = True
+    connected: bool = False
     stopped: bool = False
     estop_engaged: bool = False
     collision_detected: bool = False
