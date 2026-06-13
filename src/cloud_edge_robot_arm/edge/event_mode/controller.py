@@ -16,6 +16,8 @@ from cloud_edge_robot_arm.contracts.models import (
     EdgeEvent,
     EventSeverity,
     FailureSummary,
+    LocalReplanningRequest,
+    LocalReplanningResponse,
     MessageStatus,
     PendingMessage,
     RecoveryAction,
@@ -32,6 +34,9 @@ from cloud_edge_robot_arm.edge.recovery.manager import LocalRecoveryManager
 from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetManager
 from cloud_edge_robot_arm.edge.summaries.completion import CompletionSummaryBuilder
 from cloud_edge_robot_arm.edge.summaries.failure import FailureSummaryBuilder
+from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
+    EventAutonomyRepository,
+)
 
 
 class ControllerAction(StrEnum):
@@ -75,6 +80,7 @@ class EventTriggeredModeController:
         failure_builder: FailureSummaryBuilder | None = None,
         completion_builder: CompletionSummaryBuilder | None = None,
         outbox: PendingMessageRepository | None = None,
+        repository: EventAutonomyRepository | None = None,
         runtime_profile: str = "test",
     ) -> None:
         self._detector = detector or CompositeEventDetector()
@@ -83,6 +89,7 @@ class EventTriggeredModeController:
         self._failure_builder = failure_builder or FailureSummaryBuilder()
         self._completion_builder = completion_builder or CompletionSummaryBuilder()
         self._outbox = outbox
+        self._repo = repository
         self._profile = runtime_profile
         self._state_machines: dict[str, EventModeStateMachine] = {}
         self._completion_summaries: dict[str, CompletionSummary] = {}
@@ -211,6 +218,41 @@ class EventTriggeredModeController:
         if self._outbox is None:
             return 0
         return self._outbox.count_pending(task_id)
+
+    # --- Repository-backed operations ---
+
+    def handle_replanning_result(
+        self,
+        response: LocalReplanningResponse,
+    ) -> ControllerResult:
+        """Process a replanning result, with CAS validation."""
+        if self._repo is not None:
+            self._repo.save_replan_result(response)
+            if response.outcome == "REPLANNED":
+                self._repo.save_state(
+                    response.request_id.split("-")[2]
+                    if len(response.request_id.split("-")) >= 3
+                    else "",
+                    "RESUMING",
+                    "Replan accepted",
+                )
+        if response.outcome == "REPLANNED":
+            return ControllerResult(action=ControllerAction.CONTINUE)
+        return ControllerResult(action=ControllerAction.FAIL)
+
+    def resume_from_persisted_state(self, task_id: str) -> str | None:
+        """Recover event mode state after process restart."""
+        if self._repo is not None:
+            return self._repo.get_state(task_id)
+        return self._state_machines.get(task_id, EventModeStateMachine(task_id)).current_state
+
+    def handle_network_recovered(self, task_id: str) -> list[PendingMessage]:
+        """Re-enqueue pending outbox messages after network recovery."""
+        if self._repo is not None:
+            return self._repo.list_pending_outbox(task_id)
+        if self._outbox is not None:
+            return self._outbox.list_pending(task_id)
+        return []
 
     # --- Private helpers ---
 
