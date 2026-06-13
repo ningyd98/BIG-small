@@ -46,13 +46,19 @@ from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorSer
 from cloud_edge_robot_arm.contracts import SkillName, TaskContract
 
 
+_event_repo: Any = None
+
+
 def create_app(
     pipeline: PlanningPipeline,
     *,
     supervisor: PeriodicSupervisorService | None = None,
     event_controller: Any = None,
+    event_repo: Any = None,
 ) -> FastAPI:
     """Build the FastAPI application wired to a PlanningPipeline and optional event controller."""
+    global _event_repo
+    _event_repo = event_repo
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -82,7 +88,10 @@ def create_app(
     async def capabilities() -> CapabilitiesResponse:
         return CapabilitiesResponse(
             supported_skills=[s.value for s in SkillName],
-            supported_control_modes=["PERIODIC_CLOUD_SUPERVISION", "AUTO"],
+            supported_control_modes=[
+                "PERIODIC_CLOUD_SUPERVISION",
+                "EVENT_TRIGGERED_EDGE_AUTONOMY",
+            ],
             planner_name=pipeline._planner.planner_name,
             model_name=pipeline._planner.model_name,
         )
@@ -263,6 +272,11 @@ def create_app(
 
     # ── Phase 6: Event-Triggered Edge Autonomy ────────────────────────────
 
+    def _require_event_repo() -> Any:
+        if _event_repo is None:
+            raise HTTPException(status_code=503, detail="event_autonomy_unavailable")
+        return _event_repo
+
     @app.get(
         "/api/v1/event-control/capabilities",
         response_model=EventControlCapabilitiesResponse,
@@ -270,13 +284,15 @@ def create_app(
     async def event_control_capabilities() -> EventControlCapabilitiesResponse:
         from cloud_edge_robot_arm.contracts.models import EdgeEventType, RecoveryAction, ReplanScope
 
+        repo = _event_repo
+        is_sqlite = repo is not None and hasattr(repo, "path")
         return EventControlCapabilitiesResponse(
             mode="EVENT_TRIGGERED_EDGE_AUTONOMY",
             supported_event_types=[et.value for et in EdgeEventType],
             supported_recovery_actions=[ra.value for ra in RecoveryAction],
             supported_replan_scopes=[rs.value for rs in ReplanScope],
-            max_local_retries=3,
-            configured=event_controller is not None,
+            max_local_retries=10,
+            configured=is_sqlite,
         )
 
     @app.post(
@@ -285,15 +301,50 @@ def create_app(
         status_code=201,
     )
     async def post_event(robot_id: str, body: dict[str, Any]) -> EdgeEventResponse:
-        return EdgeEventResponse(
-            event_id=body.get("event_id", "unknown"),
-            task_id=body.get("task_id", ""),
-            event_type=body.get("event_type", "UNKNOWN"),
-            severity=body.get("severity", "INFO"),
+        repo = _require_event_repo()
+        event_id = str(body.get("event_id", ""))
+        if not event_id:
+            raise HTTPException(status_code=400, detail="event_id is required")
+        existing = getattr(repo, "get_event", lambda eid: None)(event_id)
+        if existing is not None:
+            if getattr(existing, "robot_id", "") and existing.robot_id != robot_id:
+                raise HTTPException(status_code=403, detail="access_denied: robot_id mismatch")
+            return EdgeEventResponse(
+                event_id=existing.event_id,
+                task_id=existing.task_id,
+                event_type=existing.event_type.value if hasattr(existing.event_type, 'value') else str(existing.event_type),
+                severity=str(existing.severity),
+                step_id=existing.step_id,
+                reason_code=existing.reason_code,
+                reason_detail=existing.reason_detail,
+                details=existing.details,
+            )
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent as EE
+        now = datetime.now(UTC)
+        event = EE(
+            event_id=event_id,
+            task_id=str(body.get("task_id", "")),
+            event_type=str(body.get("event_type", "UNKNOWN")),
             step_id=body.get("step_id"),
-            reason_code=body.get("reason_code", ""),
-            reason_detail=body.get("reason_detail", ""),
+            severity=str(body.get("severity", "ERROR")),
+            reason_code=str(body.get("reason_code", "")),
+            reason_detail=str(body.get("reason_detail", "")),
             details=body.get("details", {}),
+            robot_id=robot_id,
+            plan_version=0,
+            command_seq=0,
+            timestamp=now,
+        )
+        repo.save_event(event)
+        return EdgeEventResponse(
+            event_id=event.event_id,
+            task_id=event.task_id,
+            event_type=event.event_type.value,
+            severity=str(event.severity),
+            step_id=event.step_id,
+            reason_code=event.reason_code,
+            reason_detail=event.reason_detail,
+            details=event.details,
         )
 
     @app.get(
@@ -301,18 +352,43 @@ def create_app(
         response_model=EdgeEventListResponse,
     )
     async def list_task_events(task_id: str) -> EdgeEventListResponse:
-        return EdgeEventListResponse(task_id=task_id, events=[])
+        repo = _require_event_repo()
+        events = getattr(repo, "list_events", lambda tid: [])(task_id)
+        return EdgeEventListResponse(
+            task_id=task_id,
+            events=[
+                EdgeEventResponse(
+                    event_id=e.event_id,
+                    task_id=e.task_id,
+                    event_type=e.event_type.value if hasattr(e.event_type, 'value') else str(e.event_type),
+                    severity=str(e.severity),
+                    step_id=e.step_id,
+                    reason_code=e.reason_code,
+                    reason_detail=e.reason_detail,
+                    details=e.details,
+                )
+                for e in events
+            ],
+        )
 
     @app.get(
         "/api/v1/events/{event_id}",
         response_model=EdgeEventResponse,
     )
     async def get_event(event_id: str) -> EdgeEventResponse:
+        repo = _require_event_repo()
+        event = getattr(repo, "get_event", lambda eid: None)(event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="event_not_found")
         return EdgeEventResponse(
-            event_id=event_id,
-            task_id="",
-            event_type="UNKNOWN",
-            severity="INFO",
+            event_id=event.event_id,
+            task_id=event.task_id,
+            event_type=event.event_type.value if hasattr(event.event_type, 'value') else str(event.event_type),
+            severity=str(event.severity),
+            step_id=event.step_id,
+            reason_code=event.reason_code,
+            reason_detail=event.reason_detail,
+            details=event.details,
         )
 
     @app.post(
@@ -321,18 +397,56 @@ def create_app(
         status_code=201,
     )
     async def post_failure_summary(task_id: str, body: dict[str, Any]) -> FailureSummaryResponse:
-        return FailureSummaryResponse(
-            summary_id=body.get("summary_id", f"fs-{task_id}"),
+        repo = _require_event_repo()
+        summary_id = str(body.get("summary_id", f"fs-{task_id}"))
+        existing = getattr(repo, "get_failure_summary", lambda sid: None)(summary_id)
+        if existing is not None:
+            if existing.task_id != task_id:
+                raise HTTPException(status_code=403, detail="access_denied: task_id mismatch")
+            return FailureSummaryResponse(
+                summary_id=existing.summary_id,
+                task_id=existing.task_id,
+                failure_event_id=existing.failure_event_id,
+                failed_step_id=existing.failed_step_id,
+                completed_step_ids=list(existing.completed_step_ids),
+                failure_type=existing.failure_type,
+                severity=existing.severity,
+                reason=existing.reason,
+                recovery_hint=existing.recovery_hint,
+                local_retry_count=existing.local_retry_count,
+                requested_replan_scope=existing.requested_replan_scope,
+            )
+        from cloud_edge_robot_arm.contracts.models import FailureSummary
+        now = datetime.now(UTC)
+        summary = FailureSummary(
+            summary_id=summary_id,
             task_id=task_id,
-            failure_event_id=body.get("failure_event_id", ""),
-            failed_step_id=body.get("failed_step_id", ""),
-            completed_step_ids=body.get("completed_step_ids", []),
-            failure_type=body.get("failure_type", ""),
-            severity=body.get("severity", ""),
-            reason=body.get("reason", ""),
-            recovery_hint=body.get("recovery_hint", ""),
-            local_retry_count=body.get("local_retry_count", 0),
-            requested_replan_scope=body.get("requested_replan_scope", ""),
+            failure_event_id=str(body.get("failure_event_id", "")),
+            failed_step_id=str(body.get("failed_step_id", "")),
+            completed_step_ids=list(body.get("completed_step_ids", [])),
+            failure_type=str(body.get("failure_type", "")),
+            severity=str(body.get("severity", "ERROR")),
+            reason=str(body.get("reason", "")),
+            recovery_hint=str(body.get("recovery_hint", "")),
+            local_retry_count=int(body.get("local_retry_count", 0)),
+            requested_replan_scope=str(body.get("requested_replan_scope", "")),
+            plan_version=0,
+            command_seq=0,
+            timestamp=now,
+        )
+        repo.save_failure_summary(summary)
+        return FailureSummaryResponse(
+            summary_id=summary.summary_id,
+            task_id=summary.task_id,
+            failure_event_id=summary.failure_event_id,
+            failed_step_id=summary.failed_step_id,
+            completed_step_ids=list(summary.completed_step_ids),
+            failure_type=summary.failure_type,
+            severity=summary.severity,
+            reason=summary.reason,
+            recovery_hint=summary.recovery_hint,
+            local_retry_count=summary.local_retry_count,
+            requested_replan_scope=summary.requested_replan_scope,
         )
 
     @app.get(
@@ -340,11 +454,22 @@ def create_app(
         response_model=FailureSummaryResponse,
     )
     async def get_failure_summary(summary_id: str) -> FailureSummaryResponse:
+        repo = _require_event_repo()
+        summary = getattr(repo, "get_failure_summary", lambda sid: None)(summary_id)
+        if summary is None:
+            raise HTTPException(status_code=404, detail="failure_summary_not_found")
         return FailureSummaryResponse(
-            summary_id=summary_id,
-            task_id="",
-            failure_event_id="",
-            failed_step_id="",
+            summary_id=summary.summary_id,
+            task_id=summary.task_id,
+            failure_event_id=summary.failure_event_id,
+            failed_step_id=summary.failed_step_id,
+            completed_step_ids=list(summary.completed_step_ids),
+            failure_type=summary.failure_type,
+            severity=summary.severity,
+            reason=summary.reason,
+            recovery_hint=summary.recovery_hint,
+            local_retry_count=summary.local_retry_count,
+            requested_replan_scope=summary.requested_replan_scope,
         )
 
     @app.post(
@@ -353,18 +478,53 @@ def create_app(
         status_code=201,
     )
     async def replan_plan(plan_id: str, body: ReplanRequest) -> ReplanResponse:
-        from datetime import UTC, datetime
-
+        repo = _require_event_repo()
+        if body.plan_id and body.plan_id != plan_id:
+            raise HTTPException(status_code=409, detail="plan_id_mismatch")
+        request_id = body.idempotency_key or f"replan-{plan_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
+        # Check idempotency
+        existing = getattr(repo, "get_replan_result", lambda rid: None)(request_id)
+        if existing is not None:
+            return ReplanResponse(
+                request_id=existing.request_id,
+                outcome=existing.outcome,
+                reason=existing.reason,
+                new_plan_version=existing.new_plan_version,
+                new_command_seq=existing.new_command_seq,
+                new_steps=[s.model_dump(mode="json") for s in existing.new_steps],
+                planner_name=existing.planner_name,
+                prompt_version=existing.prompt_version,
+                created_at=existing.created_at,
+            )
+        from cloud_edge_robot_arm.contracts.models import LocalReplanningRequest
         now = datetime.now(UTC)
+        lrr = LocalReplanningRequest(
+            request_id=request_id,
+            trigger_event_id=body.trigger_event_id,
+            failure_summary_id=body.failure_summary_id,
+            robot_id=body.robot_id,
+            task_id=body.task_id,
+            plan_id=plan_id,
+            current_plan_version=body.current_plan_version,
+            current_command_seq=body.current_command_seq,
+            requested_replan_scope=body.requested_replan_scope,
+            completed_step_ids=list(body.completed_step_ids),
+            failed_step_id=body.failed_step_id,
+            last_successful_step_id=body.last_successful_step_id,
+            current_scene_version=body.current_scene_version,
+            scene_confidence=body.scene_confidence,
+            idempotency_key=body.idempotency_key or request_id,
+            requested_at=now,
+        )
+        repo.save_replan_request(lrr)
         return ReplanResponse(
-            request_id=f"replan-{now.strftime('%Y%m%d%H%M%S%f')}",
-            outcome="REPLANNED",
-            reason="Mock replan success",
-            new_plan_version=body.current_plan_version + 1,
-            new_command_seq=body.current_command_seq + 1,
-            new_steps=[],
-            planner_name="mock_replanner",
-            prompt_version="1.0",
+            request_id=request_id,
+            outcome="PENDING",
+            reason="Replan request queued",
+            new_plan_version=body.current_plan_version,
+            new_command_seq=body.current_command_seq,
+            planner_name="",
+            prompt_version="",
             created_at=now,
         )
 
@@ -373,10 +533,16 @@ def create_app(
         response_model=ReplanResponse,
     )
     async def get_replan_request(request_id: str) -> ReplanResponse:
+        repo = _require_event_repo()
+        req = getattr(repo, "get_replan_request", lambda rid: None)(request_id)
+        if req is None:
+            raise HTTPException(status_code=404, detail="replan_request_not_found")
         return ReplanResponse(
-            request_id=request_id,
-            outcome="UNKNOWN",
-            reason="Request not found",
+            request_id=req.request_id,
+            outcome="PENDING",
+            reason="Request exists",
+            new_plan_version=req.current_plan_version,
+            new_command_seq=req.current_command_seq,
         )
 
     @app.get(
@@ -384,10 +550,20 @@ def create_app(
         response_model=ReplanResponse,
     )
     async def get_replan_result(request_id: str) -> ReplanResponse:
+        repo = _require_event_repo()
+        result = getattr(repo, "get_replan_result", lambda rid: None)(request_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="replan_result_not_found")
         return ReplanResponse(
-            request_id=request_id,
-            outcome="UNKNOWN",
-            reason="Result not found",
+            request_id=result.request_id,
+            outcome=result.outcome,
+            reason=result.reason,
+            new_plan_version=result.new_plan_version,
+            new_command_seq=result.new_command_seq,
+            new_steps=[s.model_dump(mode="json") for s in result.new_steps],
+            planner_name=result.planner_name,
+            prompt_version=result.prompt_version,
+            created_at=result.created_at,
         )
 
     @app.post(
@@ -398,9 +574,25 @@ def create_app(
     async def post_task_completion(
         task_id: str, body: CompletionReportRequest
     ) -> CompletionReportResponse:
+        repo = _require_event_repo()
         now = datetime.now(UTC)
+        summary_id = f"cs-{task_id}-{now.strftime('%Y%m%d%H%M%S%f')}"
+        from cloud_edge_robot_arm.contracts.models import CompletionSummary
+        cs = CompletionSummary(
+            summary_id=summary_id,
+            task_id=task_id,
+            completed_step_ids=list(body.completed_step_ids),
+            result=str(body.result),
+            local_retry_count=int(body.local_retry_count),
+            cloud_replan_count=int(body.cloud_replan_count),
+            completed_at=now,
+            plan_version=0,
+            command_seq=0,
+            timestamp=now,
+        )
+        repo.save_completion_summary(cs)
         return CompletionReportResponse(
-            summary_id=f"cs-{now.strftime('%Y%m%d%H%M%S%f')}",
+            summary_id=summary_id,
             task_id=task_id,
             result=body.result,
             local_retry_count=body.local_retry_count,
@@ -413,11 +605,20 @@ def create_app(
         response_model=CompletionReportResponse,
     )
     async def get_task_completion(task_id: str) -> CompletionReportResponse:
-        return CompletionReportResponse(
-            summary_id=f"cs-{task_id}",
-            task_id=task_id,
-            result="UNKNOWN",
-        )
+        repo = _require_event_repo()
+        # Find the latest completion summary for this task
+        completions = getattr(repo, "_completion_summaries", {})
+        for sid, cs in reversed(list(completions.items())):
+            if getattr(cs, "task_id", "") == task_id:
+                return CompletionReportResponse(
+                    summary_id=cs.summary_id,
+                    task_id=cs.task_id,
+                    result=cs.result,
+                    local_retry_count=cs.local_retry_count,
+                    cloud_replan_count=cs.cloud_replan_count,
+                    completed_at=cs.completed_at,
+                )
+        raise HTTPException(status_code=404, detail="completion_not_found")
 
     # ── Exception handlers ───────────────────────────────────────────────
 
