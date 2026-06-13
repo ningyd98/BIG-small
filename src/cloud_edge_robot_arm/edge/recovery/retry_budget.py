@@ -1,8 +1,8 @@
-"""Retry budget manager for local recovery.
+"""RetryBudgetService — repository-driven, CAS-safe retry budget management.
 
-Enforces per-step, per-skill, task-total, and safety-policy retry limits.
-Effective budget = min(all applicable limits).
-Prevents reset-on-restart, concurrent double-consumption, and budget forgery.
+Replaces the in-memory RetryBudgetManager with persistent CAS semantics.
+Effective limit = min(current_step.retry_limit, skill_policy.limit,
+                      task_remaining_limit, safety_policy.limit)
 """
 
 from __future__ import annotations
@@ -10,42 +10,48 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from cloud_edge_robot_arm.contracts.models import RecoveryBudget, TaskContract
+from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
+    EventAutonomyRepository,
+)
 
 
-class RetryBudgetManager:
-    """Manages retry budgets for event-triggered edge autonomy.
+class RetryBudgetService:
+    """Manages retry budgets with repository-backed CAS consumption.
 
-    Budgets are initialized from TaskContract failure_policy and safety constraints.
-    Effective retry limit = min(step, skill, task, safety) limits.
+    Atomic consumption prevents:
+    - Double-consumption from concurrent retries
+    - Budget forgery on restart (persisted in repository)
+    - Exceeding any applicable limit (step, skill, task, safety)
     """
 
     def __init__(
         self,
         *,
+        repository: EventAutonomyRepository,
         safety_max_retry_limit: int = 10,
     ) -> None:
+        self._repo = repository
         self._safety_max = safety_max_retry_limit
-        self._budgets: dict[str, RecoveryBudget] = {}
 
     def initialize(self, task_id: str, contract: TaskContract) -> RecoveryBudget:
-        """Create a budget for a new task based on the contract."""
+        """Create and persist a retry budget for a new task."""
         step_limits = [s.retry_limit for s in contract.steps]
-        _step_max = max(step_limits) if step_limits else 3
-        per_step = min(step_limits) if step_limits else 3
         per_skill = contract.failure_policy.local_retry_limit
-        task_total = contract.failure_policy.local_retry_limit * len(contract.steps)
-
-        effective = min(per_step, per_skill, task_total, self._safety_max)
-
+        task_total = per_skill * len(contract.steps)
+        effective = min(
+            max(step_limits) if step_limits else 3,
+            per_skill,
+            task_total,
+            self._safety_max,
+        )
         now = datetime.now(UTC)
         deadline = None
         if contract.command_ttl_ms is not None:
             deadline = now + timedelta(milliseconds=contract.command_ttl_ms)
-
         budget = RecoveryBudget(
             budget_id=f"budget-{task_id}",
             task_id=task_id,
-            per_step_retry_limit=per_step,
+            per_step_retry_limit=max(step_limits) if step_limits else 3,
             per_skill_retry_limit=per_skill,
             task_total_retry_limit=task_total,
             retry_count_used=0,
@@ -58,69 +64,46 @@ class RetryBudgetManager:
             created_at=now,
             updated_at=now,
         )
-        self._budgets[task_id] = budget
-        return budget
+        return self._repo.save_retry_budget(budget)
 
-    def can_attempt(self, task_id: str) -> tuple[bool, str]:
-        """Check if a retry is allowed for the given task.
-
-        Returns (allowed, reason_string).
-        """
-        budget = self._budgets.get(task_id)
+    def can_attempt(
+        self, task_id: str, step_id: str = "", skill: str = ""
+    ) -> tuple[bool, str]:
+        """Check if a retry is allowed for the given task."""
+        budget = self._repo.get_retry_budget(task_id)
         if budget is None:
             return False, "NO_BUDGET_INITIALIZED"
-
         if budget.remaining_retries <= 0:
             return False, "RETRY_BUDGET_EXHAUSTED"
-
-        if budget.retry_deadline is not None:
-            now = datetime.now(UTC)
-            if now >= budget.retry_deadline:
-                return False, "RETRY_DEADLINE_EXCEEDED"
-
+        if budget.retry_deadline is not None and datetime.now(UTC) >= budget.retry_deadline:
+            return False, "RETRY_DEADLINE_EXCEEDED"
         return True, "OK"
 
-    def consume(self, task_id: str) -> RecoveryBudget | None:
-        """Consume one retry attempt. Returns updated budget or None if exhausted."""
-        budget = self._budgets.get(task_id)
+    def consume_if_available(
+        self, task_id: str, step_id: str, skill: str
+    ) -> tuple[bool, RecoveryBudget | None]:
+        """Atomically consume one retry via CAS in the repository.
+
+        Only succeeds if the caller's expected retry_count matches the
+        persisted value, preventing double-consumption.
+        """
+        budget = self._repo.get_retry_budget(task_id)
         if budget is None:
-            return None
-
-        allowed, _ = self.can_attempt(task_id)
+            return False, None
+        allowed, _ = self.can_attempt(task_id, step_id, skill)
         if not allowed:
-            return None
-
-        now = datetime.now(UTC)
-        updated = RecoveryBudget(
-            budget_id=budget.budget_id,
+            return False, budget
+        return self._repo.consume_retry_if_available(
             task_id=task_id,
-            per_step_retry_limit=budget.per_step_retry_limit,
-            per_skill_retry_limit=budget.per_skill_retry_limit,
-            task_total_retry_limit=budget.task_total_retry_limit,
-            retry_count_used=budget.retry_count_used + 1,
-            retry_cooldown_ms=budget.retry_cooldown_ms,
-            retry_deadline=budget.retry_deadline,
-            retry_backoff_policy=budget.retry_backoff_policy,
-            effective_retry_limit=budget.effective_retry_limit,
-            remaining_retries=budget.remaining_retries - 1,
-            scene_version=budget.scene_version,
-            created_at=budget.created_at,
-            updated_at=now,
+            step_id=step_id,
+            skill=skill,
+            expected_count=budget.retry_count_used,
         )
-        self._budgets[task_id] = updated
-        return updated
 
     def get_budget(self, task_id: str) -> RecoveryBudget | None:
-        """Get current budget state for a task."""
-        return self._budgets.get(task_id)
-
-    def remaining_retries(self, task_id: str) -> int:
-        """Get remaining retry count for a task."""
-        budget = self._budgets.get(task_id)
-        if budget is None:
-            return 0
-        return budget.remaining_retries
+        """Get the current retry budget for a task from the repository."""
+        return self._repo.get_retry_budget(task_id)
 
     def reset(self) -> None:
-        """Clear all budgets (for testing)."""
-        self._budgets.clear()
+        """No-op — repository manages lifecycle."""
+        return

@@ -181,46 +181,6 @@ class LocalRecoveryManager:
             retry_limit=retry_limit,
         )
 
-    def execute(
-        self,
-        decision: LocalRecoveryDecision,
-    ) -> LocalRecoveryResult:
-        """Execute a local recovery decision.
-
-        For actions that consume budget (RETRY_SAME_SKILL, RETRY_WITH_LIMITS,
-        REPOSITION_AND_RETRY), the budget is consumed atomically.
-        """
-        now = datetime.now(UTC)
-
-        if not decision.allowed:
-            return LocalRecoveryResult(
-                result_id=f"res-{now.strftime('%Y%m%d%H%M%S%f')}",
-                decision_id=decision.decision_id,
-                success=False,
-                error_code=decision.reason_code,
-                budget_after=decision.retry_count_after,
-                safety_decision="REJECT",
-                details={"reason": decision.reason_code},
-            )
-
-        # Consume budget for retry actions
-        if decision.action in (
-            RecoveryAction.RETRY_SAME_SKILL,
-            RecoveryAction.RETRY_WITH_LIMITS,
-            RecoveryAction.REPOSITION_AND_RETRY,
-        ):
-            # Extract task_id from event correlation
-            # In practice this comes from the event context
-            pass  # Budget consumption handled by RetryBudgetManager.consume()
-
-        return LocalRecoveryResult(
-            result_id=f"res-{now.strftime('%Y%m%d%H%M%S%f')}",
-            decision_id=decision.decision_id,
-            success=True,
-            error_code="",
-            budget_after=decision.retry_count_after,
-            safety_decision="ALLOW",
-            details={"action": decision.action.value},
-            started_at=now,
-            finished_at=now,
-        )
+    def reset(self) -> None:
+        """Clear all budgets (for testing)."""
+        self._budget_manager.reset()
