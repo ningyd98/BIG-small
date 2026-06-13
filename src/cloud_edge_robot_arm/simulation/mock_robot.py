@@ -84,6 +84,21 @@ class MockScene:
 Mutation = Callable[[], dict[str, object]]
 
 
+def _motion_kinematics(tcp_velocity: float | None, acceleration: float | None) -> dict[str, object]:
+    kinematics: dict[str, object] = {}
+    if tcp_velocity is not None:
+        kinematics["executed_tcp_velocity"] = tcp_velocity
+    if acceleration is not None:
+        kinematics["executed_acceleration"] = acceleration
+    return kinematics
+
+
+def _to_float(value: object, default: float) -> float:
+    if isinstance(value, int | float):
+        return float(value)
+    return default
+
+
 class MockRobotAdapter:
     def __init__(
         self,
@@ -113,6 +128,64 @@ class MockRobotAdapter:
 
     def inject_fault(self, fault: FaultCode, *, count: int = 1) -> None:
         self._fault_injections[fault] = self._fault_injections.get(fault, 0) + count
+
+    # --- Single-source-of-truth target resolution ---------------------------------
+    def resolve_target_pose(self, skill: str, parameters: dict[str, object]) -> Pose | None:
+        """Resolve the target pose for a motion skill from the live scene.
+
+        This is the *single* authority for target geometry: the safety shield and
+        the executed motion both use the pose returned here.
+        """
+        if skill == "HOME":
+            return Pose(x=0.0, y=-0.2, z=0.18)
+        if skill == "MOVE_ABOVE":
+            obj = self.scene.objects.get(str(parameters.get("object_id", "")))
+            if obj is None:
+                return None
+            z_offset = _to_float(parameters.get("z_offset_m"), 0.12)
+            return Pose(x=obj.pose.x, y=obj.pose.y, z=obj.pose.z + z_offset)
+        if skill == "APPROACH":
+            obj = self.scene.objects.get(str(parameters.get("object_id", "")))
+            if obj is None:
+                return None
+            return Pose(
+                x=obj.pose.x,
+                y=obj.pose.y,
+                z=max(obj.pose.z + 0.03, self.scene.minimum_safe_height_m),
+            )
+        if skill == "LIFT":
+            height = _to_float(parameters.get("height_m"), 0.15)
+            return Pose(
+                x=self.state.tcp_pose.x,
+                y=self.state.tcp_pose.y,
+                z=min(self.scene.workspace.z_max, self.state.tcp_pose.z + height),
+            )
+        if skill == "MOVE_TO_REGION":
+            region = self.scene.regions.get(str(parameters.get("region_id", "")))
+            if region is None:
+                return None
+            return Pose(
+                x=region.center.x,
+                y=region.center.y,
+                z=max(self.scene.minimum_safe_height_m + 0.12, region.center.z + 0.16),
+            )
+        if skill == "PLACE":
+            region = self.scene.regions.get(str(parameters.get("region_id", "")))
+            if region is None:
+                return None
+            return Pose(
+                x=region.center.x,
+                y=region.center.y,
+                z=max(self.scene.minimum_safe_height_m, region.center.z + 0.03),
+            )
+        if skill == "RETREAT":
+            distance = _to_float(parameters.get("distance_m"), 0.1)
+            return Pose(
+                x=self.state.tcp_pose.x,
+                y=self.state.tcp_pose.y,
+                z=min(self.scene.workspace.z_max, self.state.tcp_pose.z + distance),
+            )
+        return None
 
     def connect(self, *, timeout_ms: int | None = None) -> ActionResult:
         def mutation() -> dict[str, object]:
@@ -225,6 +298,9 @@ class MockRobotAdapter:
         z_offset_m: float = 0.12,
         *,
         timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
     ) -> ActionResult:
         obj = self.scene.objects.get(object_id)
         if obj is None:
@@ -234,11 +310,15 @@ class MockRobotAdapter:
                 f"object {object_id!r} is not present in the scene",
                 {"object_id": object_id},
             )
-        target_pose = Pose(x=obj.pose.x, y=obj.pose.y, z=obj.pose.z + z_offset_m)
+        target_pose = resolved_target or Pose(x=obj.pose.x, y=obj.pose.y, z=obj.pose.z + z_offset_m)
 
         def mutation() -> dict[str, object]:
             self.state.tcp_pose = target_pose
-            return {"object_id": object_id, "target_pose": target_pose.model_dump(mode="json")}
+            return {
+                "object_id": object_id,
+                "target_pose": target_pose.model_dump(mode="json"),
+                **_motion_kinematics(tcp_velocity, acceleration),
+            }
 
         return self._run_action(
             "MOVE_ABOVE",
@@ -248,7 +328,15 @@ class MockRobotAdapter:
             invalid_pose_code=FaultCode.TARGET_UNREACHABLE,
         )
 
-    def approach(self, object_id: str, *, timeout_ms: int | None = None) -> ActionResult:
+    def approach(
+        self,
+        object_id: str,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult:
         obj = self.scene.objects.get(object_id)
         if obj is None:
             return self._failure(
@@ -257,7 +345,7 @@ class MockRobotAdapter:
                 f"object {object_id!r} is not present in the scene",
                 {"object_id": object_id},
             )
-        target_pose = Pose(
+        target_pose = resolved_target or Pose(
             x=obj.pose.x,
             y=obj.pose.y,
             z=max(obj.pose.z + 0.03, self.scene.minimum_safe_height_m),
@@ -265,7 +353,11 @@ class MockRobotAdapter:
 
         def mutation() -> dict[str, object]:
             self.state.tcp_pose = target_pose
-            return {"object_id": object_id, "target_pose": target_pose.model_dump(mode="json")}
+            return {
+                "object_id": object_id,
+                "target_pose": target_pose.model_dump(mode="json"),
+                **_motion_kinematics(tcp_velocity, acceleration),
+            }
 
         return self._run_action(
             "APPROACH",
@@ -310,8 +402,16 @@ class MockRobotAdapter:
 
         return self._run_action("GRASP", mutation, timeout_ms=timeout_ms)
 
-    def lift(self, height_m: float = 0.15, *, timeout_ms: int | None = None) -> ActionResult:
-        lifted_pose = Pose(
+    def lift(
+        self,
+        height_m: float = 0.15,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult:
+        lifted_pose = resolved_target or Pose(
             x=self.state.tcp_pose.x,
             y=self.state.tcp_pose.y,
             z=min(self.scene.workspace.z_max, self.state.tcp_pose.z + height_m),
@@ -320,7 +420,10 @@ class MockRobotAdapter:
         def mutation() -> dict[str, object]:
             self.state.tcp_pose = lifted_pose
             self._sync_held_object_pose()
-            return {"target_pose": lifted_pose.model_dump(mode="json")}
+            return {
+                "target_pose": lifted_pose.model_dump(mode="json"),
+                **_motion_kinematics(tcp_velocity, acceleration),
+            }
 
         return self._run_action(
             "LIFT",
@@ -330,7 +433,15 @@ class MockRobotAdapter:
             invalid_pose_code=FaultCode.TARGET_UNREACHABLE,
         )
 
-    def move_to_region(self, region_id: str, *, timeout_ms: int | None = None) -> ActionResult:
+    def move_to_region(
+        self,
+        region_id: str,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult:
         region = self.scene.regions.get(region_id)
         if region is None:
             return self._failure(
@@ -339,7 +450,7 @@ class MockRobotAdapter:
                 f"region {region_id!r} is not present in the scene",
                 {"region_id": region_id},
             )
-        target_pose = Pose(
+        target_pose = resolved_target or Pose(
             x=region.center.x,
             y=region.center.y,
             z=max(self.scene.minimum_safe_height_m + 0.12, region.center.z + 0.16),
@@ -348,7 +459,11 @@ class MockRobotAdapter:
         def mutation() -> dict[str, object]:
             self.state.tcp_pose = target_pose
             self._sync_held_object_pose()
-            return {"region_id": region_id, "target_pose": target_pose.model_dump(mode="json")}
+            return {
+                "region_id": region_id,
+                "target_pose": target_pose.model_dump(mode="json"),
+                **_motion_kinematics(tcp_velocity, acceleration),
+            }
 
         return self._run_action(
             "MOVE_TO_REGION",
@@ -358,7 +473,15 @@ class MockRobotAdapter:
             invalid_pose_code=FaultCode.TARGET_UNREACHABLE,
         )
 
-    def place(self, region_id: str, *, timeout_ms: int | None = None) -> ActionResult:
+    def place(
+        self,
+        region_id: str,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult:
         region = self.scene.regions.get(region_id)
         if region is None:
             return self._failure(
@@ -375,17 +498,22 @@ class MockRobotAdapter:
                 "cannot place because gripper is not holding an object",
                 {"region_id": region_id},
             )
+        tcp_target = resolved_target or Pose(
+            x=region.center.x,
+            y=region.center.y,
+            z=max(self.scene.minimum_safe_height_m, region.center.z + 0.03),
+        )
 
         def mutation() -> dict[str, object]:
             held.pose = Pose(x=region.center.x, y=region.center.y, z=region.center.z)
             held.region_id = region_id
-            self.state.tcp_pose = Pose(
-                x=region.center.x,
-                y=region.center.y,
-                z=max(self.scene.minimum_safe_height_m, region.center.z + 0.03),
-            )
+            self.state.tcp_pose = tcp_target
             self.scene.bump_version()
-            return {"region_id": region_id, "object_id": held.object_id}
+            return {
+                "region_id": region_id,
+                "object_id": held.object_id,
+                **_motion_kinematics(tcp_velocity, acceleration),
+            }
 
         return self._run_action("PLACE", mutation, timeout_ms=timeout_ms)
 
@@ -401,8 +529,16 @@ class MockRobotAdapter:
 
         return self._run_action("RELEASE", mutation, timeout_ms=timeout_ms)
 
-    def retreat(self, distance_m: float = 0.1, *, timeout_ms: int | None = None) -> ActionResult:
-        target_pose = Pose(
+    def retreat(
+        self,
+        distance_m: float = 0.1,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult:
+        target_pose = resolved_target or Pose(
             x=self.state.tcp_pose.x,
             y=self.state.tcp_pose.y,
             z=min(self.scene.workspace.z_max, self.state.tcp_pose.z + distance_m),
@@ -410,7 +546,10 @@ class MockRobotAdapter:
 
         def mutation() -> dict[str, object]:
             self.state.tcp_pose = target_pose
-            return {"target_pose": target_pose.model_dump(mode="json")}
+            return {
+                "target_pose": target_pose.model_dump(mode="json"),
+                **_motion_kinematics(tcp_velocity, acceleration),
+            }
 
         return self._run_action(
             "RETREAT",

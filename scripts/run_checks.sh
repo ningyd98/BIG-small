@@ -40,3 +40,6 @@ python scripts/run_phase3_integrated_path_collision.py
 python scripts/run_phase3_integrated_pause.py
 python scripts/run_phase3_integrated_emergency_stop.py
 python scripts/verify_phase3_1.py
+python scripts/run_phase3_integrated_velocity_limit.py
+python scripts/run_phase3_integrated_stale_telemetry.py
+python scripts/verify_phase3_2.py

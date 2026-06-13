@@ -53,15 +53,19 @@ SKILLS_WITH_TARGET_POSE = {
 
 
 def _get_merged_max_tcp_vel(ctx: SafetyContext) -> float:
-    if ctx.merged_max_tcp_velocity is not None:
-        return ctx.merged_max_tcp_velocity
-    return ctx.contract.safety_constraints.max_tcp_velocity
+    merged = ctx.merged_max_tcp_velocity
+    contract_limit = ctx.contract.safety_constraints.max_tcp_velocity
+    if merged is not None:
+        return min(merged, contract_limit)
+    return contract_limit
 
 
 def _get_merged_max_joint_vel(ctx: SafetyContext) -> float:
-    if ctx.merged_max_joint_velocity is not None:
-        return ctx.merged_max_joint_velocity
-    return ctx.contract.safety_constraints.max_joint_velocity
+    merged = ctx.merged_max_joint_velocity
+    contract_limit = ctx.contract.safety_constraints.max_joint_velocity
+    if merged is not None:
+        return min(merged, contract_limit)
+    return contract_limit
 
 
 def _get_merged_max_accel(ctx: SafetyContext) -> float:
@@ -71,9 +75,11 @@ def _get_merged_max_accel(ctx: SafetyContext) -> float:
 
 
 def _get_merged_min_height(ctx: SafetyContext) -> float:
-    if ctx.merged_minimum_safe_height is not None:
-        return ctx.merged_minimum_safe_height
-    return ctx.contract.safety_constraints.minimum_safe_height
+    merged = ctx.merged_minimum_safe_height
+    contract_limit = ctx.contract.safety_constraints.minimum_safe_height
+    if merged is not None:
+        return min(merged, contract_limit)
+    return contract_limit
 
 
 def _get_merged_max_reach(ctx: SafetyContext) -> float:
@@ -110,6 +116,24 @@ def _get_merged_watchdog_timeout(ctx: SafetyContext) -> int:
     if ctx.merged_watchdog_timeout_ms is not None:
         return ctx.merged_watchdog_timeout_ms
     return 30_000
+
+
+def _get_absolute_max_tcp_vel(ctx: SafetyContext) -> float:
+    if ctx.absolute_max_tcp_velocity is not None:
+        return ctx.absolute_max_tcp_velocity
+    return _get_merged_max_tcp_vel(ctx)
+
+
+def _get_absolute_max_joint_vel(ctx: SafetyContext) -> float:
+    if ctx.absolute_max_joint_velocity is not None:
+        return ctx.absolute_max_joint_velocity
+    return _get_merged_max_joint_vel(ctx)
+
+
+def _get_absolute_max_accel(ctx: SafetyContext) -> float:
+    if ctx.absolute_max_acceleration is not None:
+        return ctx.absolute_max_acceleration
+    return _get_merged_max_accel(ctx)
 
 
 def _point_segment_distance_sq(
@@ -498,14 +522,27 @@ class TcpVelocityRule(SafetyRuleEvaluator):
                 message="skill is not a motion skill",
             )
         max_vel = _get_merged_max_tcp_vel(ctx)
-        if ctx.tcp_velocity > max_vel:
+        absolute = _get_absolute_max_tcp_vel(ctx)
+        if ctx.tcp_velocity > absolute:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
                 decision=SafetyDecision.REJECT,
                 reason_code=VELOCITY_EXCEEDED,
-                message=f"TCP velocity {ctx.tcp_velocity:.3f} exceeds max {max_vel:.3f}",
+                message=(
+                    f"TCP velocity {ctx.tcp_velocity:.3f} exceeds absolute max {absolute:.3f}"
+                ),
+                measured_value=ctx.tcp_velocity,
+                limit_value=absolute,
+            )
+        if ctx.tcp_velocity > max_vel:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.ALLOW_WITH_LIMITS,
+                reason_code="TCP_VELOCITY_LIMITED",
+                message=(f"TCP velocity {ctx.tcp_velocity:.3f} limited to {max_vel:.3f}"),
                 measured_value=ctx.tcp_velocity,
                 limit_value=max_vel,
+                limited_parameters={"tcp_velocity": max_vel},
             )
         return SafetyRuleResult(
             rule_id=self.rule_id,
@@ -528,16 +565,35 @@ class JointVelocityRule(SafetyRuleEvaluator):
                 message="skill is not a motion skill",
             )
         max_vel = _get_merged_max_joint_vel(ctx)
-        for i, vel in enumerate(ctx.joint_velocities):
-            if vel > max_vel:
-                return SafetyRuleResult(
-                    rule_id=self.rule_id,
-                    decision=SafetyDecision.REJECT,
-                    reason_code=JOINT_VELOCITY_EXCEEDED,
-                    message=f"joint {i} velocity {vel:.3f} exceeds max {max_vel:.3f}",
-                    measured_value=vel,
-                    limit_value=max_vel,
-                )
+        absolute = _get_absolute_max_joint_vel(ctx)
+        if not ctx.joint_velocities:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.ALLOW,
+                reason_code="JOINT_VEL_OK",
+                message="no joint velocity samples to check",
+            )
+        worst = max(ctx.joint_velocities)
+        if worst > absolute:
+            idx = ctx.joint_velocities.index(worst)
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.REJECT,
+                reason_code=JOINT_VELOCITY_EXCEEDED,
+                message=f"joint {idx} velocity {worst:.3f} exceeds absolute max {absolute:.3f}",
+                measured_value=worst,
+                limit_value=absolute,
+            )
+        if worst > max_vel:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.ALLOW_WITH_LIMITS,
+                reason_code="JOINT_VELOCITY_LIMITED",
+                message=f"joint velocity {worst:.3f} limited to {max_vel:.3f}",
+                measured_value=worst,
+                limit_value=max_vel,
+                limited_parameters={"joint_velocity": max_vel},
+            )
         return SafetyRuleResult(
             rule_id=self.rule_id,
             decision=SafetyDecision.ALLOW,
@@ -559,15 +615,26 @@ class AccelerationRule(SafetyRuleEvaluator):
                 message="skill is not a motion skill",
             )
         max_accel = _get_merged_max_accel(ctx)
+        absolute = _get_absolute_max_accel(ctx)
         accel = ctx.requested_acceleration
-        if accel > max_accel:
+        if accel > absolute:
             return SafetyRuleResult(
                 rule_id=self.rule_id,
                 decision=SafetyDecision.REJECT,
                 reason_code=ACCELERATION_EXCEEDED,
-                message=f"acceleration {accel:.3f} exceeds max {max_accel:.3f}",
+                message=f"acceleration {accel:.3f} exceeds absolute max {absolute:.3f}",
+                measured_value=accel,
+                limit_value=absolute,
+            )
+        if accel > max_accel:
+            return SafetyRuleResult(
+                rule_id=self.rule_id,
+                decision=SafetyDecision.ALLOW_WITH_LIMITS,
+                reason_code="ACCELERATION_LIMITED",
+                message=f"acceleration {accel:.3f} limited to {max_accel:.3f}",
                 measured_value=accel,
                 limit_value=max_accel,
+                limited_parameters={"acceleration": max_accel},
             )
         return SafetyRuleResult(
             rule_id=self.rule_id,

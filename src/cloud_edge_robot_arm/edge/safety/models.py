@@ -106,6 +106,9 @@ class SafetyContext(BaseModel):
     merged_scene_staleness_ms: int | None = None
     merged_telemetry_staleness_ms: int | None = None
     merged_watchdog_timeout_ms: int | None = None
+    absolute_max_tcp_velocity: float | None = None
+    absolute_max_joint_velocity: float | None = None
+    absolute_max_acceleration: float | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,7 @@ class SafetyRuleResult:
     message: str
     measured_value: float | None = None
     limit_value: float | None = None
+    limited_parameters: dict[str, Any] | None = None
     details: dict[str, object] = field(default_factory=dict)
 
 

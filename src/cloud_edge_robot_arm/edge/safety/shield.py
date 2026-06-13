@@ -86,7 +86,10 @@ class SafetyShield:
 
     @property
     def context_builder(self) -> SafetyContextBuilder:
-        return SafetyContextBuilder(merged=self._config.merged)
+        return SafetyContextBuilder(
+            merged=self._config.merged,
+            hard_limits=self._config.hard_limits,
+        )
 
     def pre_check(self, context: SafetyContext) -> SafetyEvaluationResult:
         self._reject_bypass_fields(context)
@@ -94,16 +97,25 @@ class SafetyShield:
         decision = resolve_decision(results)
         limiting = max(results, key=lambda r: _DECISION_PRIORITY.get(r.decision, 0))
         allowed = decision in {SafetyDecision.ALLOW, SafetyDecision.ALLOW_WITH_LIMITS}
-        limited_params = None
+        limited_params: dict[str, object] | None = None
+        original_params: dict[str, object] | None = None
         if decision == SafetyDecision.ALLOW_WITH_LIMITS:
-            limited_params = context.parameters
+            original_params = dict(context.parameters)
+            merged_limits = dict(context.parameters)
+            for result in results:
+                if (
+                    result.decision == SafetyDecision.ALLOW_WITH_LIMITS
+                    and result.limited_parameters
+                ):
+                    merged_limits.update(result.limited_parameters)
+            limited_params = merged_limits
         return SafetyEvaluationResult(
             allowed=allowed,
             decision=decision,
             evaluated_rules=results,
             limiting_rule=limiting if not allowed else None,
             limited_parameters=limited_params,
-            original_parameters=context.parameters if limited_params else None,
+            original_parameters=original_params,
         )
 
     def post_check(self, context: SafetyContext) -> SafetyEvaluationResult:

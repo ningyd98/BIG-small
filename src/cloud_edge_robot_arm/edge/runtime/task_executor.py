@@ -6,9 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
-
 from cloud_edge_robot_arm.contracts import TaskState
 from cloud_edge_robot_arm.edge.contract_validator import EdgeContractValidator
 from cloud_edge_robot_arm.edge.runtime.errors import TASK_TIMEOUT, runtime_error
@@ -20,10 +17,20 @@ from cloud_edge_robot_arm.edge.runtime.skill_executor import StepExecutionResult
 from cloud_edge_robot_arm.edge.runtime.skill_registry import RuntimeSkillRobot, SkillRegistry
 from cloud_edge_robot_arm.edge.runtime.state_machine import TaskStateMachine
 from cloud_edge_robot_arm.edge.runtime.task_context import TaskRuntimeContext
+from cloud_edge_robot_arm.edge.safety.providers import (
+    MockSceneStateProvider,
+    MockTelemetryProvider,
+    SceneStateProvider,
+    TelemetryProvider,
+)
+from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
 from cloud_edge_robot_arm.errors import StructuredError
 from cloud_edge_robot_arm.repositories.base import TaskRepository
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.repositories.models import ActionExecutionRecord, StepExecutionRecord
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
 
 SAFETY_DECISION_ERROR_CODES: dict[str, str] = {
     "PAUSE": "SAFETY_PAUSE_REQUESTED",
@@ -46,18 +53,28 @@ class TaskExecutor:
         self,
         *,
         robot: RuntimeSkillRobot,
-        shield: Any,
+        shield: SafetyShield,
         repository: TaskRepository | None = None,
         registry: SkillRegistry | None = None,
         min_plan_version: int = 1,
         scene_version: int = 1,
+        telemetry_provider: TelemetryProvider | None = None,
+        scene_provider: SceneStateProvider | None = None,
     ) -> None:
+        if not isinstance(shield, SafetyShield):
+            raise TypeError(
+                f"TaskExecutor requires a SafetyShield instance; got {type(shield).__name__!r}"
+            )
         self._robot = robot
         self._shield = shield
         self._repository = repository or InMemoryRepository()
         self._registry = registry or SkillRegistry.default()
         self._min_plan_version = min_plan_version
         self._scene_version = scene_version
+        self._telemetry_provider = telemetry_provider or MockTelemetryProvider()
+        self._scene_provider = scene_provider or MockSceneStateProvider(
+            robot, initial_scene_version=self._scene_version
+        )
         self._state_machine = TaskStateMachine()
         self._retry_policy = RetryPolicy()
 
@@ -151,7 +168,9 @@ class TaskExecutor:
             registry=self._registry,
             shield=self._shield,
             context_builder=self._shield.context_builder,
-            scene_version=self._scene_version,
+            telemetry_provider=self._telemetry_provider,
+            scene_provider=self._scene_provider,
+            repository=self._repository,
         )
         safety_executor.start_task()
 

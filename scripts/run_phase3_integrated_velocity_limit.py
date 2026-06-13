@@ -15,10 +15,7 @@ if str(ROOT) not in sys.path:
 
 from cloud_edge_robot_arm.edge.runtime.demo_contracts import build_pick_place_contract  # noqa: E402
 from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor  # noqa: E402
-from cloud_edge_robot_arm.edge.safety.providers import (  # noqa: E402
-    MockSceneStateProvider,
-    MockTelemetryProvider,
-)
+from cloud_edge_robot_arm.edge.safety.providers import MockTelemetryProvider  # noqa: E402
 from cloud_edge_robot_arm.edge.safety.shield import SafetyShield  # noqa: E402
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository  # noqa: E402
 from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockScene  # noqa: E402
@@ -26,35 +23,36 @@ from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockSce
 
 def main() -> int:
     robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
-    contract = build_pick_place_contract(task_id=f"phase32-pause-{uuid4().hex[:8]}")
+    contract = build_pick_place_contract(
+        task_id=f"phase32-velocity-{uuid4().hex[:8]}",
+        local_retry_limit=0,
+    )
 
-    # Missing telemetry → PAUSE
-    tel_provider = MockTelemetryProvider(missing=True)
-    scene_provider = MockSceneStateProvider(robot)
+    # Telemetry reports a velocity (0.4) that exceeds the merged limit (0.15 from contract)
+    # but is within the absolute max (1.0 from hard limits) → ALLOW_WITH_LIMITS.
+    tel_provider = MockTelemetryProvider(tcp_velocity=0.4)
 
     result = TaskExecutor(
         robot=robot,
         shield=SafetyShield(),
         repository=InMemoryRepository(),
         telemetry_provider=tel_provider,
-        scene_provider=scene_provider,
     ).submit_contract(contract.model_dump(mode="json"))
 
-    motion_actions = [
-        a.action_type
-        for a in robot.history
-        if a.action_type not in ("CONNECT", "DISCONNECT", "STOP", "EMERGENCY_STOP")
-    ]
+    # Check that the executed HOME step recorded the (limited) velocity.
+    limited_executed = False
+    for entry in robot.history:
+        details = entry.details or {}
+        if "executed_tcp_velocity" in details:
+            limited_executed = True
+            break
     payload = {
         "success": result.success,
         "state": result.context.state.value if result.context is not None else None,
-        "error_code": None if result.error is None else result.error.code,
-        "motion_actions": motion_actions,
-        "is_pause": result.context.state == "PAUSED" if result.context else False,
+        "limited_executed": limited_executed,
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
-    # Must be PAUSED with zero motion.
-    return 0 if payload["is_pause"] and not motion_actions else 1
+    return 0 if result.success and limited_executed else 1
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from typing import Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cloud_edge_robot_arm.contracts import ActionResult, RobotState, SkillName
+from cloud_edge_robot_arm.contracts import ActionResult, Pose, RobotState, SkillName
 
 
 class RuntimeSkillRobot(Protocol):
@@ -22,22 +22,63 @@ class RuntimeSkillRobot(Protocol):
         z_offset_m: float = 0.12,
         *,
         timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
     ) -> ActionResult: ...
 
-    def approach(self, object_id: str, *, timeout_ms: int | None = None) -> ActionResult: ...
+    def approach(
+        self,
+        object_id: str,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult: ...
 
     def grasp(self, object_id: str, *, timeout_ms: int | None = None) -> ActionResult: ...
 
-    def lift(self, height_m: float = 0.15, *, timeout_ms: int | None = None) -> ActionResult: ...
+    def lift(
+        self,
+        height_m: float = 0.15,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult: ...
 
-    def move_to_region(self, region_id: str, *, timeout_ms: int | None = None) -> ActionResult: ...
+    def move_to_region(
+        self,
+        region_id: str,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult: ...
 
-    def place(self, region_id: str, *, timeout_ms: int | None = None) -> ActionResult: ...
+    def place(
+        self,
+        region_id: str,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
+    ) -> ActionResult: ...
 
     def release(self, *, timeout_ms: int | None = None) -> ActionResult: ...
 
     def retreat(
-        self, distance_m: float = 0.1, *, timeout_ms: int | None = None
+        self,
+        distance_m: float = 0.1,
+        *,
+        timeout_ms: int | None = None,
+        resolved_target: Pose | None = None,
+        tcp_velocity: float | None = None,
+        acceleration: float | None = None,
     ) -> ActionResult: ...
 
     def verify_result(
@@ -58,16 +99,30 @@ class RuntimeSkillRobot(Protocol):
 
     def object_region(self, object_id: str) -> str | None: ...
 
+    def resolve_target_pose(self, skill: str, parameters: dict[str, object]) -> Pose | None: ...
+
 
 class SkillParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class MotionParams(SkillParams):
+    """Optional kinematics + resolved target injected by the safety pipeline."""
+
+    tcp_velocity: float | None = None
+    acceleration: float | None = None
+    target_pose: dict[str, float] | None = None
 
 
 class EmptyParams(SkillParams):
     model_config = ConfigDict(extra="forbid")
 
 
-class ObjectParams(SkillParams):
+class HomeParams(MotionParams):
+    pass
+
+
+class ObjectParams(MotionParams):
     object_id: str = Field(min_length=1)
 
 
@@ -75,20 +130,35 @@ class MoveAboveParams(ObjectParams):
     z_offset_m: float = 0.12
 
 
-class LiftParams(SkillParams):
+class LiftParams(MotionParams):
     height_m: float = 0.15
 
 
-class RegionParams(SkillParams):
+class RegionParams(MotionParams):
     region_id: str = Field(min_length=1)
 
 
-class RetreatParams(SkillParams):
+class RetreatParams(MotionParams):
     distance_m: float = 0.1
 
 
-class VerifyParams(ObjectParams):
+class ReleaseParams(MotionParams):
+    pass
+
+
+class VerifyParams(SkillParams):
+    object_id: str = Field(min_length=1)
     region_id: str = Field(min_length=1)
+
+
+def _resolved_pose(params: MotionParams) -> Pose | None:
+    if params.target_pose is None:
+        return None
+    return Pose(
+        x=params.target_pose["x"],
+        y=params.target_pose["y"],
+        z=params.target_pose["z"],
+    )
 
 
 SkillHandler = Callable[[RuntimeSkillRobot, SkillParams, int], ActionResult]
@@ -119,12 +189,25 @@ def _locate_object(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: in
 
 def _move_above(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
     typed = cast(MoveAboveParams, params)
-    return robot.move_above(typed.object_id, typed.z_offset_m, timeout_ms=timeout_ms)
+    return robot.move_above(
+        typed.object_id,
+        typed.z_offset_m,
+        timeout_ms=timeout_ms,
+        resolved_target=_resolved_pose(typed),
+        tcp_velocity=typed.tcp_velocity,
+        acceleration=typed.acceleration,
+    )
 
 
 def _approach(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
     typed = cast(ObjectParams, params)
-    return robot.approach(typed.object_id, timeout_ms=timeout_ms)
+    return robot.approach(
+        typed.object_id,
+        timeout_ms=timeout_ms,
+        resolved_target=_resolved_pose(typed),
+        tcp_velocity=typed.tcp_velocity,
+        acceleration=typed.acceleration,
+    )
 
 
 def _grasp(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
@@ -134,17 +217,35 @@ def _grasp(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> Ac
 
 def _lift(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
     typed = cast(LiftParams, params)
-    return robot.lift(typed.height_m, timeout_ms=timeout_ms)
+    return robot.lift(
+        typed.height_m,
+        timeout_ms=timeout_ms,
+        resolved_target=_resolved_pose(typed),
+        tcp_velocity=typed.tcp_velocity,
+        acceleration=typed.acceleration,
+    )
 
 
 def _move_to_region(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
     typed = cast(RegionParams, params)
-    return robot.move_to_region(typed.region_id, timeout_ms=timeout_ms)
+    return robot.move_to_region(
+        typed.region_id,
+        timeout_ms=timeout_ms,
+        resolved_target=_resolved_pose(typed),
+        tcp_velocity=typed.tcp_velocity,
+        acceleration=typed.acceleration,
+    )
 
 
 def _place(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
     typed = cast(RegionParams, params)
-    return robot.place(typed.region_id, timeout_ms=timeout_ms)
+    return robot.place(
+        typed.region_id,
+        timeout_ms=timeout_ms,
+        resolved_target=_resolved_pose(typed),
+        tcp_velocity=typed.tcp_velocity,
+        acceleration=typed.acceleration,
+    )
 
 
 def _release(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
@@ -153,7 +254,13 @@ def _release(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> 
 
 def _retreat(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
     typed = cast(RetreatParams, params)
-    return robot.retreat(typed.distance_m, timeout_ms=timeout_ms)
+    return robot.retreat(
+        typed.distance_m,
+        timeout_ms=timeout_ms,
+        resolved_target=_resolved_pose(typed),
+        tcp_velocity=typed.tcp_velocity,
+        acceleration=typed.acceleration,
+    )
 
 
 def _verify_result(robot: RuntimeSkillRobot, params: SkillParams, timeout_ms: int) -> ActionResult:
@@ -173,7 +280,7 @@ class SkillRegistry:
     def default(cls) -> SkillRegistry:
         return cls(
             {
-                SkillName.HOME: SkillDefinition(SkillName.HOME, EmptyParams, _home),
+                SkillName.HOME: SkillDefinition(SkillName.HOME, HomeParams, _home),
                 SkillName.OBSERVE: SkillDefinition(SkillName.OBSERVE, EmptyParams, _observe),
                 SkillName.LOCATE_OBJECT: SkillDefinition(
                     SkillName.LOCATE_OBJECT, ObjectParams, _locate_object
@@ -188,7 +295,7 @@ class SkillRegistry:
                     SkillName.MOVE_TO_REGION, RegionParams, _move_to_region
                 ),
                 SkillName.PLACE: SkillDefinition(SkillName.PLACE, RegionParams, _place),
-                SkillName.RELEASE: SkillDefinition(SkillName.RELEASE, EmptyParams, _release),
+                SkillName.RELEASE: SkillDefinition(SkillName.RELEASE, ReleaseParams, _release),
                 SkillName.RETREAT: SkillDefinition(SkillName.RETREAT, RetreatParams, _retreat),
                 SkillName.VERIFY_RESULT: SkillDefinition(
                     SkillName.VERIFY_RESULT, VerifyParams, _verify_result
