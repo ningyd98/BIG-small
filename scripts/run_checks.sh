@@ -21,3 +21,8 @@ python scripts/validate_contract_examples.py
 python scripts/run_fixed_pick_place.py --adapter mock
 python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
 python scripts/run_fault_injection_suite.py
+python scripts/run_phase2_task.py --repository sqlite
+python scripts/run_phase2_failure_case.py --fault GRASP_FAILED
+python scripts/run_phase2_replay_test.py
+python scripts/run_phase2_restart_recovery_test.py
+python scripts/verify_phase2.py
