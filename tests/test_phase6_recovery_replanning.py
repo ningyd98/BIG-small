@@ -28,7 +28,8 @@ from cloud_edge_robot_arm.contracts.models import (
     TaskTarget,
 )
 from cloud_edge_robot_arm.edge.recovery.manager import LocalRecoveryManager
-from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetManager
+from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetService
+from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
 from cloud_edge_robot_arm.edge.summaries.failure import FailureSummaryBuilder
 
 NOW = datetime(2026, 6, 13, 12, 0, 0, tzinfo=UTC)
@@ -99,11 +100,11 @@ def _make_contract(**overrides: object) -> TaskContract:
     return TaskContract(**defaults)  # type: ignore[arg-type]
 
 
-# ── RetryBudgetManager ─────────────────────────────────────────────────
+# ── RetryBudgetService ─────────────────────────────────────────────────
 
 
 def test_recovery_budget_initialized_from_contract() -> None:
-    mgr = RetryBudgetManager()
+    mgr = RetryBudgetService(repository=InMemoryEventAutonomyRepository())
     contract = _make_contract()
     budget = mgr.initialize("task-test-001", contract)
     assert budget.effective_retry_limit == 3
@@ -112,7 +113,7 @@ def test_recovery_budget_initialized_from_contract() -> None:
 
 
 def test_recovery_budget_can_attempt() -> None:
-    mgr = RetryBudgetManager()
+    mgr = RetryBudgetService(repository=InMemoryEventAutonomyRepository())
     contract = _make_contract()
     mgr.initialize("task-test-001", contract)
     allowed, reason = mgr.can_attempt("task-test-001")
@@ -121,7 +122,7 @@ def test_recovery_budget_can_attempt() -> None:
 
 
 def test_recovery_budget_exhausted() -> None:
-    mgr = RetryBudgetManager()
+    mgr = RetryBudgetService(repository=InMemoryEventAutonomyRepository())
     contract = _make_contract()
     mgr.initialize("task-test-001", contract)
     for _ in range(3):
@@ -132,7 +133,7 @@ def test_recovery_budget_exhausted() -> None:
 
 
 def test_recovery_budget_deduct_reduces_count() -> None:
-    mgr = RetryBudgetManager()
+    mgr = RetryBudgetService(repository=InMemoryEventAutonomyRepository())
     contract = _make_contract()
     mgr.initialize("task-test-001", contract)
     updated = mgr.consume("task-test-001")
@@ -142,7 +143,7 @@ def test_recovery_budget_deduct_reduces_count() -> None:
 
 
 def test_recovery_budget_unknown_task() -> None:
-    mgr = RetryBudgetManager()
+    mgr = RetryBudgetService(repository=InMemoryEventAutonomyRepository())
     allowed, reason = mgr.can_attempt("nonexistent")
     assert not allowed
     assert reason == "NO_BUDGET_INITIALIZED"
@@ -152,7 +153,7 @@ def test_recovery_budget_unknown_task() -> None:
 
 
 def test_recovery_grasp_failure_allows_retry() -> None:
-    mgr = LocalRecoveryManager(budget_manager=RetryBudgetManager())
+    mgr = LocalRecoveryManager(budget_manager=RetryBudgetService(repository=InMemoryEventAutonomyRepository()))
     contract = _make_contract()
     mgr._budget_manager.initialize("task-test-001", contract)
 
@@ -222,7 +223,7 @@ def test_recovery_target_moved_requests_replan() -> None:
 
 
 def test_recovery_budget_exhausted_after_retries() -> None:
-    budget_mgr = RetryBudgetManager()
+    budget_mgr = RetryBudgetService(repository=InMemoryEventAutonomyRepository())
     contract = _make_contract()
     budget_mgr.initialize("task-test-001", contract)
     for _ in range(3):
