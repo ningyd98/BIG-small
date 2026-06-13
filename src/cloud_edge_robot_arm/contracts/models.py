@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from math import hypot
+from math import hypot, isfinite
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -103,6 +103,13 @@ class Pose(BaseModel):
     x: float
     y: float
     z: float
+
+    @field_validator("x", "y", "z")
+    @classmethod
+    def coordinates_must_be_finite(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("pose coordinates must be finite")
+        return value
 
     def distance_xy_to(self, other: Pose) -> float:
         return hypot(self.x - other.x, self.y - other.y)

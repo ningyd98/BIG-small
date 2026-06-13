@@ -14,9 +14,7 @@ Verifies:
 
 from __future__ import annotations
 
-import subprocess
 import sys
-from pathlib import Path
 from datetime import UTC, datetime, timedelta
 
 from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
@@ -24,7 +22,6 @@ from cloud_edge_robot_arm.cloud.supervision.core import FakeClock
 from cloud_edge_robot_arm.cloud.supervision.models import (
     EdgeStatusSnapshot,
     SupervisionConfig,
-    SupervisionReasonCode,
     SupervisoryDecisionType,
 )
 from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorService
@@ -197,7 +194,7 @@ def main() -> None:
     if not ok:
         errors.append(f"target move → UPDATE: got {d3.decision.value}")
     if not ok2:
-        errors.append(f"target move → planner not invoked")
+        errors.append("target move → planner not invoked")
     print(f"  3. Target move → UPDATE: {'PASS' if ok else 'FAIL'}")
     print(f"  3b. Planner invoked: {'PASS' if ok2 else 'FAIL'}")
 
@@ -221,8 +218,6 @@ def main() -> None:
     print(f"  4. Stale state rejected: {'PASS' if ok else 'FAIL'}")
 
     # --- 5. PathCollision real rejection ---
-    from cloud_edge_robot_arm.edge.safety.rules import PathCollisionRule
-    from cloud_edge_robot_arm.edge.safety.models import SafetyContext, Obstacle
     from cloud_edge_robot_arm.contracts import (
         ControlMode,
         FailurePolicy,
@@ -232,6 +227,8 @@ def main() -> None:
         TaskStep,
         TaskTarget,
     )
+    from cloud_edge_robot_arm.edge.safety.models import Obstacle, SafetyContext
+    from cloud_edge_robot_arm.edge.safety.rules import PathCollisionRule
 
     obs = Obstacle(obstacle_id="obs-001", x=0.25, y=0.0, z=0.18, radius_m=0.1)
     c5 = TaskContract(
@@ -307,7 +304,10 @@ def main() -> None:
     ok = r5.decision.value == "REJECT" and r5.reason_code == "PATH_COLLISION"
     results["5_path_collision_real"] = ok
     if not ok:
-        errors.append(f"PathCollision: expected REJECT/PATH_COLLISION, got {r5.decision.value}/{r5.reason_code}")
+        errors.append(
+            "PathCollision: expected REJECT/PATH_COLLISION, "
+            f"got {r5.decision.value}/{r5.reason_code}"
+        )
     print(f"  5. PathCollision real rejection: {'PASS' if ok else 'FAIL'}")
 
     # --- 6. Acceleration real evaluation ---

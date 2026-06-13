@@ -13,10 +13,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from cloud_edge_robot_arm.contracts import TaskContract, TaskStep
-
+from cloud_edge_robot_arm.contracts import TaskStep
 
 # ── Reason codes ─────────────────────────────────────────────────────────────
 

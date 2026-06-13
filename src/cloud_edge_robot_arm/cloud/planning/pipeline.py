@@ -252,7 +252,9 @@ def semantic_validate(
         warnings.append(
             {
                 "field": "scene_version",
-                "message": f"mismatch: contract={parsed_scene}, scene={request.scene.scene_version}",
+                "message": (
+                    f"mismatch: contract={parsed_scene}, scene={request.scene.scene_version}"
+                ),
             }
         )
 
@@ -391,10 +393,6 @@ def complete_trusted_fields(
     completed["issued_at"] = issued_at.isoformat()
     completed["valid_until"] = valid_until.isoformat()
     completed["timestamp"] = issued_at.isoformat()
-    # Strip any model-set trusted fields that may have leaked
-    for field in TRUSTED_FIELDS:
-        # Already overwritten above; this catches nested occurrences
-        pass
     return completed
 
 

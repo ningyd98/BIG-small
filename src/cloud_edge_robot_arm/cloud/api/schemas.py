@@ -12,6 +12,11 @@ from cloud_edge_robot_arm.cloud.planning.models import (
     SafetyPolicyReference,
     SceneSummary,
 )
+from cloud_edge_robot_arm.cloud.supervision.models import (
+    EdgeStatusSnapshot,
+    SupervisionConfig,
+    SupervisoryDecision,
+)
 
 # ── Health ───────────────────────────────────────────────────────────────────
 
@@ -82,3 +87,47 @@ class DispatchResponse(BaseModel):
     dispatched: bool
     edge_accepted: bool | None = None
     edge_reason: str | None = None
+
+
+# ── Supervision ──────────────────────────────────────────────────────────────
+
+
+class SupervisionCapabilitiesResponse(BaseModel):
+    supported_decisions: list[str]
+    allowed_periods_ms: list[int]
+    configured_period_ms: int
+    command_ttl_ms: int
+
+
+class RobotStatusIngestResponse(BaseModel):
+    accepted: bool
+    robot_id: str
+    task_id: str
+    scene_version: int
+
+
+class SupervisionDecisionResponse(BaseModel):
+    decision: SupervisoryDecision
+
+
+class SupervisionDecisionListResponse(BaseModel):
+    decisions: list[SupervisoryDecision] = Field(default_factory=list)
+
+
+class SupervisionStatusResponse(BaseModel):
+    task_id: str
+    running: bool
+    last_plan_version: int
+    last_command_seq: int
+
+
+class SupervisionUnavailableResponse(BaseModel):
+    error: str = "supervision_unavailable"
+
+
+class SupervisionStartRequest(BaseModel):
+    config: SupervisionConfig | None = None
+
+
+class EdgeStatusSnapshotRequest(EdgeStatusSnapshot):
+    pass

@@ -12,11 +12,7 @@ import pytest
 
 from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
 from cloud_edge_robot_arm.cloud.supervision.core import (
-    DeterministicSupervisionPolicy,
     FakeClock,
-    PlanValidityEvaluator,
-    SceneChangeDetector,
-    TestSupervisionScheduler,
     compute_state_hash,
 )
 from cloud_edge_robot_arm.cloud.supervision.models import (
@@ -26,7 +22,7 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
     SupervisoryDecisionType,
 )
 from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorService
-
+from cloud_edge_robot_arm.contracts import TaskContract
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,7 +68,7 @@ def _make_contract(
     task_id: str = "task-001",
     plan_version: int = 1,
     command_seq: int = 1,
-) -> "TaskContract":
+) -> TaskContract:
     from cloud_edge_robot_arm.contracts import (
         ControlMode,
         FailurePolicy,
@@ -334,9 +330,7 @@ def test_update_increases_plan_version() -> None:
     )
     contract = _make_contract(plan_version=1, command_seq=1)
     service.start(contract)
-    snapshot = _make_snapshot(
-        target_state={"object_id": "red_cube", "x": 0.5, "y": 0.5, "z": 0.02}
-    )
+    snapshot = _make_snapshot(target_state={"object_id": "red_cube", "x": 0.5, "y": 0.5, "z": 0.02})
     decision = service.evaluate_snapshot(snapshot, contract)
     if decision.is_update():
         assert decision.resulting_plan_version > decision.based_on_plan_version
@@ -435,7 +429,9 @@ def test_audit_events_generated() -> None:
     assert "SUPERVISION_CYCLE_STARTED" in event_types
     assert "EDGE_STATUS_RECEIVED" in event_types
     assert "SUPERVISION_STATE_EVALUATED" in event_types
-    assert "SUPERVISION_KEEP_SELECTED" in event_types or "SUPERVISION_DECISION_CREATED" in event_types
+    assert (
+        "SUPERVISION_KEEP_SELECTED" in event_types or "SUPERVISION_DECISION_CREATED" in event_types
+    )
 
 
 # ── Clock tests ─────────────────────────────────────────────────────────────
@@ -546,9 +542,8 @@ def test_phase5_test_count_at_least_20() -> None:
 
 def test_path_collision_rejects_obstructed_path() -> None:
     """PathCollision rule returns REJECT when obstacle blocks the path."""
+    from cloud_edge_robot_arm.edge.safety.models import Obstacle, SafetyContext
     from cloud_edge_robot_arm.edge.safety.rules import PathCollisionRule
-    from cloud_edge_robot_arm.edge.safety.models import SafetyContext
-    from cloud_edge_robot_arm.edge.safety.models import Obstacle
 
     rule = PathCollisionRule()
 
@@ -646,7 +641,9 @@ def test_path_collision_rejects_obstructed_path() -> None:
     ctx = SafetyContext(**ctx_data)
     result = rule.evaluate(ctx)
     assert result.decision.value == "REJECT", f"Expected REJECT, got {result.decision.value}"
-    assert result.reason_code == "PATH_COLLISION", f"Expected PATH_COLLISION, got {result.reason_code}"
+    assert result.reason_code == "PATH_COLLISION", (
+        f"Expected PATH_COLLISION, got {result.reason_code}"
+    )
 
 
 # ── Acceleration real evaluation ────────────────────────────────────────────
@@ -654,8 +651,8 @@ def test_path_collision_rejects_obstructed_path() -> None:
 
 def test_acceleration_rule_real_evaluation() -> None:
     """Acceleration rule evaluates real telemetry/contract values, not fixed 0."""
-    from cloud_edge_robot_arm.edge.safety.rules import AccelerationRule
     from cloud_edge_robot_arm.edge.safety.models import SafetyContext
+    from cloud_edge_robot_arm.edge.safety.rules import AccelerationRule
 
     rule = AccelerationRule()
     ctx_data: dict[str, Any] = {

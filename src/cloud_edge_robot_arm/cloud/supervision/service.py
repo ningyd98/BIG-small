@@ -19,11 +19,9 @@ Key invariants:
 
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
@@ -51,8 +49,12 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
     SupervisoryDecision,
     SupervisoryDecisionType,
 )
+from cloud_edge_robot_arm.cloud.supervision.repository import (
+    InMemorySupervisionRepository,
+    SupervisionRepository,
+    SupervisionTaskStatus,
+)
 from cloud_edge_robot_arm.contracts import Pose, SkillName, TaskContract, TaskStep
-
 
 # ── Service ──────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,7 @@ class PeriodicSupervisorService:
         config: SupervisionConfig | None = None,
         clock: Clock | None = None,
         scheduler: SupervisionScheduler | None = None,
+        repository: SupervisionRepository | None = None,
         runtime_profile: str = "test",
     ) -> None:
         self._planner = planner
@@ -101,6 +104,7 @@ class PeriodicSupervisorService:
         self._profile = runtime_profile.strip().lower()
         self._policy = DeterministicSupervisionPolicy()
         self._state = _SupervisionState()
+        self._repository = repository or InMemorySupervisionRepository()
         self._contract_cache: dict[str, TaskContract] = {}
         self._last_target_positions: dict[str, Pose] = {}
 
@@ -109,15 +113,20 @@ class PeriodicSupervisorService:
                 raise ValueError(
                     "scheduler is required in production mode; test scheduler not allowed"
                 )
+            if repository is None:
+                raise ValueError(
+                    "repository is required in production mode; in-memory repository not allowed"
+                )
 
     # ── Public API ─────────────────────────────────────────────────────────
 
     def start(self, contract: TaskContract, initial_target: Pose | None = None) -> None:
         """Start supervision for a task."""
         self._contract_cache[contract.task_id] = contract
+        status = self._repository.start_task(contract)
         self._state.running = True
-        self._state.last_plan_version = contract.plan_version
-        self._state.last_command_seq = contract.command_seq
+        self._state.last_plan_version = status.last_plan_version
+        self._state.last_command_seq = status.last_command_seq
         self._state.missed_cycles = 0
         if initial_target is not None:
             self._last_target_positions[contract.task_id] = initial_target
@@ -131,6 +140,7 @@ class PeriodicSupervisorService:
     def stop(self, task_id: str) -> None:
         """Stop supervision for a task."""
         self._state.running = False
+        self._repository.stop_task(task_id)
         if self._scheduler:
             self._scheduler.stop()
         self._emit_audit(
@@ -160,7 +170,11 @@ class PeriodicSupervisorService:
         start_mono = self._clock.monotonic()
 
         # --- Retrieve or validate contract ---
-        c = contract or self._contract_cache.get(snapshot.task_id)
+        c = (
+            contract
+            or self._contract_cache.get(snapshot.task_id)
+            or self._repository.get_contract(snapshot.task_id)
+        )
         if c is None:
             return self._error_decision(
                 snapshot,
@@ -185,6 +199,7 @@ class PeriodicSupervisorService:
                 snap_err,
             )
 
+        self._repository.save_snapshot(snapshot)
         self._emit_audit(
             "EDGE_STATUS_RECEIVED",
             snapshot.task_id,
@@ -200,6 +215,10 @@ class PeriodicSupervisorService:
             for d in reversed(self._state.decisions):
                 if d.input_state_hash == state_hash:
                     return d
+        for d in reversed(self._repository.list_decisions(snapshot.task_id)):
+            if d.input_state_hash == state_hash:
+                self._state.last_idempotency_keys.add(state_hash)
+                return d
 
         # --- Track target position for change detection ---
         current_target = self._extract_target_pose(snapshot)
@@ -212,14 +231,16 @@ class PeriodicSupervisorService:
 
         # --- Run Layer 1: Deterministic supervision ---
         decision_type, reason_code, detail, should_plan = self._policy.evaluate(
-            snapshot, c, self._config, self._state.known_obstacle_ids
+            snapshot,
+            c,
+            self._config,
+            self._state.known_obstacle_ids,
+            now=self._clock.now(),
         )
 
         # --- Override: target displacement (tracked via positions) ---
         if displacement > self._config.target_displacement_threshold_m:
-            current_idx = DeterministicSupervisionPolicy._step_index(
-                c, snapshot.current_step_id
-            )
+            current_idx = DeterministicSupervisionPolicy._step_index(c, snapshot.current_step_id)
             if current_idx is not None and current_idx < len(c.steps):
                 decision_type = SupervisoryDecisionType.UPDATE_CURRENT_STEP
                 reason_code = SupervisionReasonCode.TARGET_MOVED_CURRENT_STEP
@@ -259,9 +280,7 @@ class PeriodicSupervisorService:
                     user_instruction=c.user_instruction,
                     control_mode="PERIODIC_CLOUD_SUPERVISION",
                     scene=scene,
-                    capabilities=RobotCapabilities(
-                        supported_skills=[s.value for s in SkillName]
-                    ),
+                    capabilities=RobotCapabilities(supported_skills=[s.value for s in SkillName]),
                     completed_step_ids=snapshot.completed_step_ids,
                     failed_step_id=snapshot.current_step_id,
                 )
@@ -308,16 +327,30 @@ class PeriodicSupervisorService:
         new_command_seq = c.command_seq
         updated_steps: list[TaskStep] = []
 
+        now = self._clock.now()
+        ttl = self._config.command_ttl_ms
+        valid_until = now + timedelta(milliseconds=ttl)
+
         if updated_contract is not None:
             new_plan_version = max(c.plan_version + 1, updated_contract.plan_version)
             new_command_seq = c.command_seq + 1
-            updated_steps = list(updated_contract.steps)
+            updated_steps = self._merge_updated_steps(c, updated_contract, snapshot)
+            updated_contract = c.model_copy(
+                update={
+                    "plan_version": new_plan_version,
+                    "command_seq": new_command_seq,
+                    "previous_command_seq": c.command_seq,
+                    "timestamp": now,
+                    "issued_at": now,
+                    "valid_until": valid_until,
+                    "current_step_id": snapshot.current_step_id or c.current_step_id,
+                    "steps": updated_steps,
+                }
+            )
         elif decision_type == SupervisoryDecisionType.KEEP_CURRENT_PLAN:
             new_plan_version = c.plan_version
             new_command_seq = c.command_seq
 
-        now = self._clock.now()
-        ttl = self._config.command_ttl_ms
         decision_id = f"dec-{uuid.uuid4().hex[:12]}"
         correlation_id = f"corr-{uuid.uuid4().hex[:12]}"
 
@@ -335,7 +368,7 @@ class PeriodicSupervisorService:
             edge_state_timestamp=snapshot.timestamp,
             cloud_decision_timestamp=now,
             scene_version=snapshot.scene_version,
-            valid_until=now + timedelta(milliseconds=ttl),
+            valid_until=valid_until,
             command_ttl_ms=ttl,
             updated_steps=updated_steps,
             planner_invoked=planner_invoked,
@@ -351,12 +384,38 @@ class PeriodicSupervisorService:
         decision.output_decision_hash = compute_decision_hash(decision)
 
         # --- Persist ---
-        self._state.decisions.append(decision)
-        self._state.last_idempotency_keys.add(state_hash)
+        if updated_contract is not None:
+            advanced = self._repository.advance_version_if_current(
+                task_id=snapshot.task_id,
+                expected_plan_version=c.plan_version,
+                expected_command_seq=c.command_seq,
+                new_plan_version=new_plan_version,
+                new_command_seq=new_command_seq,
+            )
+            if not advanced:
+                self._emit_audit(
+                    "SUPERVISION_VERSION_CONFLICT",
+                    snapshot.task_id,
+                    c.plan_version,
+                    c.command_seq,
+                    decision_id=decision_id,
+                    attempted_plan_version=new_plan_version,
+                    attempted_command_seq=new_command_seq,
+                )
+                return self._error_decision(
+                    snapshot,
+                    SupervisionReasonCode.PLAN_VERSION_MISMATCH,
+                    "supervision version conflict",
+                )
+
         if updated_contract:
             self._contract_cache[snapshot.task_id] = updated_contract
+            self._repository.start_task(updated_contract)
             self._state.last_plan_version = new_plan_version
             self._state.last_command_seq = new_command_seq
+        self._state.decisions.append(decision)
+        self._state.last_idempotency_keys.add(state_hash)
+        self._repository.save_decision(decision)
 
         self._emit_audit(
             "SUPERVISION_DECISION_CREATED",
@@ -370,6 +429,17 @@ class PeriodicSupervisorService:
         )
 
         return decision
+
+    def record_status_snapshot(self, snapshot: EdgeStatusSnapshot) -> None:
+        """Persist a robot status snapshot without running a supervision tick."""
+        self._repository.save_snapshot(snapshot)
+        self._emit_audit(
+            "EDGE_STATUS_RECEIVED",
+            snapshot.task_id,
+            snapshot.plan_version,
+            snapshot.command_seq,
+            snapshot=snapshot,
+        )
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -486,6 +556,26 @@ class PeriodicSupervisorService:
             correlation_id=f"err-corr-{uuid.uuid4().hex[:12]}",
         )
 
+    @staticmethod
+    def _merge_updated_steps(
+        current: TaskContract,
+        planned: TaskContract,
+        snapshot: EdgeStatusSnapshot,
+    ) -> list[TaskStep]:
+        completed = set(snapshot.completed_step_ids)
+        planned_by_id = {step.step_id: step for step in planned.steps}
+        merged: list[TaskStep] = []
+        for step in current.steps:
+            if step.step_id in completed:
+                merged.append(step)
+            else:
+                merged.append(planned_by_id.get(step.step_id, step))
+        existing = {step.step_id for step in merged}
+        for step in planned.steps:
+            if step.step_id not in existing:
+                merged.append(step)
+        return merged
+
     def _emit_audit(
         self,
         event_type: str,
@@ -503,6 +593,7 @@ class PeriodicSupervisorService:
         }
         event.update(extra)
         self._state.audit_events.append(event)
+        self._repository.record_audit_event(task_id, event)
 
     @staticmethod
     def _extract_target_pose(snapshot: EdgeStatusSnapshot) -> Pose | None:
@@ -530,6 +621,9 @@ class PeriodicSupervisorService:
         return sum(1 for d in self._state.decisions if d.planner_invoked)
 
     def decisions_for_task(self, task_id: str) -> list[SupervisoryDecision]:
+        persisted = self._repository.list_decisions(task_id)
+        if persisted:
+            return persisted
         return [d for d in self._state.decisions if d.task_id == task_id]
 
     def last_decision(self) -> SupervisoryDecision | None:
@@ -537,3 +631,9 @@ class PeriodicSupervisorService:
 
     def audit_events(self) -> list[dict[str, Any]]:
         return list(self._state.audit_events)
+
+    def status_for_task(self, task_id: str) -> SupervisionTaskStatus | None:
+        return self._repository.get_status(task_id)
+
+    def latest_snapshot(self, task_id: str) -> EdgeStatusSnapshot | None:
+        return self._repository.latest_snapshot(task_id)

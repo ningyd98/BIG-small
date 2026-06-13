@@ -18,7 +18,6 @@ variables only; they are never logged.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import time
@@ -629,8 +628,6 @@ class OpenAICompatiblePlannerAdapter:
             parsed_json = _extract_json(content)
         except ValueError as exc:
             parse_error = str(exc)
-
-        raw_output_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
         draft = PlannerDraft(
             raw_text=content,

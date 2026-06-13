@@ -63,9 +63,8 @@ def main() -> None:
             errors.append(f"command_seq={c.command_seq}, expected 1")
         if c.issued_at.tzinfo is None:
             errors.append("issued_at missing timezone")
-    print(
-        f"  outcome={result.outcome.value} task_id={result.contract.task_id if result.contract else 'N/A'}"
-    )
+    task_id = result.contract.task_id if result.contract else "N/A"
+    print(f"  outcome={result.outcome.value} task_id={task_id}")
 
     if errors:
         print(f"\nFAIL: {len(errors)} error(s):")

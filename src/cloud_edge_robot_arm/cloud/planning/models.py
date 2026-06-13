@@ -61,9 +61,7 @@ class SceneSummary(BaseModel):
 class RobotCapabilities(BaseModel):
     """Declared capabilities the edge publishes for cloud awareness."""
 
-    supported_skills: list[str] = Field(
-        min_length=1, default_factory=lambda: ["HOME"]
-    )
+    supported_skills: list[str] = Field(min_length=1, default_factory=lambda: ["HOME"])
     max_reach_m: float = Field(gt=0, default=0.65)
     max_tcp_velocity: float = Field(gt=0, default=1.0)
     max_joint_velocity: float = Field(gt=0, default=2.0)

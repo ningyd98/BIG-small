@@ -22,6 +22,9 @@ Frozen technical route:
   parameterized skill registry, task executor, and restart recovery.
 - `repositories`: in-memory and SQLite persistence for tasks, state transitions, step
   executions, action executions, accepted commands, and audit events.
+- `cloud.supervision`: periodic cloud supervisory control service, supervision API
+  models, in-memory/SQLite supervision repositories, decision persistence, and
+  command/version CAS.
 - `simulation`: deterministic mock adapter and optional MuJoCo adapter.
 - `scripts`: Phase 0/1 validation and acceptance commands.
 - `tests`: unit and acceptance tests for Phase 0, Phase 1, Phase 1.1, and Phase 2.
@@ -48,8 +51,25 @@ FastAPI API, EdgeGateway (InProcess), PromptRegistry, and cloud repositories.
 
 Phase 5 implements periodic cloud supervisory control (PCSC): two-layer supervision
 (1 Hz deterministic + conditional planner invocation), injectable Clock/Scheduler,
-target displacement tracking, and full audit trail. Phase 5 does NOT implement
-MQTT, event-triggered re-planning, or real robot control.
+target displacement tracking, FastAPI supervision endpoints, persisted snapshots and
+decisions, version compare-and-set for concurrent updates, and full audit trail. Phase
+5 does NOT implement MQTT transport, event-triggered re-planning, or real robot
+control.
+
+## Phase 5 Cloud Supervision Flow
+
+```text
+EdgeStatusSnapshot
+  -> FastAPI status/supervise endpoint
+  -> SupervisionRepository.save_snapshot
+  -> PeriodicSupervisorService snapshot validation
+  -> DeterministicSupervisionPolicy
+  -> optional PlanningPipeline replan
+  -> completed-step preserving update merge
+  -> SupervisionRepository.advance_version_if_current
+  -> SupervisionRepository.save_decision
+  -> API decision response
+```
 
 ## Phase 2 Runtime Flow
 

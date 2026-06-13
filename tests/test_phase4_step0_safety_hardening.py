@@ -36,7 +36,22 @@ def test_runtime_profile_rejects_unknown_value() -> None:
 
 @pytest.mark.parametrize("profile", ["test", "simulation", "production"])
 def test_runtime_profile_accepts_valid_values(profile):
-    cfg = AppConfig.from_env({"RUNTIME_PROFILE": profile})
+    env = {"RUNTIME_PROFILE": profile}
+    if profile == "production":
+        env.update(
+            {
+                "DATABASE_URL": "sqlite:////var/lib/big-small/robot_control.db",
+                "MQTT_BROKER_URL": "mqtt://broker.internal:1883",
+                "PLANNER_API_ENDPOINT": "https://planner.internal/v1/chat/completions",
+                "PLANNER_API_KEY": "secret-placeholder",
+                "ROBOT_ADAPTER": "real_robot_sdk",
+                "TELEMETRY_PROVIDER": "robot_sdk",
+                "SCENE_STATE_PROVIDER": "vision_pipeline",
+                "SUPERVISION_REPOSITORY": "sqlite",
+                "SUPERVISION_SCHEDULER": "asyncio",
+            }
+        )
+    cfg = AppConfig.from_env(env)
     assert cfg.runtime_profile == profile
 
 

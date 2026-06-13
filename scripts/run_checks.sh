@@ -43,3 +43,12 @@ python scripts/verify_phase3_1.py
 python scripts/run_phase3_integrated_velocity_limit.py
 python scripts/run_phase3_integrated_stale_telemetry.py
 python scripts/verify_phase3_2.py
+python scripts/run_phase4_api_smoke.py
+python scripts/run_phase4_mock_plan.py
+python scripts/run_phase4_rule_based_plan.py
+python scripts/run_phase4_request_more_observation.py
+python scripts/run_phase4_malformed_output_repair.py
+python scripts/run_phase4_idempotency.py
+python scripts/run_phase4_edge_dispatch.py
+python scripts/verify_phase4.py
+python scripts/verify_phase5.py

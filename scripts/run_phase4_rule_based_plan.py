@@ -60,12 +60,10 @@ def main() -> None:
         skills = [s.skill.value for s in steps]
         if "GRASP" not in skills or "PLACE" not in skills:
             errors.append(f"missing GRASP/PLACE in skills: {skills}")
-        print(
-            f"  outcome=PLANNED task_id={result.contract.task_id} steps={len(steps)} skills={skills[:5]}..."
-        )
-        print(
-            f"  target={result.contract.task_target.object_id} -> {result.contract.task_target.target_region_id}"
-        )
+        print(f"  outcome=PLANNED task_id={result.contract.task_id}")
+        print(f"  steps={len(steps)} skills={skills[:5]}...")
+        target = result.contract.task_target
+        print(f"  target={target.object_id} -> {target.target_region_id}")
 
     if errors:
         print(f"\nFAIL: {len(errors)} error(s):")

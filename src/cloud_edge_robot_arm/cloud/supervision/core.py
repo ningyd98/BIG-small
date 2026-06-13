@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
-from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
 from cloud_edge_robot_arm.cloud.supervision.models import (
     EdgeStatusSnapshot,
     SupervisionConfig,
@@ -23,7 +21,6 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
     SupervisoryDecisionType,
 )
 from cloud_edge_robot_arm.contracts import Pose, TaskContract
-
 
 # ── Clock (injectable, no real sleep in tests) ───────────────────────────────
 
@@ -89,9 +86,7 @@ class SceneChangeDetector:
         dist = expected.distance_xy_to(current)
         return dist, expected, current
 
-    def has_significant_change(
-        self, snapshot: EdgeStatusSnapshot, contract: TaskContract
-    ) -> bool:
+    def has_significant_change(self, snapshot: EdgeStatusSnapshot, contract: TaskContract) -> bool:
         dist, _, _ = self.target_displacement_from_telemetry(snapshot, contract)
         return dist > self._threshold_m
 
@@ -143,6 +138,7 @@ class PlanValidityEvaluator:
         contract: TaskContract,
         *,
         stale_threshold_ms: int = 5_000,
+        now: datetime | None = None,
     ) -> tuple[bool, SupervisionReasonCode | None]:
         """Return (is_valid, reason_if_invalid)."""
 
@@ -156,8 +152,8 @@ class PlanValidityEvaluator:
         # If snapshot plan_version < contract, edge is behind (KEEP should push update)
 
         # State staleness
-        now = datetime.now(UTC)
-        age_ms = int((now - snapshot.timestamp).total_seconds() * 1_000)
+        checked_at = now or datetime.now(UTC)
+        age_ms = int((checked_at - snapshot.timestamp).total_seconds() * 1_000)
         if age_ms > stale_threshold_ms:
             return False, SupervisionReasonCode.EDGE_STATE_STALE
 
@@ -210,6 +206,7 @@ class DeterministicSupervisionPolicy:
         contract: TaskContract,
         config: SupervisionConfig,
         known_obstacle_ids: set[str] | None = None,
+        now: datetime | None = None,
     ) -> tuple[SupervisoryDecisionType, SupervisionReasonCode, str, bool]:
         """Return (decision, reason_code, detail, should_invoke_planner).
 
@@ -222,6 +219,7 @@ class DeterministicSupervisionPolicy:
             snapshot,
             contract,
             stale_threshold_ms=config.stale_state_threshold_ms,
+            now=now,
         )
         if not valid:
             reason = invalid_reason or SupervisionReasonCode.SUPERVISOR_INTERNAL_ERROR
@@ -290,7 +288,10 @@ class DeterministicSupervisionPolicy:
                 return (
                     SupervisoryDecisionType.UPDATE_CURRENT_STEP,
                     SupervisionReasonCode.TARGET_MOVED_CURRENT_STEP,
-                    f"target moved {displacement:.3f}m (threshold={config.target_displacement_threshold_m:.3f}m)",
+                    (
+                        f"target moved {displacement:.3f}m "
+                        f"(threshold={config.target_displacement_threshold_m:.3f}m)"
+                    ),
                     True,
                 )
             return (

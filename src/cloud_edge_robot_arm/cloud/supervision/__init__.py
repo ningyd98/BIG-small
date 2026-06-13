@@ -22,6 +22,12 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
     SupervisoryDecision,
     SupervisoryDecisionType,
 )
+from cloud_edge_robot_arm.cloud.supervision.repository import (
+    InMemorySupervisionRepository,
+    SQLiteSupervisionRepository,
+    SupervisionRepository,
+    SupervisionTaskStatus,
+)
 from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorService
 
 __all__ = [
@@ -30,12 +36,16 @@ __all__ = [
     "DeterministicSupervisionPolicy",
     "EdgeStatusSnapshot",
     "FakeClock",
+    "InMemorySupervisionRepository",
     "PeriodicSupervisorService",
     "PlanValidityEvaluator",
     "SceneChangeDetector",
+    "SQLiteSupervisionRepository",
     "SupervisionConfig",
     "SupervisionReasonCode",
+    "SupervisionRepository",
     "SupervisionScheduler",
+    "SupervisionTaskStatus",
     "SupervisoryDecision",
     "SupervisoryDecisionType",
     "TestSupervisionScheduler",
