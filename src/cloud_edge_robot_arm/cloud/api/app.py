@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from cloud_edge_robot_arm.cloud.api.schemas import (
     CapabilitiesResponse,
-    CompletionReportRequest,
+    CompletionEvidenceRequest,
     CompletionReportResponse,
     DispatchRequest,
     DispatchResponse,
@@ -47,8 +47,6 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
 from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorService
 from cloud_edge_robot_arm.contracts import SkillName, TaskContract
 
-_event_repo: Any = None
-
 
 def create_app(
     pipeline: PlanningPipeline,
@@ -58,8 +56,6 @@ def create_app(
     event_repo: Any = None,
 ) -> FastAPI:
     """Build the FastAPI application wired to a PlanningPipeline and optional event controller."""
-    global _event_repo
-    _event_repo = event_repo
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -72,6 +68,8 @@ def create_app(
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.state.event_repo = event_repo
+    app.state.event_controller = event_controller
 
     # ── Health ───────────────────────────────────────────────────────────
 
@@ -274,9 +272,10 @@ def create_app(
     # ── Phase 6: Event-Triggered Edge Autonomy ────────────────────────────
 
     def _require_event_repo() -> Any:
-        if _event_repo is None:
+        repo = getattr(app.state, "event_repo", None)
+        if repo is None:
             raise HTTPException(status_code=503, detail="event_autonomy_unavailable")
-        return _event_repo
+        return repo
 
     @app.get(
         "/api/v1/event-control/capabilities",
@@ -285,7 +284,7 @@ def create_app(
     async def event_control_capabilities() -> EventControlCapabilitiesResponse:
         from cloud_edge_robot_arm.contracts.models import EdgeEventType, RecoveryAction, ReplanScope
 
-        repo = _event_repo
+        repo = getattr(app.state, "event_repo", None)
         is_sqlite = repo is not None and hasattr(repo, "path")
         return EventControlCapabilitiesResponse(
             mode="EVENT_TRIGGERED_EDGE_AUTONOMY",
@@ -429,11 +428,24 @@ def create_app(
             raise HTTPException(status_code=409, detail="plan_id_mismatch")
         if robot_id is not None and body.robot_id and body.robot_id != robot_id:
             raise HTTPException(status_code=409, detail="robot_id_mismatch")
+        active_record = getattr(repo, "get_active_contract", lambda tid: None)(body.task_id)
+        if active_record is None:
+            raise HTTPException(status_code=404, detail="active_contract_not_found")
+        checkpoint = getattr(repo, "get_latest_execution_checkpoint", lambda tid: None)(
+            body.task_id
+        )
+        if checkpoint is None:
+            raise HTTPException(status_code=404, detail="checkpoint_not_found")
+        summary = getattr(repo, "get_failure_summary", lambda sid: None)(body.failure_summary_id)
+        if summary is None:
+            raise HTTPException(status_code=404, detail="failure_summary_not_found")
+        event = getattr(repo, "get_event", lambda eid: None)(body.trigger_event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail="event_not_found")
         request_id = (
             body.idempotency_key
             or f"replan-{plan_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
         )
-        # Check idempotency
         existing = getattr(repo, "get_replan_result", lambda rid: None)(request_id)
         if existing is not None:
             return ReplanResponse(
@@ -457,25 +469,27 @@ def create_app(
             robot_id=body.robot_id,
             task_id=body.task_id,
             plan_id=plan_id,
-            current_plan_version=body.current_plan_version,
-            current_command_seq=body.current_command_seq,
+            current_plan_version=active_record.plan_version,
+            current_command_seq=active_record.command_seq,
             requested_replan_scope=body.requested_replan_scope,
-            completed_step_ids=list(body.completed_step_ids),
-            failed_step_id=body.failed_step_id,
-            last_successful_step_id=body.last_successful_step_id,
+            completed_step_ids=list(checkpoint.completed_step_ids),
+            failed_step_id=body.failed_step_id or checkpoint.failed_step_id,
+            last_successful_step_id=checkpoint.last_successful_step_id,
+            current_robot_state=dict(getattr(checkpoint, "robot_state", {})),
+            current_target_state=dict(getattr(summary, "target_state", {})),
+            current_obstacle_state=dict(getattr(summary, "obstacle_state", {})),
             current_scene_version=body.current_scene_version,
             scene_confidence=body.scene_confidence,
-            idempotency_key=body.idempotency_key or request_id,
+            safe_resume_state=getattr(summary, "safe_resume_state", {}),
             requested_at=now,
+            correlation_id=getattr(summary, "correlation_id", ""),
+            idempotency_key=body.idempotency_key or request_id,
         )
         from cloud_edge_robot_arm.cloud.replanning.adapters import RuleBasedReplannerAdapter
         from cloud_edge_robot_arm.cloud.replanning.service import LocalReplanningService
 
-        service = LocalReplanningService(
-            adapter=RuleBasedReplannerAdapter(),
-            repository=repo,
-        )
-        result = service.process(lrr)
+        service = LocalReplanningService(adapter=RuleBasedReplannerAdapter(), repository=repo)
+        result = service.process(lrr, apply=True, dispatch=False)
         if result.outcome == "VERSION_CONFLICT":
             raise HTTPException(status_code=409, detail="plan_version_conflict")
         return ReplanResponse(
@@ -534,34 +548,73 @@ def create_app(
         status_code=201,
     )
     async def post_task_completion(
-        task_id: str, body: CompletionReportRequest
+        task_id: str, body: CompletionEvidenceRequest
     ) -> CompletionReportResponse:
         repo = _require_event_repo()
-        now = datetime.now(UTC)
-        summary_id = f"cs-{task_id}-{now.strftime('%Y%m%d%H%M%S%f')}"
-        from cloud_edge_robot_arm.contracts.models import CompletionSummary
+        if body.task_id != task_id:
+            raise HTTPException(status_code=409, detail="task_id_mismatch")
+        active_record = getattr(repo, "get_active_contract", lambda tid: None)(task_id)
+        if active_record is None:
+            raise HTTPException(status_code=404, detail="active_contract_not_found")
+        checkpoint = getattr(repo, "get_latest_execution_checkpoint", lambda tid: None)(task_id)
+        if checkpoint is None:
+            raise HTTPException(status_code=404, detail="checkpoint_not_found")
+        if body.plan_id != active_record.plan_id:
+            raise HTTPException(status_code=409, detail="plan_id_mismatch")
+        if body.plan_version != active_record.plan_version:
+            raise HTTPException(status_code=409, detail="plan_version_mismatch")
+        if body.command_seq != active_record.command_seq:
+            raise HTTPException(status_code=409, detail="command_seq_mismatch")
+        from cloud_edge_robot_arm.contracts.models import CompletionResult
+        from cloud_edge_robot_arm.edge.completion_evaluator import CompletionEvaluator
+        from cloud_edge_robot_arm.edge.summaries.completion import CompletionSummaryBuilder
 
-        cs = CompletionSummary(
-            summary_id=summary_id,
-            task_id=task_id,
-            final_plan_version=0,
+        evaluation = CompletionEvaluator(repository=repo).evaluate(
+            contract=active_record.contract,
             completed_step_ids=list(body.completed_step_ids),
-            result=str(body.result),
-            local_retry_count=int(body.local_retry_count),
-            cloud_replan_count=int(body.cloud_replan_count),
-            completed_at=now,
-            plan_version=0,
-            command_seq=0,
-            timestamp=now,
+            completion_criteria_results=dict(body.completion_criteria_results),
+            final_safety_decision=body.final_safety_decision,
+            final_robot_state=dict(body.final_robot_state),
+            final_target_state=dict(body.final_target_state),
+            scene_version=body.scene_version,
+            last_scene_update_at=body.scene_timestamp,
         )
-        repo.save_completion_summary(cs)
-        return CompletionReportResponse(
-            summary_id=summary_id,
-            task_id=task_id,
-            result=body.result,
+        if not evaluation.completed:
+            repo.record_audit_event(
+                task_id,
+                "COMPLETION_EVIDENCE_REJECTED",
+                {
+                    "failed_checks": evaluation.failed_checks,
+                    "reason_codes": evaluation.reason_codes,
+                },
+            )
+            raise HTTPException(status_code=422, detail="completion_evidence_rejected")
+        result_value = (
+            CompletionResult.SUCCESS_WITH_RECOVERY
+            if body.local_retry_count > 0 or body.cloud_replan_count > 0
+            else CompletionResult.SUCCESS
+        )
+        summary = CompletionSummaryBuilder().build(
+            contract=active_record.contract,
+            completed_step_ids=list(body.completed_step_ids),
+            completion_criteria_results=dict(body.completion_criteria_results),
             local_retry_count=body.local_retry_count,
             cloud_replan_count=body.cloud_replan_count,
-            completed_at=now,
+            final_robot_state=dict(body.final_robot_state),
+            final_target_state=dict(body.final_target_state),
+            final_safety_decision=body.final_safety_decision,
+            result=result_value,
+            correlation_id=body.correlation_id,
+        )
+        summary = repo.save_completion_summary(summary)
+        return CompletionReportResponse(
+            summary_id=summary.summary_id,
+            task_id=summary.task_id,
+            result=summary.result,
+            total_duration_ms=summary.total_duration_ms,
+            local_retry_count=summary.local_retry_count,
+            cloud_replan_count=summary.cloud_replan_count,
+            completed_at=summary.completed_at,
         )
 
     @app.get(
@@ -583,8 +636,6 @@ def create_app(
             completed_at=summary.completed_at,
         )
 
-    # ── Exception handlers ───────────────────────────────────────────────
-
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
         return JSONResponse(
@@ -597,6 +648,19 @@ def create_app(
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": exc.detail, "status_code": exc.status_code},
+        )
+
+    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
+        IdempotencyConflictError,
+    )
+
+    @app.exception_handler(IdempotencyConflictError)
+    async def idempotency_conflict_handler(
+        request: Request, exc: IdempotencyConflictError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "idempotency_conflict", "message": str(exc)},
         )
 
     return app

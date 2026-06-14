@@ -146,7 +146,9 @@ class LocalRecoveryManager:
                     if step.step_id == step_id:
                         skill = step.skill.value
                         break
-            can_retry, reason = self._budget_manager.can_attempt(task_id, step_id, skill)
+            can_retry, reason = self._budget_manager.can_attempt(
+                task_id, step_id, skill, event.event_id
+            )
             if can_retry:
                 return LocalRecoveryDecision(
                     decision_id=f"dec-{now.strftime('%Y%m%d%H%M%S%f')}",

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
@@ -529,7 +529,7 @@ class PeriodicSupervisorService:
 
         return SceneSummary(
             scene_version=snapshot.scene_version,
-            updated_at=snapshot.timestamp,
+            updated_at=datetime.now(UTC),
             objects=objects,
             regions=regions,
             scene_confidence=snapshot.scene_confidence,

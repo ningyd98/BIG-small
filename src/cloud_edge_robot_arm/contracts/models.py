@@ -283,10 +283,136 @@ class CloudCommand(TraceableMessage):
         return value
 
 
+class CommandAckStatus(StrEnum):
+    ACCEPTED = "ACCEPTED"
+    ACCEPTED_WITH_LIMITS = "ACCEPTED_WITH_LIMITS"
+    REJECTED_EXPIRED = "REJECTED_EXPIRED"
+    REJECTED_DUPLICATE = "REJECTED_DUPLICATE"
+    REJECTED_OUT_OF_ORDER = "REJECTED_OUT_OF_ORDER"
+    REJECTED_PLAN_VERSION_MISMATCH = "REJECTED_PLAN_VERSION_MISMATCH"
+    REJECTED_CHECKPOINT_MISMATCH = "REJECTED_CHECKPOINT_MISMATCH"
+    REJECTED_SCENE_MISMATCH = "REJECTED_SCENE_MISMATCH"
+    REJECTED_TASK_MISMATCH = "REJECTED_TASK_MISMATCH"
+    REJECTED_ROBOT_MISMATCH = "REJECTED_ROBOT_MISMATCH"
+    REJECTED_COMPLETED_STEP_MODIFIED = "REJECTED_COMPLETED_STEP_MODIFIED"
+    REJECTED_SCHEMA_INVALID = "REJECTED_SCHEMA_INVALID"
+    REJECTED_SEMANTIC_INVALID = "REJECTED_SEMANTIC_INVALID"
+    REJECTED_SAFETY_CONFLICT = "REJECTED_SAFETY_CONFLICT"
+
+
+class ActiveContractStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    SUPERSEDED = "SUPERSEDED"
+    COMPLETED = "COMPLETED"
+    SAFETY_STOPPED = "SAFETY_STOPPED"
+
+
+class CheckpointExecutionState(StrEnum):
+    STARTED = "STARTED"
+    STEP_STARTED = "STEP_STARTED"
+    STEP_SUCCEEDED = "STEP_SUCCEEDED"
+    STEP_FAILED = "STEP_FAILED"
+    LOCAL_RETRY_STARTED = "LOCAL_RETRY_STARTED"
+    LOCAL_RETRY_FAILED = "LOCAL_RETRY_FAILED"
+    WAITING_CLOUD_REPLAN = "WAITING_CLOUD_REPLAN"
+    REPLAN_RECEIVED = "REPLAN_RECEIVED"
+    READY_TO_RESUME = "READY_TO_RESUME"
+    RESUMING = "RESUMING"
+    COMPLETED = "COMPLETED"
+    SAFETY_STOPPED = "SAFETY_STOPPED"
+
+
+class ReplanApplyStatus(StrEnum):
+    APPLIED = "APPLIED"
+    REJECTED = "REJECTED"
+    WAITING_FOR_NEW_OBSERVATION = "WAITING_FOR_NEW_OBSERVATION"
+    SAFETY_STOPPED = "SAFETY_STOPPED"
+    VERSION_CONFLICT = "VERSION_CONFLICT"
+
+
 class CommandAck(TraceableMessage):
     accepted: bool
     status: str = Field(min_length=1)
     error: StructuredError | None = None
+    request_id: str = Field(default="")
+    checkpoint_id: str = Field(default="")
+    correlation_id: str = Field(default="")
+    policy_version: str = Field(default="")
+    policy_hash: str = Field(default="")
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ActiveTaskContractRecord(BaseModel):
+    task_id: str = Field(min_length=1)
+    plan_id: str = Field(min_length=1)
+    robot_id: str = Field(min_length=1)
+    plan_version: int = Field(ge=0)
+    command_seq: int = Field(ge=1)
+    scene_version: int = Field(ge=0)
+    contract: TaskContract
+    status: str = Field(default=ActiveContractStatus.ACTIVE.value)
+    based_on_plan_version: int | None = Field(default=None, ge=0)
+    created_at: datetime = Field(default_factory=utc_now)
+    activated_at: datetime = Field(default_factory=utc_now)
+    superseded_at: datetime | None = None
+    correlation_id: str = Field(default="")
+    contract_hash: str = Field(default="")
+
+
+class RetryBudgetSnapshot(BaseModel):
+    task_retry_count: int = Field(default=0, ge=0)
+    step_retry_counts: dict[str, int] = Field(default_factory=dict)
+    skill_retry_counts: dict[str, int] = Field(default_factory=dict)
+    event_retry_counts: dict[str, int] = Field(default_factory=dict)
+    remaining_retries: int = Field(default=0, ge=0)
+
+
+class ExecutionCheckpoint(BaseModel):
+    checkpoint_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    plan_id: str = Field(min_length=1)
+    plan_version: int = Field(ge=0)
+    command_seq: int = Field(ge=1)
+    robot_id: str = Field(min_length=1)
+    current_step_id: str = Field(default="")
+    current_step_index: int = Field(default=0, ge=0)
+    failed_step_id: str = Field(default="")
+    last_successful_step_id: str = Field(default="")
+    completed_step_ids: list[str] = Field(default_factory=list)
+    pending_step_ids: list[str] = Field(default_factory=list)
+    step_attempts: dict[str, int] = Field(default_factory=dict)
+    retry_budget_snapshot: RetryBudgetSnapshot = Field(default_factory=RetryBudgetSnapshot)
+    robot_state: dict[str, Any] = Field(default_factory=dict)
+    target_state: dict[str, Any] = Field(default_factory=dict)
+    scene_version: int = Field(default=0, ge=0)
+    scene_timestamp: datetime | None = None
+    safety_state: dict[str, Any] = Field(default_factory=dict)
+    execution_state: str = Field(default=CheckpointExecutionState.STARTED.value)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    correlation_id: str = Field(default="")
+    checkpoint_hash: str = Field(default="")
+
+
+class ReplanApplyRecord(BaseModel):
+    apply_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    plan_id: str = Field(min_length=1)
+    robot_id: str = Field(min_length=1)
+    previous_plan_version: int = Field(ge=0)
+    previous_command_seq: int = Field(ge=1)
+    new_plan_version: int = Field(ge=0)
+    new_command_seq: int = Field(ge=1)
+    checkpoint_id: str = Field(default="")
+    status: str = Field(default=ReplanApplyStatus.APPLIED.value)
+    reason: str = Field(default="")
+    completed_step_ids: list[str] = Field(default_factory=list)
+    applied_step_ids: list[str] = Field(default_factory=list)
+    ack_status: str = Field(default="")
+    created_at: datetime = Field(default_factory=utc_now)
+    correlation_id: str = Field(default="")
+    apply_hash: str = Field(default="")
 
 
 class EdgeEvent(TraceableMessage):
@@ -427,6 +553,10 @@ class RecoveryBudget(BaseModel):
     per_skill_retry_limit: int = Field(default=5, ge=0)
     task_total_retry_limit: int = Field(default=10, ge=0)
     retry_count_used: int = Field(default=0, ge=0)
+    task_retry_count: int = Field(default=0, ge=0)
+    step_retry_counts: dict[str, int] = Field(default_factory=dict)
+    skill_retry_counts: dict[str, int] = Field(default_factory=dict)
+    event_retry_counts: dict[str, int] = Field(default_factory=dict)
     retry_cooldown_ms: int = Field(default=500, ge=0)
     retry_deadline: datetime | None = None
     retry_backoff_policy: str = Field(default="exponential")

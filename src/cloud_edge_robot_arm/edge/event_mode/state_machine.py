@@ -20,7 +20,11 @@ class EventModeState(StrEnum):
     WAITING_FOR_NEW_OBSERVATION = "WAITING_FOR_NEW_OBSERVATION"
     PREPARING_REPLAN_REQUEST = "PREPARING_REPLAN_REQUEST"
     WAITING_CLOUD_REPLAN = "WAITING_CLOUD_REPLAN"
+    REPLAN_RECEIVED = "REPLAN_RECEIVED"
     VALIDATING_REPLAN = "VALIDATING_REPLAN"
+    APPLYING_REPLAN = "APPLYING_REPLAN"
+    WAITING_EDGE_ACK = "WAITING_EDGE_ACK"
+    READY_TO_RESUME = "READY_TO_RESUME"
     RESUMING = "RESUMING"
     PAUSED = "PAUSED"
     SAFETY_STOPPED = "SAFETY_STOPPED"
@@ -67,13 +71,31 @@ LEGAL_EVENT_MODE_TRANSITIONS: dict[EventModeState, set[EventModeState]] = {
         EventModeState.FAILED,
     },
     EventModeState.WAITING_CLOUD_REPLAN: {
+        EventModeState.REPLAN_RECEIVED,
         EventModeState.VALIDATING_REPLAN,
         EventModeState.PAUSED,
         EventModeState.FAILED,
     },
+    EventModeState.REPLAN_RECEIVED: {
+        EventModeState.VALIDATING_REPLAN,
+        EventModeState.FAILED,
+    },
     EventModeState.VALIDATING_REPLAN: {
-        EventModeState.RESUMING,
+        EventModeState.APPLYING_REPLAN,
         EventModeState.PAUSED,
+        EventModeState.FAILED,
+    },
+    EventModeState.APPLYING_REPLAN: {
+        EventModeState.WAITING_EDGE_ACK,
+        EventModeState.FAILED,
+    },
+    EventModeState.WAITING_EDGE_ACK: {
+        EventModeState.READY_TO_RESUME,
+        EventModeState.PAUSED,
+        EventModeState.FAILED,
+    },
+    EventModeState.READY_TO_RESUME: {
+        EventModeState.RESUMING,
         EventModeState.FAILED,
     },
     EventModeState.RESUMING: {

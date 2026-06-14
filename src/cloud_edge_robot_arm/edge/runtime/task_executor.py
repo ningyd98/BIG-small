@@ -7,6 +7,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from cloud_edge_robot_arm.contracts import ControlMode, TaskState
+from cloud_edge_robot_arm.contracts.models import (
+    CheckpointExecutionState,
+    ExecutionCheckpoint,
+    RetryBudgetSnapshot,
+    TaskContract,
+)
 from cloud_edge_robot_arm.edge.contract_validator import EdgeContractValidator
 from cloud_edge_robot_arm.edge.runtime.errors import TASK_TIMEOUT, runtime_error
 from cloud_edge_robot_arm.edge.runtime.retry_policy import (
@@ -26,13 +32,12 @@ from cloud_edge_robot_arm.edge.safety.providers import (
 from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
 from cloud_edge_robot_arm.errors import StructuredError
 from cloud_edge_robot_arm.repositories.base import TaskRepository
+from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.repositories.models import ActionExecutionRecord, StepExecutionRecord
 
 if TYPE_CHECKING:
-    from cloud_edge_robot_arm.edge.event_mode.controller import (
-        EventTriggeredModeController,
-    )
+    from cloud_edge_robot_arm.edge.event_mode.controller import EventTriggeredModeController
     from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
 
 SAFETY_DECISION_ERROR_CODES: dict[str, str] = {
@@ -123,28 +128,10 @@ class TaskExecutor:
             return TaskExecutionResult(success=False, repository=self._repository, error=error)
 
         contract = validation.contract
-        task_id = contract.task_id
-
-        robot_state = self._robot.get_state()
-        from cloud_edge_robot_arm.contracts import RobotState
-
-        if not isinstance(robot_state, RobotState):
+        connected_error = self._connected_error()
+        if connected_error is not None:
             return TaskExecutionResult(
-                success=False,
-                repository=self._repository,
-                error=runtime_error(
-                    "ROBOT_STATE_INVALID",
-                    "robot adapter did not return a RobotState",
-                ),
-            )
-        if not robot_state.connected:
-            return TaskExecutionResult(
-                success=False,
-                repository=self._repository,
-                error=runtime_error(
-                    "ROBOT_DISCONNECTED",
-                    "robot is not connected; call connect() before submitting contracts",
-                ),
+                success=False, repository=self._repository, error=connected_error
             )
 
         command_decision = self._repository.accept_command(
@@ -154,7 +141,7 @@ class TaskExecutor:
         if not command_decision.accepted:
             error = runtime_error(command_decision.code, command_decision.message)
             self._repository.record_audit_event(
-                task_id=task_id,
+                task_id=contract.task_id,
                 event_type="CONTRACT_REJECTED",
                 details={"error_code": error.code},
             )
@@ -163,12 +150,9 @@ class TaskExecutor:
         self._repository.create_task_from_contract(contract)
         context = TaskRuntimeContext.from_contract(contract)
         self._repository.record_audit_event(
-            task_id=task_id,
+            task_id=contract.task_id,
             event_type="CONTRACT_ACCEPTED",
-            details={
-                "plan_version": contract.plan_version,
-                "command_seq": contract.command_seq,
-            },
+            details={"plan_version": contract.plan_version, "command_seq": contract.command_seq},
         )
 
         for target_state in (TaskState.VALIDATING, TaskState.READY, TaskState.EXECUTING):
@@ -181,78 +165,144 @@ class TaskExecutor:
                     error=context.last_error,
                 )
 
-        from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
-
-        safety_executor = SafetySkillExecutor(
-            robot=self._robot,
-            registry=self._registry,
-            shield=self._shield,
-            context_builder=self._shield.context_builder,
-            telemetry_provider=self._telemetry_provider,
-            scene_provider=self._scene_provider,
-            repository=self._repository,
-        )
-        safety_executor.start_task()
-        if (
-            self._event_controller is not None
-            and contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
-        ):
+        if self._is_event_contract(contract):
+            assert self._event_controller is not None
             self._event_controller.initialize_task(contract)
+            self._save_checkpoint(context, CheckpointExecutionState.STARTED.value)
 
-        current_step_index = 0
+        return self._execute_runtime(contract=contract, context=context, start_step_index=0)
+
+    def resume_from_checkpoint(
+        self,
+        contract: TaskContract,
+        checkpoint: ExecutionCheckpoint,
+    ) -> TaskExecutionResult:
+        """Resume an event-triggered task from a persisted checkpoint."""
+        if self._event_controller is None:
+            return TaskExecutionResult(
+                success=False,
+                repository=self._repository,
+                error=runtime_error(
+                    "EVENT_CONTROLLER_REQUIRED", "resume requires event controller"
+                ),
+            )
+        validation_error = self._validate_resume_contract(contract, checkpoint)
+        if validation_error is not None:
+            return TaskExecutionResult(
+                success=False, repository=self._repository, error=validation_error
+            )
+        connected_error = self._connected_error()
+        if connected_error is not None:
+            return TaskExecutionResult(
+                success=False, repository=self._repository, error=connected_error
+            )
+
+        self._repository.create_task_from_contract(contract)
+        context = TaskRuntimeContext.from_contract(contract, initial_state=TaskState.EXECUTING)
+        context.completed_step_ids = list(checkpoint.completed_step_ids)
+        context.step_attempts = dict(checkpoint.step_attempts)
+        context.failed_step_id = checkpoint.failed_step_id or None
+        start_index = self._first_pending_index(contract, checkpoint.completed_step_ids)
+        context.current_step_index = start_index
+        context.current_step_id = (
+            contract.steps[start_index].step_id if start_index < len(contract.steps) else None
+        )
+        repo = self._event_controller.repository
+        repo.save_state_transition(
+            contract.task_id,
+            "READY_TO_RESUME",
+            "RESUMING",
+            "resume from checkpoint",
+            checkpoint.correlation_id,
+        )
+        self._save_checkpoint(context, CheckpointExecutionState.RESUMING.value)
+        result = self._execute_runtime(
+            contract=contract, context=context, start_step_index=start_index
+        )
+        if result.success:
+            repo.save_state_transition(
+                contract.task_id,
+                "RESUMING",
+                "COMPLETED",
+                "resume completed task",
+                checkpoint.correlation_id,
+            )
+        return result
+
+    def _execute_runtime(
+        self,
+        *,
+        contract: TaskContract,
+        context: TaskRuntimeContext,
+        start_step_index: int,
+    ) -> TaskExecutionResult:
+        safety_executor = self._build_safety_executor()
+        safety_executor.start_task()
+
+        current_step_index = start_step_index
+        last_post_safety_decision = ""
+        last_post_safety_details: dict[str, object] = {}
         while current_step_index < len(contract.steps):
             step = contract.steps[current_step_index]
             context.current_step_index = current_step_index
             context.current_step_id = step.step_id
             safety_executor.start_step()
             self._repository.record_audit_event(
-                task_id=task_id,
+                task_id=contract.task_id,
                 event_type="STEP_STARTED",
                 details={"step_id": step.step_id, "skill": step.skill.value},
             )
+            if self._is_event_contract(contract):
+                self._save_checkpoint(context, CheckpointExecutionState.STEP_STARTED.value)
 
             step_result = self._execute_step_with_retries(
                 safety_executor=safety_executor,
                 context=context,
                 step_index=current_step_index,
             )
+            if step_result.post_safety_decision:
+                last_post_safety_decision = step_result.post_safety_decision
+                last_post_safety_details = dict(step_result.post_safety_details or {})
             if step_result.success:
-                # Step succeeded — mark complete and advance
-                context.completed_step_ids.append(step.step_id)
+                if step.step_id not in context.completed_step_ids:
+                    context.completed_step_ids.append(step.step_id)
                 self._repository.record_audit_event(
-                    task_id=task_id,
+                    task_id=contract.task_id,
                     event_type="STEP_COMPLETED",
                     details={"step_id": step.step_id, "attempt": step_result.attempt},
                 )
+                if self._is_event_contract(contract):
+                    self._save_checkpoint(
+                        context,
+                        CheckpointExecutionState.STEP_SUCCEEDED.value,
+                        safety_state=last_post_safety_details,
+                    )
                 current_step_index += 1
-
                 timeout_error = self._task_timeout_error(
                     context, next_step_index=current_step_index
                 )
                 if timeout_error is not None:
                     context.failed_step_id = step.step_id
                     return self._fail_task(
-                        context=context,
-                        error=timeout_error,
-                        state=TaskState.FAILED,
+                        context=context, error=timeout_error, state=TaskState.FAILED
                     )
                 continue
 
-            # Step failed
             error_code = step_result.error_code or "STEP_FAILED"
-
-            # Phase 6: event-triggered edge autonomy recovery path
-            if (
-                self._event_controller is not None
-                and contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
-            ):
+            if self._is_event_contract(contract):
+                self._save_checkpoint(
+                    context,
+                    CheckpointExecutionState.STEP_FAILED.value,
+                    safety_state=dict(step_result.post_safety_details or {}),
+                )
                 from cloud_edge_robot_arm.edge.events.models import DetectionContext
 
+                robot_state = self._robot.get_state()
                 det_ctx = DetectionContext(
-                    task_id=task_id,
+                    task_id=contract.task_id,
                     plan_version=contract.plan_version,
                     command_seq=contract.command_seq,
-                    robot_id="",
+                    robot_id=self._robot_id(),
                     step=step,
                     step_result=step_result,
                     robot_state=robot_state,
@@ -264,38 +314,50 @@ class TaskExecutor:
                     completion_criteria=list(contract.completion_criteria),
                 )
 
+                assert self._event_controller is not None
                 ctrl_result = self._event_controller.on_step_result(
                     result=step_result,
                     context=det_ctx,
                     contract=contract,
                 )
                 if ctrl_result.action.value == "RETRY_STEP":
-                    # CRITICAL: keep same current_step_index — re-execute same step
                     self._repository.record_audit_event(
-                        task_id=task_id,
+                        task_id=contract.task_id,
                         event_type="LOCAL_RECOVERY_APPLIED",
                         details={
                             "action": ctrl_result.action.value,
                             "event_id": ctrl_result.event.event_id if ctrl_result.event else "",
                         },
                     )
+                    self._save_checkpoint(
+                        context, CheckpointExecutionState.LOCAL_RETRY_STARTED.value
+                    )
                     safety_executor.start_step()
-                    continue  # does NOT increment current_step_index
-                elif ctrl_result.action.value == "CONTINUE":
-                    current_step_index += 1
                     continue
-                elif ctrl_result.action.value == "REPLAN_AND_CONTINUE":
+                if ctrl_result.action.value == "CONTINUE":
+                    return self._fail_task(
+                        context=context,
+                        error=runtime_error(
+                            "UNHANDLED_FAILED_STEP",
+                            "failed step cannot be skipped by CONTINUE",
+                            details={"step_id": step.step_id, "error_code": error_code},
+                        ),
+                        state=TaskState.FAILED,
+                    )
+                if ctrl_result.action.value == "REPLAN_AND_CONTINUE":
                     self._repository.record_audit_event(
-                        task_id=task_id,
+                        task_id=contract.task_id,
                         event_type="CLOUD_REPLAN_REQUESTED",
                         details={"failed_step_id": step.step_id},
                     )
-                    final_state = TaskState.WAITING_CLOUD_UPDATE
+                    self._save_checkpoint(
+                        context, CheckpointExecutionState.WAITING_CLOUD_REPLAN.value
+                    )
                     return self._fail_task(
                         context=context,
                         error=runtime_error(
                             "CLOUD_REPLAN_REQUIRED",
-                            (f"Local recovery failed for step {step.step_id}, cloud replan needed"),
+                            f"Local recovery failed for step {step.step_id}, cloud replan needed",
                             details={
                                 "event_id": ctrl_result.event.event_id if ctrl_result.event else "",
                                 "summary_id": ctrl_result.summary.summary_id
@@ -303,42 +365,38 @@ class TaskExecutor:
                                 else "",
                             },
                         ),
-                        state=final_state,
+                        state=TaskState.WAITING_CLOUD_UPDATE,
                     )
-                elif ctrl_result.action.value == "PAUSE":
+                if ctrl_result.action.value == "PAUSE":
                     self._transition(context, TaskState.PAUSED, reason="Paused by event controller")
                     return TaskExecutionResult(
                         success=False,
                         repository=self._repository,
                         context=context,
                         error=runtime_error(
-                            "TASK_PAUSED_EVENT_CONTROLLER",
-                            "Task paused by event controller",
+                            "TASK_PAUSED_EVENT_CONTROLLER", "Task paused by event controller"
                         ),
                     )
-                elif ctrl_result.action.value == "SAFETY_STOP":
-                    final_state = TaskState.SAFETY_STOPPED
+                if ctrl_result.action.value == "SAFETY_STOP":
                     stop_ok = self._execute_safety_stop(context)
                     if not stop_ok:
                         return self._fail_task(
                             context=context,
                             error=runtime_error(
-                                "SAFETY_STOP_FAILED",
-                                "both stop and emergency_stop failed",
+                                "SAFETY_STOP_FAILED", "both stop and emergency_stop failed"
                             ),
                             state=TaskState.FAILED,
                         )
+                    self._save_checkpoint(context, CheckpointExecutionState.SAFETY_STOPPED.value)
                     return self._fail_task(
                         context=context,
                         error=step_result.error
                         or runtime_error(
                             "SAFETY_STOP_EVENT", "Critical event triggered safety stop"
                         ),
-                        state=final_state,
+                        state=TaskState.SAFETY_STOPPED,
                     )
-                # Fall through to original failure handling for FAIL action
 
-            # Original Phase 0-5 failure handling
             final_state = self._determine_failure_state(error_code, step_result)
             if final_state == TaskState.SAFETY_STOPPED:
                 stop_ok = self._execute_safety_stop(context)
@@ -346,8 +404,7 @@ class TaskExecutor:
                     return self._fail_task(
                         context=context,
                         error=runtime_error(
-                            "SAFETY_STOP_FAILED",
-                            "both stop and emergency_stop failed",
+                            "SAFETY_STOP_FAILED", "both stop and emergency_stop failed"
                         ),
                         state=TaskState.FAILED,
                     )
@@ -358,9 +415,32 @@ class TaskExecutor:
                 state=final_state,
             )
 
-        # Run CompletionEvaluator before declaring success
+        return self._complete_task(
+            contract=contract,
+            context=context,
+            final_safety_decision=last_post_safety_decision,
+            final_safety_details=last_post_safety_details,
+        )
+
+    def _complete_task(
+        self,
+        *,
+        contract: TaskContract,
+        context: TaskRuntimeContext,
+        final_safety_decision: str,
+        final_safety_details: dict[str, object],
+    ) -> TaskExecutionResult:
         from cloud_edge_robot_arm.edge.completion_evaluator import CompletionEvaluator
 
+        if not final_safety_decision:
+            return self._fail_task(
+                context=context,
+                error=runtime_error(
+                    "FINAL_SAFETY_UNVERIFIED",
+                    "cannot complete without a real SafetyShield post-check result",
+                ),
+                state=TaskState.FAILED,
+            )
         robot_state = self._robot.get_state()
         robot_state_dict = robot_state.model_dump() if hasattr(robot_state, "model_dump") else {}
         final_target_state: dict[str, object] = {
@@ -373,18 +453,22 @@ class TaskExecutor:
             target_state=final_target_state,
         )
         completion_repository = getattr(self._event_controller, "repository", None)
+        scene = self._scene_provider.snapshot()
+        scene_version = scene.scene_version if scene is not None else contract.scene_version
+        scene_updated_at = scene.updated_at if scene is not None else None
         evaluation = CompletionEvaluator(repository=completion_repository).evaluate(
             contract=contract,
             completed_step_ids=list(context.completed_step_ids),
             completion_criteria_results=criteria_results,
-            final_safety_decision="ALLOW",
+            final_safety_decision=final_safety_decision,
             final_robot_state=robot_state_dict,
             final_target_state=final_target_state,
-            scene_version=contract.scene_version,
+            scene_version=scene_version,
+            last_scene_update_at=scene_updated_at,
         )
         if not evaluation.completed:
             self._repository.record_audit_event(
-                task_id=task_id,
+                task_id=contract.task_id,
                 event_type="TASK_COMPLETION_EVALUATION_FAILED",
                 details={
                     "failed_checks": evaluation.failed_checks,
@@ -402,10 +486,8 @@ class TaskExecutor:
                 state=TaskState.FAILED,
             )
 
-        if (
-            self._event_controller is not None
-            and contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
-        ):
+        if self._is_event_contract(contract):
+            assert self._event_controller is not None
             budget = self._event_controller.retry_budget(contract.task_id)
             self._event_controller.on_task_completed(
                 contract=contract,
@@ -413,12 +495,18 @@ class TaskExecutor:
                 completion_criteria_results=criteria_results,
                 final_robot_state=robot_state_dict,
                 final_target_state=final_target_state,
+                final_safety_decision=final_safety_decision,
                 local_retry_count=budget.retry_count_used if budget is not None else 0,
+            )
+            self._save_checkpoint(
+                context,
+                CheckpointExecutionState.COMPLETED.value,
+                safety_state=final_safety_details,
             )
 
         self._transition(context, TaskState.COMPLETED, reason="all steps completed and evaluated")
         self._repository.record_audit_event(
-            task_id=task_id,
+            task_id=contract.task_id,
             event_type="TASK_COMPLETED",
             details={
                 "completed_step_ids": list(context.completed_step_ids),
@@ -426,10 +514,7 @@ class TaskExecutor:
             },
         )
         return TaskExecutionResult(
-            success=True,
-            repository=self._repository,
-            context=context,
-            error=None,
+            success=True, repository=self._repository, context=context, error=None
         )
 
     def _completion_criteria_results(
@@ -553,16 +638,11 @@ class TaskExecutor:
         step_index: int,
     ) -> StepExecutionResult:
         step = context.contract.steps[step_index]
-        if (
-            self._event_controller is not None
-            and context.contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
-        ):
+        if self._is_event_contract(context.contract):
             attempt = context.step_attempts.get(step.step_id, 0) + 1
             context.step_attempts[step.step_id] = attempt
             result = safety_executor.execute_attempt(
-                contract=context.contract,
-                step=step,
-                attempt=attempt,
+                contract=context.contract, step=step, attempt=attempt
             )
             self._persist_step_attempt(context, result)
             context.elapsed_action_ms += result.duration_ms
@@ -586,9 +666,7 @@ class TaskExecutor:
         for attempt in range(1, max_attempts + 1):
             context.step_attempts[step.step_id] = attempt
             latest_result = safety_executor.execute_attempt(
-                contract=context.contract,
-                step=step,
-                attempt=attempt,
+                contract=context.contract, step=step, attempt=attempt
             )
             self._persist_step_attempt(context, latest_result)
             context.elapsed_action_ms += latest_result.duration_ms
@@ -637,15 +715,11 @@ class TaskExecutor:
             return latest_result
 
         return latest_result or safety_executor.execute_attempt(
-            contract=context.contract,
-            step=step,
-            attempt=1,
+            contract=context.contract, step=step, attempt=1
         )
 
     def _persist_step_attempt(
-        self,
-        context: TaskRuntimeContext,
-        result: StepExecutionResult,
+        self, context: TaskRuntimeContext, result: StepExecutionResult
     ) -> None:
         self._repository.record_step_execution(
             StepExecutionRecord(
@@ -675,11 +749,7 @@ class TaskExecutor:
         )
 
     def _transition(
-        self,
-        context: TaskRuntimeContext,
-        target_state: TaskState,
-        *,
-        reason: str,
+        self, context: TaskRuntimeContext, target_state: TaskState, *, reason: str
     ) -> bool:
         from_state = context.state
         result = self._state_machine.transition(context, target_state, reason=reason)
@@ -723,10 +793,7 @@ class TaskExecutor:
             details={"error_code": error.code, "failed_step_id": context.failed_step_id},
         )
         return TaskExecutionResult(
-            success=False,
-            repository=self._repository,
-            context=context,
-            error=error,
+            success=False, repository=self._repository, context=context, error=error
         )
 
     def _task_timeout_error(
@@ -747,6 +814,192 @@ class TaskExecutor:
             "task execution exceeded contract deadline before the next step",
             details={"elapsed_action_ms": context.elapsed_action_ms, "budget_ms": budget_ms},
         )
+
+    def _build_safety_executor(self) -> SafetySkillExecutor:
+        from cloud_edge_robot_arm.edge.safety.safety_skill_executor import SafetySkillExecutor
+
+        return SafetySkillExecutor(
+            robot=self._robot,
+            registry=self._registry,
+            shield=self._shield,
+            context_builder=self._shield.context_builder,
+            telemetry_provider=self._telemetry_provider,
+            scene_provider=self._scene_provider,
+            repository=self._repository,
+        )
+
+    def _save_checkpoint(
+        self,
+        context: TaskRuntimeContext,
+        execution_state: str,
+        *,
+        safety_state: dict[str, object] | None = None,
+    ) -> ExecutionCheckpoint | None:
+        if self._event_controller is None:
+            return None
+        repo = self._event_controller.repository
+        robot_state = self._robot.get_state()
+        scene = self._scene_provider.snapshot()
+        budget = self._event_controller.retry_budget(context.task_id)
+        pending = [
+            step.step_id
+            for step in context.contract.steps
+            if step.step_id not in set(context.completed_step_ids)
+        ]
+        target_state = {
+            "object_at_target": self._robot.object_region(context.contract.task_target.object_id)
+            == context.contract.task_target.target_region_id
+        }
+        now = datetime.now(UTC)
+        checkpoint = ExecutionCheckpoint(
+            checkpoint_id=(
+                f"ckpt-{context.task_id}-{context.plan_version}-{context.command_seq}-"
+                f"{len(context.completed_step_ids)}-{execution_state}-{now.strftime('%Y%m%d%H%M%S%f')}"
+            ),
+            task_id=context.task_id,
+            plan_id=self._plan_id(context.contract),
+            plan_version=context.plan_version,
+            command_seq=context.command_seq,
+            robot_id=self._robot_id(),
+            current_step_id=context.current_step_id or "",
+            current_step_index=context.current_step_index,
+            failed_step_id=context.failed_step_id or "",
+            last_successful_step_id=context.completed_step_ids[-1]
+            if context.completed_step_ids
+            else "",
+            completed_step_ids=list(context.completed_step_ids),
+            pending_step_ids=pending,
+            step_attempts=dict(context.step_attempts),
+            retry_budget_snapshot=RetryBudgetSnapshot(
+                task_retry_count=budget.task_retry_count if budget else 0,
+                step_retry_counts=dict(budget.step_retry_counts) if budget else {},
+                skill_retry_counts=dict(budget.skill_retry_counts) if budget else {},
+                event_retry_counts=dict(budget.event_retry_counts) if budget else {},
+                remaining_retries=budget.remaining_retries if budget else 0,
+            ),
+            robot_state=robot_state.model_dump(mode="json")
+            if hasattr(robot_state, "model_dump")
+            else {},
+            target_state=target_state,
+            scene_version=scene.scene_version
+            if scene is not None
+            else context.contract.scene_version,
+            scene_timestamp=scene.updated_at if scene is not None else None,
+            safety_state=dict(safety_state or {}),
+            execution_state=execution_state,
+            created_at=now,
+            updated_at=now,
+            correlation_id=self._checkpoint_correlation(context, execution_state),
+        )
+        checkpoint = checkpoint.model_copy(
+            update={
+                "checkpoint_hash": stable_payload_hash(
+                    checkpoint, ignore_fields={"checkpoint_hash"}
+                )
+            },
+            deep=True,
+        )
+        return repo.save_execution_checkpoint(checkpoint)
+
+    def _validate_resume_contract(
+        self, contract: TaskContract, checkpoint: ExecutionCheckpoint
+    ) -> StructuredError | None:
+        if not self._is_event_contract(contract):
+            return runtime_error(
+                "RESUME_REQUIRES_EVENT_MODE", "only event-triggered contracts can resume"
+            )
+        if checkpoint.execution_state in {
+            CheckpointExecutionState.COMPLETED.value,
+            CheckpointExecutionState.SAFETY_STOPPED.value,
+        }:
+            return runtime_error("CHECKPOINT_TERMINAL", "cannot resume a terminal checkpoint")
+        if contract.task_id != checkpoint.task_id:
+            return runtime_error(
+                "CHECKPOINT_TASK_MISMATCH", "contract task_id does not match checkpoint"
+            )
+        if self._plan_id(contract) != checkpoint.plan_id:
+            return runtime_error(
+                "CHECKPOINT_PLAN_MISMATCH", "contract plan_id does not match checkpoint"
+            )
+        if self._robot_id() != checkpoint.robot_id:
+            return runtime_error("CHECKPOINT_ROBOT_MISMATCH", "robot_id does not match checkpoint")
+        if contract.plan_version <= checkpoint.plan_version:
+            return runtime_error(
+                "STALE_PLAN_VERSION", "resume contract must be newer than checkpoint plan"
+            )
+        if contract.command_seq <= checkpoint.command_seq:
+            return runtime_error("STALE_COMMAND_SEQ", "resume command_seq must increase")
+        if contract.scene_version < checkpoint.scene_version:
+            return runtime_error(
+                "SCENE_VERSION_REGRESSED", "resume scene_version is older than checkpoint"
+            )
+        validation = EdgeContractValidator(
+            supported_skills=self._registry.skills(),
+            min_plan_version=self._min_plan_version,
+        ).accept_payload(contract.model_dump(mode="json"), now=datetime.now(UTC))
+        if not validation.accepted:
+            return validation.error or runtime_error(
+                "CONTRACT_SCHEMA_INVALID", "resume contract invalid"
+            )
+        if self._event_controller is not None:
+            active_versions = self._event_controller.repository.list_contract_versions(
+                contract.task_id
+            )
+            base = next(
+                (
+                    record.contract
+                    for record in active_versions
+                    if record.plan_version == checkpoint.plan_version
+                ),
+                None,
+            )
+            if base is not None:
+                base_steps = {step.step_id: step for step in base.steps}
+                new_steps = {step.step_id: step for step in contract.steps}
+                for step_id in checkpoint.completed_step_ids:
+                    if step_id not in new_steps:
+                        return runtime_error(
+                            "COMPLETED_STEP_REMOVED", "resume contract removed completed step"
+                        )
+                    if step_id in base_steps and new_steps[step_id] != base_steps[step_id]:
+                        return runtime_error(
+                            "COMPLETED_STEP_MODIFIED", "resume contract modified completed step"
+                        )
+        return None
+
+    def _connected_error(self) -> StructuredError | None:
+        from cloud_edge_robot_arm.contracts import RobotState
+
+        robot_state = self._robot.get_state()
+        if not isinstance(robot_state, RobotState):
+            return runtime_error("ROBOT_STATE_INVALID", "robot adapter did not return a RobotState")
+        if not robot_state.connected:
+            return runtime_error(
+                "ROBOT_DISCONNECTED", "robot is not connected; call connect() first"
+            )
+        return None
+
+    def _is_event_contract(self, contract: TaskContract) -> bool:
+        return (
+            self._event_controller is not None
+            and contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
+        )
+
+    def _first_pending_index(self, contract: TaskContract, completed_step_ids: list[str]) -> int:
+        completed = set(completed_step_ids)
+        for index, step in enumerate(contract.steps):
+            if step.step_id not in completed:
+                return index
+        return len(contract.steps)
+
+    def _plan_id(self, contract: TaskContract) -> str:
+        return f"plan-{contract.task_id}"
+
+    def _robot_id(self) -> str:
+        return "robot-unknown"
+
+    def _checkpoint_correlation(self, context: TaskRuntimeContext, execution_state: str) -> str:
+        return f"{context.task_id}:{context.plan_version}:{context.command_seq}:{execution_state}"
 
     def _payload_hash(self, payload: dict[str, Any]) -> str:
         canonical = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))

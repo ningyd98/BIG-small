@@ -155,7 +155,7 @@ class FailureSummaryBuilder:
             summary_id=summary_id,
             robot_id=event.robot_id,
             plan_id=event.plan_id,
-            failed_skill=contract.steps[0].skill if contract.steps else None,
+            failed_skill=self._failed_skill(contract, event.step_id),
             last_successful_step_id=last_successful_step_id,
             pending_step_ids=self._compute_pending(
                 contract, completed_step_ids or [], event.step_id
@@ -198,6 +198,15 @@ class FailureSummaryBuilder:
         if failed_step_id:
             done.add(failed_step_id)
         return [s for s in all_steps if s not in done]
+
+    @staticmethod
+    def _failed_skill(contract: TaskContract, failed_step_id: str | None):
+        if not failed_step_id:
+            return None
+        for step in contract.steps:
+            if step.step_id == failed_step_id:
+                return step.skill
+        return None
 
     @staticmethod
     def _compute_hash(summary: FailureSummary) -> str:

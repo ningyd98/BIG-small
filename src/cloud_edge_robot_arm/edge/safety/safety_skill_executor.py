@@ -278,6 +278,7 @@ class SafetySkillExecutor:
                     forbidden_zones=scene.forbidden_zones if scene is not None else [],
                 )
                 post_result = self._shield.post_check(post_ctx)
+                post_summary = self._safety_summary(post_result, scene, telemetry)
                 if post_result.decision not in {
                     SafetyDecision.ALLOW,
                     SafetyDecision.ALLOW_WITH_LIMITS,
@@ -310,9 +311,57 @@ class SafetySkillExecutor:
                         action_result=result.action_result,
                         duration_ms=result.duration_ms,
                         timestamp=datetime.now(UTC),
+                        post_safety_decision=post_result.decision.value,
+                        post_safety_details=post_summary,
                     )
+                return result.__class__(
+                    task_id=result.task_id,
+                    step_id=result.step_id,
+                    skill=result.skill,
+                    attempt=result.attempt,
+                    success=result.success,
+                    error=result.error,
+                    action_result=result.action_result,
+                    duration_ms=result.duration_ms,
+                    timestamp=result.timestamp,
+                    post_safety_decision=post_result.decision.value,
+                    post_safety_details=post_summary,
+                )
 
         return result
+
+    def _safety_summary(
+        self,
+        result: SafetyEvaluationResult,
+        scene: object | None,
+        telemetry: object | None,
+    ) -> dict[str, Any]:
+        return {
+            "decision": result.decision.value,
+            "allowed": result.allowed,
+            "policy_version": self._policy_version,
+            "policy_hash": self._policy_hash,
+            "rule_results": [
+                {
+                    "rule_id": rule.rule_id,
+                    "decision": rule.decision.value,
+                    "reason_code": rule.reason_code,
+                    "measured_value": rule.measured_value,
+                    "limit_value": rule.limit_value,
+                }
+                for rule in result.evaluated_rules
+            ],
+            "effective_limits": {
+                "policy_version": self._policy_version,
+                "policy_hash": self._policy_hash,
+            },
+            "scene_timestamp": getattr(scene, "updated_at", None).isoformat()
+            if getattr(scene, "updated_at", None) is not None
+            else "",
+            "telemetry_timestamp": getattr(telemetry, "timestamp", None).isoformat()
+            if getattr(telemetry, "timestamp", None) is not None
+            else "",
+        }
 
     def _error_details(self, decision: str, limiting: object) -> dict[str, object]:
         rule_id = getattr(limiting, "rule_id", "UNKNOWN")

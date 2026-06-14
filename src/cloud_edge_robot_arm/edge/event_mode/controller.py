@@ -103,6 +103,14 @@ class EventTriggeredModeController:
 
     def initialize_task(self, contract: TaskContract) -> None:
         """Initialize event-triggered mode for a task."""
+        self._repo.save_active_contract(
+            contract,
+            plan_id=f"plan-{contract.task_id}",
+            robot_id="robot-unknown",
+            status="ACTIVE",
+            based_on_plan_version=None,
+            correlation_id=getattr(contract, "correlation_id", ""),
+        )
         self._budget.initialize(contract.task_id, contract)
         sm = self._state_machine_for_task(contract.task_id)
         if sm.current_state == EventModeState.IDLE:
@@ -163,7 +171,12 @@ class EventTriggeredModeController:
                     return self._handle_budget_exhausted(saved_event, contract, sm, context)
                 step_id = context.step.step_id if context.step is not None else ""
                 skill = context.step.skill.value if context.step is not None else ""
-                consumed, _ = self._budget.consume_if_available(task_id, step_id, skill)
+                consumed, _ = self._budget.consume_if_available(
+                    task_id,
+                    step_id,
+                    skill,
+                    saved_event.event_id,
+                )
                 if not consumed:
                     return self._handle_budget_exhausted(saved_event, contract, sm, context)
                 self._repo.mark_event_handled(saved_event.event_id)
@@ -572,13 +585,55 @@ class EventTriggeredModeController:
                 EventModeState.EVALUATING_LOCAL_RECOVERY,
                 EventModeState.WAITING_FOR_NEW_OBSERVATION,
             ],
+            EventModeState.REPLAN_RECEIVED: [
+                EventModeState.EXECUTING_AUTONOMOUSLY,
+                EventModeState.EVENT_DETECTED,
+                EventModeState.EVALUATING_LOCAL_RECOVERY,
+                EventModeState.PREPARING_REPLAN_REQUEST,
+                EventModeState.WAITING_CLOUD_REPLAN,
+                EventModeState.REPLAN_RECEIVED,
+            ],
             EventModeState.VALIDATING_REPLAN: [
                 EventModeState.EXECUTING_AUTONOMOUSLY,
                 EventModeState.EVENT_DETECTED,
                 EventModeState.EVALUATING_LOCAL_RECOVERY,
                 EventModeState.PREPARING_REPLAN_REQUEST,
                 EventModeState.WAITING_CLOUD_REPLAN,
+                EventModeState.REPLAN_RECEIVED,
                 EventModeState.VALIDATING_REPLAN,
+            ],
+            EventModeState.APPLYING_REPLAN: [
+                EventModeState.EXECUTING_AUTONOMOUSLY,
+                EventModeState.EVENT_DETECTED,
+                EventModeState.EVALUATING_LOCAL_RECOVERY,
+                EventModeState.PREPARING_REPLAN_REQUEST,
+                EventModeState.WAITING_CLOUD_REPLAN,
+                EventModeState.REPLAN_RECEIVED,
+                EventModeState.VALIDATING_REPLAN,
+                EventModeState.APPLYING_REPLAN,
+            ],
+            EventModeState.WAITING_EDGE_ACK: [
+                EventModeState.EXECUTING_AUTONOMOUSLY,
+                EventModeState.EVENT_DETECTED,
+                EventModeState.EVALUATING_LOCAL_RECOVERY,
+                EventModeState.PREPARING_REPLAN_REQUEST,
+                EventModeState.WAITING_CLOUD_REPLAN,
+                EventModeState.REPLAN_RECEIVED,
+                EventModeState.VALIDATING_REPLAN,
+                EventModeState.APPLYING_REPLAN,
+                EventModeState.WAITING_EDGE_ACK,
+            ],
+            EventModeState.READY_TO_RESUME: [
+                EventModeState.EXECUTING_AUTONOMOUSLY,
+                EventModeState.EVENT_DETECTED,
+                EventModeState.EVALUATING_LOCAL_RECOVERY,
+                EventModeState.PREPARING_REPLAN_REQUEST,
+                EventModeState.WAITING_CLOUD_REPLAN,
+                EventModeState.REPLAN_RECEIVED,
+                EventModeState.VALIDATING_REPLAN,
+                EventModeState.APPLYING_REPLAN,
+                EventModeState.WAITING_EDGE_ACK,
+                EventModeState.READY_TO_RESUME,
             ],
             EventModeState.RESUMING: [
                 EventModeState.EXECUTING_AUTONOMOUSLY,
@@ -586,7 +641,11 @@ class EventTriggeredModeController:
                 EventModeState.EVALUATING_LOCAL_RECOVERY,
                 EventModeState.PREPARING_REPLAN_REQUEST,
                 EventModeState.WAITING_CLOUD_REPLAN,
+                EventModeState.REPLAN_RECEIVED,
                 EventModeState.VALIDATING_REPLAN,
+                EventModeState.APPLYING_REPLAN,
+                EventModeState.WAITING_EDGE_ACK,
+                EventModeState.READY_TO_RESUME,
                 EventModeState.RESUMING,
             ],
         }
