@@ -278,13 +278,10 @@ class EventTriggeredModeController:
         """Persist and apply a replanning result."""
         persisted = self._repo.save_replan_result(response)
         request = self._repo.get_replan_request(response.request_id)
-        task_id = (
-            request.task_id
-            if request is not None
-            else self._task_id_from_request_id(response.request_id)
-        )
-        if persisted.outcome == "REPLANNED" and task_id:
-            sm = self._state_machine_for_task(task_id)
+        if request is None:
+            return ControllerResult(action=ControllerAction.FAIL)
+        if persisted.outcome == "REPLANNED":
+            sm = self._state_machine_for_task(request.task_id)
             self._transition(sm, EventModeState.VALIDATING_REPLAN, "Replan received")
             self._transition(sm, EventModeState.RESUMING, "Replan accepted")
             return ControllerResult(action=ControllerAction.CONTINUE)
@@ -650,13 +647,3 @@ class EventTriggeredModeController:
             ],
         }
         return paths[state]
-
-    @staticmethod
-    def _task_id_from_request_id(request_id: str) -> str:
-        prefix = "replan-req-"
-        if not request_id.startswith(prefix):
-            return ""
-        remainder = request_id[len(prefix) :]
-        if "-evt" in remainder:
-            return remainder.split("-evt", 1)[0]
-        return remainder.rsplit("-", 1)[0]

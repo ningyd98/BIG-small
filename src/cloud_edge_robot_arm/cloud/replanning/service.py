@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from cloud_edge_robot_arm.cloud.replanning.adapters import ReplannerAdapter
@@ -31,6 +32,7 @@ class LocalReplanningService:
         repository: EventAutonomyRepository | None = None,
         apply_service: ReplanApplyService | None = None,
         max_repair_attempts: int = 2,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         if repository is None:
             from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
@@ -40,7 +42,12 @@ class LocalReplanningService:
             repository = InMemoryEventAutonomyRepository()
         self._adapter = adapter
         self._repo = repository
-        self._apply = apply_service or ReplanApplyService(repository=repository, dispatcher=None)
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
+        self._apply = apply_service or ReplanApplyService(
+            repository=repository,
+            dispatcher=None,
+            clock=self._clock,
+        )
         self._max_repair_attempts = max_repair_attempts
         self._scope_validator = ReplanScopeValidator()
 
@@ -71,7 +78,7 @@ class LocalReplanningService:
                 new_plan_version=persisted_request.current_plan_version,
                 new_command_seq=persisted_request.current_command_seq,
                 planner_name=getattr(self._adapter, "planner_name", "unknown"),
-                created_at=datetime.now(UTC),
+                created_at=self._clock(),
             )
             return self._repo.save_replan_result(failed)
 
@@ -108,7 +115,7 @@ class LocalReplanningService:
                     validation_errors=applied.errors,
                     planner_name=saved.planner_name,
                     prompt_version=saved.prompt_version,
-                    created_at=datetime.now(UTC),
+                    created_at=self._clock(),
                 )
                 return self._repo.save_replan_result(conflict)
         return saved
@@ -167,7 +174,15 @@ class LocalReplanningService:
             and checkpoint is None
             and contract_override is None
         ):
-            return None, None
+            return None, self._reject(
+                request,
+                [
+                    "trigger_event_id not found",
+                    "failure_summary_id not found",
+                    "active contract not found",
+                    "checkpoint not found",
+                ],
+            )
         if event is None:
             errors.append("trigger_event_id not found")
         if summary is None:
@@ -180,7 +195,11 @@ class LocalReplanningService:
             return None, self._reject(request, errors)
         assert summary is not None
         assert checkpoint is not None
-        active_contract = contract_override or active_record.contract  # type: ignore[union-attr]
+        if contract_override is not None:
+            active_contract = contract_override
+        else:
+            assert active_record is not None
+            active_contract = active_record.contract
         if event is not None and event.task_id != request.task_id:
             errors.append("event.task_id mismatch")
         if summary.task_id != request.task_id:
@@ -254,8 +273,9 @@ class LocalReplanningService:
                 errors.append("REPLANNED response must include new_steps")
         elif response.new_steps:
             errors.append("non-executable outcome must not include new_steps")
+        allowed_skills = context.allowed_skills or set(SkillName)
         for step in response.new_steps:
-            if step.skill not in context.allowed_skills:
+            if step.skill not in allowed_skills:
                 errors.append(f"skill {step.skill.value} is not allowed")
             bad_keys = {
                 "joint_angles",
@@ -290,7 +310,7 @@ class LocalReplanningService:
             new_plan_version=request.current_plan_version,
             new_command_seq=request.current_command_seq,
             planner_name=planner_name or getattr(self._adapter, "planner_name", "unknown"),
-            created_at=datetime.now(UTC),
+            created_at=self._clock(),
         )
 
     def _lightweight_context(

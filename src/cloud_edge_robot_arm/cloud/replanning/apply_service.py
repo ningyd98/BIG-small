@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -52,11 +53,13 @@ class ReplanApplyService:
         dispatcher: ReplanDispatchGateway | None = None,
         merge_validator: ReplanMergeValidator | None = None,
         assembler: ReplanContractAssembler | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repo = repository
         self._dispatcher = dispatcher
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
         self._merge_validator = merge_validator or ReplanMergeValidator()
-        self._assembler = assembler or ReplanContractAssembler()
+        self._assembler = assembler or ReplanContractAssembler(clock=self._clock)
 
     def apply(
         self,
@@ -80,6 +83,22 @@ class ReplanApplyService:
         assert failure_summary is not None
         assert checkpoint is not None
         active_contract = active_record.contract
+
+        if (
+            active_contract.plan_version != request.current_plan_version
+            or active_contract.command_seq != request.current_command_seq
+        ):
+            record = self._record(
+                request,
+                response,
+                active_record,
+                checkpoint,
+                status=ReplanApplyStatus.VERSION_CONFLICT.value,
+                reason="active contract version changed before apply",
+                contract=None,
+                ack=None,
+            )
+            return ReplanApplyResult(False, record, None, None, [record.reason])
 
         errors = self._validate_identity_and_versions(
             request=request,
@@ -266,10 +285,6 @@ class ReplanApplyService:
             errors.append("robot_id mismatch")
         if active_record.plan_id != request.plan_id:
             errors.append("plan_id mismatch")
-        if active_contract.plan_version != request.current_plan_version:
-            errors.append("request current_plan_version is not active")
-        if active_contract.command_seq != request.current_command_seq:
-            errors.append("request current_command_seq is not active")
         if checkpoint.task_id != request.task_id:
             errors.append("checkpoint task_id mismatch")
         if checkpoint.robot_id != request.robot_id:
@@ -311,7 +326,7 @@ class ReplanApplyService:
         errors: list[str] = []
         validation = EdgeContractValidator(min_plan_version=1).accept_payload(
             contract.model_dump(mode="json"),
-            now=datetime.now(UTC),
+            now=self._clock(),
         )
         if not validation.accepted:
             errors.append(
@@ -335,7 +350,7 @@ class ReplanApplyService:
         *,
         dispatch: bool,
     ) -> CommandAck:
-        now = datetime.now(UTC)
+        now = self._clock()
         status = CommandAckStatus.ACCEPTED.value
         accepted = True
         if not dispatch:
@@ -413,7 +428,7 @@ class ReplanApplyService:
         checkpoint: ExecutionCheckpoint | None,
         errors: list[str],
     ) -> ReplanApplyResult:
-        now = datetime.now(UTC)
+        now = self._clock()
         ack = None
         if checkpoint is not None:
             ack = self._repo.save_command_ack(

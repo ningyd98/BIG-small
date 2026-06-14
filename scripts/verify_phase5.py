@@ -25,19 +25,18 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
     SupervisoryDecisionType,
 )
 from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorService
-from cloud_edge_robot_arm.contracts import Pose, SkillName, TaskStep
+from cloud_edge_robot_arm.contracts import Pose, SkillName, TaskContract, TaskStep
 
 
 def _make_contract(
     task_id: str = "task-001",
     plan_version: int = 1,
     command_seq: int = 1,
-):
+) -> TaskContract:
     from cloud_edge_robot_arm.contracts import (
         ControlMode,
         FailurePolicy,
         SafetyConstraints,
-        TaskContract,
         TaskTarget,
     )
 
@@ -344,8 +343,14 @@ def main() -> None:
     )
     arule = AccelerationRule()
     r6 = arule.evaluate(ctx6)
-    ok = r6.measured_value is not None and r6.limit_value is not None
-    ok = ok and r6.measured_value > 0 and r6.limit_value > 0
+    measured_value = r6.measured_value
+    limit_value = r6.limit_value
+    ok = (
+        measured_value is not None
+        and limit_value is not None
+        and measured_value > 0
+        and limit_value > 0
+    )
     results["6_acceleration_real"] = ok
     if not ok:
         errors.append("Acceleration: measured_value/limit_value are zero or None")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from cloud_edge_robot_arm.contracts import SafetyDecision
 from cloud_edge_robot_arm.edge.safety.models import SafetyRuleResult
@@ -34,11 +35,10 @@ class RuleRegistry:
         return len(self._rules)
 
 
-class SafetyRuleEvaluator:
+class SafetyRuleEvaluator(Protocol):
     rule_id: str = "BASE_RULE"
 
-    def evaluate(self, context: object) -> SafetyRuleResult:
-        raise NotImplementedError
+    def evaluate(self, context: object) -> SafetyRuleResult: ...
 
 
 def resolve_decision(results: list[SafetyRuleResult]) -> SafetyDecision:

@@ -264,6 +264,8 @@ class InMemoryEventAutonomyRepository:
             payload_hash = _canonical_hash(summary)
             existing = self._completion_summaries.get(summary.summary_id)
             if existing is not None:
+                if existing.summary_hash and existing.summary_hash == summary.summary_hash:
+                    return existing
                 self._ensure_same_hash(
                     "CompletionSummary",
                     summary.summary_id,

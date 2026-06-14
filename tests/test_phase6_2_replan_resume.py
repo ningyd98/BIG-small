@@ -406,7 +406,7 @@ def test_phase62_old_replan_late_result_is_rejected() -> None:
     )
     applied_a = service.apply(request=req_a, response=resp_a, checkpoint=checkpoint, dispatch=False)
     assert not applied_a.applied
-    assert applied_a.record.status == "REJECTED"
+    assert applied_a.record.status == "VERSION_CONFLICT"
     assert repo.get_active_contract(contract.task_id).contract.steps[1].step_id == "grasp-b"  # type: ignore[union-attr]
 
 

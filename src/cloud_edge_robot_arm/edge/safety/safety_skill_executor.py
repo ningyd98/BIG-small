@@ -336,6 +336,8 @@ class SafetySkillExecutor:
         scene: object | None,
         telemetry: object | None,
     ) -> dict[str, Any]:
+        scene_timestamp = getattr(scene, "updated_at", None)
+        telemetry_timestamp = getattr(telemetry, "timestamp", None)
         return {
             "decision": result.decision.value,
             "allowed": result.allowed,
@@ -355,11 +357,9 @@ class SafetySkillExecutor:
                 "policy_version": self._policy_version,
                 "policy_hash": self._policy_hash,
             },
-            "scene_timestamp": getattr(scene, "updated_at", None).isoformat()
-            if getattr(scene, "updated_at", None) is not None
-            else "",
-            "telemetry_timestamp": getattr(telemetry, "timestamp", None).isoformat()
-            if getattr(telemetry, "timestamp", None) is not None
+            "scene_timestamp": scene_timestamp.isoformat() if scene_timestamp is not None else "",
+            "telemetry_timestamp": telemetry_timestamp.isoformat()
+            if telemetry_timestamp is not None
             else "",
         }
 

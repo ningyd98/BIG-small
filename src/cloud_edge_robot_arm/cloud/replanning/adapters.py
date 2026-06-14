@@ -6,15 +6,22 @@ ReplannerAdapter operates on LocalReplanningRequest → LocalReplanningResponse.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from importlib import import_module
 from typing import Protocol, runtime_checkable
 
 from cloud_edge_robot_arm.cloud.replanning.context import ReplanningContext
 from cloud_edge_robot_arm.contracts.models import (
+    ControlMode,
+    FailurePolicy,
     LocalReplanningRequest,
     LocalReplanningResponse,
+    SafetyConstraints,
     SkillName,
+    TaskContract,
     TaskStep,
+    TaskTarget,
 )
 
 
@@ -51,10 +58,10 @@ class MockReplannerAdapter:
     def __init__(
         self,
         canned_response: LocalReplanningResponse | None = None,
-        clock: object | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._canned = canned_response
-        self._clock: object = clock if clock is not None else lambda: datetime.now(UTC)
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
 
     @property
     def planner_name(self) -> str:
@@ -68,7 +75,7 @@ class MockReplannerAdapter:
         if self._canned is not None:
             return self._canned
 
-        now = self._clock()  # type: ignore[operator]
+        now = self._clock()
         new_steps = [
             TaskStep(
                 step_id=f"replan-step-{i}",
@@ -102,6 +109,9 @@ class RuleBasedReplannerAdapter:
     Supports CURRENT_STEP, FAILED_STEP_AND_REMAINING, REMAINING_STEPS scopes.
     """
 
+    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
+
     @property
     def planner_name(self) -> str:
         return "rule_based_replanner"
@@ -111,7 +121,7 @@ class RuleBasedReplannerAdapter:
         request: LocalReplanningRequest,
         context: ReplanningContext | None = None,
     ) -> LocalReplanningResponse:
-        now = datetime.now(UTC)
+        now = self._clock()
         scope = request.requested_replan_scope
 
         # MORE_OBSERVATION_REQUIRED — no plan generated
@@ -146,7 +156,7 @@ class RuleBasedReplannerAdapter:
         if failed_step is None:
             failed_step = _fallback_failed_step(request)
             context = ReplanningContext(
-                active_contract=_fallback_contract(request, failed_step),
+                active_contract=_fallback_contract(request, failed_step, now),
                 failed_step=failed_step,
                 completed_steps=[],
             )
@@ -241,12 +251,43 @@ def _fallback_failed_step(request: LocalReplanningRequest) -> TaskStep:
     )
 
 
-def _fallback_contract(request: LocalReplanningRequest, failed_step: TaskStep) -> object:
-    return type(
-        "FallbackReplanningContract",
-        (),
-        {"steps": [failed_step], "task_id": request.task_id},
-    )()
+def _fallback_contract(
+    request: LocalReplanningRequest,
+    failed_step: TaskStep,
+    now: datetime,
+) -> TaskContract:
+    return TaskContract(
+        task_id=request.task_id,
+        plan_version=request.current_plan_version,
+        command_seq=request.current_command_seq,
+        timestamp=now,
+        control_mode=ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY,
+        issued_at=now,
+        valid_until=now + timedelta(days=365),
+        user_instruction="fallback local replan context",
+        scene_version=request.current_scene_version,
+        expected_scene_version=request.current_scene_version,
+        task_target=TaskTarget(
+            object_id="unknown-object",
+            object_class="unknown",
+            target_region_id="unknown-region",
+        ),
+        current_step_id=failed_step.step_id,
+        steps=[failed_step],
+        safety_constraints=SafetyConstraints(
+            max_joint_velocity=1.0,
+            max_tcp_velocity=0.5,
+            minimum_safe_height=0.08,
+            workspace_id="fallback",
+        ),
+        failure_policy=FailurePolicy(
+            local_retry_limit=0,
+            on_timeout="pause",
+            on_safety_rejection="stop",
+            on_network_loss="pause",
+        ),
+        completion_criteria=["manual_review_required"],
+    )
 
 
 class OpenAICompatibleReplannerAdapter:
@@ -272,6 +313,7 @@ class OpenAICompatibleReplannerAdapter:
         model: str = "gpt-4o",
         timeout_s: float = 30.0,
         max_response_bytes: int = 256 * 1024,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         if not base_url or not api_key:
             raise ValueError("OpenAICompatibleReplannerAdapter requires base_url and api_key")
@@ -280,6 +322,7 @@ class OpenAICompatibleReplannerAdapter:
         self._model = model
         self._timeout_s = timeout_s
         self._max_response_bytes = max_response_bytes
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
         self._failure_count = 0
         self._circuit_open = False
 
@@ -301,7 +344,7 @@ class OpenAICompatibleReplannerAdapter:
                 new_plan_version=request.current_plan_version,
                 new_command_seq=request.current_command_seq,
                 planner_name=self.planner_name,
-                created_at=datetime.now(UTC),
+                created_at=self._clock(),
             )
         try:
             return self._call_llm(request)
@@ -316,7 +359,7 @@ class OpenAICompatibleReplannerAdapter:
                 new_plan_version=request.current_plan_version,
                 new_command_seq=request.current_command_seq,
                 planner_name=self.planner_name,
-                created_at=datetime.now(UTC),
+                created_at=self._clock(),
             )
 
     def _call_llm(self, request: LocalReplanningRequest) -> LocalReplanningResponse:
@@ -338,7 +381,7 @@ class OpenAICompatibleReplannerAdapter:
         )
         # HTTP call — requires httpx in production
         try:
-            import httpx  # type: ignore[import-not-found]
+            httpx = import_module("httpx")
         except ImportError as exc:
             raise RuntimeError("httpx is required for OpenAICompatibleReplannerAdapter") from exc
         with httpx.Client(timeout=self._timeout_s) as client:
@@ -358,22 +401,47 @@ class OpenAICompatibleReplannerAdapter:
         content = data["choices"][0]["message"]["content"]
         parsed = self._extract_json(content)
         raw_steps = parsed.get("new_steps", [])
+        if not isinstance(raw_steps, list):
+            raise RuntimeError("LLM response new_steps must be a list")
         new_steps = [TaskStep.model_validate(step) for step in raw_steps]
-        outcome = parsed.get("outcome", "REPLANNED")
+        outcome = self._str_field(parsed.get("outcome", "REPLANNED"), "outcome")
         if outcome == "REPLANNED" and not new_steps:
             raise RuntimeError("LLM returned REPLANNED without new_steps")
-        now = datetime.now(UTC)
+        reason = self._str_field(parsed.get("reason", "LLM-generated replan"), "reason")
+        new_plan_version = self._int_field(
+            parsed.get("new_plan_version", request.current_plan_version + 1),
+            "new_plan_version",
+        )
+        new_command_seq = self._int_field(
+            parsed.get("new_command_seq", request.current_command_seq + 1),
+            "new_command_seq",
+        )
+        now = self._clock()
         return LocalReplanningResponse(
             request_id=request.request_id,
             outcome=outcome,
-            reason=parsed.get("reason", "LLM-generated replan"),
+            reason=reason,
             new_steps=new_steps,
-            new_plan_version=int(parsed.get("new_plan_version", request.current_plan_version + 1)),
-            new_command_seq=int(parsed.get("new_command_seq", request.current_command_seq + 1)),
+            new_plan_version=new_plan_version,
+            new_command_seq=new_command_seq,
             planner_name=self.planner_name,
             prompt_version="1.0",
             created_at=now,
         )
+
+    @staticmethod
+    def _str_field(value: object, field_name: str) -> str:
+        if isinstance(value, str):
+            return value
+        raise RuntimeError(f"LLM response {field_name} must be a string")
+
+    @staticmethod
+    def _int_field(value: object, field_name: str) -> int:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            return int(value)
+        raise RuntimeError(f"LLM response {field_name} must be an integer")
 
     @staticmethod
     def _extract_json(content: str) -> dict[str, object]:

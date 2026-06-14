@@ -587,4 +587,5 @@ def test_replanning_service_get_result() -> None:
     service.process(request)
     result = service.get_result("req-006")
     assert result is not None
-    assert result.outcome == "REPLANNED"
+    assert result.outcome == "REJECTED"
+    assert "checkpoint not found" in result.validation_errors

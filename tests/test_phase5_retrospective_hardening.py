@@ -186,9 +186,11 @@ def test_supervision_repository_cas_allows_only_one_version_update() -> None:
         new_command_seq=2,
     )
 
+    status = repo.get_status(contract.task_id)
     assert first is True
     assert second is False
-    assert repo.get_status(contract.task_id).last_plan_version == 2
+    assert status is not None
+    assert status.last_plan_version == 2
 
 
 def test_update_preserves_completed_steps_and_uses_trusted_versions() -> None:
@@ -369,13 +371,29 @@ def test_production_config_requires_explicit_integrations() -> None:
     with pytest.raises(ValueError, match="DATABASE_URL"):
         AppConfig.from_env({"RUNTIME_PROFILE": "production"})
 
+    with pytest.raises(ValueError, match="test-double"):
+        AppConfig.from_env(
+            {
+                "RUNTIME_PROFILE": "production",
+                "DATABASE_URL": "sqlite:////var/lib/big-small/robot_control.db",
+                "MQTT_BROKER_URL": "mqtt://broker.internal:1883",
+                "PLANNER_API_ENDPOINT": "https://planner.internal/v1/chat/completions",
+                "PLANNER_API_KEY": "prod-secret-key",
+                "ROBOT_ADAPTER": "mock_robot",
+                "TELEMETRY_PROVIDER": "robot_sdk",
+                "SCENE_STATE_PROVIDER": "vision_pipeline",
+                "SUPERVISION_REPOSITORY": "sqlite",
+                "SUPERVISION_SCHEDULER": "asyncio",
+            }
+        )
+
     cfg = AppConfig.from_env(
         {
             "RUNTIME_PROFILE": "production",
             "DATABASE_URL": "sqlite:////var/lib/big-small/robot_control.db",
             "MQTT_BROKER_URL": "mqtt://broker.internal:1883",
             "PLANNER_API_ENDPOINT": "https://planner.internal/v1/chat/completions",
-            "PLANNER_API_KEY": "secret-placeholder",
+            "PLANNER_API_KEY": "prod-secret-key",
             "ROBOT_ADAPTER": "real_robot_sdk",
             "TELEMETRY_PROVIDER": "robot_sdk",
             "SCENE_STATE_PROVIDER": "vision_pipeline",

@@ -157,12 +157,12 @@ class TargetChangeDetector:
                 obj_id = getattr(obj, "object_id", None)
                 if obj_id == target_id:
                     pose_raw = getattr(obj, "pose", None)
-                if pose_raw is not None:
-                    return pose_raw  # type: ignore[no-any-return]
+                    if isinstance(pose_raw, Pose):
+                        return pose_raw
         for obj in objects:
             pose = getattr(obj, "pose", None)
-            if pose is not None:
-                return pose  # type: ignore[no-any-return]
+            if isinstance(pose, Pose):
+                return pose
         return None
 
     @staticmethod

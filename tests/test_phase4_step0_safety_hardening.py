@@ -12,6 +12,8 @@ from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor
 from cloud_edge_robot_arm.edge.safety.providers import (
     MockSceneStateProvider,
     MockTelemetryProvider,
+    SceneSnapshot,
+    TelemetrySample,
 )
 from cloud_edge_robot_arm.edge.safety.shield import SafetyShield, load_safety_config
 from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockScene
@@ -19,6 +21,21 @@ from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockSce
 
 def _make_scene() -> MockScene:
     return MockScene.with_default_pick_place_scene()
+
+
+class RealTelemetryProvider:
+    def latest(self) -> TelemetrySample:
+        return TelemetrySample(
+            timestamp=datetime.now(UTC),
+            tcp_velocity=0.0,
+            joint_velocities=[],
+            acceleration=0.0,
+        )
+
+
+class RealSceneStateProvider:
+    def snapshot(self) -> SceneSnapshot:
+        return SceneSnapshot(scene_version=1, updated_at=datetime.now(UTC))
 
 
 # ── RUNTIME_PROFILE validation ──────────────────────────────────────────────
@@ -35,7 +52,7 @@ def test_runtime_profile_rejects_unknown_value() -> None:
 
 
 @pytest.mark.parametrize("profile", ["test", "simulation", "production"])
-def test_runtime_profile_accepts_valid_values(profile):
+def test_runtime_profile_accepts_valid_values(profile: str) -> None:
     env = {"RUNTIME_PROFILE": profile}
     if profile == "production":
         env.update(
@@ -43,7 +60,7 @@ def test_runtime_profile_accepts_valid_values(profile):
                 "DATABASE_URL": "sqlite:////var/lib/big-small/robot_control.db",
                 "MQTT_BROKER_URL": "mqtt://broker.internal:1883",
                 "PLANNER_API_ENDPOINT": "https://planner.internal/v1/chat/completions",
-                "PLANNER_API_KEY": "secret-placeholder",
+                "PLANNER_API_KEY": "prod-secret-key",
                 "ROBOT_ADAPTER": "real_robot_sdk",
                 "TELEMETRY_PROVIDER": "robot_sdk",
                 "SCENE_STATE_PROVIDER": "vision_pipeline",
@@ -86,12 +103,34 @@ def test_production_mode_rejects_missing_scene_provider() -> None:
         )
 
 
+def test_production_mode_rejects_mock_providers() -> None:
+    robot = MockRobotAdapter(scene=_make_scene())
+    robot.connect()
+    shield = SafetyShield(load_safety_config())
+    with pytest.raises(ValueError, match="MockTelemetryProvider"):
+        TaskExecutor(
+            robot=robot,
+            shield=shield,
+            runtime_profile="production",
+            telemetry_provider=MockTelemetryProvider(),
+            scene_provider=RealSceneStateProvider(),
+        )
+    with pytest.raises(ValueError, match="MockSceneStateProvider"):
+        TaskExecutor(
+            robot=robot,
+            shield=shield,
+            runtime_profile="production",
+            telemetry_provider=RealTelemetryProvider(),
+            scene_provider=MockSceneStateProvider(robot),
+        )
+
+
 def test_production_mode_accepts_real_providers() -> None:
     robot = MockRobotAdapter(scene=_make_scene())
     robot.connect()
     shield = SafetyShield(load_safety_config())
-    tp = MockTelemetryProvider()
-    sp = MockSceneStateProvider(robot)
+    tp = RealTelemetryProvider()
+    sp = RealSceneStateProvider()
     executor = TaskExecutor(
         robot=robot,
         shield=shield,

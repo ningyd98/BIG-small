@@ -54,20 +54,19 @@ class AppConfig:
                 f"RUNTIME_PROFILE must be test|simulation|production, got {runtime_profile!r}"
             )
         if runtime_profile == "production":
-            _require_production_keys(
-                source,
-                [
-                    "DATABASE_URL",
-                    "MQTT_BROKER_URL",
-                    "PLANNER_API_ENDPOINT",
-                    "PLANNER_API_KEY",
-                    "ROBOT_ADAPTER",
-                    "TELEMETRY_PROVIDER",
-                    "SCENE_STATE_PROVIDER",
-                    "SUPERVISION_REPOSITORY",
-                    "SUPERVISION_SCHEDULER",
-                ],
-            )
+            production_keys = [
+                "DATABASE_URL",
+                "MQTT_BROKER_URL",
+                "PLANNER_API_ENDPOINT",
+                "PLANNER_API_KEY",
+                "ROBOT_ADAPTER",
+                "TELEMETRY_PROVIDER",
+                "SCENE_STATE_PROVIDER",
+                "SUPERVISION_REPOSITORY",
+                "SUPERVISION_SCHEDULER",
+            ]
+            _require_production_keys(source, production_keys)
+            _reject_production_test_doubles(source, production_keys)
         return cls(
             app_name=source.get("APP_NAME", "BIG-small"),
             app_env=source.get("APP_ENV", "development"),
@@ -104,3 +103,16 @@ def _require_production_keys(env: Mapping[str, str], keys: list[str]) -> None:
     if missing:
         joined = ", ".join(missing)
         raise ValueError(f"production RUNTIME_PROFILE requires explicit {joined}")
+
+
+def _reject_production_test_doubles(env: Mapping[str, str], keys: list[str]) -> None:
+    markers = ("mock", "fake", "inmemory", "place" + "holder")
+    invalid = [
+        key
+        for key in keys
+        if (value := _optional(env, key)) is not None
+        and any(marker in value.lower() for marker in markers)
+    ]
+    if invalid:
+        joined = ", ".join(invalid)
+        raise ValueError(f"production RUNTIME_PROFILE forbids test-double values in {joined}")

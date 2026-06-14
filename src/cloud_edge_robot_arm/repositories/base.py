@@ -15,20 +15,16 @@ from cloud_edge_robot_arm.repositories.models import (
 
 class TaskRepository(ABC):
     @abstractmethod
-    def create_task_from_contract(self, contract: TaskContract) -> TaskRecord:
-        raise NotImplementedError
+    def create_task_from_contract(self, contract: TaskContract) -> TaskRecord: ...
 
     @abstractmethod
-    def get_task(self, task_id: str) -> TaskRecord | None:
-        raise NotImplementedError
+    def get_task(self, task_id: str) -> TaskRecord | None: ...
 
     @abstractmethod
-    def update_task_state(self, task_id: str, state: str) -> None:
-        raise NotImplementedError
+    def update_task_state(self, task_id: str, state: str) -> None: ...
 
     @abstractmethod
-    def list_tasks_by_state(self, state: str) -> list[TaskRecord]:
-        raise NotImplementedError
+    def list_tasks_by_state(self, state: str) -> list[TaskRecord]: ...
 
     @abstractmethod
     def record_state_transition(
@@ -38,28 +34,22 @@ class TaskRepository(ABC):
         from_state: str,
         to_state: str,
         reason: str,
-    ) -> StateTransitionRecord:
-        raise NotImplementedError
+    ) -> StateTransitionRecord: ...
 
     @abstractmethod
-    def list_state_transitions(self, task_id: str) -> list[StateTransitionRecord]:
-        raise NotImplementedError
+    def list_state_transitions(self, task_id: str) -> list[StateTransitionRecord]: ...
 
     @abstractmethod
-    def record_step_execution(self, record: StepExecutionRecord) -> StepExecutionRecord:
-        raise NotImplementedError
+    def record_step_execution(self, record: StepExecutionRecord) -> StepExecutionRecord: ...
 
     @abstractmethod
-    def list_step_executions(self, task_id: str) -> list[StepExecutionRecord]:
-        raise NotImplementedError
+    def list_step_executions(self, task_id: str) -> list[StepExecutionRecord]: ...
 
     @abstractmethod
-    def record_action_execution(self, record: ActionExecutionRecord) -> ActionExecutionRecord:
-        raise NotImplementedError
+    def record_action_execution(self, record: ActionExecutionRecord) -> ActionExecutionRecord: ...
 
     @abstractmethod
-    def list_action_executions(self, task_id: str) -> list[ActionExecutionRecord]:
-        raise NotImplementedError
+    def list_action_executions(self, task_id: str) -> list[ActionExecutionRecord]: ...
 
     @abstractmethod
     def accept_command(
@@ -67,8 +57,7 @@ class TaskRepository(ABC):
         contract: TaskContract,
         *,
         payload_hash: str,
-    ) -> AcceptedCommandDecision:
-        raise NotImplementedError
+    ) -> AcceptedCommandDecision: ...
 
     @abstractmethod
     def record_audit_event(
@@ -77,12 +66,10 @@ class TaskRepository(ABC):
         task_id: str,
         event_type: str,
         details: dict[str, object] | None = None,
-    ) -> AuditEventRecord:
-        raise NotImplementedError
+    ) -> AuditEventRecord: ...
 
     @abstractmethod
-    def list_audit_events(self, task_id: str) -> list[AuditEventRecord]:
-        raise NotImplementedError
+    def list_audit_events(self, task_id: str) -> list[AuditEventRecord]: ...
 
     def close(self) -> None:
         return None

@@ -401,10 +401,11 @@ class SQLiteEventAutonomyRepository:
     # ── generic helpers ──────────────────────────────────────────────────
 
     def _existing_by_key(self, table: str, key_col: str, key: str) -> sqlite3.Row | None:
-        return self._conn.execute(
+        row: sqlite3.Row | None = self._conn.execute(
             f"SELECT payload_json, payload_hash FROM {table} WHERE {key_col} = ?",
             (key,),
         ).fetchone()
+        return row
 
     def _json(self, value: Any) -> str:
         return json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
@@ -751,13 +752,16 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock:
             row = self._existing_by_key("completion_summaries", "summary_id", summary.summary_id)
             if row is not None:
+                existing = CompletionSummary.model_validate_json(row["payload_json"])
+                if existing.summary_hash and existing.summary_hash == summary.summary_hash:
+                    return existing
                 _same_or_conflict(
                     "CompletionSummary",
                     summary.summary_id,
                     row["payload_hash"] or _canonical_hash(json.loads(row["payload_json"])),
                     payload_hash,
                 )
-                return CompletionSummary.model_validate_json(row["payload_json"])
+                return existing
             saved = summary.model_copy(
                 update={"summary_hash": summary.summary_hash or payload_hash}
             )

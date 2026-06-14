@@ -81,7 +81,7 @@ def main() -> int:
     )
     result = shield.pre_check(ctx)
     workspace = [r for r in result.evaluated_rules if r.rule_id == "WORKSPACE"]
-    payload = {
+    payload: dict[str, object] = {
         "success": result.allowed,
         "state": "FAILED" if not result.allowed else "COMPLETED",
         "error_code": workspace[0].reason_code if workspace else None,

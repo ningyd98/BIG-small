@@ -45,7 +45,7 @@ def main() -> int:
         wall_clock_now=issued,
     )
     result = shield.pre_check(ctx)
-    payload = {
+    payload: dict[str, object] = {
         "success": result.allowed,
         "state": "PAUSED" if result.decision.value == "PAUSE" else "FAILED",
         "error_code": result.limiting_rule.reason_code if result.limiting_rule else None,

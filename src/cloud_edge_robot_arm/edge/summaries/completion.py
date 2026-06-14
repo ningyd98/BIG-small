@@ -45,12 +45,12 @@ class CompletionSummaryBuilder:
         correlation_id: str = "",
     ) -> CompletionSummary:
         now = datetime.now(UTC)
-        summary_id = f"cs-{now.strftime('%Y%m%d%H%M%S%f')}"
+        summary_id = f"cs-{contract.task_id}"
 
         start = started_at or contract.issued_at
         total_ms = int((now - start).total_seconds() * 1000)
 
-        criteria = completion_criteria_results or {}
+        criteria = dict(completion_criteria_results or {})
         # Auto-validate: all steps completed
         all_step_ids = {s.step_id for s in contract.steps}
         criteria["all_steps_completed"] = all_step_ids.issubset(set(completed_step_ids))

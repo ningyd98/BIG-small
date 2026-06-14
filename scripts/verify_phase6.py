@@ -30,7 +30,7 @@ def report(index: int, name: str, func: Callable[[], None]) -> bool:
     return True
 
 
-def make_contract(**overrides: Any):
+def make_contract(**overrides: Any) -> Any:
     from cloud_edge_robot_arm.contracts import (
         ControlMode,
         FailurePolicy,
@@ -135,7 +135,7 @@ def make_contract(**overrides: Any):
     return TaskContract(**data)
 
 
-def run_event_executor(grasp_failures: int = 1):
+def run_event_executor(grasp_failures: int = 1) -> tuple[Any, Any, Any, Any, Any]:
     from cloud_edge_robot_arm.edge.event_mode.controller import EventTriggeredModeController
     from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor
     from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
@@ -368,6 +368,7 @@ def check_replan_service_adapter() -> None:
     from cloud_edge_robot_arm.contracts.models import (
         EdgeEvent,
         EdgeEventType,
+        ExecutionCheckpoint,
         FailureSummary,
         LocalReplanningRequest,
     )
@@ -377,6 +378,8 @@ def check_replan_service_adapter() -> None:
 
     repo = InMemoryEventAutonomyRepository()
     now = datetime.now(UTC)
+    contract = make_contract(task_id="task-rp")
+    repo.save_active_contract(contract, plan_id="plan-rp", robot_id="robot-rp")
     repo.save_event(
         EdgeEvent(
             event_id="evt-rp",
@@ -386,6 +389,9 @@ def check_replan_service_adapter() -> None:
             plan_version=1,
             command_seq=1,
             timestamp=now,
+            robot_id="robot-rp",
+            plan_id="plan-rp",
+            step_id="grasp",
         )
     )
     repo.save_failure_summary(
@@ -400,6 +406,26 @@ def check_replan_service_adapter() -> None:
             plan_version=1,
             command_seq=1,
             timestamp=now,
+            robot_id="robot-rp",
+            plan_id="plan-rp",
+        )
+    )
+    repo.save_execution_checkpoint(
+        ExecutionCheckpoint(
+            checkpoint_id="ckpt-rp",
+            task_id="task-rp",
+            plan_id="plan-rp",
+            robot_id="robot-rp",
+            plan_version=1,
+            command_seq=1,
+            current_step_id="grasp",
+            current_step_index=1,
+            failed_step_id="grasp",
+            last_successful_step_id="approach",
+            completed_step_ids=["approach"],
+            pending_step_ids=["grasp", "lift", "move-region", "place", "release", "verify"],
+            scene_version=1,
+            execution_state="WAITING_CLOUD_REPLAN",
         )
     )
     req = LocalReplanningRequest(
@@ -408,8 +434,12 @@ def check_replan_service_adapter() -> None:
         failure_summary_id="fs-rp",
         robot_id="robot-rp",
         task_id="task-rp",
-        current_plan_version=0,
+        plan_id="plan-rp",
+        current_plan_version=1,
         current_command_seq=1,
+        completed_step_ids=["approach"],
+        failed_step_id="grasp",
+        last_successful_step_id="approach",
         current_scene_version=1,
     )
     result = LocalReplanningService(adapter=MockReplannerAdapter(), repository=repo).process(req)
@@ -513,6 +543,13 @@ def check_phase_regression(script: str) -> None:
     assert proc.returncode == 0, (proc.stdout + proc.stderr)[-1000:]
 
 
+def check_phase_regressions() -> None:
+    check_phase_regression("verify_phase3.py")
+    check_phase_regression("verify_phase3_1.py")
+    check_phase_regression("verify_phase3_2.py")
+    check_phase_regression("verify_phase4.py")
+
+
 def main() -> int:
     print("Phase 6.1 Acceptance Verification", flush=True)
     print("=" * 60, flush=True)
@@ -541,15 +578,7 @@ def main() -> int:
         ("production rejects default InMemory", check_production_rejects_inmemory),
         ("OpenAICompatible config fail-fast", check_openai_config_failfast),
         ("Phase 5 no regression", lambda: check_phase_regression("verify_phase5.py")),
-        (
-            "Phase 3/3.1/3.2/4 no regression",
-            lambda: [
-                check_phase_regression("verify_phase3.py"),
-                check_phase_regression("verify_phase3_1.py"),
-                check_phase_regression("verify_phase3_2.py"),
-                check_phase_regression("verify_phase4.py"),
-            ],
-        ),
+        ("Phase 3/3.1/3.2/4 no regression", check_phase_regressions),
     ]
     passed = 0
     for i, (name, func) in enumerate(checks, start=1):

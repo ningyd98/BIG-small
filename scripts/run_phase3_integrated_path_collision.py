@@ -53,7 +53,7 @@ def main() -> int:
     )
     result = shield.pre_check(ctx)
     path_rules = [r for r in result.evaluated_rules if r.rule_id == "PATH_COLLISION"]
-    payload = {
+    payload: dict[str, object] = {
         "success": result.allowed,
         "state": "FAILED" if not result.allowed else "COMPLETED",
         "error_code": path_rules[0].reason_code if path_rules else None,

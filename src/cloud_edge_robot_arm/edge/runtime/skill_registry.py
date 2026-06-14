@@ -119,7 +119,7 @@ class EmptyParams(SkillParams):
 
 
 class HomeParams(MotionParams):
-    pass
+    """HOME uses only shared motion tuning fields."""
 
 
 class ObjectParams(MotionParams):
@@ -143,7 +143,7 @@ class RetreatParams(MotionParams):
 
 
 class ReleaseParams(MotionParams):
-    pass
+    """RELEASE uses only shared motion tuning fields."""
 
 
 class VerifyParams(SkillParams):

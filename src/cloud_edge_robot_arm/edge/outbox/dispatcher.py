@@ -38,12 +38,12 @@ class OutboxDispatcher:
         repository: EventAutonomyRepository,
         send_fn: Callable[[PendingMessage], bool],
         poll_interval_ms: int = 1000,
-        clock: object | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repo = repository
         self._send_fn = send_fn
         self._poll_interval = poll_interval_ms / 1000.0
-        self._clock: object = clock if clock is not None else lambda: datetime.now(UTC)
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
         self._running = False
         self._thread: threading.Thread | None = None
 
@@ -83,10 +83,10 @@ class OutboxDispatcher:
     def _sleep(self, seconds: float) -> None:
         if seconds <= 0:
             return
-        end = self._clock() + timedelta(seconds=seconds)  # type: ignore[operator]
+        end = self._clock() + timedelta(seconds=seconds)
         while self._running:
-            now = self._clock()  # type: ignore[operator]
+            now = self._clock()
             if now >= end:
                 break
-            remaining = (end - now).total_seconds()  # type: ignore[operator]
+            remaining = (end - now).total_seconds()
             time.sleep(min(0.1, max(0, remaining)))

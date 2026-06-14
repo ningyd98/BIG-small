@@ -15,6 +15,7 @@ from cloud_edge_robot_arm.contracts.models import (
     EdgeEvent,
     EdgeEventType,
     FailureSummary,
+    SkillName,
     TaskContract,
 )
 from cloud_edge_robot_arm.edge.events.models import DetectionContext
@@ -200,7 +201,7 @@ class FailureSummaryBuilder:
         return [s for s in all_steps if s not in done]
 
     @staticmethod
-    def _failed_skill(contract: TaskContract, failed_step_id: str | None):
+    def _failed_skill(contract: TaskContract, failed_step_id: str | None) -> SkillName | None:
         if not failed_step_id:
             return None
         for step in contract.steps:

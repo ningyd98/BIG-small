@@ -104,7 +104,7 @@ def _event_contract(**overrides: object) -> TaskContract:
     return TaskContract(**kwargs)  # type: ignore[arg-type]
 
 
-def test_task_executor_event_mode_retries_failed_step_before_next_step():
+def test_task_executor_event_mode_retries_failed_step_before_next_step() -> None:
     """APPROACH succeeds, GRASP fails once, RETRY_STEP repeats GRASP, then PLACE runs."""
     from datetime import timedelta
 
@@ -229,7 +229,7 @@ def test_task_executor_event_mode_retries_failed_step_before_next_step():
 # ── Scenario A: Local retry re-executes same step ──────────────────────
 
 
-def test_e2e_retry_reexecutes_same_step_not_next():
+def test_e2e_retry_reexecutes_same_step_not_next() -> None:
     """APPROACH → GRASP fails → RETRY_STEP → GRASP succeeds → PLACE.
     Assert sequence: [APPROACH, GRASP, GRASP, PLACE]."""
     # This test validates the while-loop structure: RETRY_STEP stays on same index.
@@ -251,7 +251,7 @@ def test_e2e_retry_reexecutes_same_step_not_next():
 # ── Scenario B: Budget exhausted → replan ──────────────────────────────
 
 
-def test_e2e_budget_exhausted_triggers_replan():
+def test_e2e_budget_exhausted_triggers_replan() -> None:
     """All retries consumed, budget exhausted."""
     repo = InMemoryEventAutonomyRepository()
     budget_svc = RetryBudgetService(repository=repo)
@@ -268,7 +268,7 @@ def test_e2e_budget_exhausted_triggers_replan():
 # ── Scenario C: CAS conflict ───────────────────────────────────────────
 
 
-def test_cas_old_replan_result_rejected():
+def test_cas_old_replan_result_rejected() -> None:
     """New version committed first, old version CAS fails."""
     repo = InMemoryEventAutonomyRepository()
     first = repo.advance_plan_version_if_current(
@@ -292,7 +292,7 @@ def test_cas_old_replan_result_rejected():
 # ── Scenario D: SQLite restart ─────────────────────────────────────────
 
 
-def test_sqlite_restart_preserves_state():
+def test_sqlite_restart_preserves_state() -> None:
     """Consume retry, close repo, reopen — all state persists."""
     db_path = tempfile.mktemp(suffix=".sqlite3")
     try:
@@ -322,7 +322,7 @@ def test_sqlite_restart_preserves_state():
 # ── Scenario E: API persistence round-trip ─────────────────────────────
 
 
-def test_api_persistence_round_trip():
+def test_api_persistence_round_trip() -> None:
     """POST event → GET returns same data. Duplicate is idempotent."""
     repo = InMemoryEventAutonomyRepository()
     from cloud_edge_robot_arm.contracts.models import EdgeEvent
@@ -352,7 +352,7 @@ def test_api_persistence_round_trip():
 # ── Scenario F: Completion failure blocks success ──────────────────────
 
 
-def test_completion_evaluator_blocks_success_on_failure():
+def test_completion_evaluator_blocks_success_on_failure() -> None:
     """All steps done but criteria fail → not completed."""
     contract = _event_contract()
     evaluator = CompletionEvaluator()
@@ -389,7 +389,7 @@ def test_completion_evaluator_blocks_success_on_failure():
 # ── Extra: Outbox dedup ────────────────────────────────────────────────
 
 
-def test_outbox_cas_prevents_double_claim():
+def test_outbox_cas_prevents_double_claim() -> None:
     repo = InMemoryEventAutonomyRepository()
     msg = PendingMessage(
         message_id="msg-ob-dedup",
@@ -406,7 +406,7 @@ def test_outbox_cas_prevents_double_claim():
     assert c2 is None, "Second claim must fail — already SENDING"
 
 
-def test_sqlite_outbox_retry_wait_survives_restart_and_reclaims():
+def test_sqlite_outbox_retry_wait_survives_restart_and_reclaims() -> None:
     """Failed SQLite outbox sends persist as RETRY_WAIT and are reclaimable after restart."""
     db_path = tempfile.mktemp(suffix=".sqlite3")
     try:
@@ -448,7 +448,7 @@ def test_sqlite_outbox_retry_wait_survives_restart_and_reclaims():
 # ── Extra: Budget CAS prevents double consume ──────────────────────────
 
 
-def test_budget_cas_prevents_double_consume():
+def test_budget_cas_prevents_double_consume() -> None:
     repo = InMemoryEventAutonomyRepository()
     budget = RecoveryBudget(
         budget_id="bud-cas2",
@@ -470,7 +470,7 @@ def test_budget_cas_prevents_double_consume():
 # ── Extra: Replan rejects completed step modification ──────────────────
 
 
-def test_replan_rejects_completed_step_modification():
+def test_replan_rejects_completed_step_modification() -> None:
     from cloud_edge_robot_arm.cloud.replanning.validators import (
         CompletedStepsProtectionValidator,
     )
@@ -538,7 +538,7 @@ def test_replan_rejects_completed_step_modification():
 # ── Extra: Old plan_version rejected ───────────────────────────────────
 
 
-def test_old_plan_version_rejected():
+def test_old_plan_version_rejected() -> None:
     repo = InMemoryEventAutonomyRepository()
     # Advance to version 3
     assert repo.advance_plan_version_if_current("task-v", 0, 0, 3, 1) is True

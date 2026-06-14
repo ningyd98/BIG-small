@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from cloud_edge_robot_arm.contracts.models import (
@@ -56,6 +57,10 @@ class ReplanMergeValidator:
             errors.append("new_command_seq must increase")
         if response.created_at >= active_contract.valid_until:
             errors.append("replan result arrived after active contract expiry")
+        replacement_ids = [step.step_id for step in response.new_steps]
+        for step_id in replacement_ids:
+            if step_id in completed_set:
+                errors.append(f"completed step {step_id} cannot appear in replacement steps")
         for step in response.new_steps:
             low_level = _LOW_LEVEL_PARAMETER_KEYS.intersection(step.parameters)
             if low_level:
@@ -72,6 +77,8 @@ class ReplanMergeValidator:
             completed_step_ids=completed,
         )
         candidate_ids = [step.step_id for step in candidate]
+        if len(candidate_ids) != len(set(candidate_ids)):
+            errors.append("merged contract contains duplicate step_id values")
         for step_id in completed:
             if step_id not in candidate_ids:
                 errors.append(f"completed step {step_id} missing after merge")
@@ -141,8 +148,14 @@ class ReplanMergeValidator:
 class ReplanContractAssembler:
     """Builds a new trusted TaskContract from a validated partial replan."""
 
-    def __init__(self, *, ttl_seconds: int = 300) -> None:
+    def __init__(
+        self,
+        *,
+        ttl_seconds: int = 300,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._ttl_seconds = ttl_seconds
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
 
     def assemble(
         self,
@@ -159,7 +172,7 @@ class ReplanContractAssembler:
             failed_step_id=request.failed_step_id or checkpoint.failed_step_id,
             completed_step_ids=checkpoint.completed_step_ids,
         )
-        now = datetime.now(UTC)
+        now = self._clock()
         valid_until = max(active_contract.valid_until, now + timedelta(seconds=self._ttl_seconds))
         pending = [
             step for step in merged_steps if step.step_id not in set(checkpoint.completed_step_ids)

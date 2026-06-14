@@ -89,10 +89,7 @@ def check_scene_sufficiency(
         for obj in scene.objects
         if _object_matches_instruction(obj.object_id, obj.object_class, instruction)
     ]
-    if len(matching_objects) == 0:
-        # Could be a refill task, so just note that no explicit match found
-        pass
-    elif len(matching_objects) > 1:
+    if len(matching_objects) > 1:
         ids = ", ".join(obj.object_id for obj in matching_objects)
         return f"ambiguous target: multiple matching objects ({ids})"
 

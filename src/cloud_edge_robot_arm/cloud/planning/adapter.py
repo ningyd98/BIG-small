@@ -283,9 +283,6 @@ class RuleBasedPlannerAdapter:
     REQUEST_MORE_OBSERVATION via a sentinel field that the pipeline translates.
     """
 
-    def __init__(self) -> None:
-        pass
-
     @property
     def planner_name(self) -> str:
         return "rule_based"

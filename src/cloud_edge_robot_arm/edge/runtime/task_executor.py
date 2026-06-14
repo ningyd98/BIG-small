@@ -94,6 +94,10 @@ class TaskExecutor:
                     "scene_provider is required in production mode; "
                     "MockSceneStateProvider is not allowed"
                 )
+            if isinstance(telemetry_provider, MockTelemetryProvider):
+                raise ValueError("MockTelemetryProvider is not allowed in production mode")
+            if isinstance(scene_provider, MockSceneStateProvider):
+                raise ValueError("MockSceneStateProvider is not allowed in production mode")
 
         self._telemetry_provider = telemetry_provider or MockTelemetryProvider()
         self._scene_provider = scene_provider or MockSceneStateProvider(

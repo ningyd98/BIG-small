@@ -78,7 +78,7 @@ class PlanningResponse(BaseModel):
 
 
 class DispatchRequest(BaseModel):
-    pass  # No body needed for now — may add override options in future
+    """Empty dispatch command body."""
 
 
 class DispatchResponse(BaseModel):
@@ -130,7 +130,7 @@ class SupervisionStartRequest(BaseModel):
 
 
 class EdgeStatusSnapshotRequest(EdgeStatusSnapshot):
-    pass
+    """Request body alias for persisted edge status snapshots."""
 
 
 # ── Phase 6: Event-Triggered Edge Autonomy ──────────────────────────────────
