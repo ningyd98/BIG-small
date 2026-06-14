@@ -355,14 +355,14 @@ def test_supervision_api_rejects_robot_status_path_mismatch() -> None:
     assert response.json()["error"] == "robot_id_mismatch"
 
 
-def test_planning_capabilities_do_not_advertise_phase6_control_mode() -> None:
+def test_planning_capabilities_advertise_phase6_without_auto_mode() -> None:
     app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
     client = TestClient(app)
     response = client.get("/api/v1/planning/capabilities")
     assert response.status_code == 200
     modes = response.json()["supported_control_modes"]
-    assert "PERIODIC_CLOUD_SUPERVISION" in modes
-    assert "EVENT_TRIGGERED_EDGE_AUTONOMY" not in modes
+    assert modes == ["PERIODIC_CLOUD_SUPERVISION", "EVENT_TRIGGERED_EDGE_AUTONOMY"]
+    assert "AUTO" not in modes
 
 
 def test_production_config_requires_explicit_integrations() -> None:

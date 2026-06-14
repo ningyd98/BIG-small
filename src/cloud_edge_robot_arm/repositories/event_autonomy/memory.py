@@ -62,9 +62,7 @@ class InMemoryEventAutonomyRepository:
         ids = self._events_by_task.get(task_id, [])
         return [self._events[eid] for eid in ids if eid in self._events]
 
-    def mark_event_handled(
-        self, event_id: str, handled_at: datetime | None = None
-    ) -> bool:
+    def mark_event_handled(self, event_id: str, handled_at: datetime | None = None) -> bool:
         if event_id not in self._events:
             return False
         return True
@@ -148,67 +146,55 @@ class InMemoryEventAutonomyRepository:
             self._transitions.setdefault(task_id, []).append(entry)
             self._states[task_id] = to_state
 
-    def list_state_transitions(
-        self, task_id: str
-    ) -> list[dict[str, object]]:
+    def list_state_transitions(self, task_id: str) -> list[dict[str, object]]:
         return list(self._transitions.get(task_id, []))
 
     # ── Failure Summary ─────────────────────────────────────────────────
 
-    def save_failure_summary(
-        self, summary: FailureSummary
-    ) -> FailureSummary:
+    def save_failure_summary(self, summary: FailureSummary) -> FailureSummary:
         with self._lock:
             if summary.summary_id not in self._failure_summaries:
                 self._failure_summaries[summary.summary_id] = summary
             return self._failure_summaries[summary.summary_id]
 
-    def get_failure_summary(
-        self, summary_id: str
-    ) -> FailureSummary | None:
+    def get_failure_summary(self, summary_id: str) -> FailureSummary | None:
         return self._failure_summaries.get(summary_id)
 
     # ── Completion Summary ──────────────────────────────────────────────
 
-    def save_completion_summary(
-        self, summary: CompletionSummary
-    ) -> CompletionSummary:
+    def save_completion_summary(self, summary: CompletionSummary) -> CompletionSummary:
         with self._lock:
             if summary.summary_id not in self._completion_summaries:
                 self._completion_summaries[summary.summary_id] = summary
             return self._completion_summaries[summary.summary_id]
 
-    def get_completion_summary(
-        self, summary_id: str
-    ) -> CompletionSummary | None:
+    def get_completion_summary(self, summary_id: str) -> CompletionSummary | None:
         return self._completion_summaries.get(summary_id)
+
+    def get_completion_summary_for_task(self, task_id: str) -> CompletionSummary | None:
+        matches = [
+            summary for summary in self._completion_summaries.values() if summary.task_id == task_id
+        ]
+        return matches[-1] if matches else None
 
     # ── Replan ──────────────────────────────────────────────────────────
 
-    def save_replan_request(
-        self, request: LocalReplanningRequest
-    ) -> LocalReplanningRequest:
+    def save_replan_request(self, request: LocalReplanningRequest) -> LocalReplanningRequest:
         with self._lock:
             if request.request_id not in self._replan_requests:
                 self._replan_requests[request.request_id] = request
             return self._replan_requests[request.request_id]
 
-    def get_replan_request(
-        self, request_id: str
-    ) -> LocalReplanningRequest | None:
+    def get_replan_request(self, request_id: str) -> LocalReplanningRequest | None:
         return self._replan_requests.get(request_id)
 
-    def save_replan_result(
-        self, result: LocalReplanningResponse
-    ) -> LocalReplanningResponse:
+    def save_replan_result(self, result: LocalReplanningResponse) -> LocalReplanningResponse:
         with self._lock:
             if result.request_id not in self._replan_results:
                 self._replan_results[result.request_id] = result
             return self._replan_results[result.request_id]
 
-    def get_replan_result(
-        self, request_id: str
-    ) -> LocalReplanningResponse | None:
+    def get_replan_result(self, request_id: str) -> LocalReplanningResponse | None:
         return self._replan_results.get(request_id)
 
     # ── Outbox ──────────────────────────────────────────────────────────
@@ -223,9 +209,9 @@ class InMemoryEventAutonomyRepository:
     def claim_outbox_message(self) -> PendingMessage | None:
         with self._lock:
             for msg in self._outbox.values():
-                if msg.status != MessageStatus.PENDING:
-                    continue
                 now = datetime.now(UTC)
+                if msg.status not in {MessageStatus.PENDING, MessageStatus.RETRY_WAIT}:
+                    continue
                 if msg.next_retry_at is not None and msg.next_retry_at > now:
                     continue
                 updated = PendingMessage(
@@ -234,6 +220,7 @@ class InMemoryEventAutonomyRepository:
                     event_id=msg.event_id,
                     summary_id=msg.summary_id,
                     request_id=msg.request_id,
+                    idempotency_key=msg.idempotency_key,
                     message_type=msg.message_type,
                     payload=deepcopy(msg.payload),
                     status=MessageStatus.SENDING,
@@ -282,11 +269,9 @@ class InMemoryEventAutonomyRepository:
                 new_status = MessageStatus.DEAD_LETTER
                 next_attempt = None
             else:
-                new_status = MessageStatus.PENDING
+                new_status = MessageStatus.RETRY_WAIT
                 backoff_ms = msg.backoff_base_ms * (2 ** (new_count - 1))
-                next_attempt = datetime.now(UTC) + timedelta(
-                    milliseconds=backoff_ms
-                )
+                next_attempt = datetime.now(UTC) + timedelta(milliseconds=backoff_ms)
             updated = PendingMessage(
                 message_id=msg.message_id,
                 task_id=msg.task_id,
@@ -306,13 +291,11 @@ class InMemoryEventAutonomyRepository:
             self._outbox[message_id] = updated
             return True
 
-    def list_pending_outbox(
-        self, task_id: str | None = None
-    ) -> list[PendingMessage]:
+    def list_pending_outbox(self, task_id: str | None = None) -> list[PendingMessage]:
         with self._lock:
             result: list[PendingMessage] = []
             for msg in self._outbox.values():
-                if msg.status != MessageStatus.PENDING:
+                if msg.status not in {MessageStatus.PENDING, MessageStatus.RETRY_WAIT}:
                     continue
                 if task_id is not None and msg.task_id != task_id:
                     continue
@@ -330,7 +313,12 @@ class InMemoryEventAutonomyRepository:
         new_command_seq: int,
     ) -> bool:
         with self._lock:
-            current = self._plan_versions.get(task_id, (0, 0))
+            if new_plan_version <= expected_plan_version or new_command_seq <= expected_command_seq:
+                return False
+            current = self._plan_versions.get(task_id)
+            if current is None:
+                current = (expected_plan_version, expected_command_seq)
+                self._plan_versions[task_id] = current
             if current[0] != expected_plan_version or current[1] != expected_command_seq:
                 return False
             self._plan_versions[task_id] = (new_plan_version, new_command_seq)

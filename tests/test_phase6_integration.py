@@ -24,8 +24,8 @@ from cloud_edge_robot_arm.edge.event_mode.controller import (
 from cloud_edge_robot_arm.edge.events.models import DetectionContext
 from cloud_edge_robot_arm.edge.outbox import InMemoryPendingMessageRepository
 from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetService
-from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
 from cloud_edge_robot_arm.edge.summaries.completion import CompletionSummaryBuilder
+from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
 
 NOW = datetime(2026, 6, 13, 12, 0, 0, tzinfo=UTC)
 

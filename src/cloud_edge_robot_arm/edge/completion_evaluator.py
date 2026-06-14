@@ -109,26 +109,30 @@ class CompletionEvaluator:
             k: bool(v) for k, v in completion_criteria_results.items()
         }
 
-        # Check 4: Final robot state meets safety requirements
+        # Check 4: Final SafetyShield decision and robot state meet safety requirements
+        if final_safety_decision not in {"ALLOW", "ALLOW_WITH_LIMITS"}:
+            failures.append("CHECK_4_FINAL_SAFETY_REJECTED")
+            codes.append(f"FINAL_SAFETY:{final_safety_decision}")
         robot_state = final_robot_state or {}
-        stopped = robot_state.get("stopped", False)
         estop = robot_state.get("estop_engaged", False)
         collision = robot_state.get("collision_detected", False)
+        connected = robot_state.get("connected", True)
         if estop:
             failures.append("CHECK_4_ESTOP_ENGAGED")
             codes.append("ESTOP_ENGAGED")
         elif collision:
             failures.append("CHECK_4_COLLISION_DETECTED")
             codes.append("COLLISION_DETECTED")
-        elif not stopped:
-            failures.append("CHECK_4_ROBOT_NOT_STOPPED")
-            codes.append("ROBOT_NOT_STOPPED")
-        else:
+        elif connected is False:
+            failures.append("CHECK_4_ROBOT_DISCONNECTED")
+            codes.append("ROBOT_DISCONNECTED")
+        elif final_safety_decision in {"ALLOW", "ALLOW_WITH_LIMITS"}:
             codes.append("ROBOT_SAFE")
         evidence["robot_safety"] = {
-            "stopped": stopped,
+            "connected": connected,
             "estop_engaged": estop,
             "collision_detected": collision,
+            "final_safety_decision": final_safety_decision,
         }
 
         # Check 5: Gripper state matches task result

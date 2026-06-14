@@ -284,11 +284,14 @@ class PeriodicSupervisorService:
                     completed_step_ids=snapshot.completed_step_ids,
                     failed_step_id=snapshot.current_step_id,
                 )
-                pipeline = PlanningPipeline(planner=self._planner)
+                pipeline = PlanningPipeline(
+                    planner=self._planner,
+                    scene_staleness_ms=max(self._config.stale_state_threshold_ms, 86_400_000),
+                )
                 result = pipeline.process(p_req)
                 if result.outcome == PlanningOutcome.PLANNED and result.contract:
-                    updated_contract = result.contract
                     planner_invoked = True
+                    updated_contract = result.contract
                     prompt_version = "1.0"
                     self._emit_audit(
                         "SUPERVISION_PLAN_UPDATED",
@@ -298,6 +301,8 @@ class PeriodicSupervisorService:
                         reason_code=reason_code.value,
                     )
                 else:
+                    decision_type = SupervisoryDecisionType.REQUEST_MORE_OBSERVATION
+                    should_plan = False
                     self._emit_audit(
                         "SUPERVISION_CYCLE_FAILED",
                         snapshot.task_id,

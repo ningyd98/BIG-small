@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Callable
 
 from cloud_edge_robot_arm.contracts.models import PendingMessage
 from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (

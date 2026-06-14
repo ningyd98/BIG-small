@@ -1,87 +1,77 @@
 # BIG-small Architecture
 
-## Phase 0/1 Scope
+BIG-small uses a cloud-edge architecture with deterministic edge execution and cloud-side planning/supervision services.
 
-BIG-small uses a cloud-edge architecture, but Phase 0 and Phase 1 deliberately stop before cloud planning, MQTT, model prompts, and real robot control.
+## Components
 
-Frozen technical route:
+- `contracts`: Pydantic models, enums, traceable messages, and JSON Schema exports.
+- `edge.runtime`: contract validation, command replay defense, task state machine, skill execution, retry policy, restart recovery, and `TaskExecutor`.
+- `edge.safety`: SafetyShield, safety context builder, runtime telemetry/scene providers, stop controller, and 21 safety rules.
+- `edge.event_mode`: event-triggered autonomy controller and state machine.
+- `edge.recovery`: deterministic local recovery evaluation, local recovery executor, and repository-backed retry budget service.
+- `edge.outbox`: pending-message repository protocol and dispatcher.
+- `cloud.planning`: initial planning pipeline and planner adapters.
+- `cloud.supervision`: periodic cloud supervisory control and supervision repositories.
+- `cloud.replanning`: local replanning service and replanner adapters.
+- `cloud.api`: FastAPI API for planning, supervision, event autonomy, summaries, replanning, and completion reports.
+- `repositories`: runtime repositories and event-autonomy repositories with in-memory and SQLite implementations.
+- `simulation`: deterministic mock robot adapter for CI and local tests.
 
-- Runtime: Python with an `asyncio`-compatible package layout.
-- Deterministic execution: `MockRobotAdapter`.
-- Physics simulation target: MuJoCo through an optional adapter.
-- Cloud models: not connected.
-- Real robot SDKs: not connected.
+## Phase 6.1 event autonomy layer
 
-## Current Components
+The Phase 6.1 layer adds a durable event-triggered loop without implementing Phase 7 AUTO features.
 
-- `contracts`: Pydantic models, JSON Schema exports, and example validation.
-- `shared`: frozen Phase 0/1 route constants.
-- `edge`: `RobotAdapter`, fixed pick-and-place flow, Phase 1 skill executor, and Phase 2
-  task runtime.
-- `edge.runtime`: task context, explicit state machine, retry policy, condition evaluator,
-  parameterized skill registry, task executor, and restart recovery.
-- `repositories`: in-memory and SQLite persistence for tasks, state transitions, step
-  executions, action executions, accepted commands, and audit events.
-- `cloud.supervision`: periodic cloud supervisory control service, supervision API
-  models, in-memory/SQLite supervision repositories, decision persistence, and
-  command/version CAS.
-- `simulation`: deterministic mock adapter and optional MuJoCo adapter.
-- `scripts`: Phase 0/1 validation and acceptance commands.
-- `tests`: unit and acceptance tests for Phase 0, Phase 1, Phase 1.1, and Phase 2.
+Stable interfaces:
 
-## Boundary
+- `EventAutonomyRepository`: persistence boundary for events, retry budgets, state, summaries, replan requests/results, outbox, plan-version CAS, and audit events.
+- `EventTriggeredModeController`: event-mode orchestration and state persistence.
+- `RetryBudgetService`: repository-backed retry allowance and atomic consumption.
+- `LocalReplanningService`: cloud-side request validation, adapter call, result validation, CAS update, and persistence.
+- `CompletionEvaluator`: deterministic completion verification.
 
-Phase 0-2 do not implement cloud task planning, MQTT, periodic cloud supervision,
-event-triggered cloud re-planning, LLM/VLM prompt calls, ROS 2, full safety shield, or
-real robot control.
-
-Phase 3 implements the independent edge safety shield (21 rules, StopController,
-Watchdog) and deterministic safety execution gate control.
-
-Phase 3.1 integrates SafetyShield into TaskExecutor as a mandatory dependency with
-fail-closed enforcement and real rule implementations using merged constraints.
-
-Phase 3.2 adds real intent resolution (SkillSafetyIntentResolver), runtime safety data
-providers (TelemetryProvider / SceneStateProvider Protocol), ALLOW_WITH_LIMITS
-implementation, and comprehensive integration verification.
-
-Phase 4 implements the cloud initial planning service: PlannerAdapter Protocol (Mock,
-RuleBased, OpenAICompatible), planning pipeline with model untrusted boundary,
-FastAPI API, EdgeGateway (InProcess), PromptRegistry, and cloud repositories.
-
-Phase 5 implements periodic cloud supervisory control (PCSC): two-layer supervision
-(1 Hz deterministic + conditional planner invocation), injectable Clock/Scheduler,
-target displacement tracking, FastAPI supervision endpoints, persisted snapshots and
-decisions, version compare-and-set for concurrent updates, and full audit trail. Phase
-5 does NOT implement MQTT transport, event-triggered re-planning, or real robot
-control.
-
-## Phase 5 Cloud Supervision Flow
-
-```text
-EdgeStatusSnapshot
-  -> FastAPI status/supervise endpoint
-  -> SupervisionRepository.save_snapshot
-  -> PeriodicSupervisorService snapshot validation
-  -> DeterministicSupervisionPolicy
-  -> optional PlanningPipeline replan
-  -> completed-step preserving update merge
-  -> SupervisionRepository.advance_version_if_current
-  -> SupervisionRepository.save_decision
-  -> API decision response
-```
-
-## Phase 2 Runtime Flow
+## Runtime data flow
 
 ```text
 TaskContract
-  -> EdgeContractValidator
-  -> Repository.accept_command
-  -> TaskRuntimeContext
-  -> TaskStateMachine
-  -> SkillRegistry
-  -> SkillExecutor
-  -> RobotAdapter
-  -> Repository
-  -> AuditLog
+  -> TaskExecutor
+  -> SafetySkillExecutor pre-check
+  -> RobotAdapter action
+  -> SafetySkillExecutor post-check
+  -> CompositeEventDetector
+  -> EventTriggeredModeController
+  -> RetryBudgetService or FailureSummary/LocalReplanningRequest
+  -> EventAutonomyRepository
+  -> OutboxDispatcher/API retrieval
 ```
+
+`RETRY_STEP` keeps the same step index and re-enters the same SafetyShield-protected execution path.
+
+## SQLite event-autonomy tables
+
+The SQLite event-autonomy repository creates:
+
+- `edge_events`
+- `recovery_budgets`
+- `recovery_attempts`
+- `event_mode_states`
+- `event_mode_transitions`
+- `failure_summaries`
+- `completion_summaries`
+- `replan_requests`
+- `replan_results`
+- `event_outbox`
+- `event_audit_events`
+- `plan_versions`
+
+The tested CAS paths are retry-budget consumption, plan-version advance, and outbox claim.
+
+## Production boundary
+
+Production mode must explicitly configure durable and real integrations. Test defaults may use mock adapters, fake clocks, and in-memory repositories, but production constructors reject missing durable dependencies where production mode is enforced.
+
+## Verification references
+
+- Phase 3 safety: `scripts/verify_phase3.py`, `scripts/verify_phase3_1.py`, `scripts/verify_phase3_2.py`.
+- Phase 4 planning: `scripts/verify_phase4.py`.
+- Phase 5 supervision: `scripts/verify_phase5.py`.
+- Phase 6.1 event autonomy: `scripts/verify_phase6.py` and `tests/test_phase6_e2e_executor.py`.

@@ -95,13 +95,9 @@ class LocalRecoveryExecutor:
                     decision_id=decision.decision_id,
                     success=False,
                     error_code="BUDGET_CONSUME_FAILED",
-                    budget_after=(
-                        budget.retry_count_used if budget else 0
-                    ),
+                    budget_after=(budget.retry_count_used if budget else 0),
                     safety_decision="REJECT",
-                    details={
-                        "reason": "Budget consumption failed — concurrent or exhausted"
-                    },
+                    details={"reason": "Budget consumption failed — concurrent or exhausted"},
                 )
 
         # Safety recheck if required
@@ -124,9 +120,7 @@ class LocalRecoveryExecutor:
                     error_code="SAFETY_RECHECK_FAILED",
                     budget_after=decision.retry_count_after,
                     safety_decision=str(safety_result),
-                    details={
-                        "reason": f"Safety recheck returned {safety_result}"
-                    },
+                    details={"reason": f"Safety recheck returned {safety_result}"},
                 )
 
         self._repo.record_audit_event(

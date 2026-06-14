@@ -12,7 +12,6 @@ from cloud_edge_robot_arm.contracts.models import (
     EdgeEvent,
     EdgeEventType,
     LocalRecoveryDecision,
-    LocalRecoveryResult,
     RecoveryAction,
     TaskContract,
 )
@@ -140,7 +139,14 @@ class LocalRecoveryManager:
 
         # Locally recoverable events — check budget
         if event.event_type in _LOCALLY_RECOVERABLE:
-            can_retry, reason = self._budget_manager.can_attempt(task_id)
+            step_id = event.step_id or ""
+            skill = ""
+            if contract is not None and step_id:
+                for step in contract.steps:
+                    if step.step_id == step_id:
+                        skill = step.skill.value
+                        break
+            can_retry, reason = self._budget_manager.can_attempt(task_id, step_id, skill)
             if can_retry:
                 return LocalRecoveryDecision(
                     decision_id=f"dec-{now.strftime('%Y%m%d%H%M%S%f')}",

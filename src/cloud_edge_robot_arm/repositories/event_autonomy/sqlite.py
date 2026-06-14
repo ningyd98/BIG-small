@@ -237,6 +237,9 @@ class SQLiteEventAutonomyRepository:
                 ON event_outbox(task_id);
             CREATE INDEX IF NOT EXISTS idx_event_outbox_status
                 ON event_outbox(status);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_event_outbox_idempotency
+                ON event_outbox(idempotency_key)
+                WHERE idempotency_key IS NOT NULL AND idempotency_key != '';
 
             CREATE TABLE IF NOT EXISTS event_audit_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -247,6 +250,13 @@ class SQLiteEventAutonomyRepository:
             );
             CREATE INDEX IF NOT EXISTS idx_event_audit_events_task
                 ON event_audit_events(task_id);
+
+            CREATE TABLE IF NOT EXISTS plan_versions (
+                task_id TEXT PRIMARY KEY,
+                plan_version INTEGER NOT NULL,
+                command_seq INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            );
         """)
         self._conn.commit()
 
@@ -265,13 +275,21 @@ class SQLiteEventAutonomyRepository:
                         payload_json, handled, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)""",
                     (
-                        event.event_id, event.task_id, event.event_type.value,
-                        event.step_id, event.severity,
-                        event.reason_code, event.reason_detail,
-                        event.robot_id, event.plan_id,
-                        event.plan_version, event.command_seq,
+                        event.event_id,
+                        event.task_id,
+                        event.event_type.value,
+                        event.step_id,
+                        event.severity,
+                        event.reason_code,
+                        event.reason_detail,
+                        event.robot_id,
+                        event.plan_id,
+                        event.plan_version,
+                        event.command_seq,
                         json.dumps(event.details, default=str),
-                        payload, now, now,
+                        payload,
+                        now,
+                        now,
                     ),
                 )
                 self._conn.commit()
@@ -293,9 +311,7 @@ class SQLiteEventAutonomyRepository:
         ).fetchall()
         return [EdgeEvent.model_validate_json(r["payload_json"]) for r in rows]
 
-    def mark_event_handled(
-        self, event_id: str, handled_at: datetime | None = None
-    ) -> bool:
+    def mark_event_handled(self, event_id: str, handled_at: datetime | None = None) -> bool:
         now = (handled_at or datetime.now(UTC)).isoformat()
         with self._write_lock:
             cursor = self._conn.execute(
@@ -328,12 +344,20 @@ class SQLiteEventAutonomyRepository:
                     scene_version = excluded.scene_version,
                     updated_at = excluded.updated_at""",
                 (
-                    budget.budget_id, budget.task_id,
-                    budget.per_step_retry_limit, budget.per_skill_retry_limit,
-                    budget.task_total_retry_limit, budget.retry_count_used,
-                    budget.retry_cooldown_ms, deadline, budget.retry_backoff_policy,
-                    budget.effective_retry_limit, budget.remaining_retries,
-                    budget.scene_version, now, now,
+                    budget.budget_id,
+                    budget.task_id,
+                    budget.per_step_retry_limit,
+                    budget.per_skill_retry_limit,
+                    budget.task_total_retry_limit,
+                    budget.retry_count_used,
+                    budget.retry_cooldown_ms,
+                    deadline,
+                    budget.retry_backoff_policy,
+                    budget.effective_retry_limit,
+                    budget.remaining_retries,
+                    budget.scene_version,
+                    now,
+                    now,
                 ),
             )
             self._conn.commit()
@@ -359,8 +383,7 @@ class SQLiteEventAutonomyRepository:
             retry_count_used=row["retry_count_used"],
             retry_cooldown_ms=row["retry_cooldown_ms"],
             retry_deadline=(
-                datetime.fromisoformat(row["retry_deadline"])
-                if row["retry_deadline"] else None
+                datetime.fromisoformat(row["retry_deadline"]) if row["retry_deadline"] else None
             ),
             retry_backoff_policy=row["retry_backoff_policy"],
             effective_retry_limit=row["effective_retry_limit"],
@@ -403,7 +426,8 @@ class SQLiteEventAutonomyRepository:
         now = _iso_now()
         with self._write_lock:
             self._conn.execute(
-                """INSERT INTO event_mode_states (task_id, current_state, reason, event_id, updated_at)
+                """INSERT INTO event_mode_states
+                   (task_id, current_state, reason, event_id, updated_at)
                    VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(task_id) DO UPDATE SET
                        current_state = excluded.current_state,
@@ -433,7 +457,8 @@ class SQLiteEventAutonomyRepository:
                 (task_id, from_state, to_state, reason, event_id, now),
             )
             self._conn.execute(
-                """INSERT INTO event_mode_states (task_id, current_state, reason, event_id, updated_at)
+                """INSERT INTO event_mode_states
+                   (task_id, current_state, reason, event_id, updated_at)
                    VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(task_id) DO UPDATE SET
                        current_state = excluded.current_state,
@@ -452,8 +477,10 @@ class SQLiteEventAutonomyRepository:
         ).fetchall()
         return [
             {
-                "from_state": r["from_state"], "to_state": r["to_state"],
-                "reason": r["reason"], "event_id": r["event_id"],
+                "from_state": r["from_state"],
+                "to_state": r["to_state"],
+                "reason": r["reason"],
+                "event_id": r["event_id"],
                 "created_at": r["created_at"],
             }
             for r in rows
@@ -475,13 +502,23 @@ class SQLiteEventAutonomyRepository:
                         payload_json, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        summary.summary_id, summary.task_id, summary.failure_event_id,
-                        summary.failed_step_id, json.dumps(summary.completed_step_ids),
-                        summary.failure_type, summary.severity, summary.reason,
-                        summary.recovery_hint, summary.local_retry_count,
-                        summary.retry_limit, summary.requested_replan_scope,
-                        summary.plan_version, summary.command_seq,
-                        payload, now, now,
+                        summary.summary_id,
+                        summary.task_id,
+                        summary.failure_event_id,
+                        summary.failed_step_id,
+                        json.dumps(summary.completed_step_ids),
+                        summary.failure_type,
+                        summary.severity,
+                        summary.reason,
+                        summary.recovery_hint,
+                        summary.local_retry_count,
+                        summary.retry_limit,
+                        summary.requested_replan_scope,
+                        summary.plan_version,
+                        summary.command_seq,
+                        payload,
+                        now,
+                        now,
                     ),
                 )
                 self._conn.commit()
@@ -513,13 +550,20 @@ class SQLiteEventAutonomyRepository:
                         payload_json, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        summary.summary_id, summary.task_id, summary.final_plan_version,
+                        summary.summary_id,
+                        summary.task_id,
+                        summary.final_plan_version,
                         json.dumps(summary.completed_step_ids),
                         json.dumps(summary.completion_criteria_results),
-                        summary.local_retry_count, summary.cloud_replan_count,
-                        summary.result, summary.final_safety_decision,
-                        summary.plan_version, summary.command_seq,
-                        payload, now, now,
+                        summary.local_retry_count,
+                        summary.cloud_replan_count,
+                        summary.result,
+                        summary.final_safety_decision,
+                        summary.plan_version,
+                        summary.command_seq,
+                        payload,
+                        now,
+                        now,
                     ),
                 )
                 self._conn.commit()
@@ -531,6 +575,14 @@ class SQLiteEventAutonomyRepository:
         row = self._conn.execute(
             "SELECT payload_json FROM completion_summaries WHERE summary_id = ?",
             (summary_id,),
+        ).fetchone()
+        return None if row is None else CompletionSummary.model_validate_json(row["payload_json"])
+
+    def get_completion_summary_for_task(self, task_id: str) -> CompletionSummary | None:
+        row = self._conn.execute(
+            """SELECT payload_json FROM completion_summaries
+               WHERE task_id = ? ORDER BY id DESC LIMIT 1""",
+            (task_id,),
         ).fetchone()
         return None if row is None else CompletionSummary.model_validate_json(row["payload_json"])
 
@@ -549,12 +601,19 @@ class SQLiteEventAutonomyRepository:
                         failed_step_id, payload_json, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        request.request_id, request.idempotency_key or None,
-                        request.task_id, request.trigger_event_id,
-                        request.failure_summary_id, request.current_plan_version,
-                        request.current_command_seq, request.requested_replan_scope,
+                        request.request_id,
+                        request.idempotency_key or None,
+                        request.task_id,
+                        request.trigger_event_id,
+                        request.failure_summary_id,
+                        request.current_plan_version,
+                        request.current_command_seq,
+                        request.requested_replan_scope,
                         json.dumps(request.completed_step_ids),
-                        request.failed_step_id, payload, now, now,
+                        request.failed_step_id,
+                        payload,
+                        now,
+                        now,
                     ),
                 )
                 self._conn.commit()
@@ -567,7 +626,9 @@ class SQLiteEventAutonomyRepository:
             "SELECT payload_json FROM replan_requests WHERE request_id = ?",
             (request_id,),
         ).fetchone()
-        return None if row is None else LocalReplanningRequest.model_validate_json(row["payload_json"])
+        return (
+            None if row is None else LocalReplanningRequest.model_validate_json(row["payload_json"])
+        )
 
     def save_replan_result(self, result: LocalReplanningResponse) -> LocalReplanningResponse:
         payload = result.model_dump_json()
@@ -582,11 +643,16 @@ class SQLiteEventAutonomyRepository:
                         validation_errors_json, payload_json, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        result.request_id, task_id, result.outcome,
-                        result.new_plan_version, result.new_command_seq,
+                        result.request_id,
+                        task_id,
+                        result.outcome,
+                        result.new_plan_version,
+                        result.new_command_seq,
                         json.dumps([s.model_dump(mode="json") for s in result.new_steps]),
                         json.dumps(result.validation_errors),
-                        payload, now, now,
+                        payload,
+                        now,
+                        now,
                     ),
                 )
                 self._conn.commit()
@@ -599,7 +665,11 @@ class SQLiteEventAutonomyRepository:
             "SELECT payload_json FROM replan_results WHERE request_id = ?",
             (request_id,),
         ).fetchone()
-        return None if row is None else LocalReplanningResponse.model_validate_json(row["payload_json"])
+        return (
+            None
+            if row is None
+            else LocalReplanningResponse.model_validate_json(row["payload_json"])
+        )
 
     # ── Outbox ──────────────────────────────────────────────────────────
 
@@ -610,15 +680,22 @@ class SQLiteEventAutonomyRepository:
             try:
                 self._conn.execute(
                     """INSERT INTO event_outbox (
-                        message_id, task_id, message_type, payload_json,
+                        message_id, idempotency_key, task_id, message_type, payload_json,
                         status, retry_count, max_retries, backoff_base_ms,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
-                        message.message_id, message.task_id,
-                        message.message_type, payload,
-                        MessageStatus.PENDING.value, message.max_retries,
-                        message.backoff_base_ms, now, now,
+                        message.message_id,
+                        message.idempotency_key or message.message_id,
+                        message.task_id,
+                        message.message_type,
+                        payload,
+                        MessageStatus.PENDING.value,
+                        message.retry_count,
+                        message.max_retries,
+                        message.backoff_base_ms,
+                        now,
+                        now,
                     ),
                 )
                 self._conn.commit()
@@ -631,7 +708,7 @@ class SQLiteEventAutonomyRepository:
         with self._write_lock:
             row = self._conn.execute(
                 """SELECT payload_json FROM event_outbox
-                   WHERE status = 'PENDING'
+                   WHERE status IN ('PENDING', 'RETRY_WAIT')
                      AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
                    ORDER BY id LIMIT 1""",
                 (now,),
@@ -641,13 +718,14 @@ class SQLiteEventAutonomyRepository:
             msg = PendingMessage.model_validate_json(row["payload_json"])
             # Update both status column AND payload_json to keep them in sync
             import json as _json
+
             payload_dict = _json.loads(row["payload_json"])
             payload_dict["status"] = "SENDING"
             updated_payload = _json.dumps(payload_dict, default=str)
             cursor = self._conn.execute(
                 """UPDATE event_outbox
                    SET status = 'SENDING', claimed_at = ?, payload_json = ?, updated_at = ?
-                   WHERE message_id = ? AND status = 'PENDING'""",
+                   WHERE message_id = ? AND status IN ('PENDING', 'RETRY_WAIT')""",
                 (now, updated_payload, now, msg.message_id),
             )
             self._conn.commit()
@@ -659,12 +737,17 @@ class SQLiteEventAutonomyRepository:
         now = _iso_now()
         with self._write_lock:
             row = self._conn.execute(
-                "SELECT payload_json FROM event_outbox WHERE message_id = ? AND status = 'SENDING'",
+                "SELECT status, payload_json FROM event_outbox WHERE message_id = ?",
                 (message_id,),
             ).fetchone()
             if row is None:
                 return False
+            if row["status"] == "SENT":
+                return True
+            if row["status"] != "SENDING":
+                return False
             import json as _json
+
             payload_dict = _json.loads(row["payload_json"])
             payload_dict["status"] = "SENT"
             updated_payload = _json.dumps(payload_dict, default=str)
@@ -688,27 +771,28 @@ class SQLiteEventAutonomyRepository:
             if row is None:
                 return False
             import json as _json
+
             new_count = int(row["retry_count"]) + 1
             max_retries = int(row["max_retries"])
             if new_count >= max_retries:
                 new_status = "DEAD_LETTER"
                 next_attempt = None
             else:
-                new_status = "PENDING"
+                new_status = "RETRY_WAIT"
                 backoff_ms = int(row["backoff_base_ms"]) * (2 ** (new_count - 1))
-                next_attempt = (
-                    datetime.now(UTC) + timedelta(milliseconds=backoff_ms)
-                ).isoformat()
+                next_attempt = (datetime.now(UTC) + timedelta(milliseconds=backoff_ms)).isoformat()
             payload_dict = _json.loads(row["payload_json"])
             payload_dict["status"] = new_status
+            payload_dict["retry_count"] = new_count
+            payload_dict["last_error"] = error
+            payload_dict["next_retry_at"] = next_attempt
             updated_payload = _json.dumps(payload_dict, default=str)
             self._conn.execute(
                 """UPDATE event_outbox
                    SET status = ?, retry_count = ?, last_error = ?,
                        next_attempt_at = ?, payload_json = ?, updated_at = ?
                    WHERE message_id = ?""",
-                (new_status, new_count, error, next_attempt,
-                 updated_payload, now, message_id),
+                (new_status, new_count, error, next_attempt, updated_payload, now, message_id),
             )
             self._conn.commit()
             return True
@@ -717,13 +801,15 @@ class SQLiteEventAutonomyRepository:
         if task_id is not None:
             rows = self._conn.execute(
                 """SELECT payload_json FROM event_outbox
-                   WHERE status = 'PENDING' AND task_id = ?
+                   WHERE status IN ('PENDING', 'RETRY_WAIT') AND task_id = ?
                    ORDER BY id""",
                 (task_id,),
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT payload_json FROM event_outbox WHERE status = 'PENDING' ORDER BY id",
+                """SELECT payload_json FROM event_outbox
+                   WHERE status IN ('PENDING', 'RETRY_WAIT')
+                   ORDER BY id""",
             ).fetchall()
         return [PendingMessage.model_validate_json(r["payload_json"]) for r in rows]
 
@@ -737,24 +823,48 @@ class SQLiteEventAutonomyRepository:
         new_plan_version: int,
         new_command_seq: int,
     ) -> bool:
+        if new_plan_version <= expected_plan_version or new_command_seq <= expected_command_seq:
+            return False
+        now = _iso_now()
         with self._write_lock:
             row = self._conn.execute(
-                """SELECT COALESCE(MAX(new_plan_version), 0) as max_version
-                   FROM replan_results WHERE task_id = ?""",
+                "SELECT plan_version, command_seq FROM plan_versions WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
-            max_existing = int(row["max_version"]) if row else 0
-            if max_existing > expected_plan_version:
+            if row is None:
+                self._conn.execute(
+                    """INSERT INTO plan_versions
+                       (task_id, plan_version, command_seq, updated_at)
+                       VALUES (?, ?, ?, ?)""",
+                    (task_id, expected_plan_version, expected_command_seq, now),
+                )
+            elif (
+                int(row["plan_version"]) != expected_plan_version
+                or int(row["command_seq"]) != expected_command_seq
+            ):
                 self._conn.commit()
                 return False
+            cursor = self._conn.execute(
+                """UPDATE plan_versions
+                   SET plan_version = ?, command_seq = ?, updated_at = ?
+                   WHERE task_id = ?
+                     AND plan_version = ?
+                     AND command_seq = ?""",
+                (
+                    new_plan_version,
+                    new_command_seq,
+                    now,
+                    task_id,
+                    expected_plan_version,
+                    expected_command_seq,
+                ),
+            )
             self._conn.commit()
-            return True
+            return cursor.rowcount == 1
 
     # ── Audit ───────────────────────────────────────────────────────────
 
-    def record_audit_event(
-        self, task_id: str, event_type: str, details: dict[str, object]
-    ) -> None:
+    def record_audit_event(self, task_id: str, event_type: str, details: dict[str, object]) -> None:
         now = _iso_now()
         with self._write_lock:
             self._conn.execute(

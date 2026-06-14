@@ -57,6 +57,7 @@ class ExecutionEventDetector:
                 f"Skill {skill.value if hasattr(skill, 'value') else skill} execution failed"
             ),
             details={
+                "attempt": getattr(result, "attempt", 0),
                 "skill": skill.value if hasattr(skill, "value") else str(skill),
                 "error": result.error.model_dump() if result.error else None,
                 "duration_ms": result.duration_ms,

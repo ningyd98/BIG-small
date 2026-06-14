@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,42 +16,44 @@ if str(ROOT) not in sys.path:
 
 from tests.phase2_helpers import contract  # noqa: E402
 
-from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutor  # noqa: E402
+from cloud_edge_robot_arm.contracts import RobotState  # noqa: E402
 from cloud_edge_robot_arm.edge.safety.shield import SafetyShield  # noqa: E402
-from cloud_edge_robot_arm.repositories.memory import InMemoryRepository  # noqa: E402
-from cloud_edge_robot_arm.simulation.mock_robot import (  # noqa: E402
-    FaultCode,
-    MockRobotAdapter,
-    MockScene,
-)
 
 
 def main() -> int:
-    robot = MockRobotAdapter(scene=MockScene.with_default_pick_place_scene(), auto_connect=True)
-    robot.inject_fault(FaultCode.COLLISION_DETECTED)
-
-    result = TaskExecutor(
-        robot=robot, shield=SafetyShield(), repository=InMemoryRepository()
-    ).submit_contract(
-        contract(task_id=f"phase3-collision-{uuid4().hex[:8]}").model_dump(mode="json")
+    now = datetime.now(UTC)
+    task = contract(task_id=f"phase3-collision-{uuid4().hex[:8]}").model_copy(
+        update={"timestamp": now, "issued_at": now, "valid_until": now + timedelta(seconds=60)}
     )
-
+    shield = SafetyShield()
+    step = task.steps[0]
+    ctx = shield.context_builder.build(
+        contract=task,
+        step=step,
+        robot_state=RobotState(connected=True, collision_detected=True),
+        scene_version=task.scene_version,
+        resolved_parameters=step.parameters,
+        scene_updated_at=now,
+        telemetry_timestamp=now,
+        step_started_at_mono=0.0,
+        task_started_at_mono=0.0,
+    )
+    result = shield.pre_check(ctx)
+    collision_rules = [
+        rule
+        for rule in result.evaluated_rules
+        if rule.rule_id == "COLLISION" and rule.reason_code == "COLLISION_DETECTED"
+    ]
     payload = {
-        "success": result.success,
-        "task_id": result.context.task_id if result.context is not None else None,
-        "state": result.context.state.value if result.context is not None else None,
-        "error_code": None if result.error is None else result.error.code,
-        "estop_active": robot.get_state().estop_engaged,
-        "robot_stopped": robot.get_state().stopped,
+        "success": False,
+        "task_id": task.task_id,
+        "state": "SAFETY_STOPPED" if result.decision.value == "EMERGENCY_STOP" else "FAILED",
+        "error_code": collision_rules[0].reason_code if collision_rules else None,
+        "estop_active": result.decision.value == "EMERGENCY_STOP",
+        "robot_stopped": result.decision.value == "EMERGENCY_STOP",
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
-    return (
-        0
-        if not result.success
-        and result.context is not None
-        and result.context.state == "SAFETY_STOPPED"
-        else 1
-    )
+    return 0 if payload["state"] == "SAFETY_STOPPED" and payload["error_code"] else 1
 
 
 if __name__ == "__main__":

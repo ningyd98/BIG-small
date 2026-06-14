@@ -53,7 +53,7 @@ class PlanningRequest(BaseModel):
     user_instruction: str = Field(min_length=1)
     control_mode: str = Field(
         default="EVENT_TRIGGERED_EDGE_AUTONOMY",
-        pattern=r"^(PERIODIC_CLOUD_SUPERVISION|EVENT_TRIGGERED_EDGE_AUTONOMY|AUTO)$",
+        pattern=r"^(PERIODIC_CLOUD_SUPERVISION|EVENT_TRIGGERED_EDGE_AUTONOMY)$",
     )
     scene: SceneSummary
     capabilities: RobotCapabilities = Field(default_factory=lambda: RobotCapabilities())
@@ -145,6 +145,22 @@ class EventControlCapabilitiesResponse(BaseModel):
     configured: bool = True
 
 
+class EdgeEventRequest(BaseModel):
+    event_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    event_type: str = Field(min_length=1)
+    severity: str = Field(default="ERROR", min_length=1)
+    step_id: str | None = None
+    reason_code: str = ""
+    reason_detail: str = ""
+    robot_id: str = ""
+    plan_id: str = ""
+    plan_version: int = Field(default=0, ge=0)
+    command_seq: int = Field(default=0, ge=0)
+    scene_version: int = Field(default=0, ge=0)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class EdgeEventResponse(BaseModel):
     event_id: str
     task_id: str
@@ -160,6 +176,23 @@ class EdgeEventResponse(BaseModel):
 class EdgeEventListResponse(BaseModel):
     task_id: str
     events: list[EdgeEventResponse] = Field(default_factory=list)
+
+
+class FailureSummaryRequest(BaseModel):
+    summary_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    failure_event_id: str = Field(min_length=1)
+    failed_step_id: str = Field(min_length=1)
+    completed_step_ids: list[str] = Field(default_factory=list)
+    failure_type: str = ""
+    severity: str = "ERROR"
+    reason: str = Field(min_length=1)
+    recovery_hint: str = Field(default="request_cloud_replan", min_length=1)
+    local_retry_count: int = Field(default=0, ge=0)
+    retry_limit: int = Field(default=0, ge=0)
+    requested_replan_scope: str = "FAILED_STEP_AND_REMAINING"
+    plan_version: int = Field(default=0, ge=0)
+    command_seq: int = Field(default=0, ge=0)
 
 
 class FailureSummaryResponse(BaseModel):

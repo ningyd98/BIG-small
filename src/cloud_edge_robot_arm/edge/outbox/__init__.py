@@ -83,7 +83,7 @@ class InMemoryPendingMessageRepository:
                 msg.retry_count += 1
                 msg.last_error = error
                 if msg.retry_count >= msg.max_retries:
-                    msg.status = MessageStatus.FAILED
+                    msg.status = MessageStatus.DEAD_LETTER
                 else:
                     msg.status = MessageStatus.PENDING
 

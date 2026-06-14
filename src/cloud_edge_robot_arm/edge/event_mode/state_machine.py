@@ -53,6 +53,7 @@ LEGAL_EVENT_MODE_TRANSITIONS: dict[EventModeState, set[EventModeState]] = {
     EventModeState.LOCAL_RECOVERY_RUNNING: {
         EventModeState.EXECUTING_AUTONOMOUSLY,
         EventModeState.EVENT_DETECTED,
+        EventModeState.PREPARING_REPLAN_REQUEST,
         EventModeState.FAILED,
     },
     EventModeState.WAITING_FOR_NEW_OBSERVATION: {

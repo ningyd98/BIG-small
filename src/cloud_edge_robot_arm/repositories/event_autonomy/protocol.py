@@ -53,9 +53,7 @@ class EventAutonomyRepository(Protocol):
         """List all events for a given task, ordered by creation time."""
         ...
 
-    def mark_event_handled(
-        self, event_id: str, handled_at: datetime | None = None
-    ) -> bool:
+    def mark_event_handled(self, event_id: str, handled_at: datetime | None = None) -> bool:
         """Mark an event as having been processed. Returns False if not found."""
         ...
 
@@ -111,63 +109,49 @@ class EventAutonomyRepository(Protocol):
         """Record a state transition for audit trail."""
         ...
 
-    def list_state_transitions(
-        self, task_id: str
-    ) -> list[dict[str, object]]:
+    def list_state_transitions(self, task_id: str) -> list[dict[str, object]]:
         """List all state transitions for a task in chronological order."""
         ...
 
     # ── Failure Summary ─────────────────────────────────────────────────
 
-    def save_failure_summary(
-        self, summary: FailureSummary
-    ) -> FailureSummary:
+    def save_failure_summary(self, summary: FailureSummary) -> FailureSummary:
         """Persist a failure summary. Idempotent on summary_id unique constraint."""
         ...
 
-    def get_failure_summary(
-        self, summary_id: str
-    ) -> FailureSummary | None:
+    def get_failure_summary(self, summary_id: str) -> FailureSummary | None:
         """Retrieve a failure summary by ID. Returns None if not found."""
         ...
 
     # ── Completion Summary ──────────────────────────────────────────────
 
-    def save_completion_summary(
-        self, summary: CompletionSummary
-    ) -> CompletionSummary:
+    def save_completion_summary(self, summary: CompletionSummary) -> CompletionSummary:
         """Persist a completion summary. Idempotent on summary_id unique constraint."""
         ...
 
-    def get_completion_summary(
-        self, summary_id: str
-    ) -> CompletionSummary | None:
+    def get_completion_summary(self, summary_id: str) -> CompletionSummary | None:
         """Retrieve a completion summary by ID. Returns None if not found."""
+        ...
+
+    def get_completion_summary_for_task(self, task_id: str) -> CompletionSummary | None:
+        """Retrieve the latest completion summary for a task."""
         ...
 
     # ── Replan ──────────────────────────────────────────────────────────
 
-    def save_replan_request(
-        self, request: LocalReplanningRequest
-    ) -> LocalReplanningRequest:
+    def save_replan_request(self, request: LocalReplanningRequest) -> LocalReplanningRequest:
         """Persist a replan request. Idempotent on request_id unique constraint."""
         ...
 
-    def get_replan_request(
-        self, request_id: str
-    ) -> LocalReplanningRequest | None:
+    def get_replan_request(self, request_id: str) -> LocalReplanningRequest | None:
         """Retrieve a replan request by ID."""
         ...
 
-    def save_replan_result(
-        self, result: LocalReplanningResponse
-    ) -> LocalReplanningResponse:
+    def save_replan_result(self, result: LocalReplanningResponse) -> LocalReplanningResponse:
         """Persist a replan result. Idempotent on request_id unique constraint."""
         ...
 
-    def get_replan_result(
-        self, request_id: str
-    ) -> LocalReplanningResponse | None:
+    def get_replan_result(self, request_id: str) -> LocalReplanningResponse | None:
         """Retrieve a replan result by request ID."""
         ...
 
@@ -198,9 +182,7 @@ class EventAutonomyRepository(Protocol):
         """
         ...
 
-    def list_pending_outbox(
-        self, task_id: str | None = None
-    ) -> list[PendingMessage]:
+    def list_pending_outbox(self, task_id: str | None = None) -> list[PendingMessage]:
         """List PENDING messages, optionally filtered by task_id."""
         ...
 

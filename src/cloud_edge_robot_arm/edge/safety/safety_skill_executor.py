@@ -94,6 +94,14 @@ class SafetySkillExecutor:
         telemetry = self._telemetry_provider.latest()
         scene = self._scene_provider.snapshot()
 
+        if step.skill.value == "VERIFY_RESULT":
+            return self._execute_with_robot(
+                contract=contract,
+                step=step,
+                attempt=attempt,
+                parameters=step.parameters,
+            )
+
         # Resolve the high-level skill into an explicit, checkable intent. The SAME
         # resolved intent (target pose + limited velocity) is used for the shield
         # check and for the robot motion below.
@@ -164,6 +172,15 @@ class SafetySkillExecutor:
             )
 
         self._record_rule_results(contract, step, pre_result)
+        if pre_result.decision in {SafetyDecision.ALLOW, SafetyDecision.ALLOW_WITH_LIMITS}:
+            self._record_audit(
+                "SAFETY_RULE_PASSED",
+                contract=contract,
+                step=step,
+                rule_id="SUMMARY",
+                decision=pre_result.decision.value,
+                reason_code="SAFETY_PRECHECK_PASSED",
+            )
 
         if pre_result.decision in {SafetyDecision.ALLOW, SafetyDecision.ALLOW_WITH_LIMITS}:
             params = intent.resolved_parameters
@@ -204,22 +221,6 @@ class SafetySkillExecutor:
         decision = pre_result.decision
         limiting = pre_result.limiting_rule
         error_code = SAFETY_DECISION_ERROR_CODES.get(decision.value, "SAFETY_ACTION_REJECTED")
-        audit_event = {
-            "PAUSE": "SAFETY_PAUSE_REQUESTED",
-            "REJECT": "SAFETY_ACTION_REJECTED",
-            "REQUEST_CORRECTION": "SAFETY_ACTION_REJECTED",
-            "EMERGENCY_STOP": "EMERGENCY_STOP_REQUESTED",
-        }.get(decision.value, "SAFETY_ACTION_REJECTED")
-        self._record_audit(
-            audit_event,
-            contract=contract,
-            step=step,
-            rule_id=limiting.rule_id if limiting else "UNKNOWN",
-            decision=decision.value,
-            reason_code=limiting.reason_code if limiting else "UNKNOWN",
-            measured_value=limiting.measured_value if limiting else None,
-            limit_value=limiting.limit_value if limiting else None,
-        )
         return self._result(
             contract=contract,
             step=step,
@@ -343,8 +344,10 @@ class SafetySkillExecutor:
         if self._repository is None:
             return
         for rule in result.evaluated_rules:
-            if rule.decision in {SafetyDecision.ALLOW, SafetyDecision.ALLOW_WITH_LIMITS}:
-                event = "SAFETY_RULE_PASSED"
+            if rule.decision == SafetyDecision.ALLOW:
+                continue
+            if rule.decision == SafetyDecision.ALLOW_WITH_LIMITS:
+                event = "SAFETY_RULE_LIMITED"
             else:
                 event = "SAFETY_RULE_FAILED"
             self._record_audit(

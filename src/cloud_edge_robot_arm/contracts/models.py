@@ -94,6 +94,7 @@ class MessageStatus(StrEnum):
     PENDING = "PENDING"
     SENDING = "SENDING"
     SENT = "SENT"
+    RETRY_WAIT = "RETRY_WAIT"
     FAILED = "FAILED"
     DEAD_LETTER = "DEAD_LETTER"
 
@@ -481,6 +482,7 @@ class PendingMessage(BaseModel):
     event_id: str | None = None
     summary_id: str | None = None
     request_id: str | None = None
+    idempotency_key: str = Field(default="")
     message_type: str = Field(min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
     status: MessageStatus = MessageStatus.PENDING

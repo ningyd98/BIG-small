@@ -32,18 +32,15 @@ class RetryBudgetService:
     ) -> None:
         self._repo = repository
         self._safety_max = safety_max_retry_limit
+        self._contracts: dict[str, TaskContract] = {}
 
     def initialize(self, task_id: str, contract: TaskContract) -> RecoveryBudget:
         """Create and persist a retry budget for a new task."""
+        self._contracts[task_id] = contract
         step_limits = [s.retry_limit for s in contract.steps]
         per_skill = contract.failure_policy.local_retry_limit
-        task_total = per_skill * len(contract.steps)
-        effective = min(
-            max(step_limits) if step_limits else 3,
-            per_skill,
-            task_total,
-            self._safety_max,
-        )
+        task_total = min(per_skill, self._safety_max)
+        effective = task_total
         now = datetime.now(UTC)
         deadline = None
         if contract.command_ttl_ms is not None:
@@ -51,7 +48,7 @@ class RetryBudgetService:
         budget = RecoveryBudget(
             budget_id=f"budget-{task_id}",
             task_id=task_id,
-            per_step_retry_limit=max(step_limits) if step_limits else 3,
+            per_step_retry_limit=max(step_limits) if step_limits else 0,
             per_skill_retry_limit=per_skill,
             task_total_retry_limit=task_total,
             retry_count_used=0,
@@ -66,14 +63,14 @@ class RetryBudgetService:
         )
         return self._repo.save_retry_budget(budget)
 
-    def can_attempt(
-        self, task_id: str, step_id: str = "", skill: str = ""
-    ) -> tuple[bool, str]:
+    def can_attempt(self, task_id: str, step_id: str = "", skill: str = "") -> tuple[bool, str]:
         """Check if a retry is allowed for the given task."""
         budget = self._repo.get_retry_budget(task_id)
         if budget is None:
             return False, "NO_BUDGET_INITIALIZED"
-        if budget.remaining_retries <= 0:
+        effective_limit = self._effective_limit(task_id, step_id, skill, budget)
+        remaining = max(0, effective_limit - budget.retry_count_used)
+        if remaining <= 0 or budget.remaining_retries <= 0:
             return False, "RETRY_BUDGET_EXHAUSTED"
         if budget.retry_deadline is not None and datetime.now(UTC) >= budget.retry_deadline:
             return False, "RETRY_DEADLINE_EXCEEDED"
@@ -100,6 +97,36 @@ class RetryBudgetService:
             expected_count=budget.retry_count_used,
         )
 
+    def consume(self, task_id: str, step_id: str = "", skill: str = "") -> RecoveryBudget | None:
+        """Backward-compatible single retry consume helper."""
+        consumed, budget = self.consume_if_available(task_id, step_id, skill)
+        if not consumed:
+            return None
+        return budget
+
+    def record_result(
+        self,
+        task_id: str,
+        step_id: str,
+        skill: str,
+        *,
+        success: bool,
+        error_code: str = "",
+        duration_ms: int = 0,
+    ) -> None:
+        """Record retry result metadata for audit and recovery traceability."""
+        self._repo.record_audit_event(
+            task_id,
+            "LOCAL_RETRY_RESULT",
+            {
+                "step_id": step_id,
+                "skill": skill,
+                "success": success,
+                "error_code": error_code,
+                "duration_ms": duration_ms,
+            },
+        )
+
     def get_budget(self, task_id: str) -> RecoveryBudget | None:
         """Get the current retry budget for a task from the repository."""
         return self._repo.get_retry_budget(task_id)
@@ -107,3 +134,27 @@ class RetryBudgetService:
     def reset(self) -> None:
         """No-op — repository manages lifecycle."""
         return
+
+    def _effective_limit(
+        self,
+        task_id: str,
+        step_id: str,
+        skill: str,
+        budget: RecoveryBudget,
+    ) -> int:
+        contract = self._contracts.get(task_id)
+        current_step_limit = budget.per_step_retry_limit
+        if contract is not None and step_id:
+            for step in contract.steps:
+                if step.step_id == step_id:
+                    current_step_limit = step.retry_limit
+                    break
+        skill_policy_limit = budget.per_skill_retry_limit
+        if contract is not None and skill:
+            skill_policy_limit = contract.failure_policy.local_retry_limit
+        return min(
+            current_step_limit,
+            skill_policy_limit,
+            budget.task_total_retry_limit,
+            self._safety_max,
+        )

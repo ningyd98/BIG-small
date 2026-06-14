@@ -252,9 +252,7 @@ class OpenAICompatibleReplannerAdapter:
         max_response_bytes: int = 256 * 1024,
     ) -> None:
         if not base_url or not api_key:
-            raise ValueError(
-                "OpenAICompatibleReplannerAdapter requires base_url and api_key"
-            )
+            raise ValueError("OpenAICompatibleReplannerAdapter requires base_url and api_key")
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
@@ -302,18 +300,21 @@ class OpenAICompatibleReplannerAdapter:
         from cloud_edge_robot_arm.cloud.replanning.prompts import (
             build_replan_prompt,
         )
+
         prompt = build_replan_prompt(request)
-        payload = _json.dumps({
-            "model": self._model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-            "max_tokens": 2048,
-        })
+        payload = _json.dumps(
+            {
+                "model": self._model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 2048,
+            }
+        )
         # HTTP call — requires httpx in production
         try:
             import httpx  # type: ignore[import-not-found]
-        except ImportError:
-            raise RuntimeError("httpx is required for OpenAICompatibleReplannerAdapter")
+        except ImportError as exc:
+            raise RuntimeError("httpx is required for OpenAICompatibleReplannerAdapter") from exc
         with httpx.Client(timeout=self._timeout_s) as client:
             response = client.post(
                 f"{self._base_url}/v1/chat/completions",

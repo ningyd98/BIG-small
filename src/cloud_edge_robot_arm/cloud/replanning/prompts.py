@@ -112,20 +112,17 @@ def build_replan_prompt(request: object) -> str:
     current_robot = getattr(request, "current_robot_state", {})
     template = template.replace(
         "{{ROBOT_STATE}}",
-        _json.dumps(current_robot) if isinstance(current_robot, dict)
-        else str(current_robot),
+        _json.dumps(current_robot) if isinstance(current_robot, dict) else str(current_robot),
     )
     current_target = getattr(request, "current_target_state", {})
     template = template.replace(
         "{{TARGET_STATE}}",
-        _json.dumps(current_target) if isinstance(current_target, dict)
-        else str(current_target),
+        _json.dumps(current_target) if isinstance(current_target, dict) else str(current_target),
     )
     obstacle = getattr(request, "current_obstacle_state", {})
     template = template.replace(
         "{{OBSTACLE_STATE}}",
-        _json.dumps(obstacle) if isinstance(obstacle, dict)
-        else str(obstacle),
+        _json.dumps(obstacle) if isinstance(obstacle, dict) else str(obstacle),
     )
     template = template.replace("{{FAILURE_SUMMARY}}", "")
     template = template.replace("{{CURRENT_CONTRACT}}", "")

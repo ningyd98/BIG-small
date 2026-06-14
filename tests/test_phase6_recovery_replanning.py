@@ -29,8 +29,8 @@ from cloud_edge_robot_arm.contracts.models import (
 )
 from cloud_edge_robot_arm.edge.recovery.manager import LocalRecoveryManager
 from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetService
-from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
 from cloud_edge_robot_arm.edge.summaries.failure import FailureSummaryBuilder
+from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
 
 NOW = datetime(2026, 6, 13, 12, 0, 0, tzinfo=UTC)
 
@@ -153,7 +153,9 @@ def test_recovery_budget_unknown_task() -> None:
 
 
 def test_recovery_grasp_failure_allows_retry() -> None:
-    mgr = LocalRecoveryManager(budget_manager=RetryBudgetService(repository=InMemoryEventAutonomyRepository()))
+    mgr = LocalRecoveryManager(
+        budget_manager=RetryBudgetService(repository=InMemoryEventAutonomyRepository())
+    )
     contract = _make_contract()
     mgr._budget_manager.initialize("task-test-001", contract)
 

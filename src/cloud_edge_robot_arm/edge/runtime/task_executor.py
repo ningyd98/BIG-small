@@ -193,6 +193,11 @@ class TaskExecutor:
             repository=self._repository,
         )
         safety_executor.start_task()
+        if (
+            self._event_controller is not None
+            and contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
+        ):
+            self._event_controller.initialize_task(contract)
 
         current_step_index = 0
         while current_step_index < len(contract.steps):
@@ -221,7 +226,9 @@ class TaskExecutor:
                 )
                 current_step_index += 1
 
-                timeout_error = self._task_timeout_error(context, next_step_index=current_step_index)
+                timeout_error = self._task_timeout_error(
+                    context, next_step_index=current_step_index
+                )
                 if timeout_error is not None:
                     context.failed_step_id = step.step_id
                     return self._fail_task(
@@ -288,14 +295,9 @@ class TaskExecutor:
                         context=context,
                         error=runtime_error(
                             "CLOUD_REPLAN_REQUIRED",
-                            (
-                                f"Local recovery failed for step {step.step_id}, "
-                                f"cloud replan needed"
-                            ),
+                            (f"Local recovery failed for step {step.step_id}, cloud replan needed"),
                             details={
-                                "event_id": ctrl_result.event.event_id
-                                if ctrl_result.event
-                                else "",
+                                "event_id": ctrl_result.event.event_id if ctrl_result.event else "",
                                 "summary_id": ctrl_result.summary.summary_id
                                 if ctrl_result.summary
                                 else "",
@@ -304,9 +306,7 @@ class TaskExecutor:
                         state=final_state,
                     )
                 elif ctrl_result.action.value == "PAUSE":
-                    self._transition(
-                        context, TaskState.PAUSED, reason="Paused by event controller"
-                    )
+                    self._transition(context, TaskState.PAUSED, reason="Paused by event controller")
                     return TaskExecutionResult(
                         success=False,
                         repository=self._repository,
@@ -339,38 +339,47 @@ class TaskExecutor:
                 # Fall through to original failure handling for FAIL action
 
             # Original Phase 0-5 failure handling
-                final_state = self._determine_failure_state(error_code, step_result)
-                if final_state == TaskState.SAFETY_STOPPED:
-                    stop_ok = self._execute_safety_stop(context)
-                    if not stop_ok:
-                        return self._fail_task(
-                            context=context,
-                            error=runtime_error(
-                                "SAFETY_STOP_FAILED",
-                                "both stop and emergency_stop failed",
-                            ),
-                            state=TaskState.FAILED,
-                        )
-                return self._fail_task(
-                    context=context,
-                    error=step_result.error
-                    or runtime_error("STEP_FAILED", "step failed without structured error"),
-                    state=final_state,
-                )
+            final_state = self._determine_failure_state(error_code, step_result)
+            if final_state == TaskState.SAFETY_STOPPED:
+                stop_ok = self._execute_safety_stop(context)
+                if not stop_ok:
+                    return self._fail_task(
+                        context=context,
+                        error=runtime_error(
+                            "SAFETY_STOP_FAILED",
+                            "both stop and emergency_stop failed",
+                        ),
+                        state=TaskState.FAILED,
+                    )
+            return self._fail_task(
+                context=context,
+                error=step_result.error
+                or runtime_error("STEP_FAILED", "step failed without structured error"),
+                state=final_state,
+            )
 
         # Run CompletionEvaluator before declaring success
         from cloud_edge_robot_arm.edge.completion_evaluator import CompletionEvaluator
 
-        evaluator = CompletionEvaluator()
-        robot_state_dict = robot_state.model_dump() if hasattr(robot_state, 'model_dump') else {}
-        evaluation = evaluator.evaluate(
+        robot_state = self._robot.get_state()
+        robot_state_dict = robot_state.model_dump() if hasattr(robot_state, "model_dump") else {}
+        final_target_state: dict[str, object] = {
+            "object_at_target": self._robot.object_region(contract.task_target.object_id)
+            == contract.task_target.target_region_id
+        }
+        criteria_results = self._completion_criteria_results(
             contract=contract,
             completed_step_ids=list(context.completed_step_ids),
-            completion_criteria_results=dict(context.completion_criteria_results)
-            if hasattr(context, 'completion_criteria_results')
-            else {},
+            target_state=final_target_state,
+        )
+        completion_repository = getattr(self._event_controller, "repository", None)
+        evaluation = CompletionEvaluator(repository=completion_repository).evaluate(
+            contract=contract,
+            completed_step_ids=list(context.completed_step_ids),
+            completion_criteria_results=criteria_results,
             final_safety_decision="ALLOW",
             final_robot_state=robot_state_dict,
+            final_target_state=final_target_state,
             scene_version=contract.scene_version,
         )
         if not evaluation.completed:
@@ -382,14 +391,29 @@ class TaskExecutor:
                     "reason_codes": evaluation.reason_codes,
                 },
             )
+            failure_detail = "; ".join(evaluation.failed_checks)
             return self._fail_task(
                 context=context,
                 error=runtime_error(
                     "COMPLETION_EVALUATION_FAILED",
-                    f"Task did not pass completion evaluation: {'; '.join(evaluation.failed_checks)}",
+                    f"Task did not pass completion evaluation: {failure_detail}",
                     details={"failed_checks": evaluation.failed_checks},
                 ),
                 state=TaskState.FAILED,
+            )
+
+        if (
+            self._event_controller is not None
+            and contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
+        ):
+            budget = self._event_controller.retry_budget(contract.task_id)
+            self._event_controller.on_task_completed(
+                contract=contract,
+                completed_step_ids=list(context.completed_step_ids),
+                completion_criteria_results=criteria_results,
+                final_robot_state=robot_state_dict,
+                final_target_state=final_target_state,
+                local_retry_count=budget.retry_count_used if budget is not None else 0,
             )
 
         self._transition(context, TaskState.COMPLETED, reason="all steps completed and evaluated")
@@ -407,6 +431,34 @@ class TaskExecutor:
             context=context,
             error=None,
         )
+
+    def _completion_criteria_results(
+        self,
+        *,
+        contract: Any,
+        completed_step_ids: list[str],
+        target_state: dict[str, object],
+    ) -> dict[str, bool]:
+        all_steps = {step.step_id for step in contract.steps}
+        completed = set(completed_step_ids)
+        results: dict[str, bool] = {}
+        for criterion in contract.completion_criteria:
+            normalized = criterion.strip().lower()
+            if normalized in {"all_steps_completed", "done", "ok"}:
+                results[criterion] = all_steps.issubset(completed)
+            elif normalized in {
+                "object_placed",
+                "object_in_bin",
+                "object_in_bin_a",
+                "object_inside_target_region",
+            }:
+                results[criterion] = bool(target_state.get("object_at_target", False))
+            elif normalized in {"robot_in_safe_pose", "robot_safe"}:
+                state = self._robot.get_state()
+                results[criterion] = not state.estop_engaged and not state.collision_detected
+            else:
+                results[criterion] = False
+        return results
 
     def _determine_failure_state(self, error_code: str, result: StepExecutionResult) -> TaskState:
         if error_code in SAFETY_STOP_ERROR_CODES:
@@ -501,6 +553,34 @@ class TaskExecutor:
         step_index: int,
     ) -> StepExecutionResult:
         step = context.contract.steps[step_index]
+        if (
+            self._event_controller is not None
+            and context.contract.control_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
+        ):
+            attempt = context.step_attempts.get(step.step_id, 0) + 1
+            context.step_attempts[step.step_id] = attempt
+            result = safety_executor.execute_attempt(
+                contract=context.contract,
+                step=step,
+                attempt=attempt,
+            )
+            self._persist_step_attempt(context, result)
+            context.elapsed_action_ms += result.duration_ms
+            if not result.success:
+                context.failed_step_id = step.step_id
+                if result.error is not None:
+                    context.set_error(result.error)
+                self._repository.record_audit_event(
+                    task_id=context.task_id,
+                    event_type="STEP_FAILED",
+                    details={
+                        "step_id": step.step_id,
+                        "attempt": attempt,
+                        "error_code": result.error_code,
+                    },
+                )
+            return result
+
         max_attempts = self._retry_policy.max_attempts(step, context.contract.failure_policy)
         latest_result: StepExecutionResult | None = None
         for attempt in range(1, max_attempts + 1):

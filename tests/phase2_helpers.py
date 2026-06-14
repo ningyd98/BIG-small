@@ -12,7 +12,7 @@ from cloud_edge_robot_arm.contracts import (
     TaskTarget,
 )
 
-NOW = datetime(2026, 6, 13, 10, 30, tzinfo=UTC)
+NOW = datetime.now(UTC)
 
 
 def step(
@@ -46,14 +46,15 @@ def contract(
     valid_ms: int = 60_000,
     local_retry_limit: int = 1,
 ) -> TaskContract:
+    issued = datetime.now(UTC)
     return TaskContract(
         task_id=task_id,
         plan_version=plan_version,
         command_seq=command_seq,
-        timestamp=NOW,
+        timestamp=issued,
         control_mode=ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY,
-        issued_at=NOW,
-        valid_until=NOW + timedelta(milliseconds=valid_ms),
+        issued_at=issued,
+        valid_until=issued + timedelta(milliseconds=valid_ms),
         user_instruction="place the red cube into bin a",
         scene_version=1,
         expected_scene_version=1,

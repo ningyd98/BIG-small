@@ -32,8 +32,8 @@ class CompositeEventDetector:
     ) -> None:
         self._detectors = detectors or _default_detectors()
         self._dedup_window_ms = dedup_window_ms
-        # Dedup tracking: (task_id, event_type, step_id) → event_id
-        self._seen_events: dict[tuple[str, str, str], str] = {}
+        # Dedup tracking: (task_id, event_type, step_id, attempt) → event_id
+        self._seen_events: dict[tuple[str, str, str, str], str] = {}
 
     @property
     def detectors(self) -> list[EventDetector]:
@@ -79,9 +79,10 @@ class CompositeEventDetector:
         return key in self._seen_events
 
     @staticmethod
-    def _dedup_key(event: EdgeEvent) -> tuple[str, str, str]:
+    def _dedup_key(event: EdgeEvent) -> tuple[str, str, str, str]:
         step = event.step_id or ""
-        return (event.task_id, event.event_type.value, step)
+        attempt = str(event.details.get("attempt", ""))
+        return (event.task_id, event.event_type.value, step, attempt)
 
 
 def _default_detectors() -> list[EventDetector]:
