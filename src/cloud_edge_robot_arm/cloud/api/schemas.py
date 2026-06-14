@@ -244,10 +244,19 @@ class ReplanResponse(BaseModel):
     created_at: datetime | None = None
 
 
-class CompletionReportRequest(BaseModel):
+class CompletionEvidenceRequest(BaseModel):
     task_id: str = Field(min_length=1)
+    plan_id: str = Field(min_length=1)
+    plan_version: int = Field(ge=0)
+    command_seq: int = Field(ge=1)
     completed_step_ids: list[str] = Field(default_factory=list)
-    result: str = Field(default="SUCCESS")
+    completion_criteria_results: dict[str, bool] = Field(default_factory=dict)
+    final_robot_state: dict[str, Any] = Field(default_factory=dict)
+    final_target_state: dict[str, Any] = Field(default_factory=dict)
+    final_safety_decision: str = Field(min_length=1)
+    scene_version: int = Field(ge=0)
+    scene_timestamp: datetime
+    correlation_id: str = Field(default="")
     local_retry_count: int = Field(default=0, ge=0)
     cloud_replan_count: int = Field(default=0, ge=0)
 

@@ -174,7 +174,7 @@ class CompletionEvaluator:
                 codes.append("SCENE_FRESH")
             evidence["scene_staleness_ms"] = staleness_ms
         else:
-            codes.append("SCENE_FRESH_UNKNOWN")
+            codes.append("SCENE_FRESHNESS_UNVERIFIED")
         evidence["scene_version"] = scene_version
 
         # Check 8: No unresolved safety events

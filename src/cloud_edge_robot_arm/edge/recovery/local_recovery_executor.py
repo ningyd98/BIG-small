@@ -1,8 +1,8 @@
-"""LocalRecoveryExecutor — executes recovery actions with real safety checks.
+"""LocalRecoveryExecutor — authorization only.
 
-Every budget-consuming action uses CAS via RetryBudgetService.
-Every action requiring safety recheck invokes the safety executor.
-No action returns success without real execution.
+This service no longer pretends to execute motion. It only authorizes or
+rejects recovery based on budget and safety recheck. The TaskExecutor remains
+responsible for re-running the real step.
 """
 
 from __future__ import annotations
@@ -21,11 +21,7 @@ from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
 
 
 class LocalRecoveryExecutor:
-    """Executes recovery actions with real budget consumption and safety checks.
-
-    Replaces the fake LocalRecoveryManager.execute() that returned
-    success=True without any actual execution.
-    """
+    """Authorizes local recovery; real skill execution stays in TaskExecutor."""
 
     def __init__(
         self,
@@ -83,6 +79,7 @@ class LocalRecoveryExecutor:
                 task_id=task_id,
                 step_id=step_id,
                 skill=skill,
+                event_id=decision.event_id,
             )
             if not consumed:
                 self._repo.record_audit_event(
@@ -103,10 +100,22 @@ class LocalRecoveryExecutor:
         # Safety recheck if required
         if decision.requires_safety_recheck and self._safety is not None:
             safety_check = getattr(self._safety, "pre_check", None)
-            if safety_check is not None:
-                safety_result = safety_check(task_id, step_id, skill)
-            else:
-                safety_result = "ALLOW"
+            if safety_check is None:
+                self._repo.record_audit_event(
+                    task_id=task_id,
+                    event_type="RECOVERY_SAFETY_REJECTED",
+                    details={"safety_decision": "UNAVAILABLE"},
+                )
+                return LocalRecoveryResult(
+                    result_id=f"res-{now.strftime('%Y%m%d%H%M%S%f')}",
+                    decision_id=decision.decision_id,
+                    success=False,
+                    error_code="SAFETY_RECHECK_UNAVAILABLE",
+                    budget_after=decision.retry_count_after,
+                    safety_decision="REJECT",
+                    details={"reason": "Safety recheck unavailable"},
+                )
+            safety_result = safety_check(task_id, step_id, skill)
             if safety_result != "ALLOW":
                 self._repo.record_audit_event(
                     task_id=task_id,
@@ -122,10 +131,20 @@ class LocalRecoveryExecutor:
                     safety_decision=str(safety_result),
                     details={"reason": f"Safety recheck returned {safety_result}"},
                 )
+        else:
+            return LocalRecoveryResult(
+                result_id=f"res-{now.strftime('%Y%m%d%H%M%S%f')}",
+                decision_id=decision.decision_id,
+                success=False,
+                error_code="REAL_RECOVERY_EXECUTION_REQUIRED",
+                budget_after=decision.retry_count_after,
+                safety_decision="REJECT",
+                details={"reason": "LocalRecoveryExecutor only authorizes recovery"},
+            )
 
         self._repo.record_audit_event(
             task_id=task_id,
-            event_type="RECOVERY_EXECUTED",
+            event_type="RECOVERY_AUTHORIZED",
             details={
                 "action": decision.action.value,
                 "decision_id": decision.decision_id,

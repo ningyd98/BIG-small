@@ -52,6 +52,10 @@ class RetryBudgetService:
             per_skill_retry_limit=per_skill,
             task_total_retry_limit=task_total,
             retry_count_used=0,
+            task_retry_count=0,
+            step_retry_counts={},
+            skill_retry_counts={},
+            event_retry_counts={},
             retry_cooldown_ms=500,
             retry_deadline=deadline,
             retry_backoff_policy="exponential",
@@ -63,21 +67,43 @@ class RetryBudgetService:
         )
         return self._repo.save_retry_budget(budget)
 
-    def can_attempt(self, task_id: str, step_id: str = "", skill: str = "") -> tuple[bool, str]:
-        """Check if a retry is allowed for the given task."""
+    def can_attempt(
+        self,
+        task_id: str,
+        step_id: str = "",
+        skill: str = "",
+        event_id: str = "",
+    ) -> tuple[bool, str]:
+        """Check if a retry is allowed for the given task/step/skill/event."""
         budget = self._repo.get_retry_budget(task_id)
         if budget is None:
             return False, "NO_BUDGET_INITIALIZED"
+        if event_id and budget.event_retry_counts.get(event_id, 0) > 0:
+            return False, "EVENT_RETRY_ALREADY_CONSUMED"
         effective_limit = self._effective_limit(task_id, step_id, skill, budget)
-        remaining = max(0, effective_limit - budget.retry_count_used)
-        if remaining <= 0 or budget.remaining_retries <= 0:
+        step_used = budget.step_retry_counts.get(step_id, 0) if step_id else 0
+        skill_used = budget.skill_retry_counts.get(skill, 0) if skill else 0
+        task_remaining = max(0, budget.task_total_retry_limit - budget.task_retry_count)
+        step_remaining = max(0, effective_limit - step_used)
+        skill_remaining = max(0, budget.per_skill_retry_limit - skill_used)
+        effective_remaining = min(
+            task_remaining,
+            step_remaining,
+            skill_remaining,
+            budget.remaining_retries,
+        )
+        if effective_remaining <= 0:
             return False, "RETRY_BUDGET_EXHAUSTED"
         if budget.retry_deadline is not None and datetime.now(UTC) >= budget.retry_deadline:
             return False, "RETRY_DEADLINE_EXCEEDED"
         return True, "OK"
 
     def consume_if_available(
-        self, task_id: str, step_id: str, skill: str
+        self,
+        task_id: str,
+        step_id: str,
+        skill: str,
+        event_id: str = "",
     ) -> tuple[bool, RecoveryBudget | None]:
         """Atomically consume one retry via CAS in the repository.
 
@@ -87,7 +113,7 @@ class RetryBudgetService:
         budget = self._repo.get_retry_budget(task_id)
         if budget is None:
             return False, None
-        allowed, _ = self.can_attempt(task_id, step_id, skill)
+        allowed, _ = self.can_attempt(task_id, step_id, skill, event_id)
         if not allowed:
             return False, budget
         return self._repo.consume_retry_if_available(
@@ -95,6 +121,7 @@ class RetryBudgetService:
             step_id=step_id,
             skill=skill,
             expected_count=budget.retry_count_used,
+            event_id=event_id,
         )
 
     def consume(self, task_id: str, step_id: str = "", skill: str = "") -> RecoveryBudget | None:

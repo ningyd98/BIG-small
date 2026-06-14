@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
+from cloud_edge_robot_arm.cloud.replanning.context import ReplanningContext
 from cloud_edge_robot_arm.contracts.models import (
     LocalReplanningRequest,
     LocalReplanningResponse,
@@ -26,8 +27,12 @@ class ReplannerAdapter(Protocol):
     Must never output joint angles, PWM, servo pulse, or trajectory points.
     """
 
-    def replan(self, request: LocalReplanningRequest) -> LocalReplanningResponse:
-        """Generate a local replan from the given request."""
+    def replan(
+        self,
+        request: LocalReplanningRequest,
+        context: ReplanningContext | None = None,
+    ) -> LocalReplanningResponse:
+        """Generate a local replan from the given request and current context."""
         ...
 
     @property
@@ -55,7 +60,11 @@ class MockReplannerAdapter:
     def planner_name(self) -> str:
         return "mock_replanner"
 
-    def replan(self, request: LocalReplanningRequest) -> LocalReplanningResponse:
+    def replan(
+        self,
+        request: LocalReplanningRequest,
+        context: ReplanningContext | None = None,
+    ) -> LocalReplanningResponse:
         if self._canned is not None:
             return self._canned
 
@@ -97,7 +106,11 @@ class RuleBasedReplannerAdapter:
     def planner_name(self) -> str:
         return "rule_based_replanner"
 
-    def replan(self, request: LocalReplanningRequest) -> LocalReplanningResponse:
+    def replan(
+        self,
+        request: LocalReplanningRequest,
+        context: ReplanningContext | None = None,
+    ) -> LocalReplanningResponse:
         now = datetime.now(UTC)
         scope = request.requested_replan_scope
 
@@ -129,16 +142,15 @@ class RuleBasedReplannerAdapter:
                 created_at=now,
             )
 
-        # Infer failed skill from request context, not hardcoded
-        failed_skill = SkillName.GRASP  # Default fallback only when no context
-        if request.failed_step_id:
-            # The failed step's skill is inferred from the step_id naming convention
-            # or from the current_* state fields provided in the request
-            for skill_name in SkillName:
-                if skill_name.value.lower() in request.failed_step_id.lower():
-                    failed_skill = skill_name
-                    break
-        new_steps = self._generate_replacement_steps(scope, failed_skill)
+        failed_step = context.failed_step if context is not None else None
+        if failed_step is None:
+            failed_step = _fallback_failed_step(request)
+            context = ReplanningContext(
+                active_contract=_fallback_contract(request, failed_step),
+                failed_step=failed_step,
+                completed_steps=[],
+            )
+        new_steps = self._generate_replacement_steps(scope, request, context)
 
         return LocalReplanningResponse(
             request_id=request.request_id,
@@ -153,78 +165,88 @@ class RuleBasedReplannerAdapter:
         )
 
     @staticmethod
-    def _generate_replacement_steps(scope: str, failed_skill: SkillName) -> list[TaskStep]:
-        steps: list[TaskStep] = []
+    def _generate_replacement_steps(
+        scope: str,
+        request: LocalReplanningRequest,
+        context: ReplanningContext | None,
+    ) -> list[TaskStep]:
+        if context is None:
+            return []
+        failed_step = context.failed_step
+        completed_skills = {step.skill for step in context.completed_steps}
+        remaining_after_failed = _remaining_after_failed(
+            context.active_contract.steps, failed_step.step_id
+        )
+        replan_step_id = f"{failed_step.step_id}-replan-v{request.current_plan_version + 1}"
         if scope == "CURRENT_STEP":
-            # Replace only the failed step with adjusted parameters
-            steps.append(
-                TaskStep(
-                    step_id="replan-current-step",
-                    skill=failed_skill,
-                    parameters={"adjusted": True},
-                    expected_duration_ms=3000,
-                    timeout_ms=8000,
-                    retry_limit=3,
-                    preconditions=["target_visible"],
-                    success_conditions=["grasp_confirmed"],
+            return [
+                failed_step.model_copy(
+                    update={
+                        "step_id": replan_step_id,
+                        "parameters": {
+                            **failed_step.parameters,
+                            "tcp_velocity": 0.08,
+                        },
+                        "retry_limit": max(1, failed_step.retry_limit),
+                    },
+                    deep=True,
                 )
+            ]
+        if scope == "REMAINING_STEPS":
+            return [
+                step.model_copy(deep=True)
+                for step in remaining_after_failed
+                if step.skill not in completed_skills
+            ]
+        if scope in ("FAILED_STEP_AND_REMAINING", "FULL_PLAN_REQUIRED"):
+            replacement = failed_step.model_copy(
+                update={
+                    "step_id": replan_step_id,
+                    "parameters": {
+                        **failed_step.parameters,
+                        "replan_strategy": "reduced_speed_retry",
+                    },
+                    "retry_limit": max(1, failed_step.retry_limit),
+                },
+                deep=True,
             )
-        elif scope in ("FAILED_STEP_AND_REMAINING", "REMAINING_STEPS", "FULL_PLAN_REQUIRED"):
-            steps.extend(
-                [
-                    TaskStep(
-                        step_id="replan-approach",
-                        skill=SkillName.APPROACH,
-                        parameters={"speed": "reduced"},
-                        expected_duration_ms=2000,
-                        timeout_ms=5000,
-                        retry_limit=3,
-                        preconditions=["target_visible"],
-                        success_conditions=["above_target"],
-                    ),
-                    TaskStep(
-                        step_id="replan-grasp",
-                        skill=SkillName.GRASP,
-                        parameters={},
-                        expected_duration_ms=2000,
-                        timeout_ms=5000,
-                        retry_limit=3,
-                        preconditions=["above_target"],
-                        success_conditions=["grasp_confirmed"],
-                    ),
-                    TaskStep(
-                        step_id="replan-lift",
-                        skill=SkillName.LIFT,
-                        parameters={},
-                        expected_duration_ms=1500,
-                        timeout_ms=4000,
-                        retry_limit=3,
-                        preconditions=["grasp_confirmed"],
-                        success_conditions=["lifted"],
-                    ),
-                    TaskStep(
-                        step_id="replan-place",
-                        skill=SkillName.PLACE,
-                        parameters={},
-                        expected_duration_ms=2000,
-                        timeout_ms=5000,
-                        retry_limit=3,
-                        preconditions=["lifted"],
-                        success_conditions=["placed"],
-                    ),
-                    TaskStep(
-                        step_id="replan-verify",
-                        skill=SkillName.VERIFY_RESULT,
-                        parameters={},
-                        expected_duration_ms=1000,
-                        timeout_ms=3000,
-                        retry_limit=3,
-                        preconditions=["placed"],
-                        success_conditions=["verified"],
-                    ),
-                ]
-            )
-        return steps
+            steps = [replacement]
+            for step in remaining_after_failed:
+                if step.skill in completed_skills and step.skill in {
+                    SkillName.GRASP,
+                    SkillName.PLACE,
+                    SkillName.RELEASE,
+                }:
+                    continue
+                steps.append(step.model_copy(deep=True))
+            return steps
+        return []
+
+
+def _remaining_after_failed(steps: list[TaskStep], failed_step_id: str) -> list[TaskStep]:
+    for idx, step in enumerate(steps):
+        if step.step_id == failed_step_id:
+            return list(steps[idx + 1 :])
+    return []
+
+
+def _fallback_failed_step(request: LocalReplanningRequest) -> TaskStep:
+    return TaskStep(
+        step_id=request.failed_step_id or "replanned-step",
+        skill=SkillName.GRASP,
+        parameters={},
+        expected_duration_ms=2000,
+        timeout_ms=5000,
+        retry_limit=3,
+    )
+
+
+def _fallback_contract(request: LocalReplanningRequest, failed_step: TaskStep) -> object:
+    return type(
+        "FallbackReplanningContract",
+        (),
+        {"steps": [failed_step], "task_id": request.task_id},
+    )()
 
 
 class OpenAICompatibleReplannerAdapter:
@@ -265,7 +287,11 @@ class OpenAICompatibleReplannerAdapter:
     def planner_name(self) -> str:
         return f"openai_compatible/{self._model}"
 
-    def replan(self, request: LocalReplanningRequest) -> LocalReplanningResponse:
+    def replan(
+        self,
+        request: LocalReplanningRequest,
+        context: ReplanningContext | None = None,
+    ) -> LocalReplanningResponse:
         """Generate a replan via LLM. Fail-closed on any error."""
         if self._circuit_open:
             return LocalReplanningResponse(
@@ -330,16 +356,42 @@ class OpenAICompatibleReplannerAdapter:
                 raise RuntimeError("Response exceeds size limit")
         data = response.json()
         content = data["choices"][0]["message"]["content"]
-        parsed = _json.loads(content) if content.strip().startswith("{") else {}
+        parsed = self._extract_json(content)
+        raw_steps = parsed.get("new_steps", [])
+        new_steps = [TaskStep.model_validate(step) for step in raw_steps]
+        outcome = parsed.get("outcome", "REPLANNED")
+        if outcome == "REPLANNED" and not new_steps:
+            raise RuntimeError("LLM returned REPLANNED without new_steps")
         now = datetime.now(UTC)
         return LocalReplanningResponse(
             request_id=request.request_id,
-            outcome=parsed.get("outcome", "REPLANNED"),
+            outcome=outcome,
             reason=parsed.get("reason", "LLM-generated replan"),
-            new_steps=[],
-            new_plan_version=request.current_plan_version + 1,
-            new_command_seq=request.current_command_seq + 1,
+            new_steps=new_steps,
+            new_plan_version=int(parsed.get("new_plan_version", request.current_plan_version + 1)),
+            new_command_seq=int(parsed.get("new_command_seq", request.current_command_seq + 1)),
             planner_name=self.planner_name,
             prompt_version="1.0",
             created_at=now,
         )
+
+    @staticmethod
+    def _extract_json(content: str) -> dict[str, object]:
+        import json as _json
+
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end < start:
+            raise RuntimeError("LLM response did not contain JSON object")
+        parsed = _json.loads(text[start : end + 1])
+        if not isinstance(parsed, dict):
+            raise RuntimeError("LLM response JSON must be an object")
+        return parsed

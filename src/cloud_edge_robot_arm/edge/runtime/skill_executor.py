@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -29,6 +30,8 @@ class StepExecutionResult:
     action_result: ActionResult | None
     duration_ms: int
     timestamp: datetime
+    post_safety_decision: str = ""
+    post_safety_details: dict[str, Any] | None = None
 
     @property
     def error_code(self) -> str | None:
