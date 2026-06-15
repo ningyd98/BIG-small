@@ -47,6 +47,7 @@ def main() -> int:
     args.output.mkdir(parents=True, exist_ok=True)
     history = _run_history(args.output) if not args.skip_history else _skipped_history()
     install_readiness = _collect_install_readiness(args.output / "install")
+    process_protocol_guard = _run_process_protocol_guard(args.output / "process_protocol")
     ros2 = verify_ros2_integration(args.output / "ros2")
     moveit = verify_moveit_safety(args.output / "moveit")
     isaac = verify_isaac_smoke(args.output / "isaac")
@@ -60,7 +61,11 @@ def main() -> int:
     }
     component_statuses = {name: item["status"] for name, item in components.items()}
     all_validated = all(item["validation_claimed"] is True for item in components.values())
-    any_rejected = history["returncode"] != 0 or safety_pressure["status"] != "PASSED"
+    any_rejected = (
+        history["returncode"] != 0
+        or safety_pressure["status"] != "PASSED"
+        or process_protocol_guard["status"] != "PASSED"
+    )
     any_blocked = any(status == "BLOCKED_BY_ENV" for status in component_statuses.values())
     status = (
         "PHASE9_1_REJECTED"
@@ -77,6 +82,7 @@ def main() -> int:
         "cross_backend": cross_backend,
         "safety_pressure": safety_pressure,
         "install_readiness": install_readiness,
+        "process_protocol_guard": process_protocol_guard,
         "history": history,
         "time_domains": TIME_DOMAINS,
         "validation_claimed": status == "PHASE9_1_ACCEPTED",
@@ -149,6 +155,29 @@ def _collect_install_readiness(output_dir: Path) -> dict[str, object]:
         "commands": evidence,
     }
     (output_dir / "install_readiness.json").write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def _run_process_protocol_guard(output_dir: Path) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_isaac_process_protocol.py"]
+    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    payload: dict[str, object] = {
+        "status": "PASSED" if result.returncode == 0 else "FAILED",
+        "validation_claimed": False,
+        "purpose": (
+            "verifies external JSONL process protocol and replay rejection; "
+            "not an Isaac runtime validation"
+        ),
+        "command": command,
+        "returncode": result.returncode,
+        "stdout_tail": _sanitize_text(result.stdout[-4000:]),
+        "stderr_tail": _sanitize_text(result.stderr[-4000:]),
+    }
+    (output_dir / "process_protocol_guard.json").write_text(
         json.dumps(payload, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
