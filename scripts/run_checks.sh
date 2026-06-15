@@ -59,4 +59,5 @@ python scripts/verify_phase8.py
 python scripts/verify_phase8_1.py
 python scripts/verify_phase8_2.py
 python scripts/verify_phase9.py
+python scripts/verify_phase9_1.py --skip-history
 python -m pip check
