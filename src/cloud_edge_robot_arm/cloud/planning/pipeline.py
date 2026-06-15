@@ -325,7 +325,7 @@ def attempt_repair(
         if "timeout_ms" in msg and "<" in msg and "expected_duration_ms" in msg:
             try:
                 idx = int(field.split("[")[1].split("]")[0])
-            except IndexError, ValueError:
+            except (IndexError, ValueError):
                 continue
             steps = repaired.get("steps", [])
             if idx < len(steps):
@@ -336,7 +336,7 @@ def attempt_repair(
         if "success_conditions" in field and "no success" in msg:
             try:
                 idx = int(field.split("[")[1].split("]")[0])
-            except IndexError, ValueError:
+            except (IndexError, ValueError):
                 continue
             steps = repaired.get("steps", [])
             if idx < len(steps):

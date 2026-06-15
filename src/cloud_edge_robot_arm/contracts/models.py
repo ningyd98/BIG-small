@@ -330,6 +330,98 @@ class ReplanApplyStatus(StrEnum):
     VERSION_CONFLICT = "VERSION_CONFLICT"
 
 
+class RiskLevel(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+
+
+class AutoModeDecisionType(StrEnum):
+    KEEP_CURRENT_MODE = "KEEP_CURRENT_MODE"
+    SWITCH_TO_PERIODIC_CLOUD_SUPERVISION = "SWITCH_TO_PERIODIC_CLOUD_SUPERVISION"
+    SWITCH_TO_EVENT_TRIGGERED_EDGE_AUTONOMY = "SWITCH_TO_EVENT_TRIGGERED_EDGE_AUTONOMY"
+    PAUSE_TASK = "PAUSE_TASK"
+    SAFE_STOP = "SAFE_STOP"
+    REQUEST_MORE_OBSERVATION = "REQUEST_MORE_OBSERVATION"
+
+
+class AutoModeTransitionStatus(StrEnum):
+    PREPARED = "PREPARED"
+    COMMITTED = "COMMITTED"
+    ABORTED = "ABORTED"
+    ROLLED_BACK = "ROLLED_BACK"
+
+
+class AutoModeStatus(BaseModel):
+    task_id: str = Field(min_length=1)
+    current_mode: ControlMode
+    mode_version: int = Field(ge=0)
+    switch_count: int = Field(default=0, ge=0)
+    last_switch_at: datetime | None = None
+    last_decision_id: str = Field(default="")
+    policy_version: str = Field(default="")
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class RiskComponentScores(BaseModel):
+    task_risk: float = Field(ge=0.0, le=100.0)
+    scene_dynamics_risk: float = Field(ge=0.0, le=100.0)
+    perception_risk: float = Field(ge=0.0, le=100.0)
+    network_risk: float = Field(ge=0.0, le=100.0)
+    execution_risk: float = Field(ge=0.0, le=100.0)
+    safety_risk: float = Field(ge=0.0, le=100.0)
+
+
+class RiskSnapshot(BaseModel):
+    snapshot_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    component_scores: RiskComponentScores
+    total_score: float = Field(ge=0.0, le=100.0)
+    risk_level: RiskLevel
+    data_freshness: dict[str, int] = Field(default_factory=dict)
+    missing_inputs: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+    policy_version: str = Field(min_length=1)
+    created_at: datetime
+    expires_at: datetime
+    input_hash: str = Field(min_length=1)
+
+
+class AutoModeDecision(BaseModel):
+    decision_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    current_mode: ControlMode
+    selected_mode: ControlMode | None = None
+    action: AutoModeDecisionType
+    risk_score: float = Field(ge=0.0, le=100.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason_codes: list[str] = Field(default_factory=list)
+    decision_version: int = Field(default=1, ge=1)
+    created_at: datetime
+    valid_until: datetime
+    input_snapshot_hash: str = Field(min_length=1)
+    policy_version: str = Field(min_length=1)
+
+
+class AutoModeTransition(BaseModel):
+    transition_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    from_mode: ControlMode
+    to_mode: ControlMode
+    status: AutoModeTransitionStatus
+    expected_mode_version: int = Field(ge=0)
+    new_mode_version: int = Field(ge=0)
+    idempotency_key: str = Field(min_length=1)
+    decision_id: str = Field(default="")
+    prepared_at: datetime
+    committed_at: datetime | None = None
+    aborted_at: datetime | None = None
+    reason: str = Field(default="")
+    payload_hash: str = Field(default="")
+
+
 class CommandAck(TraceableMessage):
     accepted: bool
     status: str = Field(min_length=1)

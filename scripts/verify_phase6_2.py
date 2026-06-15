@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import ast
+import asyncio
+import json
 import sqlite3
 import subprocess
 import sys
@@ -11,8 +13,7 @@ import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-
-from fastapi.testclient import TestClient
+from typing import Any
 
 from cloud_edge_robot_arm.cloud.api.app import create_app
 from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
@@ -56,6 +57,66 @@ from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockSce
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "cloud_edge_robot_arm"
+
+
+def asgi_request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return asyncio.run(_asgi_request(app, method, path, json_body=json_body))
+
+
+async def _asgi_request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = b"" if json_body is None else json.dumps(json_body).encode("utf-8")
+    sent = False
+    status_code = 0
+    response_body = bytearray()
+
+    async def receive() -> dict[str, Any]:
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        nonlocal status_code
+        if message["type"] == "http.response.start":
+            status_code = int(message["status"])
+        elif message["type"] == "http.response.body":
+            response_body.extend(message.get("body", b""))
+
+    headers = [(b"content-type", b"application/json")] if json_body is not None else []
+    await app(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode("utf-8"),
+            "query_string": b"",
+            "headers": headers,
+            "client": ("verify", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+            "state": {},
+        },
+        receive,
+        send,
+    )
+    text = response_body.decode("utf-8")
+    return {"status_code": status_code, "json": json.loads(text) if text else None}
 
 
 def make_contract(*, task_id: str = "phase62-task", retry_limit: int = 1) -> TaskContract:
@@ -566,12 +627,14 @@ def check_completion_evidence_model() -> None:
     assert evaluate().completed is True
 
     repo = SQLiteEventAutonomyRepository(":memory:")
-    client = TestClient(create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo))
-    forged = client.post(
+    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo)
+    forged = asgi_request(
+        app,
+        "POST",
         "/api/v1/tasks/phase62-forged/completion",
-        json={"task_id": "phase62-forged", "completed_step_ids": [], "result": "SUCCESS"},
+        json_body={"task_id": "phase62-forged", "completed_step_ids": [], "result": "SUCCESS"},
     )
-    assert forged.status_code == 422
+    assert forged["status_code"] == 422
     assert repo.get_completion_summary_for_task("phase62-forged") is None
     repo.close()
 

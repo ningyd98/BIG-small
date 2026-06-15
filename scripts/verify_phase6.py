@@ -7,6 +7,8 @@ one line per check immediately and exits non-zero if any check fails.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -17,6 +19,66 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def asgi_request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return asyncio.run(_asgi_request(app, method, path, json_body=json_body))
+
+
+async def _asgi_request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = b"" if json_body is None else json.dumps(json_body).encode("utf-8")
+    sent = False
+    status_code = 0
+    response_body = bytearray()
+
+    async def receive() -> dict[str, Any]:
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        nonlocal status_code
+        if message["type"] == "http.response.start":
+            status_code = int(message["status"])
+        elif message["type"] == "http.response.body":
+            response_body.extend(message.get("body", b""))
+
+    headers = [(b"content-type", b"application/json")] if json_body is not None else []
+    await app(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode("utf-8"),
+            "query_string": b"",
+            "headers": headers,
+            "client": ("verify", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+            "state": {},
+        },
+        receive,
+        send,
+    )
+    text = response_body.decode("utf-8")
+    return {"status_code": status_code, "json": json.loads(text) if text else None}
 
 
 def report(index: int, name: str, func: Callable[[], None]) -> bool:
@@ -168,8 +230,6 @@ def check_compile_self() -> None:
 
 
 def check_capabilities() -> None:
-    from fastapi.testclient import TestClient
-
     from cloud_edge_robot_arm.cloud.api.app import create_app
     from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
     from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
@@ -177,19 +237,17 @@ def check_capabilities() -> None:
         InMemoryEventAutonomyRepository,
     )
 
-    client = TestClient(
-        create_app(
-            PlanningPipeline(planner=MockPlannerAdapter()),
-            event_repo=InMemoryEventAutonomyRepository(),
-        )
+    app = create_app(
+        PlanningPipeline(planner=MockPlannerAdapter()),
+        event_repo=InMemoryEventAutonomyRepository(),
     )
-    modes = client.get("/api/v1/planning/capabilities").json()["supported_control_modes"]
+    modes = asgi_request(app, "GET", "/api/v1/planning/capabilities")["json"][
+        "supported_control_modes"
+    ]
     assert modes == ["PERIODIC_CLOUD_SUPERVISION", "EVENT_TRIGGERED_EDGE_AUTONOMY"]
 
 
 def check_no_auto() -> None:
-    from fastapi.testclient import TestClient
-
     from cloud_edge_robot_arm.cloud.api.app import create_app
     from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
     from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
@@ -197,13 +255,11 @@ def check_no_auto() -> None:
         InMemoryEventAutonomyRepository,
     )
 
-    client = TestClient(
-        create_app(
-            PlanningPipeline(planner=MockPlannerAdapter()),
-            event_repo=InMemoryEventAutonomyRepository(),
-        )
+    app = create_app(
+        PlanningPipeline(planner=MockPlannerAdapter()),
+        event_repo=InMemoryEventAutonomyRepository(),
     )
-    payload = client.get("/api/v1/planning/capabilities").json()
+    payload = asgi_request(app, "GET", "/api/v1/planning/capabilities")["json"]
     assert "AUTO" not in payload["supported_control_modes"]
 
 
@@ -332,8 +388,6 @@ def check_network_recovery_idempotent_send() -> None:
 
 
 def check_api_persistence() -> None:
-    from fastapi.testclient import TestClient
-
     from cloud_edge_robot_arm.cloud.api.app import create_app
     from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
     from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
@@ -342,7 +396,7 @@ def check_api_persistence() -> None:
     )
 
     repo = InMemoryEventAutonomyRepository()
-    client = TestClient(create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo))
+    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo)
     payload = {
         "event_id": "evt-api",
         "task_id": "task-api",
@@ -353,13 +407,28 @@ def check_api_persistence() -> None:
         "plan_version": 1,
         "command_seq": 1,
     }
-    assert client.post("/api/v1/robots/robot-api/events", json=payload).status_code == 201
-    assert client.get("/api/v1/events/evt-api").json()["event_id"] == "evt-api"
-    assert len(client.get("/api/v1/tasks/task-api/events").json()["events"]) == 1
-    assert client.post("/api/v1/robots/robot-api/events", json=payload).status_code == 201
+    assert (
+        asgi_request(app, "POST", "/api/v1/robots/robot-api/events", json_body=payload)[
+            "status_code"
+        ]
+        == 201
+    )
+    assert asgi_request(app, "GET", "/api/v1/events/evt-api")["json"]["event_id"] == "evt-api"
+    assert len(asgi_request(app, "GET", "/api/v1/tasks/task-api/events")["json"]["events"]) == 1
+    assert (
+        asgi_request(app, "POST", "/api/v1/robots/robot-api/events", json_body=payload)[
+            "status_code"
+        ]
+        == 201
+    )
     mismatch = dict(payload, event_id="evt-api-2", robot_id="other")
-    assert client.post("/api/v1/robots/robot-api/events", json=mismatch).status_code == 409
-    assert client.get("/api/v1/events/missing").status_code == 404
+    assert (
+        asgi_request(app, "POST", "/api/v1/robots/robot-api/events", json_body=mismatch)[
+            "status_code"
+        ]
+        == 409
+    )
+    assert asgi_request(app, "GET", "/api/v1/events/missing")["status_code"] == 404
 
 
 def check_replan_service_adapter() -> None:

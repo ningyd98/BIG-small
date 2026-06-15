@@ -19,6 +19,13 @@ def _read_bool(env: Mapping[str, str], key: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _read_float(env: Mapping[str, str], key: str, default: float) -> float:
+    raw = env.get(key)
+    if raw is None or raw == "":
+        return default
+    return float(raw)
+
+
 @dataclass(frozen=True)
 class CoordinationModeDefaults:
     periodic_supervision_ms: int = 1_000
@@ -44,6 +51,24 @@ class AppConfig:
     scene_state_provider: str | None = None
     supervision_repository: str | None = None
     supervision_scheduler: str | None = None
+    skill_cache_backend: str = "inmemory"
+    skill_cache_db_path: str | None = None
+    skill_promotion_min_successes: int = 3
+    skill_promotion_success_rate: float = 0.9
+    skill_quarantine_failures: int = 2
+    skill_template_ttl_seconds: int = 86_400
+    risk_policy_version: str = "risk-v1"
+    risk_component_weights: str = (
+        "task=0.15,scene=0.15,perception=0.15,network=0.15,execution=0.2,safety=0.2"
+    )
+    risk_level_thresholds: str = "low=25,medium=50,high=75,critical=90"
+    auto_mode_enabled: bool = False
+    auto_mode_repository: str = "inmemory"
+    auto_mode_db_path: str | None = None
+    auto_min_dwell_seconds: int = 120
+    auto_switch_cooldown_seconds: int = 300
+    auto_confirmation_count: int = 2
+    auto_max_switches_per_task: int = 5
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AppConfig:
@@ -65,7 +90,20 @@ class AppConfig:
                 "SUPERVISION_REPOSITORY",
                 "SUPERVISION_SCHEDULER",
             ]
+            if _read_bool(source, "AUTO_MODE_ENABLED", False):
+                production_keys.extend(
+                    [
+                        "SKILL_CACHE_BACKEND",
+                        "SKILL_CACHE_DB_PATH",
+                        "AUTO_MODE_REPOSITORY",
+                        "AUTO_MODE_DB_PATH",
+                        "RISK_POLICY_VERSION",
+                        "RISK_COMPONENT_WEIGHTS",
+                        "RISK_LEVEL_THRESHOLDS",
+                    ]
+                )
             _require_production_keys(source, production_keys)
+            _reject_phase7_production_defaults(source)
             _reject_production_test_doubles(source, production_keys)
         return cls(
             app_name=source.get("APP_NAME", "BIG-small"),
@@ -88,6 +126,27 @@ class AppConfig:
             scene_state_provider=_optional(source, "SCENE_STATE_PROVIDER"),
             supervision_repository=_optional(source, "SUPERVISION_REPOSITORY"),
             supervision_scheduler=_optional(source, "SUPERVISION_SCHEDULER"),
+            skill_cache_backend=source.get("SKILL_CACHE_BACKEND", "inmemory").strip().lower(),
+            skill_cache_db_path=_optional(source, "SKILL_CACHE_DB_PATH"),
+            skill_promotion_min_successes=_read_int(source, "SKILL_PROMOTION_MIN_SUCCESSES", 3),
+            skill_promotion_success_rate=_read_float(source, "SKILL_PROMOTION_SUCCESS_RATE", 0.9),
+            skill_quarantine_failures=_read_int(source, "SKILL_QUARANTINE_FAILURES", 2),
+            skill_template_ttl_seconds=_read_int(source, "SKILL_TEMPLATE_TTL", 86_400),
+            risk_policy_version=source.get("RISK_POLICY_VERSION", "risk-v1"),
+            risk_component_weights=source.get(
+                "RISK_COMPONENT_WEIGHTS",
+                "task=0.15,scene=0.15,perception=0.15,network=0.15,execution=0.2,safety=0.2",
+            ),
+            risk_level_thresholds=source.get(
+                "RISK_LEVEL_THRESHOLDS", "low=25,medium=50,high=75,critical=90"
+            ),
+            auto_mode_enabled=_read_bool(source, "AUTO_MODE_ENABLED", False),
+            auto_mode_repository=source.get("AUTO_MODE_REPOSITORY", "inmemory").strip().lower(),
+            auto_mode_db_path=_optional(source, "AUTO_MODE_DB_PATH"),
+            auto_min_dwell_seconds=_read_int(source, "AUTO_MIN_DWELL_SECONDS", 120),
+            auto_switch_cooldown_seconds=_read_int(source, "AUTO_SWITCH_COOLDOWN_SECONDS", 300),
+            auto_confirmation_count=_read_int(source, "AUTO_CONFIRMATION_COUNT", 2),
+            auto_max_switches_per_task=_read_int(source, "AUTO_MAX_SWITCHES_PER_TASK", 5),
         )
 
 
@@ -116,3 +175,18 @@ def _reject_production_test_doubles(env: Mapping[str, str], keys: list[str]) -> 
     if invalid:
         joined = ", ".join(invalid)
         raise ValueError(f"production RUNTIME_PROFILE forbids test-double values in {joined}")
+
+
+def _reject_phase7_production_defaults(env: Mapping[str, str]) -> None:
+    if not _read_bool(env, "AUTO_MODE_ENABLED", False):
+        return
+    skill_backend = _optional(env, "SKILL_CACHE_BACKEND")
+    auto_repo = _optional(env, "AUTO_MODE_REPOSITORY")
+    if skill_backend is None:
+        raise ValueError("production AUTO requires explicit SKILL_CACHE_BACKEND")
+    if skill_backend.strip().lower() == "inmemory":
+        raise ValueError("production AUTO forbids InMemory Skill Cache repository")
+    if auto_repo is None:
+        raise ValueError("production AUTO requires explicit AUTO_MODE_REPOSITORY")
+    if auto_repo.strip().lower() == "inmemory":
+        raise ValueError("production AUTO forbids InMemory AUTO repository")

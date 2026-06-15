@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from cloud_edge_robot_arm.cloud.api.app import create_app
@@ -30,6 +32,66 @@ from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorSer
 from cloud_edge_robot_arm.config import AppConfig
 from cloud_edge_robot_arm.contracts import Pose, SkillName
 from tests.test_phase5_supervision import _make_contract, _make_snapshot
+
+
+def _request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return asyncio.run(_asgi_request(app, method, path, json_body=json_body))
+
+
+async def _asgi_request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = b"" if json_body is None else json.dumps(json_body).encode("utf-8")
+    sent = False
+    status_code = 0
+    response_body = bytearray()
+
+    async def receive() -> dict[str, Any]:
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        nonlocal status_code
+        if message["type"] == "http.response.start":
+            status_code = int(message["status"])
+        elif message["type"] == "http.response.body":
+            response_body.extend(message.get("body", b""))
+
+    headers = [(b"content-type", b"application/json")] if json_body is not None else []
+    await app(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode("utf-8"),
+            "query_string": b"",
+            "headers": headers,
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+            "state": {},
+        },
+        receive,
+        send,
+    )
+    text = response_body.decode("utf-8")
+    return {"status_code": status_code, "json": json.loads(text) if text else None}
 
 
 class BrokenPlannerAdapter:
@@ -300,42 +362,41 @@ def test_supervision_api_endpoints_form_closed_loop() -> None:
         repository=repository,
     )
     app = create_app(pipeline, supervisor=supervisor)
-    client = TestClient(app)
 
-    capabilities = client.get("/api/v1/supervision/capabilities")
-    assert capabilities.status_code == 200
-    assert "KEEP_CURRENT_PLAN" in capabilities.json()["supported_decisions"]
+    capabilities = _request(app, "GET", "/api/v1/supervision/capabilities")
+    assert capabilities["status_code"] == 200
+    assert "KEEP_CURRENT_PLAN" in capabilities["json"]["supported_decisions"]
 
-    planning = client.post("/api/v1/plans", json=_planning_request_payload())
-    assert planning.status_code == 201
-    contract = planning.json()["contract"]
+    planning = _request(app, "POST", "/api/v1/plans", json_body=_planning_request_payload())
+    assert planning["status_code"] == 201
+    contract = planning["json"]["contract"]
     task_id = contract["task_id"]
 
-    start = client.post(f"/api/v1/plans/{task_id}/supervision/start")
-    assert start.status_code == 200
-    assert start.json()["running"] is True
+    start = _request(app, "POST", f"/api/v1/plans/{task_id}/supervision/start")
+    assert start["status_code"] == 200
+    assert start["json"]["running"] is True
 
     snapshot = _snapshot_payload(task_id=task_id, timestamp=clock.now())
-    status = client.post("/api/v1/robots/robot-001/status", json=snapshot)
-    assert status.status_code == 202
+    status = _request(app, "POST", "/api/v1/robots/robot-001/status", json_body=snapshot)
+    assert status["status_code"] == 202
 
-    decision = client.post(f"/api/v1/plans/{task_id}/supervise", json=snapshot)
-    assert decision.status_code == 200
-    assert decision.json()["decision"] == "KEEP_CURRENT_PLAN"
+    decision = _request(app, "POST", f"/api/v1/plans/{task_id}/supervise", json_body=snapshot)
+    assert decision["status_code"] == 200
+    assert decision["json"]["decision"] == "KEEP_CURRENT_PLAN"
 
-    listed = client.get(f"/api/v1/plans/{task_id}/supervision/decisions")
-    assert listed.status_code == 200
-    assert [item["decision_id"] for item in listed.json()["decisions"]] == [
-        decision.json()["decision_id"]
+    listed = _request(app, "GET", f"/api/v1/plans/{task_id}/supervision/decisions")
+    assert listed["status_code"] == 200
+    assert [item["decision_id"] for item in listed["json"]["decisions"]] == [
+        decision["json"]["decision_id"]
     ]
 
-    running = client.get(f"/api/v1/plans/{task_id}/supervision/status")
-    assert running.status_code == 200
-    assert running.json()["running"] is True
+    running = _request(app, "GET", f"/api/v1/plans/{task_id}/supervision/status")
+    assert running["status_code"] == 200
+    assert running["json"]["running"] is True
 
-    stop = client.post(f"/api/v1/plans/{task_id}/supervision/stop")
-    assert stop.status_code == 200
-    assert stop.json()["running"] is False
+    stop = _request(app, "POST", f"/api/v1/plans/{task_id}/supervision/stop")
+    assert stop["status_code"] == 200
+    assert stop["json"]["running"] is False
 
 
 def test_supervision_api_rejects_robot_status_path_mismatch() -> None:
@@ -348,21 +409,23 @@ def test_supervision_api_rejects_robot_status_path_mismatch() -> None:
             repository=InMemorySupervisionRepository(),
         ),
     )
-    client = TestClient(app)
-    response = client.post(
+    response = _request(
+        app,
+        "POST",
         "/api/v1/robots/robot-other/status",
-        json=_snapshot_payload(task_id="task-001", robot_id="robot-001", timestamp=clock.now()),
+        json_body=_snapshot_payload(
+            task_id="task-001", robot_id="robot-001", timestamp=clock.now()
+        ),
     )
-    assert response.status_code == 409
-    assert response.json()["error"] == "robot_id_mismatch"
+    assert response["status_code"] == 409
+    assert response["json"]["error"] == "robot_id_mismatch"
 
 
 def test_planning_capabilities_advertise_phase6_without_auto_mode() -> None:
     app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
-    client = TestClient(app)
-    response = client.get("/api/v1/planning/capabilities")
-    assert response.status_code == 200
-    modes = response.json()["supported_control_modes"]
+    response = _request(app, "GET", "/api/v1/planning/capabilities")
+    assert response["status_code"] == 200
+    modes = response["json"]["supported_control_modes"]
     assert modes == ["PERIODIC_CLOUD_SUPERVISION", "EVENT_TRIGGERED_EDGE_AUTONOMY"]
     assert "AUTO" not in modes
 

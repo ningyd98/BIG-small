@@ -14,6 +14,9 @@ BIG-small uses a cloud-edge architecture with deterministic edge execution and c
 - `cloud.supervision`: periodic cloud supervisory control and supervision repositories.
 - `cloud.replanning`: local replanning service and replanner adapters.
 - `cloud.api`: FastAPI API for planning, supervision, event autonomy, summaries, replanning, and completion reports.
+- `skill_cache`: Phase 7 high-level skill template cache, statistics, promotion/quarantine/invalidation, and InMemory/SQLite persistence.
+- `risk`: Phase 7 deterministic risk evaluator and versioned risk policy.
+- `auto_mode`: Phase 7 AUTO selector, persisted decisions/status/transitions, and mode transition lifecycle.
 - `repositories`: runtime repositories and event-autonomy repositories with in-memory and SQLite implementations.
 - `simulation`: deterministic mock robot adapter for CI and local tests.
 
@@ -46,6 +49,18 @@ TaskContract
 
 `RETRY_STEP` keeps the same step index and re-enters the same SafetyShield-protected execution path.
 
+## Phase 7 Skill Cache, Risk, and AUTO
+
+Phase 7 adds decision-support services around the two existing execution modes. AUTO is not a third execution engine. It only selects between `PERIODIC_CLOUD_SUPERVISION` and `EVENT_TRIGGERED_EDGE_AUTONOMY`, or chooses keep current, request observation, pause, or safe stop.
+
+`SkillCacheRepository` persists high-level `SkillTemplate` records and `SkillExecutionRecord` statistics. It never stores joint-angle sequences, PWM, motor commands, servo pulses, or unverified low-level trajectories. Cache hits still require fresh contract generation/validation, current-scene parameter resolution, and `SafetyShield`.
+
+`RiskEvaluator` produces versioned `RiskSnapshot` records with task, scene dynamics, perception, network, execution, and safety risk components. Missing inputs fail closed and SafetyShield emergency stop hard-overrides to CRITICAL.
+
+`AutoModeSelector` uses risk snapshots, cache lookup results, contract/checkpoint readiness, supervision availability, event autonomy readiness, and switch history. It enforces dwell time, cooldown, switch limits, and atomic-step safe boundaries.
+
+`ModeTransitionService` models prepare/commit/abort transitions with idempotency keys and expected mode versions. `AutoModeRepository` persists risk snapshots, decisions, statuses, switch history, and prepared transitions through restart.
+
 ## SQLite event-autonomy tables
 
 The SQLite event-autonomy repository creates:
@@ -69,9 +84,13 @@ The tested CAS paths are retry-budget consumption, plan-version advance, and out
 
 Production mode must explicitly configure durable and real integrations. Test defaults may use mock adapters, fake clocks, and in-memory repositories, but production constructors reject missing durable dependencies where production mode is enforced.
 
+When `AUTO_MODE_ENABLED=true` in production, `SKILL_CACHE_BACKEND`, `SKILL_CACHE_DB_PATH`, `AUTO_MODE_REPOSITORY`, `AUTO_MODE_DB_PATH`, `RISK_POLICY_VERSION`, `RISK_COMPONENT_WEIGHTS`, and `RISK_LEVEL_THRESHOLDS` must be explicit. Production AUTO rejects InMemory repositories, fake/mock providers, static network data, and missing risk policy.
+
 ## Verification references
 
 - Phase 3 safety: `scripts/verify_phase3.py`, `scripts/verify_phase3_1.py`, `scripts/verify_phase3_2.py`.
 - Phase 4 planning: `scripts/verify_phase4.py`.
 - Phase 5 supervision: `scripts/verify_phase5.py`.
 - Phase 6.1 event autonomy: `scripts/verify_phase6.py` and `tests/test_phase6_e2e_executor.py`.
+- Phase 6.2 checkpoint/replan closure: `scripts/verify_phase6_2.py`.
+- Phase 7 skill cache, risk, AUTO, and transition closure: `scripts/verify_phase7.py`.

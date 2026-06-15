@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
 from cloud_edge_robot_arm.cloud.api.app import create_app
 from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
@@ -39,6 +41,66 @@ from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEven
 from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockScene
+
+
+def _request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return asyncio.run(_asgi_request(app, method, path, json_body=json_body))
+
+
+async def _asgi_request(
+    app: Any,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = b"" if json_body is None else json.dumps(json_body).encode("utf-8")
+    sent = False
+    status_code = 0
+    response_body = bytearray()
+
+    async def receive() -> dict[str, Any]:
+        nonlocal sent
+        if sent:
+            return {"type": "http.disconnect"}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        nonlocal status_code
+        if message["type"] == "http.response.start":
+            status_code = int(message["status"])
+        elif message["type"] == "http.response.body":
+            response_body.extend(message.get("body", b""))
+
+    headers = [(b"content-type", b"application/json")] if json_body is not None else []
+    await app(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode("utf-8"),
+            "query_string": b"",
+            "headers": headers,
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+            "state": {},
+        },
+        receive,
+        send,
+    )
+    text = response_body.decode("utf-8")
+    return {"status_code": status_code, "json": json.loads(text) if text else None}
 
 
 def _contract(*, task_id: str = "task-phase62", retry_limit: int = 1) -> TaskContract:
@@ -430,12 +492,14 @@ def test_phase62_idempotency_conflict() -> None:
 
 def test_phase62_completion_api_rejects_forged_success() -> None:
     repo = InMemoryEventAutonomyRepository()
-    client = TestClient(create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo))
-    response = client.post(
+    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo)
+    response = _request(
+        app,
+        "POST",
         "/api/v1/tasks/task-forged/completion",
-        json={"task_id": "task-forged", "completed_step_ids": [], "result": "SUCCESS"},
+        json_body={"task_id": "task-forged", "completed_step_ids": [], "result": "SUCCESS"},
     )
-    assert response.status_code == 422
+    assert response["status_code"] == 422
     assert repo.get_completion_summary_for_task("task-forged") is None
 
 
@@ -464,8 +528,6 @@ def test_phase62_two_fastapi_apps_have_isolated_repositories() -> None:
     repo_b = InMemoryEventAutonomyRepository()
     app_a = create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo_a)
     app_b = create_app(PlanningPipeline(planner=MockPlannerAdapter()), event_repo=repo_b)
-    client_a = TestClient(app_a)
-    client_b = TestClient(app_b)
     payload = {
         "event_id": "evt-app-a",
         "task_id": "task-app-a",
@@ -475,9 +537,12 @@ def test_phase62_two_fastapi_apps_have_isolated_repositories() -> None:
         "plan_version": 1,
         "command_seq": 1,
     }
-    assert client_a.post("/api/v1/robots/robot-a/events", json=payload).status_code == 201
-    assert client_a.get("/api/v1/events/evt-app-a").status_code == 200
-    assert client_b.get("/api/v1/events/evt-app-a").status_code == 404
+    assert (
+        _request(app_a, "POST", "/api/v1/robots/robot-a/events", json_body=payload)["status_code"]
+        == 201
+    )
+    assert _request(app_a, "GET", "/api/v1/events/evt-app-a")["status_code"] == 200
+    assert _request(app_b, "GET", "/api/v1/events/evt-app-a")["status_code"] == 404
 
 
 def test_phase62_replanned_empty_steps_rejected() -> None:

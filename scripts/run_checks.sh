@@ -52,3 +52,7 @@ python scripts/run_phase4_idempotency.py
 python scripts/run_phase4_edge_dispatch.py
 python scripts/verify_phase4.py
 python scripts/verify_phase5.py
+python scripts/verify_phase6.py
+python scripts/verify_phase6_2.py
+python scripts/verify_phase7.py
+python -m pip check

@@ -17,6 +17,14 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
     SupervisionConfig,
     SupervisoryDecision,
 )
+from cloud_edge_robot_arm.contracts import AutoModeDecision, AutoModeTransition, RiskSnapshot
+from cloud_edge_robot_arm.risk.models import RiskSnapshotInput
+from cloud_edge_robot_arm.skill_cache.models import (
+    SkillCacheKey,
+    SkillExecutionRecord,
+    SkillStatistics,
+    SkillTemplate,
+)
 
 # ── Health ───────────────────────────────────────────────────────────────────
 
@@ -143,6 +151,71 @@ class EventControlCapabilitiesResponse(BaseModel):
     supported_replan_scopes: list[str] = Field(default_factory=list)
     max_local_retries: int = 3
     configured: bool = True
+
+
+# ── Phase 7: Skill Cache, Risk, AUTO Mode ───────────────────────────────────
+
+
+class AutoModeCapabilitiesResponse(BaseModel):
+    configured: bool
+    auto_mode_enabled: bool
+    supported_control_modes: list[str] = Field(default_factory=list)
+    supported_decisions: list[str] = Field(default_factory=list)
+    policy_version: str = ""
+
+
+class RiskEvaluateRequest(RiskSnapshotInput):
+    """Request body for deterministic risk evaluation."""
+
+
+class RiskSnapshotResponse(RiskSnapshot):
+    """Response body for persisted risk snapshots."""
+
+
+class AutoModeDecisionRequest(BaseModel):
+    cache_key: SkillCacheKey | None = None
+    active_contract_complete: bool
+    checkpoint_persisted: bool
+    event_autonomy_ready: bool
+    supervision_available: bool
+    atomic_step_active: bool = False
+
+
+class AutoModeDecisionResponse(AutoModeDecision):
+    """Response body for AUTO selector decisions."""
+
+
+class ModeTransitionCreateRequest(BaseModel):
+    from_mode: str = Field(min_length=1)
+    to_mode: str = Field(min_length=1)
+    expected_mode_version: int = Field(ge=0)
+    idempotency_key: str = Field(min_length=1)
+    decision_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class ModeTransitionResponse(AutoModeTransition):
+    """Response body for mode transition lifecycle records."""
+
+
+class SkillTemplateRequest(SkillTemplate):
+    """Skill cache template creation body."""
+
+
+class SkillTemplateResponse(SkillTemplate):
+    """Skill cache template response body."""
+
+
+class SkillTemplateListResponse(BaseModel):
+    templates: list[SkillTemplateResponse] = Field(default_factory=list)
+
+
+class SkillExecutionRecordRequest(SkillExecutionRecord):
+    """Skill execution audit record body."""
+
+
+class SkillStatisticsResponse(SkillStatistics):
+    """Skill cache statistics response body."""
 
 
 class EdgeEventRequest(BaseModel):

@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from cloud_edge_robot_arm.auto_mode.models import (
+    AutoModePolicy,
+    AutoModeState,
+    AutoModeTransitionRequest,
+)
+from cloud_edge_robot_arm.auto_mode.repository import AutoModeRepository
+from cloud_edge_robot_arm.auto_mode.selector import AutoModeSelector
+from cloud_edge_robot_arm.auto_mode.transition_service import ModeTransitionService
 from cloud_edge_robot_arm.cloud.api.schemas import (
+    AutoModeCapabilitiesResponse,
+    AutoModeDecisionRequest,
+    AutoModeDecisionResponse,
     CapabilitiesResponse,
     CompletionEvidenceRequest,
     CompletionReportResponse,
@@ -24,11 +35,20 @@ from cloud_edge_robot_arm.cloud.api.schemas import (
     FailureSummaryRequest,
     FailureSummaryResponse,
     HealthResponse,
+    ModeTransitionCreateRequest,
+    ModeTransitionResponse,
     PlanningRequest,
     PlanningResponse,
     ReplanRequest,
     ReplanResponse,
+    RiskEvaluateRequest,
+    RiskSnapshotResponse,
     RobotStatusIngestResponse,
+    SkillExecutionRecordRequest,
+    SkillStatisticsResponse,
+    SkillTemplateListResponse,
+    SkillTemplateRequest,
+    SkillTemplateResponse,
     SupervisionCapabilitiesResponse,
     SupervisionDecisionListResponse,
     SupervisionStartRequest,
@@ -45,7 +65,17 @@ from cloud_edge_robot_arm.cloud.supervision.models import (
     SupervisoryDecisionType,
 )
 from cloud_edge_robot_arm.cloud.supervision.service import PeriodicSupervisorService
-from cloud_edge_robot_arm.contracts import SkillName, TaskContract
+from cloud_edge_robot_arm.contracts import (
+    AutoModeDecisionType,
+    AutoModeStatus,
+    ControlMode,
+    SkillName,
+    TaskContract,
+)
+from cloud_edge_robot_arm.risk.evaluator import RiskEvaluator
+from cloud_edge_robot_arm.risk.models import RiskPolicy
+from cloud_edge_robot_arm.skill_cache.models import SkillCacheLookupResult
+from cloud_edge_robot_arm.skill_cache.repository import SkillCacheRepository
 
 
 def create_app(
@@ -54,6 +84,12 @@ def create_app(
     supervisor: PeriodicSupervisorService | None = None,
     event_controller: Any = None,
     event_repo: Any = None,
+    skill_cache_repo: SkillCacheRepository | None = None,
+    auto_mode_repo: AutoModeRepository | None = None,
+    auto_mode_enabled: bool = False,
+    risk_policy: RiskPolicy | None = None,
+    auto_mode_policy: AutoModePolicy | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     """Build the FastAPI application wired to a PlanningPipeline and optional event controller."""
 
@@ -70,6 +106,12 @@ def create_app(
     )
     app.state.event_repo = event_repo
     app.state.event_controller = event_controller
+    app.state.skill_cache_repo = skill_cache_repo
+    app.state.auto_mode_repo = auto_mode_repo
+    app.state.auto_mode_enabled = bool(auto_mode_enabled)
+    app.state.risk_policy = risk_policy or RiskPolicy(version="risk-v1")
+    app.state.auto_mode_policy = auto_mode_policy or AutoModePolicy(version="auto-v1")
+    app.state.clock = clock or (lambda: datetime.now(UTC))
 
     # ── Health ───────────────────────────────────────────────────────────
 
@@ -634,6 +676,241 @@ def create_app(
             local_retry_count=summary.local_retry_count,
             cloud_replan_count=summary.cloud_replan_count,
             completed_at=summary.completed_at,
+        )
+
+    # ── Phase 7: Skill Cache, Risk, AUTO Mode ────────────────────────────
+
+    def _require_skill_cache_repo() -> SkillCacheRepository:
+        repo = getattr(app.state, "skill_cache_repo", None)
+        if repo is None:
+            raise HTTPException(status_code=503, detail="skill_cache_unavailable")
+        return cast(SkillCacheRepository, repo)
+
+    def _require_auto_mode_repo() -> AutoModeRepository:
+        repo = getattr(app.state, "auto_mode_repo", None)
+        if repo is None:
+            raise HTTPException(status_code=503, detail="auto_mode_unavailable")
+        return cast(AutoModeRepository, repo)
+
+    @app.get(
+        "/api/v1/auto-mode/capabilities",
+        response_model=AutoModeCapabilitiesResponse,
+    )
+    async def auto_mode_capabilities() -> AutoModeCapabilitiesResponse:
+        configured = (
+            bool(getattr(app.state, "auto_mode_enabled", False))
+            and getattr(app.state, "auto_mode_repo", None) is not None
+            and getattr(app.state, "skill_cache_repo", None) is not None
+        )
+        return AutoModeCapabilitiesResponse(
+            configured=configured,
+            auto_mode_enabled=bool(getattr(app.state, "auto_mode_enabled", False)) and configured,
+            supported_control_modes=[
+                ControlMode.PERIODIC_CLOUD_SUPERVISION.value,
+                ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY.value,
+            ],
+            supported_decisions=[decision.value for decision in AutoModeDecisionType],
+            policy_version=app.state.auto_mode_policy.version,
+        )
+
+    @app.post(
+        "/api/v1/tasks/{task_id}/risk/evaluate",
+        response_model=RiskSnapshotResponse,
+        status_code=201,
+    )
+    async def evaluate_task_risk(task_id: str, body: RiskEvaluateRequest) -> RiskSnapshotResponse:
+        repo = _require_auto_mode_repo()
+        if body.task_id != task_id:
+            raise HTTPException(status_code=409, detail="task_id_mismatch")
+        snapshot = RiskEvaluator(
+            policy=app.state.risk_policy,
+            clock=app.state.clock,
+        ).evaluate(body)
+        saved = repo.save_risk_snapshot(snapshot)
+        return RiskSnapshotResponse.model_validate(saved.model_dump(mode="json"))
+
+    @app.get(
+        "/api/v1/tasks/{task_id}/risk/latest",
+        response_model=RiskSnapshotResponse,
+    )
+    async def latest_task_risk(task_id: str) -> RiskSnapshotResponse:
+        repo = _require_auto_mode_repo()
+        snapshot = repo.latest_risk_snapshot(task_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="risk_snapshot_not_found")
+        return RiskSnapshotResponse.model_validate(snapshot.model_dump(mode="json"))
+
+    @app.post(
+        "/api/v1/tasks/{task_id}/auto-mode/decide",
+        response_model=AutoModeDecisionResponse,
+        status_code=201,
+    )
+    async def decide_auto_mode(
+        task_id: str, body: AutoModeDecisionRequest
+    ) -> AutoModeDecisionResponse:
+        if not bool(getattr(app.state, "auto_mode_enabled", False)):
+            raise HTTPException(status_code=503, detail="auto_mode_disabled")
+        auto_repo = _require_auto_mode_repo()
+        skill_repo = _require_skill_cache_repo()
+        risk_snapshot = auto_repo.latest_risk_snapshot(task_id)
+        if risk_snapshot is None:
+            raise HTTPException(status_code=404, detail="risk_snapshot_not_found")
+        state = auto_repo.get_status(task_id)
+        if state is None:
+            state = AutoModeStatus(
+                task_id=task_id,
+                current_mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
+                mode_version=0,
+                switch_count=0,
+                policy_version=app.state.auto_mode_policy.version,
+                updated_at=app.state.clock(),
+            )
+        cache_lookup = (
+            skill_repo.lookup_templates(body.cache_key)
+            if body.cache_key is not None
+            else SkillCacheLookupResult(match_type="no_match")
+        )
+        decision = AutoModeSelector(
+            policy=app.state.auto_mode_policy,
+            clock=app.state.clock,
+        ).decide(
+            current_state=AutoModeState.model_validate(state),
+            risk_snapshot=risk_snapshot,
+            cache_lookup=cache_lookup,
+            active_contract_complete=body.active_contract_complete,
+            checkpoint_persisted=body.checkpoint_persisted,
+            event_autonomy_ready=body.event_autonomy_ready,
+            supervision_available=body.supervision_available,
+            atomic_step_active=body.atomic_step_active,
+            mode_history=[],
+        )
+        saved = auto_repo.save_decision(decision)
+        return AutoModeDecisionResponse.model_validate(saved.model_dump(mode="json"))
+
+    @app.get(
+        "/api/v1/tasks/{task_id}/auto-mode/status",
+        response_model=AutoModeStatus,
+    )
+    async def get_auto_mode_status(task_id: str) -> AutoModeStatus:
+        repo = _require_auto_mode_repo()
+        status = repo.get_status(task_id)
+        if status is None:
+            raise HTTPException(status_code=404, detail="auto_mode_status_not_found")
+        return status
+
+    @app.post(
+        "/api/v1/tasks/{task_id}/mode-transitions",
+        response_model=ModeTransitionResponse,
+        status_code=201,
+    )
+    async def prepare_mode_transition(
+        task_id: str, body: ModeTransitionCreateRequest
+    ) -> ModeTransitionResponse:
+        repo = _require_auto_mode_repo()
+        try:
+            from_mode = ControlMode(body.from_mode)
+            to_mode = ControlMode(body.to_mode)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="invalid_control_mode") from exc
+        transition = ModeTransitionService(clock=app.state.clock).prepare(
+            AutoModeTransitionRequest(
+                task_id=task_id,
+                from_mode=from_mode,
+                to_mode=to_mode,
+                expected_mode_version=body.expected_mode_version,
+                idempotency_key=body.idempotency_key,
+                decision_id=body.decision_id,
+                reason=body.reason,
+            )
+        )
+        saved = repo.save_transition(transition)
+        return ModeTransitionResponse.model_validate(saved.model_dump(mode="json"))
+
+    @app.get(
+        "/api/v1/tasks/{task_id}/mode-transitions/{transition_id}",
+        response_model=ModeTransitionResponse,
+    )
+    async def get_mode_transition(task_id: str, transition_id: str) -> ModeTransitionResponse:
+        repo = _require_auto_mode_repo()
+        transition = repo.get_transition(transition_id)
+        if transition is None:
+            raise HTTPException(status_code=404, detail="mode_transition_not_found")
+        if transition.task_id != task_id:
+            raise HTTPException(status_code=409, detail="task_id_mismatch")
+        return ModeTransitionResponse.model_validate(transition.model_dump(mode="json"))
+
+    @app.post(
+        "/api/v1/skill-cache/templates",
+        response_model=SkillTemplateResponse,
+        status_code=201,
+    )
+    async def create_skill_template(body: SkillTemplateRequest) -> SkillTemplateResponse:
+        repo = _require_skill_cache_repo()
+        saved = repo.save_template(body)
+        return SkillTemplateResponse.model_validate(saved.model_dump(mode="json"))
+
+    @app.get(
+        "/api/v1/skill-cache/templates",
+        response_model=SkillTemplateListResponse,
+    )
+    async def list_skill_templates() -> SkillTemplateListResponse:
+        repo = _require_skill_cache_repo()
+        return SkillTemplateListResponse(
+            templates=[
+                SkillTemplateResponse.model_validate(template.model_dump(mode="json"))
+                for template in repo.list_templates()
+            ]
+        )
+
+    @app.get(
+        "/api/v1/skill-cache/templates/{template_id}",
+        response_model=SkillTemplateResponse,
+    )
+    async def get_skill_template(template_id: str) -> SkillTemplateResponse:
+        repo = _require_skill_cache_repo()
+        template = repo.get_template(template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="skill_template_not_found")
+        return SkillTemplateResponse.model_validate(template.model_dump(mode="json"))
+
+    @app.post(
+        "/api/v1/skill-cache/templates/{template_id}/invalidate",
+        response_model=SkillTemplateResponse,
+    )
+    async def invalidate_skill_template(template_id: str) -> SkillTemplateResponse:
+        repo = _require_skill_cache_repo()
+        try:
+            template = repo.invalidate_template(template_id, "api_invalidate")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="skill_template_not_found") from exc
+        return SkillTemplateResponse.model_validate(template.model_dump(mode="json"))
+
+    @app.post(
+        "/api/v1/skill-cache/templates/{template_id}/execution-records",
+        response_model=SkillExecutionRecordRequest,
+        status_code=201,
+    )
+    async def record_skill_execution(
+        template_id: str, body: SkillExecutionRecordRequest
+    ) -> SkillExecutionRecordRequest:
+        repo = _require_skill_cache_repo()
+        if body.template_id != template_id:
+            raise HTTPException(status_code=409, detail="template_id_mismatch")
+        if repo.get_template(template_id) is None:
+            raise HTTPException(status_code=404, detail="skill_template_not_found")
+        saved = repo.save_execution_record(body)
+        return SkillExecutionRecordRequest.model_validate(saved.model_dump(mode="json"))
+
+    @app.get(
+        "/api/v1/skill-cache/templates/{template_id}/statistics",
+        response_model=SkillStatisticsResponse,
+    )
+    async def get_skill_statistics(template_id: str) -> SkillStatisticsResponse:
+        repo = _require_skill_cache_repo()
+        if repo.get_template(template_id) is None:
+            raise HTTPException(status_code=404, detail="skill_template_not_found")
+        return SkillStatisticsResponse.model_validate(
+            repo.get_statistics(template_id).model_dump(mode="json")
         )
 
     @app.exception_handler(ValueError)
