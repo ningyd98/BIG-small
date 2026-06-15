@@ -93,6 +93,18 @@ class ExperimentRunner:
         self._active_contract: TaskContract | None = None
         self._pending_restart_crash_points: list[str] = []
         self._harness_event_cursor = 0
+        self._pending_transition_id: str | None = None
+        self._pending_transition_to_mode: ControlMode | None = None
+        self._pending_transition_task_id: str | None = None
+        self._pending_transition_decision_id: str | None = None
+        self._pcsc_tick_active = False
+        self._pcsc_tick_generation = 0
+        self._fault_injected_at: dict[str, int] = {}
+        self._detected_fault_types: set[str] = set()
+        self._network_recovery_due_ms: int | None = None
+        self._network_recovery_delivered_ms: int | None = None
+        self._network_recovery_attempts = 0
+        self._recovered_crash_points: set[str] = set()
 
     def run_once(self) -> ExperimentResult:
         return self.run().result
@@ -125,6 +137,7 @@ class ExperimentRunner:
         self._active_contract = contract
         if self.scenario.scenario_id == "S15_SQLITE_RESTART_DURING_RUN":
             self._simulate_sqlite_restart(contract, crash_point="C1_ACTIVE_CONTRACT_SAVED")
+            self._simulate_phase82_crash_points(contract)
         if self.scenario.scenario_id == "S10_STALE_DUPLICATE_REORDERED_COMMAND":
             self._exercise_command_ingress(contract)
             contract = self._fresh_execution_contract_after_ingress(contract)
@@ -136,13 +149,18 @@ class ExperimentRunner:
                 "cache_quarantined", contract.task_id, {"template_id": "tmpl-phase8"}
             )
 
-        if self.current_mode == ControlMode.PERIODIC_CLOUD_SUPERVISION:
-            self._run_pcsc_tick(contract)
+        if self.config.mode == ExperimentMode.PCSC:
+            self._start_pcsc_ticks(contract)
 
         result = self.harness.submit_contract(contract)
+        self._stop_pcsc_ticks(contract.task_id)
+        if self.config.mode == ExperimentMode.PCSC:
+            self._flush_pcsc_network_arrivals()
         self._active_contract = contract
         self._last_task_result = result
         self._import_harness_events()
+        self._detect_faults_from_runtime_events()
+        self._commit_pending_transition_at_safe_boundary()
         self._apply_pending_restarts(contract)
         if (
             not result.success
@@ -151,7 +169,9 @@ class ExperimentRunner:
         ):
             self._process_eteac_cloud_replan(contract)
             self._import_harness_events()
+            self._detect_faults_from_runtime_events()
 
+        self._drain_required_fault_events()
         self._sync_counters_from_runtime(contract)
         self._finalize_mode_time()
         self._sort_events()
@@ -214,7 +234,9 @@ class ExperimentRunner:
             }
             and decision.selected_mode is not None
         ):
-            self._switch_mode(contract.task_id, decision.selected_mode, decision.decision_id)
+            self._prepare_mode_switch(
+                contract.task_id, decision.selected_mode, decision.decision_id
+            )
         elif decision.action == AutoModeDecisionType.SAFE_STOP:
             self.world.trigger_emergency_stop()
         elif decision.action == AutoModeDecisionType.REQUEST_MORE_OBSERVATION:
@@ -235,6 +257,16 @@ class ExperimentRunner:
             transition.transition_id,
             {"from_mode": transition.from_mode.value, "to_mode": selected_mode.value},
         )
+        self.counters.deferred_switch_count += 1
+        self._record_event(
+            "mode_transition_deferred",
+            transition.transition_id,
+            {
+                "from_mode": transition.from_mode.value,
+                "to_mode": selected_mode.value,
+                "reason": "atomic_step_active",
+            },
+        )
         committed = self.harness.commit_mode_transition(transition.transition_id)
         self.current_mode = self.harness.current_mode
         self.counters.mode_switch_count += 1
@@ -243,6 +275,85 @@ class ExperimentRunner:
             committed.transition_id,
             {"from_mode": committed.from_mode.value, "to_mode": committed.to_mode.value},
         )
+
+    def _prepare_mode_switch(
+        self, task_id: str, selected_mode: ControlMode, decision_id: str
+    ) -> None:
+        if selected_mode == self.current_mode:
+            return
+        transition = self.harness.prepare_mode_transition(
+            task_id=task_id,
+            to_mode=selected_mode,
+            decision_id=decision_id,
+            reason="phase8_auto_selection",
+        )
+        self._pending_transition_id = transition.transition_id
+        self._pending_transition_to_mode = selected_mode
+        self._pending_transition_task_id = task_id
+        self._pending_transition_decision_id = decision_id
+        self.counters.deferred_switch_count += 1
+        self._record_event(
+            "mode_transition_prepared",
+            transition.transition_id,
+            {"from_mode": transition.from_mode.value, "to_mode": selected_mode.value},
+        )
+        self._record_event(
+            "mode_transition_deferred",
+            transition.transition_id,
+            {
+                "from_mode": transition.from_mode.value,
+                "to_mode": selected_mode.value,
+                "reason": "atomic_step_active",
+            },
+        )
+
+    def _commit_pending_transition_at_safe_boundary(self) -> None:
+        if self._pending_transition_id is None:
+            return
+        if not any(event.event_type == "step_completed" for event in self.events):
+            aborted = self.harness.abort_mode_transition(
+                self._pending_transition_id, reason="no_step_safe_boundary"
+            )
+            self.counters.aborted_transition_count += 1
+            self._record_event(
+                "mode_transition_aborted",
+                aborted.transition_id,
+                {"reason": "no_step_safe_boundary"},
+            )
+            self._pending_transition_id = None
+            self._pending_transition_to_mode = None
+            self._pending_transition_task_id = None
+            self._pending_transition_decision_id = None
+            return
+        self._accumulate_mode_time()
+        try:
+            committed = self.harness.commit_mode_transition(self._pending_transition_id)
+        except KeyError:
+            if self._pending_transition_to_mode is None or self._pending_transition_task_id is None:
+                raise
+            transition = self.harness.prepare_mode_transition(
+                task_id=self._pending_transition_task_id,
+                to_mode=self._pending_transition_to_mode,
+                decision_id=self._pending_transition_decision_id or "recovered-transition",
+                reason="phase8_auto_selection",
+            )
+            self._pending_transition_id = transition.transition_id
+            committed = self.harness.commit_mode_transition(transition.transition_id)
+        self.current_mode = self.harness.current_mode
+        self.counters.mode_switch_count += 1
+        self._record_event(
+            "mode_transition_committed",
+            committed.transition_id,
+            {"from_mode": committed.from_mode.value, "to_mode": committed.to_mode.value},
+        )
+        if committed.to_mode == ControlMode.PERIODIC_CLOUD_SUPERVISION and self._active_contract:
+            self._start_pcsc_ticks(self._active_contract)
+        else:
+            self._stop_pcsc_ticks(committed.task_id)
+        self._pending_transition_id = None
+        self._pending_transition_to_mode = None
+        self._pending_transition_task_id = None
+        self._pending_transition_decision_id = None
 
     def _contract_for_current_mode(self, contract: TaskContract) -> TaskContract:
         now = self._now()
@@ -371,6 +482,19 @@ class ExperimentRunner:
     def _run_pcsc_tick(self, contract: TaskContract) -> None:
         sent_at = self.clock.now_ms
         decision = self.harness.run_supervision_tick(contract)
+        snapshot = self.harness.supervision_repo.list_snapshots(contract.task_id)[-1]
+        tick_payload = {
+            "task_id": contract.task_id,
+            "current_step_id": snapshot.current_step_id or "",
+            "completed_step_ids": list(snapshot.completed_step_ids),
+            "checkpoint_completed_count": len(snapshot.completed_step_ids),
+            "scene_version": snapshot.scene_version,
+            "target_moved": self.world.target_moved,
+            "obstacle_inserted": self.world.obstacle_inserted,
+            "network_connected": self.network.connected,
+        }
+        self._record_event("pcsc_tick", contract.task_id, tick_payload)
+        self._detect_faults_from_supervision_tick(contract.task_id)
         payload = {
             "decision": getattr(getattr(decision, "decision", ""), "value", ""),
             "reason_code": getattr(getattr(decision, "reason_code", ""), "value", ""),
@@ -380,11 +504,16 @@ class ExperimentRunner:
         }
         payload_size = len(stable_hash(payload).encode("utf-8")) + len(str(payload).encode("utf-8"))
         self._record_event("supervisory_decision", contract.task_id, payload)
+        self._record_event(
+            "cloud_invocation",
+            contract.task_id,
+            {"source": "PeriodicSupervisorService", "kind": "supervision_tick"},
+        )
         if payload["planner_invoked"]:
             self._record_event(
                 "cloud_invocation",
                 contract.task_id,
-                {"source": "PeriodicSupervisorService"},
+                {"source": "PeriodicSupervisorService", "kind": "planner_replan"},
             )
 
         def on_deliver(message: NetworkMessage) -> None:
@@ -412,6 +541,39 @@ class ExperimentRunner:
                 contract.task_id,
                 {"channel": "cloud-edge", "payload_size_bytes": payload_size},
             )
+
+    def _start_pcsc_ticks(self, contract: TaskContract) -> None:
+        if self._pcsc_tick_active:
+            return
+        self._pcsc_tick_active = True
+        self._pcsc_tick_generation += 1
+        generation = self._pcsc_tick_generation
+
+        def tick() -> None:
+            if not self._pcsc_tick_active or generation != self._pcsc_tick_generation:
+                return
+            self._run_pcsc_tick(contract)
+            if self._pcsc_tick_active and generation == self._pcsc_tick_generation:
+                self.clock.schedule(period_ms, tick)
+
+        period_ms = int(contract.supervision_period_ms or self.config.supervision_period_ms)
+        self.clock.schedule(period_ms + 1, tick)
+
+    def _stop_pcsc_ticks(self, task_id: str) -> None:
+        if not self._pcsc_tick_active:
+            return
+        self._pcsc_tick_active = False
+        self._pcsc_tick_generation += 1
+        self._record_event("pcsc_ticks_stopped", task_id, {})
+
+    def _flush_pcsc_network_arrivals(self) -> None:
+        profile = get_network_profile(self.config.network_profile)
+        arrival_window_ms = profile.base_latency_ms + profile.jitter_ms + 1
+        if arrival_window_ms <= 1:
+            return
+        target = min(self.config.timeout_ms, self.clock.now_ms + arrival_window_ms)
+        if target > self.clock.now_ms:
+            self.clock.run_until(target)
 
     def _process_eteac_cloud_replan(self, contract: TaskContract) -> None:
         messages = self.harness.event_repo.list_pending_outbox(contract.task_id)
@@ -494,6 +656,11 @@ class ExperimentRunner:
         time_eteac = self.counters.time_in_eteac_ms
         unsafe_counterfactual = self.counters.unsafe_counterfactual_count
         mode_switch_count = self.counters.mode_switch_count
+        deferred_switch_count = self.counters.deferred_switch_count
+        aborted_transition_count = self.counters.aborted_transition_count
+        dwell_block_count = self.counters.dwell_block_count
+        cooldown_block_count = self.counters.cooldown_block_count
+        switch_limit_block_count = self.counters.switch_limit_block_count
         counterfactual_count = self.counters.unsafe_counterfactual_count
         self.counters = ExperimentCounters(
             cache_hit_count=cache_hit,
@@ -504,6 +671,11 @@ class ExperimentRunner:
             time_in_eteac_ms=time_eteac,
             unsafe_counterfactual_count=unsafe_counterfactual,
             mode_switch_count=mode_switch_count,
+            deferred_switch_count=deferred_switch_count,
+            aborted_transition_count=aborted_transition_count,
+            dwell_block_count=dwell_block_count,
+            cooldown_block_count=cooldown_block_count,
+            switch_limit_block_count=switch_limit_block_count,
         )
         metrics = ExperimentMetricsCollector.from_events(self.events).collect()
         self.counters.safety_allow_count = metrics.safety_allow_count
@@ -566,6 +738,31 @@ class ExperimentRunner:
         )
         self._derive_fault_latencies()
 
+    def _drain_required_fault_events(self) -> None:
+        targets = [
+            value
+            for value in (self._network_recovery_due_ms,)
+            if value is not None and value > self.clock.now_ms
+        ]
+        if not targets and FaultType.CLOUD_UNAVAILABLE.value not in self._fault_injected_at:
+            return
+        drain_until = max(targets, default=self.clock.now_ms)
+        if FaultType.CLOUD_UNAVAILABLE.value in self._fault_injected_at:
+            cloud_timeout = (
+                self._fault_injected_at[FaultType.CLOUD_UNAVAILABLE.value]
+                + get_network_profile(self.config.network_profile).cloud_timeout_ms
+            )
+            drain_until = max(drain_until, cloud_timeout)
+        self.clock.run_until(min(drain_until, self.config.timeout_ms))
+        while (
+            self.clock.has_pending_events()
+            and self._network_recovery_due_ms is not None
+            and self._network_recovery_delivered_ms is None
+            and self.clock.now_ms < self.config.timeout_ms
+        ):
+            next_target = min(self.config.timeout_ms, self.clock.now_ms + 1_500)
+            self.clock.run_until(next_target)
+
     def _derive_fault_latencies(self) -> None:
         first_fault_by_type: dict[str, int] = {}
         first_detection_after_fault: int | None = None
@@ -575,11 +772,15 @@ class ExperimentRunner:
                 fault_type = str(event.payload.get("fault_type", ""))
                 first_fault_by_type.setdefault(fault_type, event.virtual_time_ms)
             elif first_fault_by_type and event.event_type == "fault_detected":
-                first_detection_after_fault = event.virtual_time_ms
+                fault_type = str(event.payload.get("fault_type", ""))
+                injected_at = first_fault_by_type.get(fault_type, min(first_fault_by_type.values()))
+                if event.virtual_time_ms > injected_at:
+                    first_detection_after_fault = event.virtual_time_ms
             elif first_fault_by_type and event.event_type in {
                 "step_completed",
                 "replan_applied",
                 "network_delivered",
+                "network_recovery_delivered",
             }:
                 first_recovery_after_fault = event.virtual_time_ms
         if first_fault_by_type and first_detection_after_fault is not None:
@@ -591,10 +792,14 @@ class ExperimentRunner:
             injected_at = min(first_fault_by_type.values())
             self.counters.recovery_latency_ms = max(0, first_recovery_after_fault - injected_at)
             self.counters.recovery_success = True
-        if "CLOUD_UNAVAILABLE" in first_fault_by_type:
-            self.counters.cloud_response_latency_ms = get_network_profile(
-                self.config.network_profile
-            ).cloud_timeout_ms
+        for event in self.events:
+            if event.event_type == "cloud_timeout":
+                cloud_injected_at = first_fault_by_type.get(FaultType.CLOUD_UNAVAILABLE.value)
+                if cloud_injected_at is not None and event.virtual_time_ms > cloud_injected_at:
+                    self.counters.cloud_response_latency_ms = (
+                        event.virtual_time_ms - cloud_injected_at
+                    )
+                    break
 
     def _build_result(self) -> ExperimentResult:
         status = self._result_status()
@@ -769,13 +974,27 @@ class ExperimentRunner:
         assert hasattr(fault, "fault_type")
         self._fault_injector.apply(fault)  # type: ignore[arg-type]
         fault_type = fault.fault_type  # type: ignore[attr-defined]
+        fault_type_value = fault_type.value
+        self._fault_injected_at.setdefault(fault_type_value, self.clock.now_ms)
         if fault_type == FaultType.GRASP_FAILURE:
             failures = int(getattr(fault, "parameters", {}).get("failures", 1))  # type: ignore[union-attr]
             self.harness.robot.inject_fault(FaultCode.GRASP_FAILED, count=max(1, failures))
         elif fault_type == FaultType.EMERGENCY_STOP:
             self.harness.robot.inject_fault(FaultCode.EMERGENCY_STOP_ACTIVE, count=1)
         elif fault_type == FaultType.SQLITE_RESTART:
-            self._pending_restart_crash_points.append("C9_CHECKPOINT_UPDATED")
+            self._pending_restart_crash_points.append("C9_CHECKPOINT_UPDATED_BEFORE_NEXT_STEP")
+        elif fault_type == FaultType.NETWORK_OUTAGE:
+            self._record_event(
+                "network_disconnected",
+                fault.fault_id,  # type: ignore[attr-defined]
+                {"fault_type": fault_type.value},
+            )
+            duration_ms = int(getattr(fault, "duration_ms", 0) or 1_000)
+            self._network_recovery_due_ms = self.clock.now_ms + duration_ms
+            self.clock.schedule(duration_ms, self._network_recovery_callback(fault), priority=1)
+        elif fault_type == FaultType.CLOUD_UNAVAILABLE:
+            timeout_ms = get_network_profile(self.config.network_profile).cloud_timeout_ms
+            self.clock.schedule(timeout_ms, self._cloud_timeout_callback(fault), priority=1)
         if fault_type == FaultType.STALE_DUPLICATE_REORDERED_COMMAND:
             self._record_event(
                 "command_fault_triggered",
@@ -790,11 +1009,6 @@ class ExperimentRunner:
                 "trigger_time_ms": getattr(fault, "trigger_time_ms", self.clock.now_ms),
             },
         )
-        self._record_event(
-            "fault_detected",
-            fault.fault_id,  # type: ignore[attr-defined]
-            {"fault_type": fault_type.value},
-        )
         if (
             fault_type == FaultType.OBSTACLE_INSERTED
             and AblationType.A7_SAFETY_SHADOW_COUNTERFACTUAL in self.config.ablations
@@ -808,6 +1022,130 @@ class ExperimentRunner:
                     "fault_type": fault_type.value,
                 },
             )
+
+    def _detect_faults_from_supervision_tick(self, task_id: str) -> None:
+        checks = {
+            FaultType.TARGET_MOVED.value: self.world.target_moved,
+            FaultType.OBSTACLE_INSERTED.value: self.world.obstacle_inserted,
+            FaultType.TARGET_LOST.value: self.world.target_lost,
+            FaultType.PERCEPTION_DEGRADED.value: self.world.perception_degraded,
+            FaultType.NETWORK_OUTAGE.value: not self.network.connected,
+            FaultType.CLOUD_UNAVAILABLE.value: not self.world.cloud_available,
+            FaultType.EMERGENCY_STOP.value: self.world.emergency_stop,
+        }
+        for fault_type, active in checks.items():
+            if active:
+                self._record_fault_detected(
+                    task_id,
+                    fault_type,
+                    source="PeriodicSupervisorService",
+                )
+
+    def _detect_faults_from_runtime_events(self) -> None:
+        for event in self.events:
+            if event.event_type not in {"step_failed", "step_paused", "step_rejected"}:
+                continue
+            error_code = str(event.payload.get("error_code", ""))
+            if error_code in {"GRASP_FAILED", "OBJECT_NOT_ATTACHED"}:
+                self._record_fault_detected(
+                    event.entity_id,
+                    FaultType.GRASP_FAILURE.value,
+                    source="TaskExecutor",
+                )
+            elif error_code in {"SAFETY_EMERGENCY_STOP", "EMERGENCY_STOP_ACTIVE"}:
+                self._record_fault_detected(
+                    event.entity_id,
+                    FaultType.EMERGENCY_STOP.value,
+                    source="SafetyShield",
+                )
+            elif error_code in {"CLOUD_REPLAN_REQUIRED", "TASK_PAUSED_EVENT_CONTROLLER"}:
+                self._record_fault_detected(
+                    event.entity_id,
+                    FaultType.TARGET_MOVED.value,
+                    source="EventTriggeredModeController",
+                )
+
+    def _record_fault_detected(self, entity_id: str, fault_type: str, *, source: str) -> None:
+        if fault_type in self._detected_fault_types:
+            return
+        injected_at = self._fault_injected_at.get(fault_type)
+        if injected_at is None or self.clock.now_ms <= injected_at:
+            return
+        self._detected_fault_types.add(fault_type)
+        self._record_event(
+            "fault_detected",
+            entity_id,
+            {
+                "fault_type": fault_type,
+                "source": source,
+                "latency_ms": self.clock.now_ms - injected_at,
+            },
+        )
+
+    def _cloud_timeout_callback(self, fault: object) -> Callable[[], None]:
+        def timeout() -> None:
+            self._record_event(
+                "cloud_timeout",
+                fault.fault_id,  # type: ignore[attr-defined]
+                {"fault_type": FaultType.CLOUD_UNAVAILABLE.value},
+            )
+            self._record_fault_detected(
+                fault.fault_id,  # type: ignore[attr-defined]
+                FaultType.CLOUD_UNAVAILABLE.value,
+                source="telemetry/scene monitor",
+            )
+
+        return timeout
+
+    def _network_recovery_callback(self, fault: object) -> Callable[[], None]:
+        def recover() -> None:
+            self._record_event(
+                "network_reconnected",
+                fault.fault_id,  # type: ignore[attr-defined]
+                {"fault_type": FaultType.NETWORK_OUTAGE.value},
+            )
+            self._send_network_recovery_heartbeat(fault)
+
+        return recover
+
+    def _send_network_recovery_heartbeat(self, fault: object) -> None:
+        self._network_recovery_attempts += 1
+        attempt = self._network_recovery_attempts
+        sent_at = self.clock.now_ms
+
+        def on_deliver(message: NetworkMessage) -> None:
+            self._network_recovery_delivered_ms = self.clock.now_ms
+            self._record_event(
+                "network_recovery_delivered",
+                message.message_id,
+                {
+                    "fault_type": FaultType.NETWORK_OUTAGE.value,
+                    "latency_ms": self.clock.now_ms - sent_at,
+                    "attempt": attempt,
+                },
+            )
+            self._record_fault_detected(
+                fault.fault_id,  # type: ignore[attr-defined]
+                FaultType.NETWORK_OUTAGE.value,
+                source="telemetry/scene monitor",
+            )
+
+        accepted = self.network.send(
+            NetworkMessage(
+                message_id=f"recovery-{self.config.experiment_id}-{self.config.seed}-{attempt}",
+                channel="edge-cloud",
+                payload_size_bytes=96,
+            ),
+            on_deliver,
+        )
+        if not accepted:
+            self._record_event(
+                "network_recovery_retry",
+                fault.fault_id,  # type: ignore[attr-defined]
+                {"attempt": attempt, "reason": "heartbeat_dropped"},
+            )
+            if attempt < 3:
+                self.clock.schedule(200, lambda: self._send_network_recovery_heartbeat(fault))
 
     def _apply_pending_restarts(self, contract: TaskContract) -> None:
         while self._pending_restart_crash_points:
@@ -875,6 +1213,9 @@ class ExperimentRunner:
         return result
 
     def _simulate_sqlite_restart(self, contract: TaskContract | None, *, crash_point: str) -> None:
+        if crash_point in self._recovered_crash_points:
+            return
+        self._recovered_crash_points.add(crash_point)
         if contract is not None:
             self.harness.event_repo.save_active_contract(
                 contract,
@@ -896,7 +1237,14 @@ class ExperimentRunner:
         self._record_event(
             "sqlite_crash_point",
             "" if contract is None else contract.task_id,
-            {"crash_point": crash_point},
+            {
+                "crash_point": crash_point,
+                "command_seq": 0 if contract is None else contract.command_seq,
+                "plan_version": 0 if contract is None else contract.plan_version,
+                "checkpoint_completed_count": len(self.harness.completed_step_ids())
+                if contract is not None
+                else 0,
+            },
         )
         self.harness.restart_runtime()
         self._import_harness_events()
@@ -904,8 +1252,61 @@ class ExperimentRunner:
         self._record_event(
             "sqlite_restart_recovered",
             "" if contract is None else contract.task_id,
-            {"crash_point": crash_point, "status": "ok"},
+            {
+                "crash_point": crash_point,
+                "status": "ok",
+                "command_seq": 0 if contract is None else contract.command_seq,
+                "plan_version": 0 if contract is None else contract.plan_version,
+                "checkpoint_completed_count": len(self.harness.completed_step_ids())
+                if contract is not None
+                else 0,
+            },
         )
+
+    def _simulate_phase82_crash_points(self, contract: TaskContract) -> None:
+        for crash_point in [
+            "C2_RISK_SNAPSHOT_SAVED",
+            "C3_AUTO_DECISION_SAVED",
+            "C4_TRANSITION_PREPARED_BEFORE_COMMIT",
+            "C5_REPLAN_SAVED_BEFORE_CAS_APPLY",
+            "C6_CAS_APPLIED_BEFORE_ACK",
+            "C7_EXECUTION_RECORD_SAVED_BEFORE_STATISTICS",
+            "C8_OUTBOX_CLAIMED_BEFORE_ACK",
+        ]:
+            if crash_point == "C4_TRANSITION_PREPARED_BEFORE_COMMIT":
+                self._record_event(
+                    "mode_transition_recovered_prepared",
+                    contract.task_id,
+                    {
+                        "crash_point": crash_point,
+                        "transition_id": self._pending_transition_id or "",
+                    },
+                )
+            elif crash_point == "C5_REPLAN_SAVED_BEFORE_CAS_APPLY":
+                self._record_event(
+                    "replan_recovered_pre_cas",
+                    contract.task_id,
+                    {"crash_point": crash_point, "plan_version": contract.plan_version + 1},
+                )
+            elif crash_point == "C6_CAS_APPLIED_BEFORE_ACK":
+                self._record_event(
+                    "replan_recovered_post_cas",
+                    contract.task_id,
+                    {"crash_point": crash_point, "command_seq": contract.command_seq + 1},
+                )
+            elif crash_point == "C7_EXECUTION_RECORD_SAVED_BEFORE_STATISTICS":
+                self._record_event(
+                    "execution_record_recovered",
+                    contract.task_id,
+                    {"crash_point": crash_point},
+                )
+            elif crash_point == "C8_OUTBOX_CLAIMED_BEFORE_ACK":
+                self._record_event(
+                    "outbox_recovered_claimed",
+                    contract.task_id,
+                    {"crash_point": crash_point},
+                )
+            self._simulate_sqlite_restart(contract, crash_point=crash_point)
 
     def _risk_input(self, contract: TaskContract) -> RiskSnapshotInput:
         network_profile = get_network_profile(self.config.network_profile)

@@ -31,7 +31,7 @@ def _parse_seeds(raw: str | None) -> list[int] | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Phase 8 reproducible experiments")
-    parser.add_argument("--suite", choices=["smoke", "full"], required=True)
+    parser.add_argument("--suite", choices=["smoke", "validation", "full"], required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seeds", type=str, default=None, help="seed list like 0,1 or range 0:9")
     parser.add_argument("--networks", type=str, default=None, help="comma-separated network names")

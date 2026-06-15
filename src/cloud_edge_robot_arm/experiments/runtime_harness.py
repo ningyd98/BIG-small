@@ -669,23 +669,53 @@ class RuntimeExperimentHarness:
         return saved
 
     def _edge_snapshot(self, contract: TaskContract) -> EdgeStatusSnapshot:
+        current_step_id = self._current_step_id_from_observer(contract.task_id)
+        scene = self.scene_provider.snapshot()
         return EdgeStatusSnapshot(
             robot_id="robot-unknown",
             task_id=contract.task_id,
             plan_version=contract.plan_version,
             command_seq=contract.command_seq,
-            scene_version=self.robot.scene_version,
+            scene_version=self.world.scene_version,
             timestamp=self.clock_adapter.now(),
-            current_step_id="",
+            current_step_id=current_step_id,
             completed_step_ids=self.completed_step_ids(),
             robot_state=self.robot.get_state().model_dump(mode="json"),
             target_state={
                 "object_id": contract.task_target.object_id,
                 "object_class": contract.task_target.object_class,
                 "region_id": contract.task_target.target_region_id,
+                "target_visible": self.world.target_visible,
+                "target_moved": self.world.target_moved,
+                "target_lost": self.world.target_lost,
+                "obstacle_inserted": self.world.obstacle_inserted,
+                "obstacle_count": self.world.obstacle_count,
+                "scene_version": self.world.scene_version,
+            },
+            obstacle_state={
+                "obstacle_ids": [obstacle.obstacle_id for obstacle in scene.obstacles],
+                "obstacle_inserted": self.world.obstacle_inserted,
+                "obstacle_count": self.world.obstacle_count,
             },
             scene_confidence=self.world.scene_confidence,
         )
+
+    def _current_step_id_from_observer(self, task_id: str) -> str:
+        active = ""
+        completed: set[str] = set()
+        for event in self.observer.events:
+            payload = event.get("payload")
+            if not isinstance(payload, dict) or payload.get("task_id") != task_id:
+                continue
+            event_type = str(event.get("event_type", ""))
+            entity_id = str(event.get("entity_id", ""))
+            if event_type == "step_started":
+                active = entity_id
+            elif event_type in {"step_completed", "step_failed", "step_paused", "step_rejected"}:
+                completed.add(entity_id)
+                if active == entity_id:
+                    active = ""
+        return "" if active in completed else active
 
 
 def _ack_status_for_error(code: str) -> str:
