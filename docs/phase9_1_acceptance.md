@@ -13,6 +13,9 @@ The current host is accepted only for core MuJoCo readiness. ROS 2, MoveIt 2, an
 ## Required Commands
 
 ```bash
+scripts/phase9/install_ros2_jazzy.sh --artifact-dir artifacts/phase9_1/install
+scripts/phase9/install_vulkan_runtime.sh --artifact-dir artifacts/phase9_1/install
+ARTIFACT_DIR=artifacts/phase9_1/install python scripts/phase9/check_isaac_sim.py
 python scripts/verify_phase9_1.py
 python scripts/verify_phase9_1_ros2_integration.py
 python scripts/verify_phase9_1_moveit_safety.py
@@ -31,6 +34,7 @@ python scripts/verify_phase9_1.py --skip-history
 - A blocked ROS 2, MoveIt 2, or Isaac Sim check exits successfully only to indicate the verifier itself worked.
 - The artifact must still contain `status=BLOCKED_BY_ENV` and `validation_claimed=false`.
 - Every blocked component records the actual commands, exit codes, stdout, and stderr that established the blocker.
+- Install readiness is dry-run by default and must record that core Python remains unchanged.
 - Isaac Sim validation requires a real Isaac run count greater than zero before `validation_claimed=true`.
 - Cross-backend validation remains `NOT_RUN_BLOCKED_BY_ENV` unless Isaac Sim is available.
 

@@ -8,6 +8,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - Core Phase 9 history: passed through `scripts/verify_phase9.py`
 - Safety pressure: 100 MuJoCo near-miss trials, 0 illegal collisions
 - Cross-backend: MuJoCo reference generated; Isaac comparison not run because Isaac is blocked by environment
+- Install readiness: dry-run plans generated for ROS 2 Jazzy, MoveIt 2, Vulkan, and Isaac compatibility without modifying the core Python environment
 
 ## Environment Blockers
 
@@ -24,6 +25,10 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - `artifacts/phase9_1/isaac/isaac_verification.json`
 - `artifacts/phase9_1/cross_backend/cross_backend_verification.json`
 - `artifacts/phase9_1/safety_pressure/safety_pressure.json`
+- `artifacts/phase9_1/install/install_readiness.json`
+- `artifacts/phase9_1/install/install_plan.json`
+- `artifacts/phase9_1/install/vulkan_install_plan.json`
+- `artifacts/phase9_1/install/isaac_compatibility_report.json`
 
 ## Time Domains
 

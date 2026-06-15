@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -45,6 +46,7 @@ def main() -> int:
 
     args.output.mkdir(parents=True, exist_ok=True)
     history = _run_history(args.output) if not args.skip_history else _skipped_history()
+    install_readiness = _collect_install_readiness(args.output / "install")
     ros2 = verify_ros2_integration(args.output / "ros2")
     moveit = verify_moveit_safety(args.output / "moveit")
     isaac = verify_isaac_smoke(args.output / "isaac")
@@ -74,6 +76,7 @@ def main() -> int:
         "components": components,
         "cross_backend": cross_backend,
         "safety_pressure": safety_pressure,
+        "install_readiness": install_readiness,
         "history": history,
         "time_domains": TIME_DOMAINS,
         "validation_claimed": status == "PHASE9_1_ACCEPTED",
@@ -94,7 +97,7 @@ def _run_history(output_dir: Path) -> dict[str, object]:
         text=True,
         capture_output=True,
     )
-    payload = {
+    payload: dict[str, object] = {
         "command": ["python", "scripts/verify_phase9.py"],
         "returncode": result.returncode,
         "stdout_tail": _sanitize_text(result.stdout[-4000:]),
@@ -115,6 +118,41 @@ def _skipped_history() -> dict[str, object]:
         "stderr_tail": "",
         "skipped": True,
     }
+
+
+def _collect_install_readiness(output_dir: Path) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    commands = [
+        ["bash", "scripts/phase9/install_ros2_jazzy.sh", "--artifact-dir", str(output_dir)],
+        ["bash", "scripts/phase9/install_vulkan_runtime.sh", "--artifact-dir", str(output_dir)],
+        [sys.executable, "scripts/phase9/check_isaac_sim.py"],
+    ]
+    evidence: list[dict[str, object]] = []
+    env = os.environ.copy()
+    env["ARTIFACT_DIR"] = str(output_dir)
+    for command in commands:
+        result = subprocess.run(command, check=False, text=True, capture_output=True, env=env)
+        evidence.append(
+            {
+                "argv": ["python" if item == sys.executable else item for item in command],
+                "exit_code": result.returncode,
+                "stdout": _sanitize_text(result.stdout[-4000:]),
+                "stderr": _sanitize_text(result.stderr[-4000:]),
+            }
+        )
+    payload: dict[str, object] = {
+        "status": "RECORDED",
+        "execute_mode": "dry_run",
+        "core_python_environment": "unchanged",
+        "ros_environment": "/opt/ros/jazzy plus ros2_ws/install after explicit install",
+        "isaac_environment": "official Isaac Sim runtime selected by ISAAC_SIM_ROOT",
+        "commands": evidence,
+    }
+    (output_dir / "install_readiness.json").write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
 
 
 def _sanitize_text(value: str) -> str:
