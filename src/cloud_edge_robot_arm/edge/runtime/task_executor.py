@@ -4,8 +4,9 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
+from cloud_edge_robot_arm.cloud.supervision.core import Clock, WallClock
 from cloud_edge_robot_arm.contracts import ControlMode, TaskState
 from cloud_edge_robot_arm.contracts.models import (
     CheckpointExecutionState,
@@ -56,6 +57,20 @@ class TaskExecutionResult:
     error: StructuredError | None = None
 
 
+class TaskExecutionObserver(Protocol):
+    def on_contract_received(self, task_id: str, payload: dict[str, Any]) -> None: ...
+
+    def on_contract_validation(self, task_id: str, accepted: bool, error_code: str) -> None: ...
+
+    def on_task_executor_called(self, task_id: str) -> None: ...
+
+    def on_step_started(self, contract: TaskContract, step_id: str, attempt: int) -> None: ...
+
+    def on_step_result(self, contract: TaskContract, result: StepExecutionResult) -> None: ...
+
+    def on_task_terminal(self, result: TaskExecutionResult) -> None: ...
+
+
 class TaskExecutor:
     def __init__(
         self,
@@ -70,6 +85,8 @@ class TaskExecutor:
         scene_provider: SceneStateProvider | None = None,
         runtime_profile: str = "test",
         event_controller: EventTriggeredModeController | None = None,
+        observer: TaskExecutionObserver | None = None,
+        clock: Clock | None = None,
     ) -> None:
         if not isinstance(shield, SafetyShield):
             raise TypeError(
@@ -106,9 +123,15 @@ class TaskExecutor:
         self._state_machine = TaskStateMachine()
         self._retry_policy = RetryPolicy()
         self._event_controller = event_controller
+        self._observer = observer
+        self._clock: Clock = clock or WallClock()
+        self._checkpoint_sequence = 0
 
     def submit_contract(self, payload: dict[str, Any]) -> TaskExecutionResult:
         task_id = self._extract_task_id(payload)
+        if self._observer is not None:
+            self._observer.on_task_executor_called(task_id)
+            self._observer.on_contract_received(task_id, payload)
         self._repository.record_audit_event(
             task_id=task_id,
             event_type="CONTRACT_RECEIVED",
@@ -119,6 +142,12 @@ class TaskExecutor:
             supported_skills=self._registry.skills(),
             min_plan_version=self._min_plan_version,
         ).accept_payload(payload, now=self._validation_now(payload))
+        if self._observer is not None:
+            self._observer.on_contract_validation(
+                task_id,
+                validation.accepted,
+                "" if validation.error is None else validation.error.code,
+            )
         if not validation.accepted or validation.contract is None:
             error = validation.error or runtime_error(
                 "CONTRACT_SCHEMA_INVALID",
@@ -129,13 +158,17 @@ class TaskExecutor:
                 event_type="CONTRACT_REJECTED",
                 details={"error_code": error.code},
             )
-            return TaskExecutionResult(success=False, repository=self._repository, error=error)
+            return self._finish(
+                TaskExecutionResult(success=False, repository=self._repository, error=error)
+            )
 
         contract = validation.contract
         connected_error = self._connected_error()
         if connected_error is not None:
-            return TaskExecutionResult(
-                success=False, repository=self._repository, error=connected_error
+            return self._finish(
+                TaskExecutionResult(
+                    success=False, repository=self._repository, error=connected_error
+                )
             )
 
         command_decision = self._repository.accept_command(
@@ -149,7 +182,9 @@ class TaskExecutor:
                 event_type="CONTRACT_REJECTED",
                 details={"error_code": error.code},
             )
-            return TaskExecutionResult(success=False, repository=self._repository, error=error)
+            return self._finish(
+                TaskExecutionResult(success=False, repository=self._repository, error=error)
+            )
 
         self._repository.create_task_from_contract(contract)
         context = TaskRuntimeContext.from_contract(contract)
@@ -162,11 +197,13 @@ class TaskExecutor:
         for target_state in (TaskState.VALIDATING, TaskState.READY, TaskState.EXECUTING):
             transition = self._transition(context, target_state, reason="task accepted")
             if not transition:
-                return TaskExecutionResult(
-                    success=False,
-                    repository=self._repository,
-                    context=context,
-                    error=context.last_error,
+                return self._finish(
+                    TaskExecutionResult(
+                        success=False,
+                        repository=self._repository,
+                        context=context,
+                        error=context.last_error,
+                    )
                 )
 
         if self._is_event_contract(contract):
@@ -183,22 +220,28 @@ class TaskExecutor:
     ) -> TaskExecutionResult:
         """Resume an event-triggered task from a persisted checkpoint."""
         if self._event_controller is None:
-            return TaskExecutionResult(
-                success=False,
-                repository=self._repository,
-                error=runtime_error(
-                    "EVENT_CONTROLLER_REQUIRED", "resume requires event controller"
-                ),
+            return self._finish(
+                TaskExecutionResult(
+                    success=False,
+                    repository=self._repository,
+                    error=runtime_error(
+                        "EVENT_CONTROLLER_REQUIRED", "resume requires event controller"
+                    ),
+                )
             )
         validation_error = self._validate_resume_contract(contract, checkpoint)
         if validation_error is not None:
-            return TaskExecutionResult(
-                success=False, repository=self._repository, error=validation_error
+            return self._finish(
+                TaskExecutionResult(
+                    success=False, repository=self._repository, error=validation_error
+                )
             )
         connected_error = self._connected_error()
         if connected_error is not None:
-            return TaskExecutionResult(
-                success=False, repository=self._repository, error=connected_error
+            return self._finish(
+                TaskExecutionResult(
+                    success=False, repository=self._repository, error=connected_error
+                )
             )
 
         self._repository.create_task_from_contract(contract)
@@ -256,6 +299,9 @@ class TaskExecutor:
                 event_type="STEP_STARTED",
                 details={"step_id": step.step_id, "skill": step.skill.value},
             )
+            if self._observer is not None:
+                next_attempt = context.step_attempts.get(step.step_id, 0) + 1
+                self._observer.on_step_started(contract, step.step_id, next_attempt)
             if self._is_event_contract(contract):
                 self._save_checkpoint(context, CheckpointExecutionState.STEP_STARTED.value)
 
@@ -264,6 +310,8 @@ class TaskExecutor:
                 context=context,
                 step_index=current_step_index,
             )
+            if self._observer is not None:
+                self._observer.on_step_result(contract, step_result)
             if step_result.post_safety_decision:
                 last_post_safety_decision = step_result.post_safety_decision
                 last_post_safety_details = dict(step_result.post_safety_details or {})
@@ -373,12 +421,15 @@ class TaskExecutor:
                     )
                 if ctrl_result.action.value == "PAUSE":
                     self._transition(context, TaskState.PAUSED, reason="Paused by event controller")
-                    return TaskExecutionResult(
-                        success=False,
-                        repository=self._repository,
-                        context=context,
-                        error=runtime_error(
-                            "TASK_PAUSED_EVENT_CONTROLLER", "Task paused by event controller"
+                    return self._finish(
+                        TaskExecutionResult(
+                            success=False,
+                            repository=self._repository,
+                            context=context,
+                            error=runtime_error(
+                                "TASK_PAUSED_EVENT_CONTROLLER",
+                                "Task paused by event controller",
+                            ),
                         ),
                     )
                 if ctrl_result.action.value == "SAFETY_STOP":
@@ -460,7 +511,10 @@ class TaskExecutor:
         scene = self._scene_provider.snapshot()
         scene_version = scene.scene_version if scene is not None else contract.scene_version
         scene_updated_at = scene.updated_at if scene is not None else None
-        evaluation = CompletionEvaluator(repository=completion_repository).evaluate(
+        evaluation = CompletionEvaluator(
+            repository=completion_repository,
+            clock=self._clock.now,
+        ).evaluate(
             contract=contract,
             completed_step_ids=list(context.completed_step_ids),
             completion_criteria_results=criteria_results,
@@ -517,8 +571,10 @@ class TaskExecutor:
                 "evaluation_passed": True,
             },
         )
-        return TaskExecutionResult(
-            success=True, repository=self._repository, context=context, error=None
+        return self._finish(
+            TaskExecutionResult(
+                success=True, repository=self._repository, context=context, error=None
+            )
         )
 
     def _completion_criteria_results(
@@ -796,9 +852,16 @@ class TaskExecutor:
             event_type="TASK_FAILED",
             details={"error_code": error.code, "failed_step_id": context.failed_step_id},
         )
-        return TaskExecutionResult(
-            success=False, repository=self._repository, context=context, error=error
+        return self._finish(
+            TaskExecutionResult(
+                success=False, repository=self._repository, context=context, error=error
+            )
         )
+
+    def _finish(self, result: TaskExecutionResult) -> TaskExecutionResult:
+        if self._observer is not None:
+            self._observer.on_task_terminal(result)
+        return result
 
     def _task_timeout_error(
         self,
@@ -830,6 +893,7 @@ class TaskExecutor:
             telemetry_provider=self._telemetry_provider,
             scene_provider=self._scene_provider,
             repository=self._repository,
+            clock=self._clock,
         )
 
     def _save_checkpoint(
@@ -854,11 +918,13 @@ class TaskExecutor:
             "object_at_target": self._robot.object_region(context.contract.task_target.object_id)
             == context.contract.task_target.target_region_id
         }
-        now = datetime.now(UTC)
+        now = self._clock.now()
+        self._checkpoint_sequence += 1
         checkpoint = ExecutionCheckpoint(
             checkpoint_id=(
                 f"ckpt-{context.task_id}-{context.plan_version}-{context.command_seq}-"
-                f"{len(context.completed_step_ids)}-{execution_state}-{now.strftime('%Y%m%d%H%M%S%f')}"
+                f"{len(context.completed_step_ids)}-{execution_state}-"
+                f"{self._checkpoint_sequence:06d}-{now.strftime('%Y%m%d%H%M%S%f')}"
             ),
             task_id=context.task_id,
             plan_id=self._plan_id(context.contract),
@@ -940,7 +1006,7 @@ class TaskExecutor:
         validation = EdgeContractValidator(
             supported_skills=self._registry.skills(),
             min_plan_version=self._min_plan_version,
-        ).accept_payload(contract.model_dump(mode="json"), now=datetime.now(UTC))
+        ).accept_payload(contract.model_dump(mode="json"), now=self._clock.now())
         if not validation.accepted:
             return validation.error or runtime_error(
                 "CONTRACT_SCHEMA_INVALID", "resume contract invalid"

@@ -47,7 +47,7 @@ def scenario_registry() -> list[ScenarioDefinition]:
                 FaultEvent(
                     fault_id="f-grasp",
                     fault_type=FaultType.GRASP_FAILURE,
-                    trigger_time_ms=1_100,
+                    trigger_time_ms=250,
                     parameters={"failures": 1},
                 )
             ],

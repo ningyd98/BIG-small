@@ -94,6 +94,7 @@ class SafetyContext(BaseModel):
     holding_object: bool = False
     step_started_at: float | None = None
     task_started_at_mono: float | None = None
+    monotonic_now: float | None = None
     task_deadline_utc: datetime | None = None
     wall_clock_now: datetime | None = None
     merged_max_tcp_velocity: float | None = None

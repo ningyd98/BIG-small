@@ -705,7 +705,9 @@ def check_no_stub_success_paths() -> None:
             if isinstance(node, ast.Pass):
                 offenders.append(f"{path.relative_to(ROOT)}:{node.lineno} contains pass")
     task_executor = (SRC / "edge" / "runtime" / "task_executor.py").read_text(encoding="utf-8")
-    assert "CompletionEvaluator(repository=completion_repository).evaluate" in task_executor
+    assert "CompletionEvaluator(" in task_executor
+    assert "repository=completion_repository" in task_executor
+    assert ".evaluate(" in task_executor
     assert offenders == [], "\n".join(offenders)
 
 

@@ -56,4 +56,5 @@ python scripts/verify_phase6.py
 python scripts/verify_phase6_2.py
 python scripts/verify_phase7.py
 python scripts/verify_phase8.py
+python scripts/verify_phase8_1.py
 python -m pip check

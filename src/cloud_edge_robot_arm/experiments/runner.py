@@ -11,24 +11,18 @@ from pathlib import Path
 from cloud_edge_robot_arm.auto_mode.models import (
     AutoModePolicy,
     AutoModeState,
-    AutoModeTransitionRequest,
 )
-from cloud_edge_robot_arm.auto_mode.repository import SQLiteAutoModeRepository
 from cloud_edge_robot_arm.auto_mode.selector import AutoModeSelector
-from cloud_edge_robot_arm.auto_mode.transition_service import ModeTransitionService
 from cloud_edge_robot_arm.contracts import (
     AutoModeDecisionType,
     ControlMode,
-    FailurePolicy,
     RiskLevel,
-    SafetyConstraints,
-    SafetyDecision,
     SkillName,
     TaskContract,
-    TaskStep,
-    TaskTarget,
 )
+from cloud_edge_robot_arm.edge.runtime.task_executor import TaskExecutionResult
 from cloud_edge_robot_arm.experiments.metrics import ExperimentCounters
+from cloud_edge_robot_arm.experiments.metrics_collector import ExperimentMetricsCollector
 from cloud_edge_robot_arm.experiments.models import (
     AblationType,
     CachePolicy,
@@ -41,12 +35,13 @@ from cloud_edge_robot_arm.experiments.models import (
 )
 from cloud_edge_robot_arm.experiments.profiles import get_network_profile
 from cloud_edge_robot_arm.experiments.reproducibility import config_hash, stable_hash
+from cloud_edge_robot_arm.experiments.runtime_harness import RuntimeExperimentHarness
 from cloud_edge_robot_arm.experiments.scenario import get_scenario
-from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import SQLiteEventAutonomyRepository
 from cloud_edge_robot_arm.risk.evaluator import RiskEvaluator
 from cloud_edge_robot_arm.risk.models import RiskPolicy, RiskSnapshotInput
 from cloud_edge_robot_arm.simulation.clock import VirtualClock
 from cloud_edge_robot_arm.simulation.fault_injection import FaultInjector
+from cloud_edge_robot_arm.simulation.mock_robot import FaultCode
 from cloud_edge_robot_arm.simulation.network import NetworkMessage, NetworkSimulator
 from cloud_edge_robot_arm.simulation.world import SimulatedWorld
 from cloud_edge_robot_arm.skill_cache.models import (
@@ -89,18 +84,25 @@ class ExperimentRunner:
         self._rng_variation_ms = self._seeded_variation_ms()
         self._git_sha = git_sha()
         self._fault_injector = FaultInjector(world=self.world, network=self.network)
+        self.harness = RuntimeExperimentHarness(
+            config=config,
+            clock=self.clock,
+            world=self.world,
+        )
+        self._last_task_result: TaskExecutionResult | None = None
+        self._active_contract: TaskContract | None = None
+        self._pending_restart_crash_points: list[str] = []
+        self._harness_event_cursor = 0
 
     def run_once(self) -> ExperimentResult:
         return self.run().result
 
     def run(self) -> ExperimentExecution:
         self._record_event("run_started", self.config.experiment_id, {"seed": self.config.seed})
-        contract = self._build_contract()
+        contract = self.harness.create_contract()
         self._prime_cache_if_needed()
         self._schedule_faults()
-        self._run_network_warmup()
         self._execute_scenario(contract)
-        self.clock.run_until_idle()
         result = self._build_result()
         self._record_event("run_completed", result.run_id, {"status": result.result_status.value})
         result = result.model_copy(update={"event_count": len(self.events)}, deep=True)
@@ -108,79 +110,51 @@ class ExperimentRunner:
         return ExperimentExecution(result=result, events=list(self.events))
 
     def _execute_scenario(self, contract: TaskContract) -> None:
+        self._active_contract = contract
         self._apply_immediate_scenario_effects()
         if self.config.mode == ExperimentMode.AUTO:
-            self._run_auto_decision(contract)
-        if self.world.emergency_stop:
-            self.counters.record_safety(SafetyDecision.EMERGENCY_STOP)
-            self._record_event("safety_stop", contract.task_id, {"reason": "emergency_stop"})
-            return
-        if self.world.target_lost or self.world.perception_degraded:
-            self.counters.record_safety(SafetyDecision.PAUSE)
-            self._record_event(
-                "request_observation", contract.task_id, {"reason": "insufficient_evidence"}
-            )
-            return
-        if self.world.obstacle_inserted:
-            self.counters.record_safety(SafetyDecision.PAUSE)
-            self.counters.replan_count += 1
-            if AblationType.A7_SAFETY_SHADOW_COUNTERFACTUAL in self.config.ablations:
-                self.counters.unsafe_counterfactual_count += 1
-            self._record_event("obstacle_recovery", contract.task_id, {"replan": True})
-        elif self.world.target_moved:
-            self.counters.replan_count += 1
-            self.counters.recovery_success = True
-            self._record_event(
-                "target_replanned", contract.task_id, {"scene_version": self.world.scene_version}
-            )
-
+            if self._scenario_has_fault(FaultType.EMERGENCY_STOP):
+                self._record_event(
+                    "auto_decision_deferred",
+                    contract.task_id,
+                    {"reason": "emergency_stop_fault_profile"},
+                )
+            else:
+                self._run_auto_decision(contract)
+        contract = self._contract_for_current_mode(contract)
+        self._active_contract = contract
+        if self.scenario.scenario_id == "S15_SQLITE_RESTART_DURING_RUN":
+            self._simulate_sqlite_restart(contract, crash_point="C1_ACTIVE_CONTRACT_SAVED")
         if self.scenario.scenario_id == "S10_STALE_DUPLICATE_REORDERED_COMMAND":
-            self.counters.stale_command_rejection_count = 1
-            self.counters.duplicate_command_rejection_count = 1
-            self.counters.reordered_command_rejection_count = 1
-            self._record_event("command_rejections", contract.task_id, {"count": 3})
+            self._exercise_command_ingress(contract)
+            contract = self._fresh_execution_contract_after_ingress(contract)
+            self._active_contract = contract
         if self.scenario.scenario_id == "S12_SKILL_CACHE_QUARANTINE":
             self.counters.cache_quarantine_count = 1
             self.counters.cache_hit_count = 0
             self._record_event(
                 "cache_quarantined", contract.task_id, {"template_id": "tmpl-phase8"}
             )
-        if self.scenario.scenario_id == "S15_SQLITE_RESTART_DURING_RUN":
-            self._simulate_sqlite_restart(contract)
 
-        for step in contract.steps:
-            self._execute_step(contract, step)
-            if self._terminal_pause_or_stop():
-                break
+        if self.current_mode == ControlMode.PERIODIC_CLOUD_SUPERVISION:
+            self._run_pcsc_tick(contract)
 
+        result = self.harness.submit_contract(contract)
+        self._active_contract = contract
+        self._last_task_result = result
+        self._import_harness_events()
+        self._apply_pending_restarts(contract)
+        if (
+            not result.success
+            and result.error is not None
+            and result.error.code == "CLOUD_REPLAN_REQUIRED"
+        ):
+            self._process_eteac_cloud_replan(contract)
+            self._import_harness_events()
+
+        self._sync_counters_from_runtime(contract)
         self._finalize_mode_time()
-
-    def _execute_step(self, contract: TaskContract, step: TaskStep) -> None:
-        duration_ms = step.expected_duration_ms + self._rng_variation_ms
-        self.clock.advance(duration_ms)
-        self.counters.telemetry_count += 1
-        self.counters.command_count += 1
-        self.counters.record_safety(SafetyDecision.ALLOW)
-        attempt = self.counters.step_attempts.get(step.step_id, 0) + 1
-        self.counters.step_attempts[step.step_id] = attempt
-        if step.skill == SkillName.GRASP and self.scenario.scenario_id == "S04_GRASP_FAILURE":
-            failures = 1
-            if attempt <= failures:
-                self.counters.failed_steps.append(step.step_id)
-                self.counters.local_retry_count += 1
-                self.counters.replan_count += 1
-                self.counters.fault_detection_latency_ms = (
-                    self.counters.fault_detection_latency_ms or 100
-                )
-                self.counters.recovery_latency_ms = self.counters.recovery_latency_ms or 250
-                self._record_event("grasp_retry", step.step_id, {"attempt": attempt})
-                self._execute_step(contract, step)
-                return
-        if step.step_id not in self.counters.completed_steps:
-            self.counters.completed_steps.append(step.step_id)
-        self._record_event(
-            "step_completed", step.step_id, {"skill": step.skill.value, "attempt": attempt}
-        )
+        self._sort_events()
 
     def _run_auto_decision(self, contract: TaskContract) -> None:
         risk_input = self._risk_input(contract)
@@ -188,6 +162,12 @@ class ExperimentRunner:
             policy=RiskPolicy(version=self.config.risk_policy_version),
             clock=self._now,
         ).evaluate(risk_input)
+        self.harness.save_risk_snapshot(risk_snapshot)
+        self._record_event(
+            "risk_snapshot_saved",
+            risk_snapshot.snapshot_id,
+            {"risk_level": risk_snapshot.risk_level.value, "score": risk_snapshot.total_score},
+        )
         cache_lookup = self._cache_lookup()
         if AblationType.A1_AUTO_WITHOUT_SKILL_CACHE_SIGNAL in self.config.ablations:
             cache_lookup = SkillCacheLookupResult(match_type="exact_match", templates=[])
@@ -217,6 +197,7 @@ class ExperimentRunner:
             atomic_step_active=False,
             mode_history=[],
         )
+        self.harness.save_auto_decision(decision)
         self._record_event(
             "auto_decision",
             decision.decision_id,
@@ -243,21 +224,377 @@ class ExperimentRunner:
         if selected_mode == self.current_mode:
             return
         self._accumulate_mode_time()
-        request = AutoModeTransitionRequest(
+        transition = self.harness.prepare_mode_transition(
             task_id=task_id,
-            from_mode=self.current_mode,
             to_mode=selected_mode,
-            expected_mode_version=1,
-            idempotency_key=f"{self.config.experiment_id}-{task_id}-{selected_mode.value}",
             decision_id=decision_id,
             reason="phase8_auto_selection",
         )
-        transition = ModeTransitionService(clock=self._now).prepare(request)
-        self.current_mode = selected_mode
+        self._record_event(
+            "mode_transition_prepared",
+            transition.transition_id,
+            {"from_mode": transition.from_mode.value, "to_mode": selected_mode.value},
+        )
+        committed = self.harness.commit_mode_transition(transition.transition_id)
+        self.current_mode = self.harness.current_mode
         self.counters.mode_switch_count += 1
         self._record_event(
-            "mode_transition_prepared", transition.transition_id, {"to_mode": selected_mode.value}
+            "mode_transition_committed",
+            committed.transition_id,
+            {"from_mode": committed.from_mode.value, "to_mode": committed.to_mode.value},
         )
+
+    def _contract_for_current_mode(self, contract: TaskContract) -> TaskContract:
+        now = self._now()
+        return contract.model_copy(
+            update={
+                "control_mode": self.current_mode,
+                "timestamp": now,
+                "issued_at": now,
+                "valid_until": now + timedelta(milliseconds=self.config.timeout_ms),
+            },
+            deep=True,
+        )
+
+    def _exercise_command_ingress(self, contract: TaskContract) -> None:
+        accepted = self.harness.deliver_cloud_command(contract, request_id="s10-accepted")
+        now = self._now()
+        stale_seq = contract.model_copy(
+            update={
+                "command_seq": contract.command_seq,
+                "plan_version": contract.plan_version + 1,
+                "timestamp": now,
+                "issued_at": now,
+                "valid_until": now + timedelta(milliseconds=self.config.timeout_ms),
+            },
+            deep=True,
+        )
+        commands = [
+            (
+                "s10-expired",
+                contract.model_copy(
+                    update={
+                        "command_seq": contract.command_seq + 1,
+                        "timestamp": now,
+                        "issued_at": now,
+                        "valid_until": now,
+                    },
+                    deep=True,
+                ),
+            ),
+            ("s10-duplicate", contract),
+            (
+                "s10-conflict",
+                contract.model_copy(update={"user_instruction": "changed by conflict"}, deep=True),
+            ),
+            ("s10-stale-seq", stale_seq),
+            (
+                "s10-stale-plan",
+                contract.model_copy(
+                    update={
+                        "command_seq": contract.command_seq + 2,
+                        "plan_version": 0,
+                        "timestamp": now,
+                        "issued_at": now,
+                        "valid_until": now + timedelta(milliseconds=self.config.timeout_ms),
+                    },
+                    deep=True,
+                ),
+            ),
+            (
+                "s10-newer-out-of-order",
+                contract.model_copy(
+                    update={
+                        "command_seq": contract.command_seq + 4,
+                        "plan_version": contract.plan_version + 1,
+                        "previous_command_seq": contract.command_seq,
+                        "timestamp": now,
+                        "issued_at": now,
+                        "valid_until": now + timedelta(milliseconds=self.config.timeout_ms),
+                    },
+                    deep=True,
+                ),
+            ),
+            (
+                "s10-older-after-newer",
+                contract.model_copy(
+                    update={
+                        "command_seq": contract.command_seq + 3,
+                        "plan_version": contract.plan_version + 1,
+                        "previous_command_seq": contract.command_seq,
+                        "timestamp": now,
+                        "issued_at": now,
+                        "valid_until": now + timedelta(milliseconds=self.config.timeout_ms),
+                    },
+                    deep=True,
+                ),
+            ),
+            (
+                "s10-scene-mismatch",
+                contract.model_copy(
+                    update={
+                        "command_seq": contract.command_seq + 5,
+                        "plan_version": contract.plan_version + 2,
+                        "scene_version": contract.expected_scene_version + 1,
+                        "timestamp": now,
+                        "issued_at": now,
+                        "valid_until": now + timedelta(milliseconds=self.config.timeout_ms),
+                    },
+                    deep=True,
+                ),
+            ),
+        ]
+        self._record_event(
+            "command_ingress_started",
+            contract.task_id,
+            {"accepted_status": accepted.status, "accepted": accepted.accepted},
+        )
+        for request_id, command in commands:
+            self.harness.deliver_cloud_command(command, request_id=request_id)
+        self._import_harness_events()
+
+    def _fresh_execution_contract_after_ingress(self, contract: TaskContract) -> TaskContract:
+        now = self._now()
+        return contract.model_copy(
+            update={
+                "command_seq": contract.command_seq + 6,
+                "previous_command_seq": contract.command_seq + 4,
+                "plan_version": contract.plan_version + 2,
+                "control_mode": self.current_mode,
+                "timestamp": now,
+                "issued_at": now,
+                "valid_until": now + timedelta(milliseconds=self.config.timeout_ms),
+            },
+            deep=True,
+        )
+
+    def _run_pcsc_tick(self, contract: TaskContract) -> None:
+        sent_at = self.clock.now_ms
+        decision = self.harness.run_supervision_tick(contract)
+        payload = {
+            "decision": getattr(getattr(decision, "decision", ""), "value", ""),
+            "reason_code": getattr(getattr(decision, "reason_code", ""), "value", ""),
+            "planner_invoked": bool(getattr(decision, "planner_invoked", False)),
+            "resulting_plan_version": int(getattr(decision, "resulting_plan_version", 0)),
+            "command_seq": int(getattr(decision, "command_seq", 0)),
+        }
+        payload_size = len(stable_hash(payload).encode("utf-8")) + len(str(payload).encode("utf-8"))
+        self._record_event("supervisory_decision", contract.task_id, payload)
+        if payload["planner_invoked"]:
+            self._record_event(
+                "cloud_invocation",
+                contract.task_id,
+                {"source": "PeriodicSupervisorService"},
+            )
+
+        def on_deliver(message: NetworkMessage) -> None:
+            self._record_event(
+                "network_delivered",
+                message.message_id,
+                {
+                    "channel": message.channel,
+                    "latency_ms": self.clock.now_ms - sent_at,
+                    "payload_size_bytes": message.payload_size_bytes,
+                },
+            )
+
+        accepted = self.network.send(
+            NetworkMessage(
+                message_id=f"pcsc-{self.config.experiment_id}-{self.config.seed}-{sent_at}",
+                channel="cloud-edge",
+                payload_size_bytes=payload_size,
+            ),
+            on_deliver,
+        )
+        if not accepted:
+            self._record_event(
+                "network_dropped",
+                contract.task_id,
+                {"channel": "cloud-edge", "payload_size_bytes": payload_size},
+            )
+
+    def _process_eteac_cloud_replan(self, contract: TaskContract) -> None:
+        messages = self.harness.event_repo.list_pending_outbox(contract.task_id)
+        request_ids = [message.request_id for message in messages if message.request_id]
+        if not request_ids:
+            return
+        request = self.harness.event_repo.get_replan_request(request_ids[-1])
+        if request is None:
+            return
+        response, applied = self.harness.replanning.process_and_apply(request, dispatch=False)
+        self._record_event(
+            "cloud_invocation",
+            contract.task_id,
+            {"source": "LocalReplanningService", "request_id": request.request_id},
+        )
+        if response.outcome == "REPLANNED":
+            self._record_event(
+                "replan_proposal_saved",
+                request.request_id,
+                {
+                    "outcome": response.outcome,
+                    "new_plan_version": response.new_plan_version,
+                    "new_command_seq": response.new_command_seq,
+                },
+            )
+        if applied is not None:
+            self._record_event(
+                "replan_applied",
+                request.request_id,
+                {
+                    "applied": applied.applied,
+                    "status": applied.record.status,
+                    "ack_status": "" if applied.ack is None else applied.ack.status,
+                },
+            )
+            if applied.applied and applied.contract is not None:
+                checkpoint = self.harness.event_repo.get_latest_execution_checkpoint(
+                    contract.task_id
+                )
+                if checkpoint is not None:
+                    resumed = self.harness.executor.resume_from_checkpoint(
+                        applied.contract,
+                        checkpoint,
+                    )
+                    self._last_task_result = resumed
+
+    def _import_harness_events(self) -> None:
+        raw_events = self.harness.observer.events[self._harness_event_cursor :]
+        self._harness_event_cursor = len(self.harness.observer.events)
+        for raw in raw_events:
+            payload = raw.get("payload", {})
+            event_payload = payload if isinstance(payload, dict) else {"payload": str(payload)}
+            virtual_time = _payload_int(raw.get("virtual_time_ms"), default=self.clock.now_ms)
+            event_type = str(raw.get("event_type", "unknown"))
+            entity_id = str(raw.get("entity_id", ""))
+            self.events.append(
+                ExperimentEvent(
+                    virtual_time_ms=virtual_time,
+                    event_type=event_type,
+                    entity_id=entity_id,
+                    payload=dict(event_payload),
+                    payload_hash=stable_hash(
+                        {
+                            "event_type": event_type,
+                            "entity_id": entity_id,
+                            "payload": event_payload,
+                            "t": virtual_time,
+                        }
+                    ),
+                )
+            )
+        self._sort_events()
+
+    def _sync_counters_from_runtime(self, contract: TaskContract) -> None:
+        cache_hit = self.counters.cache_hit_count
+        cache_miss = self.counters.cache_miss_count
+        cache_quarantine = self.counters.cache_quarantine_count
+        trusted = self.counters.trusted_template_execution_count
+        time_pcsc = self.counters.time_in_pcsc_ms
+        time_eteac = self.counters.time_in_eteac_ms
+        unsafe_counterfactual = self.counters.unsafe_counterfactual_count
+        mode_switch_count = self.counters.mode_switch_count
+        counterfactual_count = self.counters.unsafe_counterfactual_count
+        self.counters = ExperimentCounters(
+            cache_hit_count=cache_hit,
+            cache_miss_count=cache_miss,
+            cache_quarantine_count=cache_quarantine,
+            trusted_template_execution_count=trusted,
+            time_in_pcsc_ms=time_pcsc,
+            time_in_eteac_ms=time_eteac,
+            unsafe_counterfactual_count=unsafe_counterfactual,
+            mode_switch_count=mode_switch_count,
+        )
+        metrics = ExperimentMetricsCollector.from_events(self.events).collect()
+        self.counters.safety_allow_count = metrics.safety_allow_count
+        self.counters.safety_allow_with_limits_count = metrics.safety_allow_with_limits_count
+        self.counters.safety_pause_count = metrics.safety_pause_count
+        self.counters.safety_reject_count = metrics.safety_reject_count
+        self.counters.emergency_stop_count = metrics.emergency_stop_count
+        self.counters.stale_command_rejection_count = metrics.stale_command_rejection_count
+        self.counters.duplicate_command_rejection_count = metrics.duplicate_command_rejection_count
+        self.counters.reordered_command_rejection_count = metrics.reordered_command_rejection_count
+        self.counters.cloud_invocation_count = metrics.cloud_invocation_count
+        self.counters.supervisory_decision_count = metrics.supervisory_decision_count
+        self.counters.replan_count = metrics.replan_count
+
+        records = self.harness.step_execution_records(contract.task_id)
+        if records:
+            self.counters.completed_steps = [record.step_id for record in records if record.success]
+            self.counters.failed_steps = [
+                record.step_id for record in records if not record.success
+            ]
+        else:
+            self.counters.completed_steps = [
+                event.entity_id for event in self.events if event.event_type == "step_completed"
+            ]
+            self.counters.failed_steps = [
+                event.entity_id
+                for event in self.events
+                if event.event_type in {"step_failed", "step_rejected", "step_paused"}
+            ]
+        for record in records:
+            self.counters.step_attempts[record.step_id] = max(
+                self.counters.step_attempts.get(record.step_id, 0),
+                int(record.attempt),
+            )
+        if not records:
+            for event in self.events:
+                if event.event_type not in {
+                    "step_completed",
+                    "step_failed",
+                    "step_rejected",
+                    "step_paused",
+                }:
+                    continue
+                self.counters.step_attempts[event.entity_id] = max(
+                    self.counters.step_attempts.get(event.entity_id, 0),
+                    _payload_int(event.payload.get("attempt"), default=1),
+                )
+        self.counters.local_retry_count = sum(
+            1 for record in records if int(record.attempt) > 1 and record.success
+        )
+        self.counters.command_count = len(self.harness.accepted_command_records(contract.task_id))
+        self.counters.telemetry_count = len(
+            [event for event in self.events if event.event_type == "step_completed"]
+        )
+        self.counters.simulated_collision_count = (
+            1 if self.harness.robot.get_state().collision_detected else 0
+        )
+        self.counters.unsafe_counterfactual_count = counterfactual_count + sum(
+            1 for event in self.events if event.event_type == "safety_counterfactual"
+        )
+        self._derive_fault_latencies()
+
+    def _derive_fault_latencies(self) -> None:
+        first_fault_by_type: dict[str, int] = {}
+        first_detection_after_fault: int | None = None
+        first_recovery_after_fault: int | None = None
+        for event in self.events:
+            if event.event_type == "fault_injected":
+                fault_type = str(event.payload.get("fault_type", ""))
+                first_fault_by_type.setdefault(fault_type, event.virtual_time_ms)
+            elif first_fault_by_type and event.event_type == "fault_detected":
+                first_detection_after_fault = event.virtual_time_ms
+            elif first_fault_by_type and event.event_type in {
+                "step_completed",
+                "replan_applied",
+                "network_delivered",
+            }:
+                first_recovery_after_fault = event.virtual_time_ms
+        if first_fault_by_type and first_detection_after_fault is not None:
+            injected_at = min(first_fault_by_type.values())
+            self.counters.fault_detection_latency_ms = max(
+                0, first_detection_after_fault - injected_at
+            )
+        if first_fault_by_type and first_recovery_after_fault is not None:
+            injected_at = min(first_fault_by_type.values())
+            self.counters.recovery_latency_ms = max(0, first_recovery_after_fault - injected_at)
+            self.counters.recovery_success = True
+        if "CLOUD_UNAVAILABLE" in first_fault_by_type:
+            self.counters.cloud_response_latency_ms = get_network_profile(
+                self.config.network_profile
+            ).cloud_timeout_ms
 
     def _build_result(self) -> ExperimentResult:
         status = self._result_status()
@@ -338,6 +675,25 @@ class ExperimentRunner:
             return ResultStatus.NEEDS_OBSERVATION
         if self.clock.now_ms >= self.config.timeout_ms:
             return ResultStatus.TIMEOUT
+        if self._last_task_result is not None:
+            if self._last_task_result.success:
+                return ResultStatus.SUCCESS
+            if self._last_task_result.error is not None:
+                if self._last_task_result.error.code in {
+                    "SAFETY_EMERGENCY_STOP",
+                    "EMERGENCY_STOP_ACTIVE",
+                    "SAFETY_STOP_EVENT",
+                }:
+                    return ResultStatus.SAFETY_STOPPED
+                if self._last_task_result.error.code in {
+                    "TASK_PAUSED_EVENT_CONTROLLER",
+                    "COMPLETION_EVALUATION_FAILED",
+                    "SAFETY_ACTION_REJECTED",
+                    "SAFETY_REQUEST_CORRECTION",
+                    "CLOUD_REPLAN_REQUIRED",
+                }:
+                    return ResultStatus.NEEDS_OBSERVATION
+            return ResultStatus.FAILED
         return ResultStatus.SUCCESS
 
     def _terminal_reason(self, status: ResultStatus) -> str:
@@ -376,16 +732,7 @@ class ExperimentRunner:
         return violations
 
     def _cloud_invocations(self) -> int:
-        base = 0
-        if self.current_mode == ControlMode.PERIODIC_CLOUD_SUPERVISION:
-            base += max(1, len(self.counters.completed_steps) // 3)
-        if self.counters.replan_count:
-            base += self.counters.replan_count
-        if self.config.cache_policy == CachePolicy.NO_CACHE_REUSE:
-            base += 1
-        if self.config.mode == ExperimentMode.PCSC:
-            base += 1
-        return base
+        return self.counters.cloud_invocation_count
 
     def _run_network_warmup(self) -> None:
         delivered: list[NetworkMessage] = []
@@ -422,18 +769,53 @@ class ExperimentRunner:
         assert hasattr(fault, "fault_type")
         self._fault_injector.apply(fault)  # type: ignore[arg-type]
         fault_type = fault.fault_type  # type: ignore[attr-defined]
-        if fault_type == FaultType.NETWORK_OUTAGE:
-            self.counters.fault_detection_latency_ms = 100
-            self.counters.recovery_latency_ms = 1_000
-        elif fault_type == FaultType.CLOUD_UNAVAILABLE:
-            self.counters.cloud_response_latency_ms = get_network_profile(
-                self.config.network_profile
-            ).cloud_timeout_ms
-        elif fault_type == FaultType.STALE_DUPLICATE_REORDERED_COMMAND:
-            self.counters.stale_command_rejection_count = 1
-            self.counters.duplicate_command_rejection_count = 1
-            self.counters.reordered_command_rejection_count = 1
-        self._record_event("fault_injected", fault.fault_id, {"fault_type": fault_type.value})  # type: ignore[attr-defined]
+        if fault_type == FaultType.GRASP_FAILURE:
+            failures = int(getattr(fault, "parameters", {}).get("failures", 1))  # type: ignore[union-attr]
+            self.harness.robot.inject_fault(FaultCode.GRASP_FAILED, count=max(1, failures))
+        elif fault_type == FaultType.EMERGENCY_STOP:
+            self.harness.robot.inject_fault(FaultCode.EMERGENCY_STOP_ACTIVE, count=1)
+        elif fault_type == FaultType.SQLITE_RESTART:
+            self._pending_restart_crash_points.append("C9_CHECKPOINT_UPDATED")
+        if fault_type == FaultType.STALE_DUPLICATE_REORDERED_COMMAND:
+            self._record_event(
+                "command_fault_triggered",
+                fault.fault_id,  # type: ignore[attr-defined]
+                {"fault_type": fault_type.value},
+            )
+        self._record_event(
+            "fault_injected",
+            fault.fault_id,  # type: ignore[attr-defined]
+            {
+                "fault_type": fault_type.value,
+                "trigger_time_ms": getattr(fault, "trigger_time_ms", self.clock.now_ms),
+            },
+        )
+        self._record_event(
+            "fault_detected",
+            fault.fault_id,  # type: ignore[attr-defined]
+            {"fault_type": fault_type.value},
+        )
+        if (
+            fault_type == FaultType.OBSTACLE_INSERTED
+            and AblationType.A7_SAFETY_SHADOW_COUNTERFACTUAL in self.config.ablations
+        ):
+            self._record_event(
+                "safety_counterfactual",
+                fault.fault_id,  # type: ignore[attr-defined]
+                {
+                    "metric_kind": "counterfactual",
+                    "would_enter_execution_without_safety": True,
+                    "fault_type": fault_type.value,
+                },
+            )
+
+    def _apply_pending_restarts(self, contract: TaskContract) -> None:
+        while self._pending_restart_crash_points:
+            crash_point = self._pending_restart_crash_points.pop(0)
+            self._simulate_sqlite_restart(contract, crash_point=crash_point)
+
+    def _scenario_has_fault(self, fault_type: FaultType) -> bool:
+        return any(fault.fault_type == fault_type for fault in self.scenario.scheduled_faults)
 
     def _apply_immediate_scenario_effects(self) -> None:
         if self.scenario.scenario_id == "S07_NETWORK_DEGRADED":
@@ -492,93 +874,37 @@ class ExperimentRunner:
         repo.close()
         return result
 
-    def _simulate_sqlite_restart(self, contract: TaskContract) -> None:
-        db_dir = self.config.artifact_dir
-        db_dir.mkdir(parents=True, exist_ok=True)
-        auto_path = db_dir / "auto-mode.sqlite3"
-        event_path = db_dir / "event-autonomy.sqlite3"
-        auto_repo = SQLiteAutoModeRepository(auto_path, clock=self._now)
-        auto_repo.save_status(
-            AutoModeState(
-                task_id=contract.task_id,
-                current_mode=self.current_mode,
-                mode_version=1,
-                switch_count=self.counters.mode_switch_count,
-                last_switch_at=self._now(),
-                policy_version="auto-v1",
-                updated_at=self._now(),
+    def _simulate_sqlite_restart(self, contract: TaskContract | None, *, crash_point: str) -> None:
+        if contract is not None:
+            self.harness.event_repo.save_active_contract(
+                contract,
+                plan_id=f"plan-{contract.task_id}",
+                robot_id="robot-unknown",
+                status="ACTIVE",
             )
+            self.harness.auto_repo.save_status(
+                AutoModeState(
+                    task_id=contract.task_id,
+                    current_mode=self.current_mode,
+                    mode_version=1 + self.counters.mode_switch_count,
+                    switch_count=self.counters.mode_switch_count,
+                    last_switch_at=self._now(),
+                    policy_version="auto-v1",
+                    updated_at=self._now(),
+                )
+            )
+        self._record_event(
+            "sqlite_crash_point",
+            "" if contract is None else contract.task_id,
+            {"crash_point": crash_point},
         )
-        auto_repo.close()
-        reopened_auto = SQLiteAutoModeRepository(auto_path, clock=self._now)
-        assert reopened_auto.get_status(contract.task_id) is not None
-        reopened_auto.close()
-        event_repo = SQLiteEventAutonomyRepository(event_path)
-        event_repo.save_active_contract(
-            contract,
-            plan_id=f"plan-{contract.task_id}",
-            robot_id="robot-phase8",
-            status="ACTIVE",
-        )
-        event_repo.close()
-        reopened_event = SQLiteEventAutonomyRepository(event_path)
-        assert reopened_event.get_active_contract(contract.task_id) is not None
-        reopened_event.close()
-        self._record_event("sqlite_restart_recovered", contract.task_id, {"status": "ok"})
-
-    def _terminal_pause_or_stop(self) -> bool:
-        return self.world.emergency_stop or self.world.target_lost or self.world.perception_degraded
-
-    def _build_contract(self) -> TaskContract:
-        issued = self._now()
-        mode = self.current_mode
-        return TaskContract(
-            task_id=f"task-{self.config.experiment_id}-{self.config.seed}",
-            plan_version=1,
-            command_seq=1,
-            timestamp=issued,
-            control_mode=mode,
-            issued_at=issued,
-            valid_until=issued + timedelta(milliseconds=self.config.timeout_ms),
-            user_instruction="place the red cube into bin a",
-            scene_version=1,
-            expected_scene_version=1,
-            task_target=TaskTarget(
-                object_id="red_cube",
-                object_class=self.config.task_profile.object_class,
-                target_region_id="bin_a",
-            ),
-            steps=[
-                _step("step-home", SkillName.HOME),
-                _step(
-                    "step-move-above",
-                    SkillName.MOVE_ABOVE,
-                    {"object_id": "red_cube", "z_offset_m": 0.12},
-                ),
-                _step("step-approach", SkillName.APPROACH, {"object_id": "red_cube"}),
-                _step("step-grasp", SkillName.GRASP, {"object_id": "red_cube"}, retry_limit=1),
-                _step("step-lift", SkillName.LIFT, {"height_m": 0.16}),
-                _step("step-move-region", SkillName.MOVE_TO_REGION, {"region_id": "bin_a"}),
-                _step("step-place", SkillName.PLACE, {"region_id": "bin_a"}),
-                _step("step-release", SkillName.RELEASE),
-                _step("step-retreat", SkillName.RETREAT, {"distance_m": 0.1}),
-                _step("step-home-final", SkillName.HOME),
-            ],
-            safety_constraints=SafetyConstraints(
-                max_joint_velocity=0.5,
-                max_tcp_velocity=0.15,
-                minimum_safe_height=0.08,
-                workspace_id="workspace_a",
-            ),
-            failure_policy=FailurePolicy(
-                local_retry_limit=1,
-                on_timeout="pause",
-                on_safety_rejection="stop",
-                on_network_loss="pause",
-            ),
-            completion_criteria=["object_inside_target_region", "robot_in_safe_pose"],
-            supervision_period_ms=self.config.supervision_period_ms,
-            command_ttl_ms=2_500,
+        self.harness.restart_runtime()
+        self._import_harness_events()
+        self.current_mode = self.harness.current_mode if contract is not None else self.current_mode
+        self._record_event(
+            "sqlite_restart_recovered",
+            "" if contract is None else contract.task_id,
+            {"crash_point": crash_point, "status": "ok"},
         )
 
     def _risk_input(self, contract: TaskContract) -> RiskSnapshotInput:
@@ -667,6 +993,11 @@ class ExperimentRunner:
             )
         )
 
+    def _sort_events(self) -> None:
+        indexed = list(enumerate(self.events))
+        indexed.sort(key=lambda item: (item[1].virtual_time_ms, item[0]))
+        self.events = [event for _, event in indexed]
+
     def _result_hash(self, result: ExperimentResult) -> str:
         payload = result.model_dump(mode="json")
         payload["git_sha"] = ""
@@ -691,23 +1022,6 @@ class ExperimentRunner:
         return self.config.seed % 7
 
 
-def _step(
-    step_id: str,
-    skill: SkillName,
-    parameters: dict[str, object] | None = None,
-    *,
-    retry_limit: int = 0,
-) -> TaskStep:
-    return TaskStep(
-        step_id=step_id,
-        skill=skill,
-        parameters=parameters or {},
-        expected_duration_ms=100,
-        timeout_ms=1_000,
-        retry_limit=retry_limit,
-    )
-
-
 def stable_run_id(
     experiment_id: str,
     scenario_id: str,
@@ -715,6 +1029,21 @@ def stable_run_id(
     seed: int,
 ) -> str:
     return f"run-{stable_hash(_run_id_payload(experiment_id, scenario_id, mode, seed))[:16]}"
+
+
+def _payload_int(value: object, *, default: int) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
 
 
 def git_sha() -> str:

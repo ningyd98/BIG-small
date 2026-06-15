@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from cloud_edge_robot_arm.contracts import ActionResult, Pose, RobotState
@@ -110,6 +111,8 @@ class MockRobotAdapter:
         default_action_duration_ms: int = 10,
         default_timeout_ms: int = 1_000,
         fault_injections: dict[FaultCode | str, int] | None = None,
+        clock: Callable[[], datetime] | None = None,
+        advance_clock: Callable[[int], None] | None = None,
     ) -> None:
         self.scene = scene
         self.state = RobotState(connected=auto_connect)
@@ -119,6 +122,8 @@ class MockRobotAdapter:
         self.default_action_duration_ms = default_action_duration_ms
         self.default_timeout_ms = default_timeout_ms
         self._fault_injections: dict[FaultCode, int] = {}
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
+        self._advance_clock = advance_clock
         for fault, count in dict(fault_injections or {}).items():
             self._fault_injections[FaultCode(fault)] = count
 
@@ -729,6 +734,7 @@ class MockRobotAdapter:
                 state_after=after,
                 duration_ms=duration,
                 details={"robot_state": after},
+                started_at=self._clock(),
             )
         )
 
@@ -750,6 +756,7 @@ class MockRobotAdapter:
                 error_code=code,
                 error_message=message,
                 details=details,
+                started_at=self._clock(),
             )
         )
 
@@ -770,6 +777,7 @@ class MockRobotAdapter:
             error_code=fault.value,
             error_message=message,
             details={"fault": fault.value},
+            started_at=self._clock(),
         )
 
     def _record_result(
@@ -778,8 +786,12 @@ class MockRobotAdapter:
         if before is not None:
             updated = result.model_copy(update={"state_before": before})
             self.history.append(updated)
+            if self._advance_clock is not None:
+                self._advance_clock(updated.duration_ms)
             return updated
         self.history.append(result)
+        if self._advance_clock is not None:
+            self._advance_clock(result.duration_ms)
         return result
 
     def _consume_fault(self, fault: FaultCode) -> bool:

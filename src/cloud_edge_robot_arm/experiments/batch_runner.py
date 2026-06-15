@@ -31,9 +31,17 @@ class BatchSummary:
 SMOKE_SCENARIOS = [
     "S01_NORMAL_STATIC",
     "S02_TARGET_MOVED",
+    "S03_OBSTACLE_INSERTED",
+    "S04_GRASP_FAILURE",
+    "S05_TARGET_LOST",
+    "S06_PERCEPTION_DEGRADED",
+    "S07_NETWORK_DEGRADED",
     "S08_NETWORK_OUTAGE",
+    "S09_CLOUD_UNAVAILABLE",
     "S10_STALE_DUPLICATE_REORDERED_COMMAND",
     "S11_SKILL_CACHE_HIT",
+    "S12_SKILL_CACHE_QUARANTINE",
+    "S13_MODE_OSCILLATION_PRESSURE",
     "S14_EMERGENCY_STOP",
     "S15_SQLITE_RESTART_DURING_RUN",
 ]
@@ -83,7 +91,14 @@ def run_suite(
                         risk_policy_version="risk-v1",
                         supervision_period_ms=1_000,
                         timeout_ms=30_000,
-                        artifact_dir=output_dir / "runs" / scenario_id / mode.value / str(seed),
+                        artifact_dir=(
+                            output_dir
+                            / "runs"
+                            / scenario_id
+                            / mode.value
+                            / network.value
+                            / str(seed)
+                        ),
                     )
                     execution = ExperimentRunner(config).run()
                     results.append(execution.result)

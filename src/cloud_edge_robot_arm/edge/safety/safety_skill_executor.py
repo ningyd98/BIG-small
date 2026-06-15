@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import time
 from datetime import UTC, datetime
 from typing import Any
 
+from cloud_edge_robot_arm.cloud.supervision.core import Clock, WallClock
 from cloud_edge_robot_arm.contracts import RobotState, SafetyDecision, TaskContract, TaskStep
 from cloud_edge_robot_arm.edge.runtime.errors import runtime_error
 from cloud_edge_robot_arm.edge.runtime.skill_executor import (
@@ -42,6 +42,7 @@ class SafetySkillExecutor:
         telemetry_provider: TelemetryProvider,
         scene_provider: SceneStateProvider,
         repository: TaskRepository | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._robot = robot
         self._registry = registry
@@ -50,16 +51,17 @@ class SafetySkillExecutor:
         self._telemetry_provider = telemetry_provider
         self._scene_provider = scene_provider
         self._repository = repository
+        self._clock: Clock = clock or WallClock()
         self._resolver = SkillSafetyIntentResolver(robot)
         self._task_started_at_mono: float | None = None
         self._step_started_at_mono: float | None = None
         self._skill_executor = SkillExecutor(robot=robot, registry=registry)
 
     def start_task(self) -> None:
-        self._task_started_at_mono = time.monotonic()
+        self._task_started_at_mono = self._clock.monotonic()
 
     def start_step(self) -> None:
-        self._step_started_at_mono = time.monotonic()
+        self._step_started_at_mono = self._clock.monotonic()
 
     @property
     def _policy_version(self) -> str:
@@ -137,6 +139,7 @@ class SafetySkillExecutor:
             telemetry_timestamp=telemetry_timestamp,
             step_started_at_mono=self._step_started_at_mono,
             task_started_at_mono=self._task_started_at_mono,
+            monotonic_now=self._clock.monotonic(),
             requested_velocity=intent.requested_tcp_velocity,
             requested_joint_velocities=(
                 list(telemetry.joint_velocities)
@@ -148,6 +151,7 @@ class SafetySkillExecutor:
             requested_acceleration=intent.requested_acceleration,
             obstacles=obstacles,
             forbidden_zones=forbidden,
+            wall_clock_now=self._clock.now(),
         )
 
         try:
@@ -267,6 +271,7 @@ class SafetySkillExecutor:
                     telemetry_timestamp=telemetry.timestamp if telemetry is not None else None,
                     step_started_at_mono=self._step_started_at_mono,
                     task_started_at_mono=self._task_started_at_mono,
+                    monotonic_now=self._clock.monotonic(),
                     requested_velocity=telemetry.tcp_velocity if telemetry is not None else 0.0,
                     requested_joint_velocities=(
                         list(telemetry.joint_velocities)
@@ -276,6 +281,7 @@ class SafetySkillExecutor:
                     requested_acceleration=telemetry.acceleration if telemetry is not None else 0.0,
                     obstacles=scene.obstacles if scene is not None else [],
                     forbidden_zones=scene.forbidden_zones if scene is not None else [],
+                    wall_clock_now=self._clock.now(),
                 )
                 post_result = self._shield.post_check(post_ctx)
                 post_summary = self._safety_summary(post_result, scene, telemetry)

@@ -17,7 +17,7 @@ BIG-small uses a cloud-edge architecture with deterministic edge execution and c
 - `skill_cache`: Phase 7 high-level skill template cache, statistics, promotion/quarantine/invalidation, and InMemory/SQLite persistence.
 - `risk`: Phase 7 deterministic risk evaluator and versioned risk policy.
 - `auto_mode`: Phase 7 AUTO selector, persisted decisions/status/transitions, and mode transition lifecycle.
-- `experiments`: Phase 8 experiment models, deterministic runner, batch suite, metrics, statistics, artifacts, and reproducibility hashing.
+- `experiments`: Phase 8 and Phase 8.1 experiment models, deterministic runner, runtime harness, batch suite, metrics, statistics, artifacts, and reproducibility hashing.
 - `repositories`: runtime repositories and event-autonomy repositories with in-memory and SQLite implementations.
 - `simulation`: deterministic mock robot adapter, virtual clock, network simulator, world state, and fault injection for CI and local tests.
 
@@ -94,6 +94,17 @@ formal `initial_mode` and `final_mode` are only
 `PERIODIC_CLOUD_SUPERVISION` or `EVENT_TRIGGERED_EDGE_AUTONOMY`. Safety
 counterfactuals are shadow metrics only and do not enter `TaskExecutor`.
 
+## Phase 8.1 validity layer
+
+Phase 8.1 keeps the Phase 8 surface but replaces synthetic runner-side outcomes
+with a `RuntimeExperimentHarness` that drives the real execution chain:
+`TaskContract -> ContractValidator -> SafetyShield -> TaskExecutor ->
+SkillRegistry -> MockRobotAdapter -> repositories / audit`.
+
+This layer also connects PCSC supervision ticks, ETEAC event/replan handling,
+AUTO prepare/commit/abort transitions, SQLite restart recovery, and
+event-sourced metric recomputation from formal events.
+
 ## Production boundary
 
 Production mode must explicitly configure durable and real integrations. Test defaults may use mock adapters, fake clocks, and in-memory repositories, but production constructors reject missing durable dependencies where production mode is enforced.
@@ -109,3 +120,4 @@ When `AUTO_MODE_ENABLED=true` in production, `SKILL_CACHE_BACKEND`, `SKILL_CACHE
 - Phase 6.2 checkpoint/replan closure: `scripts/verify_phase6_2.py`.
 - Phase 7 skill cache, risk, AUTO, and transition closure: `scripts/verify_phase7.py`.
 - Phase 8 reproducible experiments: `scripts/verify_phase8.py`.
+- Phase 8.1 experimental validity: `scripts/verify_phase8_1.py`.

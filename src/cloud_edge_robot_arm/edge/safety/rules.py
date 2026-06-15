@@ -845,7 +845,8 @@ class StepTimeoutRule(SafetyRuleEvaluator):
                 reason_code="STEP_START_MISSING",
                 message="step start time missing - fail closed",
             )
-        elapsed_ms = (time.monotonic() - ctx.step_started_at) * 1000
+        now = ctx.monotonic_now if ctx.monotonic_now is not None else time.monotonic()
+        elapsed_ms = (now - ctx.step_started_at) * 1000
         step_obj = None
         for s in ctx.contract.steps:
             if s.step_id == ctx.step_id:
@@ -920,7 +921,8 @@ class WatchdogRule(SafetyRuleEvaluator):
                 reason_code="WATCHDOG_MISSING",
                 message="watchdog not started - fail closed",
             )
-        elapsed_ms = (time.monotonic() - ctx.task_started_at_mono) * 1000
+        now = ctx.monotonic_now if ctx.monotonic_now is not None else time.monotonic()
+        elapsed_ms = (now - ctx.task_started_at_mono) * 1000
         limit_ms = float(_get_merged_watchdog_timeout(ctx))
         if elapsed_ms > limit_ms:
             return SafetyRuleResult(

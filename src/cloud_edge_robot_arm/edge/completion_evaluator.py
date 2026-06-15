@@ -6,6 +6,7 @@ simple step exhaustion. Step exhaustion != task success.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -53,8 +54,14 @@ class CompletionEvaluator:
     Check 9: VERIFY_RESULT step succeeded
     """
 
-    def __init__(self, *, repository: EventAutonomyRepository | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        repository: EventAutonomyRepository | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._repo = repository
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
 
     def evaluate(
         self,
@@ -72,7 +79,7 @@ class CompletionEvaluator:
         """Run all 9 checks and return a structured evaluation."""
         all_ids = {s.step_id for s in contract.steps}
         completed_set = set(completed_step_ids)
-        now = datetime.now(UTC)
+        now = self._clock()
         failures: list[str] = []
         codes: list[str] = []
         evidence: dict[str, object] = {}

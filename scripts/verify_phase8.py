@@ -108,12 +108,26 @@ def check_dynamic_and_outage() -> None:
 
 def check_command_rejections() -> None:
     with tempfile.TemporaryDirectory() as tmp_s:
-        result = ExperimentRunner(
+        execution = ExperimentRunner(
             _config(Path(tmp_s), "S10_STALE_DUPLICATE_REORDERED_COMMAND", ExperimentMode.AUTO)
-        ).run_once()
-        assert result.stale_command_rejection_count == 1
-        assert result.duplicate_command_rejection_count == 1
-        assert result.reordered_command_rejection_count == 1
+        ).run()
+        result = execution.result
+        statuses = {
+            str(event.payload.get("status", ""))
+            for event in execution.events
+            if event.event_type == "command_ack" and event.payload.get("accepted") is False
+        }
+        assert {
+            "REJECTED_EXPIRED",
+            "REJECTED_DUPLICATE",
+            "REJECTED_IDEMPOTENCY_CONFLICT",
+            "REJECTED_STALE_SEQUENCE",
+            "REJECTED_STALE_PLAN",
+            "REJECTED_SCENE_MISMATCH",
+        }.issubset(statuses)
+        assert result.stale_command_rejection_count >= 1
+        assert result.duplicate_command_rejection_count >= 1
+        assert result.reordered_command_rejection_count >= 1
 
 
 def check_skill_cache_ablation() -> None:
