@@ -12,7 +12,7 @@ fi
 
 . .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
 python -m ruff format --check .
 python -m ruff check .
 python -m mypy .
@@ -57,4 +57,6 @@ python scripts/verify_phase6_2.py
 python scripts/verify_phase7.py
 python scripts/verify_phase8.py
 python scripts/verify_phase8_1.py
+python scripts/verify_phase8_2.py
+python scripts/verify_phase9.py
 python -m pip check

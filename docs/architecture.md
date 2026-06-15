@@ -19,7 +19,7 @@ BIG-small uses a cloud-edge architecture with deterministic edge execution and c
 - `auto_mode`: Phase 7 AUTO selector, persisted decisions/status/transitions, and mode transition lifecycle.
 - `experiments`: Phase 8 and Phase 8.1 experiment models, deterministic runner, runtime harness, batch suite, metrics, statistics, artifacts, and reproducibility hashing.
 - `repositories`: runtime repositories and event-autonomy repositories with in-memory and SQLite implementations.
-- `simulation`: deterministic mock robot adapter, virtual clock, network simulator, world state, and fault injection for CI and local tests.
+- `simulation`: deterministic mock robot adapter, virtual clock, network simulator, world state, MuJoCo physics backend, physics robot adapter, domain randomization, ROS 2 conversion/QoS guards, Isaac independent-process client guards, and fault injection for CI and local tests.
 
 ## Phase 6.1 event autonomy layer
 
@@ -105,6 +105,33 @@ This layer also connects PCSC supervision ticks, ETEAC event/replan handling,
 AUTO prepare/commit/abort transitions, SQLite restart recovery, and
 event-sourced metric recomputation from formal events.
 
+## Phase 9 physical simulation layer
+
+Phase 9 adds a physical backend below the existing safety and task execution
+boundaries:
+
+```text
+TaskContract
+  -> EdgeContractValidator
+  -> SafetyShield
+  -> TaskExecutor
+  -> SkillExecutor
+  -> PhysicsRobotAdapter
+  -> SimulatorBackend
+  -> MuJoCo physics state / contacts / sensor frames
+```
+
+`MuJoCoPhysicsBackend` is the core backend for CI and benchmark execution. It
+loads an MJCF scene, owns `mujoco.MjModel` and `mujoco.MjData`, advances
+simulation with `mj_step`, reads the TCP pose from a site, classifies contacts,
+and emits sensor frames. `PhysicsRobotAdapter` maps the 13 high-level skills to
+physics-backed actions while keeping MuJoCo types out of the upper runtime.
+
+Isaac Sim, ROS 2, and MoveIt 2 are decoupled. Core imports never require Isaac
+private modules or `rclpy`; environment verifiers mark those paths
+`BLOCKED_BY_ENV` unless the host is actually ready. Ground truth is evaluation
+data only and is not formal control input.
+
 ## Production boundary
 
 Production mode must explicitly configure durable and real integrations. Test defaults may use mock adapters, fake clocks, and in-memory repositories, but production constructors reject missing durable dependencies where production mode is enforced.
@@ -121,3 +148,5 @@ When `AUTO_MODE_ENABLED=true` in production, `SKILL_CACHE_BACKEND`, `SKILL_CACHE
 - Phase 7 skill cache, risk, AUTO, and transition closure: `scripts/verify_phase7.py`.
 - Phase 8 reproducible experiments: `scripts/verify_phase8.py`.
 - Phase 8.1 experimental validity: `scripts/verify_phase8_1.py`.
+- Phase 8.2 sensitivity and closed-loop validity: `scripts/verify_phase8_2.py`.
+- Phase 9 MuJoCo readiness and guarded Isaac/ROS checks: `scripts/verify_phase9.py`.

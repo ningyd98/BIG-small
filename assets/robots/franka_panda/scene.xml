@@ -1,0 +1,70 @@
+<mujoco model="bigsmall_phase9_franka_like_scene">
+  <compiler angle="radian" coordinate="local"/>
+  <option timestep="0.0041666667" gravity="0 0 -9.81" integrator="RK4"/>
+  <default>
+    <joint damping="0.8" armature="0.01" limited="true"/>
+    <geom contype="1" conaffinity="1" solref="0.01 1" solimp="0.9 0.95 0.001" friction="0.8 0.01 0.001"/>
+    <position kp="12" kv="3" ctrllimited="true"/>
+  </default>
+  <worldbody>
+    <geom name="table" type="box" pos="0.35 0 -0.025" size="0.65 0.45 0.025" contype="1" conaffinity="1" rgba="0.45 0.45 0.45 1"/>
+    <body name="panda_link0" pos="0 0 0.22">
+      <geom name="base" type="cylinder" size="0.08 0.04" contype="0" conaffinity="0" rgba="0.2 0.2 0.22 1"/>
+      <body name="panda_link1" pos="0 0 0.09">
+        <joint name="joint1" type="hinge" axis="0 0 1" range="-2.9 2.9"/>
+        <geom name="link1" type="capsule" fromto="0 0 0 0.08 0 0.07" size="0.025" contype="0" conaffinity="0" rgba="0.9 0.9 0.86 1"/>
+        <body name="panda_link2" pos="0.08 0 0.07">
+          <joint name="joint2" type="hinge" axis="0 1 0" range="-1.8 1.8"/>
+          <geom name="link2" type="capsule" fromto="0 0 0 0.12 0 0.08" size="0.022" contype="0" conaffinity="0" rgba="0.88 0.88 0.84 1"/>
+          <body name="panda_link3" pos="0.12 0 0.08">
+            <joint name="joint3" type="hinge" axis="0 1 0" range="-2.8 2.8"/>
+            <geom name="link3" type="capsule" fromto="0 0 0 0.12 0 -0.04" size="0.021" contype="0" conaffinity="0" rgba="0.86 0.86 0.82 1"/>
+            <body name="panda_link4" pos="0.12 0 -0.04">
+              <joint name="joint4" type="hinge" axis="1 0 0" range="-2.9 2.9"/>
+              <geom name="link4" type="capsule" fromto="0 0 0 0.1 0 0.04" size="0.019" contype="0" conaffinity="0" rgba="0.84 0.84 0.8 1"/>
+              <body name="panda_link5" pos="0.1 0 0.04">
+                <joint name="joint5" type="hinge" axis="0 1 0" range="-2.9 2.9"/>
+                <geom name="link5" type="capsule" fromto="0 0 0 0.08 0 0" size="0.018" contype="0" conaffinity="0" rgba="0.82 0.82 0.78 1"/>
+                <body name="panda_link6" pos="0.08 0 0">
+                  <joint name="joint6" type="hinge" axis="1 0 0" range="-2.9 2.9"/>
+                  <geom name="link6" type="capsule" fromto="0 0 0 0.06 0 0" size="0.016" contype="0" conaffinity="0" rgba="0.8 0.8 0.76 1"/>
+                  <body name="panda_hand" pos="0.06 0 0">
+                    <joint name="joint7" type="hinge" axis="0 1 0" range="-2.9 2.9"/>
+                    <geom name="hand" type="box" pos="0.035 0 0" size="0.035 0.04 0.025" contype="0" conaffinity="0" rgba="0.2 0.2 0.22 1"/>
+                    <site name="tcp" pos="0.105 0 0" size="0.01"/>
+                    <body name="left_finger" pos="0.075 0.045 0">
+                      <joint name="finger_left_joint" type="slide" axis="0 1 0" range="0 0.04"/>
+                      <geom name="left_finger_geom" type="box" pos="0.025 0 0" size="0.035 0.008 0.028" contype="2" conaffinity="2" rgba="0.1 0.1 0.1 1"/>
+                    </body>
+                    <body name="right_finger" pos="0.075 -0.045 0">
+                      <joint name="finger_right_joint" type="slide" axis="0 -1 0" range="0 0.04"/>
+                      <geom name="right_finger_geom" type="box" pos="0.025 0 0" size="0.035 0.008 0.028" contype="2" conaffinity="2" rgba="0.1 0.1 0.1 1"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+    <body name="object" pos="0.45 0 0.035">
+      <freejoint name="object_free"/>
+      <geom name="object_geom" type="box" size="0.035 0.035 0.035" mass="0.08" contype="1" conaffinity="3" rgba="0.9 0.2 0.15 1"/>
+    </body>
+    <body name="target_region" pos="0.2 0.25 0.002">
+      <geom name="target_region_geom" type="box" size="0.08 0.08 0.002" contype="0" conaffinity="0" rgba="0.1 0.6 0.2 0.4"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <position name="act1" joint="joint1" ctrlrange="-2.9 2.9"/>
+    <position name="act2" joint="joint2" ctrlrange="-1.8 1.8"/>
+    <position name="act3" joint="joint3" ctrlrange="-2.8 2.8"/>
+    <position name="act4" joint="joint4" ctrlrange="-2.9 2.9"/>
+    <position name="act5" joint="joint5" ctrlrange="-2.9 2.9"/>
+    <position name="act6" joint="joint6" ctrlrange="-2.9 2.9"/>
+    <position name="act7" joint="joint7" ctrlrange="-2.9 2.9"/>
+    <position name="left_finger_act" joint="finger_left_joint" ctrlrange="0 0.04" kp="25" kv="4"/>
+    <position name="right_finger_act" joint="finger_right_joint" ctrlrange="0 0.04" kp="25" kv="4"/>
+  </actuator>
+</mujoco>

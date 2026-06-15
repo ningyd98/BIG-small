@@ -1,0 +1,25 @@
+name: Phase 9 Isaac Self Hosted
+
+on:
+  workflow_dispatch:
+
+jobs:
+  isaac:
+    runs-on: [self-hosted, Linux, NVIDIA, Isaac]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Isaac environment
+        run: python scripts/phase9/check_isaac_sim.py
+
+      - name: Run Isaac smoke
+        run: python scripts/verify_phase9_isaac.py
+
+      - name: Run ROS 2 bridge smoke
+        run: python scripts/verify_phase9_ros2.py
+
+      - name: Upload Phase 9 summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase9-isaac-summary
+          path: artifacts/phase9/
