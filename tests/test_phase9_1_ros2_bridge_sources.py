@@ -61,3 +61,26 @@ def test_phase9_1_ros2_sim_bridge_package_installs_node() -> None:
     assert "scripts/bigsmall_sim_bridge_node" in cmake
     assert "<exec_depend>rclpy</exec_depend>" in package
     assert "<exec_depend>bigsmall_interfaces</exec_depend>" in package
+
+
+def test_phase9_1_ros2_sim_bridge_has_ordered_shutdown_path() -> None:
+    source = Path(
+        "ros2_ws/src/bigsmall_sim_bridge/bigsmall_sim_bridge/sim_bridge_node.py"
+    ).read_text(encoding="utf-8")
+
+    stop_body = source.split("    def _stop(", maxsplit=1)[1].split(
+        "    def _reset_world", maxsplit=1
+    )[0]
+    goal_body = source.split("    def _goal_callback(", maxsplit=1)[1].split(
+        "    def _cancel_callback", maxsplit=1
+    )[0]
+    main_body = source.split("def main() -> None:", maxsplit=1)[1]
+
+    assert "self._state.shutdown_requested = True" in stop_body
+    assert "self._state.motion_active = False" in stop_body
+    assert "GoalResponse.REJECT" in goal_body
+    assert "ExternalShutdownException" in source
+    assert "RCLError" in source
+    assert main_body.index("executor.shutdown()") < main_body.index("node.close()")
+    assert main_body.index("node.close()") < main_body.index("node.destroy_node()")
+    assert main_body.index("node.destroy_node()") < main_body.index("rclpy.shutdown()")

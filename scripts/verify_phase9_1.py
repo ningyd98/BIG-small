@@ -68,32 +68,17 @@ def main() -> int:
         "moveit": moveit.to_jsonable(),
         "isaac": isaac.to_jsonable(),
     }
-    component_statuses = {name: item["status"] for name, item in components.items()}
-    any_rejected = (
-        history["returncode"] != 0
-        or safety_pressure["status"] != "PASSED"
-        or process_protocol_guard["status"] != "PASSED"
-        or isaac_backend_guard["status"] != "PASSED"
-        or isaac_benchmark_guard["status"] == "FAILED"
-        or ros_interface_guard["status"] != "PASSED"
-        or ros_bridge_source_guard["status"] != "PASSED"
-        or moveit_source_guard["status"] != "PASSED"
-    )
-    any_blocked = any(status == "BLOCKED_BY_ENV" for status in component_statuses.values())
-    accepted_ready = _phase9_1_acceptance_ready(
+    status = _phase9_1_status(
         components=components,
         cross_backend=cross_backend,
         isaac_benchmark_guard=isaac_benchmark_guard,
         safety_pressure=safety_pressure,
-    )
-    status = (
-        "PHASE9_1_REJECTED"
-        if any_rejected
-        else "PHASE9_1_ACCEPTED"
-        if accepted_ready
-        else "PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK"
-        if any_blocked
-        else "PHASE9_1_REJECTED"
+        history=history,
+        process_protocol_guard=process_protocol_guard,
+        isaac_backend_guard=isaac_backend_guard,
+        ros_interface_guard=ros_interface_guard,
+        ros_bridge_source_guard=ros_bridge_source_guard,
+        moveit_source_guard=moveit_source_guard,
     )
     summary: dict[str, Any] = {
         "status": status,
@@ -121,14 +106,9 @@ def main() -> int:
 
 
 def _run_history(output_dir: Path) -> dict[str, object]:
-    result = subprocess.run(
-        [sys.executable, "scripts/verify_phase9.py"],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
+    command, result = _run_core_python_command(["scripts/verify_phase9.py"])
     payload: dict[str, object] = {
-        "command": ["python", "scripts/verify_phase9.py"],
+        "command": command,
         "returncode": result.returncode,
         "stdout_tail": _sanitize_text(result.stdout[-4000:]),
         "stderr_tail": _sanitize_text(result.stderr[-4000:]),
@@ -205,6 +185,71 @@ def _phase9_1_acceptance_ready(
     )
 
 
+def _phase9_1_status(
+    *,
+    components: dict[str, dict[str, object]],
+    cross_backend: dict[str, object],
+    isaac_benchmark_guard: dict[str, object],
+    safety_pressure: dict[str, object],
+    history: dict[str, object],
+    process_protocol_guard: dict[str, object],
+    isaac_backend_guard: dict[str, object],
+    ros_interface_guard: dict[str, object],
+    ros_bridge_source_guard: dict[str, object],
+    moveit_source_guard: dict[str, object],
+) -> str:
+    if (
+        history["returncode"] != 0
+        or safety_pressure["status"] != "PASSED"
+        or process_protocol_guard["status"] != "PASSED"
+        or isaac_backend_guard["status"] != "PASSED"
+        or isaac_benchmark_guard["status"] == "FAILED"
+        or ros_interface_guard["status"] != "PASSED"
+        or ros_bridge_source_guard["status"] != "PASSED"
+        or moveit_source_guard["status"] != "PASSED"
+    ):
+        return "PHASE9_1_REJECTED"
+    if _phase9_1_acceptance_ready(
+        components=components,
+        cross_backend=cross_backend,
+        isaac_benchmark_guard=isaac_benchmark_guard,
+        safety_pressure=safety_pressure,
+    ):
+        return "PHASE9_1_ACCEPTED"
+    if not _component_allows_core_acceptance(components["ros2"], "ROS2_INTEGRATION_VALIDATED"):
+        return "PHASE9_1_REJECTED"
+    if not _component_allows_core_acceptance(components["moveit"], "MOVEIT_SAFETY_VALIDATED"):
+        return "PHASE9_1_REJECTED"
+    if _blocked_by_environment(components["isaac"]) and _cross_backend_blocked_by_environment(
+        cross_backend
+    ):
+        return "PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK"
+    return "PHASE9_1_REJECTED"
+
+
+def _component_allows_core_acceptance(component: dict[str, object], validated_status: str) -> bool:
+    status = str(component.get("status", ""))
+    if status == validated_status:
+        return component.get("validation_claimed") is True
+    return _blocked_by_environment(component)
+
+
+def _blocked_by_environment(component: dict[str, object]) -> bool:
+    return (
+        component.get("status") == "BLOCKED_BY_ENV"
+        and component.get("validation_claimed") is False
+        and component.get("environment_ready") is False
+    )
+
+
+def _cross_backend_blocked_by_environment(cross_backend: dict[str, object]) -> bool:
+    return (
+        cross_backend.get("status") == "BLOCKED_BY_ENV"
+        and cross_backend.get("validation_claimed") is False
+        and cross_backend.get("isaac_comparison_status") == "NOT_RUN_BLOCKED_BY_ENV"
+    )
+
+
 def _int_value(value: object) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -222,16 +267,25 @@ def _collect_install_readiness(output_dir: Path) -> dict[str, object]:
     commands = [
         ["bash", "scripts/phase9/install_ros2_jazzy.sh", "--artifact-dir", str(output_dir)],
         ["bash", "scripts/phase9/install_vulkan_runtime.sh", "--artifact-dir", str(output_dir)],
-        [sys.executable, "scripts/phase9/check_isaac_sim.py"],
+        [_core_python_executable(), "scripts/phase9/check_isaac_sim.py"],
     ]
     evidence: list[dict[str, object]] = []
     env = os.environ.copy()
     env["ARTIFACT_DIR"] = str(output_dir)
     for command in commands:
-        result = subprocess.run(command, check=False, text=True, capture_output=True, env=env)
+        command_env = _core_python_env() if command[0] == _core_python_executable() else env
+        command_env["ARTIFACT_DIR"] = str(output_dir)
+        result = subprocess.run(
+            command, check=False, text=True, capture_output=True, env=command_env
+        )
         evidence.append(
             {
-                "argv": ["python" if item == sys.executable else item for item in command],
+                "argv": [
+                    "python"
+                    if item in {sys.executable, _core_python_executable()}
+                    else _sanitize_text(item)
+                    for item in command
+                ],
                 "exit_code": result.returncode,
                 "stdout": _sanitize_text(result.stdout[-4000:]),
                 "stderr": _sanitize_text(result.stderr[-4000:]),
@@ -254,8 +308,9 @@ def _collect_install_readiness(output_dir: Path) -> dict[str, object]:
 
 def _run_process_protocol_guard(output_dir: Path) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_isaac_process_protocol.py"]
-    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    command, result = _run_core_python_command(
+        ["-m", "pytest", "-q", "tests/test_phase9_1_isaac_process_protocol.py"]
+    )
     payload: dict[str, object] = {
         "status": "PASSED" if result.returncode == 0 else "FAILED",
         "validation_claimed": False,
@@ -277,8 +332,9 @@ def _run_process_protocol_guard(output_dir: Path) -> dict[str, object]:
 
 def _run_isaac_backend_guard(output_dir: Path) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_isaac_backend.py"]
-    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    command, result = _run_core_python_command(
+        ["-m", "pytest", "-q", "tests/test_phase9_1_isaac_backend.py"]
+    )
     payload: dict[str, object] = {
         "status": "PASSED" if result.returncode == 0 else "FAILED",
         "validation_claimed": False,
@@ -300,17 +356,17 @@ def _run_isaac_backend_guard(output_dir: Path) -> dict[str, object]:
 
 def _run_isaac_benchmark_guard(output_dir: Path) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = [
-        "python",
-        "scripts/run_phase9_benchmarks.py",
-        "--backend",
-        "isaac",
-        "--suite",
-        "smoke",
-        "--output",
-        str(output_dir),
-    ]
-    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    command, result = _run_core_python_command(
+        [
+            "scripts/run_phase9_benchmarks.py",
+            "--backend",
+            "isaac",
+            "--suite",
+            "smoke",
+            "--output",
+            str(output_dir),
+        ]
+    )
     summary_path = output_dir / "phase9_smoke_isaac" / "summary.json"
     benchmark_status = "MISSING_SUMMARY"
     if summary_path.exists():
@@ -337,8 +393,9 @@ def _run_isaac_benchmark_guard(output_dir: Path) -> dict[str, object]:
 
 def _run_ros_interface_guard(output_dir: Path) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_ros2_interfaces.py"]
-    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    command, result = _run_core_python_command(
+        ["-m", "pytest", "-q", "tests/test_phase9_1_ros2_interfaces.py"]
+    )
     payload: dict[str, object] = {
         "status": "PASSED" if result.returncode == 0 else "FAILED",
         "validation_claimed": False,
@@ -359,8 +416,9 @@ def _run_ros_interface_guard(output_dir: Path) -> dict[str, object]:
 
 def _run_ros_bridge_source_guard(output_dir: Path) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_ros2_bridge_sources.py"]
-    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    command, result = _run_core_python_command(
+        ["-m", "pytest", "-q", "tests/test_phase9_1_ros2_bridge_sources.py"]
+    )
     payload: dict[str, object] = {
         "status": "PASSED" if result.returncode == 0 else "FAILED",
         "validation_claimed": False,
@@ -381,8 +439,9 @@ def _run_ros_bridge_source_guard(output_dir: Path) -> dict[str, object]:
 
 def _run_moveit_source_guard(output_dir: Path) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_moveit_sources.py"]
-    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    command, result = _run_core_python_command(
+        ["-m", "pytest", "-q", "tests/test_phase9_1_moveit_sources.py"]
+    )
     payload: dict[str, object] = {
         "status": "PASSED" if result.returncode == 0 else "FAILED",
         "validation_claimed": False,
@@ -402,9 +461,60 @@ def _run_moveit_source_guard(output_dir: Path) -> dict[str, object]:
     return payload
 
 
+def _run_core_python_command(args: list[str]) -> tuple[list[str], subprocess.CompletedProcess[str]]:
+    command = [_core_python_executable(), *args]
+    display_command = ["python", *args]
+    result = subprocess.run(
+        command, check=False, text=True, capture_output=True, env=_core_python_env()
+    )
+    return display_command, result
+
+
+def _core_python_executable() -> str:
+    conda_prefix = os.environ.get("CONDA_PREFIX", "")
+    if "/envs/" in conda_prefix:
+        candidate = Path(conda_prefix.split("/envs/", maxsplit=1)[0]) / "bin" / "python"
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
+def _core_python_env() -> dict[str, str]:
+    env = os.environ.copy()
+    active_conda_prefix = env.get("CONDA_PREFIX", "")
+    for key in (
+        "AMENT_PREFIX_PATH",
+        "COLCON_PREFIX_PATH",
+        "CMAKE_PREFIX_PATH",
+        "PYTHONPATH",
+        "ROS_DISTRO",
+        "ROS_DOMAIN_ID",
+        "ROS_PYTHON_VERSION",
+        "ROS_VERSION",
+        "RMW_IMPLEMENTATION",
+    ):
+        env.pop(key, None)
+    if active_conda_prefix and "/envs/" in active_conda_prefix:
+        env.pop("CONDA_PREFIX", None)
+        env.pop("CONDA_DEFAULT_ENV", None)
+        env.pop("CONDA_PROMPT_MODIFIER", None)
+        path_entries = env.get("PATH", "").split(os.pathsep)
+        filtered_path = [
+            entry
+            for entry in path_entries
+            if entry
+            and not entry.startswith(active_conda_prefix)
+            and "bigsmall_runtime/ros2_ws/install" not in entry
+        ]
+        core_bin = str(Path(_core_python_executable()).parent)
+        env["PATH"] = os.pathsep.join([core_bin, *filtered_path])
+    return env
+
+
 def _sanitize_text(value: str) -> str:
     home = str(Path.home())
     sanitized = value.replace(sys.executable, "python")
+    sanitized = sanitized.replace(_core_python_executable(), "python")
     if home:
         sanitized = sanitized.replace(home, "$HOME")
     sanitized = re.sub(r"/home/[A-Za-z0-9_.-]+", "$HOME", sanitized)

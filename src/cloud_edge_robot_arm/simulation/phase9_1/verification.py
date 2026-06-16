@@ -52,6 +52,13 @@ RUNTIME_EVIDENCE_FIELDS = (
     "observed_result",
 )
 
+FORBIDDEN_LOG_MARKERS = (
+    "Traceback",
+    "Segmentation fault",
+    "RCLError",
+    "process exited unexpectedly",
+)
+
 ROS_ENV_ACTIVATION_SCRIPT = Path("scripts/phase9/activate_ros2_moveit_env.sh")
 
 
@@ -337,7 +344,13 @@ def verify_isaac_smoke(output_dir: Path) -> ComponentVerification:
             ]
         ),
         _run(["bash", "-lc", 'test -n "$ISAAC_SIM_ROOT"']),
-        _run([sys.executable, "scripts/phase9/isaac_standalone_app.py", "--check-imports"]),
+        _run(
+            [
+                _core_python_executable(),
+                "scripts/phase9/isaac_standalone_app.py",
+                "--check-imports",
+            ]
+        ),
     ]
     if isaac_python:
         commands.append(_run(["bash", "-lc", f"test -d {root!r}"]))
@@ -419,33 +432,25 @@ def verify_cross_backend(output_dir: Path) -> dict[str, object]:
     env = detect_environment()
     mujoco_artifact = _load_json(output_dir / "mujoco_artifact.json")
     isaac_artifact = _load_json(output_dir / "isaac_artifact.json")
+    isaac_ready = env.level == "ISAAC_READY"
+    mujoco_reference_error = ""
     if mujoco_artifact:
         mujoco_reference_status = "ARTIFACT_AVAILABLE"
     else:
-        reference = run_mujoco_physical_trial(
-            "S16_PAYLOAD_MASS_VARIATION",
-            seed=0,
-            randomization_level="MODERATE",
-        )
-        mujoco_artifact = {
-            "backend_name": "mujoco",
-            "run_id": "phase9_1_generated_reference",
-            "process_provenance": {"runtime": "mujoco-python"},
-            "validation_claimed": True,
-            "result_hash": reference.result_hash,
-            "metrics": {
-                "success_rate": 1.0,
-                "completion_time_ms": reference.metrics["trajectory_duration_ms"],
-                "joint_rmse": reference.metrics["joint_tracking_rmse"],
-                "tcp_rmse": reference.metrics["tcp_position_error_m"],
-                "collision_count": reference.metrics["illegal_collision_count"],
-                "state_machine_final_state": "SUCCESS",
-            },
-        }
-        mujoco_reference_status = "AVAILABLE"
+        try:
+            mujoco_artifact = _generate_mujoco_reference_artifact()
+            mujoco_reference_status = "AVAILABLE"
+        except (ImportError, ModuleNotFoundError) as exc:
+            if isaac_ready:
+                raise
+            mujoco_artifact = _generate_mujoco_reference_with_core_python(output_dir, exc)
+            if mujoco_artifact:
+                mujoco_reference_status = "AVAILABLE_CORE_PYTHON"
+            else:
+                mujoco_reference_status = "NOT_RUN_CORE_ENV_UNAVAILABLE"
+                mujoco_reference_error = f"{type(exc).__name__}: {exc}"
     mujoco_valid = _backend_artifact_valid(mujoco_artifact, expected_backend="mujoco")
     isaac_valid = _backend_artifact_valid(isaac_artifact, expected_backend="isaac")
-    isaac_ready = env.level == "ISAAC_READY"
     compared_values: dict[str, object] = {}
     if mujoco_valid and isaac_valid:
         mujoco_metrics = _artifact_metrics(mujoco_artifact)
@@ -471,11 +476,18 @@ def verify_cross_backend(output_dir: Path) -> dict[str, object]:
     )
     payload: dict[str, object] = {
         "status": status,
-        "mujoco_reference_status": mujoco_reference_status if mujoco_valid else "INVALID",
-        "mujoco_artifact_source": "generated"
-        if str(mujoco_artifact.get("run_id", "")) == "phase9_1_generated_reference"
-        else "artifact",
+        "mujoco_reference_status": mujoco_reference_status
+        if mujoco_valid or mujoco_reference_status.startswith("NOT_RUN")
+        else "INVALID",
+        "mujoco_artifact_source": (
+            "generated"
+            if str(mujoco_artifact.get("run_id", "")) == "phase9_1_generated_reference"
+            else "artifact"
+            if mujoco_artifact
+            else "not_run"
+        ),
         "mujoco_result_hash": str(mujoco_artifact.get("result_hash", "")),
+        "mujoco_reference_error": _sanitize_text(mujoco_reference_error),
         "isaac_comparison_status": "RUN"
         if isaac_valid
         else (
@@ -508,7 +520,82 @@ def verify_cross_backend(output_dir: Path) -> dict[str, object]:
     return payload
 
 
+def _generate_mujoco_reference_artifact() -> dict[str, object]:
+    reference = run_mujoco_physical_trial(
+        "S16_PAYLOAD_MASS_VARIATION",
+        seed=0,
+        randomization_level="MODERATE",
+    )
+    return {
+        "backend_name": "mujoco",
+        "run_id": "phase9_1_generated_reference",
+        "process_provenance": {"runtime": "mujoco-python"},
+        "validation_claimed": True,
+        "result_hash": reference.result_hash,
+        "metrics": {
+            "success_rate": 1.0,
+            "completion_time_ms": reference.metrics["trajectory_duration_ms"],
+            "joint_rmse": reference.metrics["joint_tracking_rmse"],
+            "tcp_rmse": reference.metrics["tcp_position_error_m"],
+            "collision_count": reference.metrics["illegal_collision_count"],
+            "state_machine_final_state": "SUCCESS",
+        },
+    }
+
+
+def _generate_mujoco_reference_with_core_python(
+    output_dir: Path,
+    original_error: ImportError,
+) -> dict[str, object]:
+    core_python = _core_python_executable()
+    if Path(core_python).resolve() == Path(sys.executable).resolve():
+        return {}
+    artifact_path = output_dir / "mujoco_reference_artifact.json"
+    code = (
+        "import json; "
+        "import sys; "
+        "from pathlib import Path; "
+        "sys.path.insert(0, 'src'); "
+        "from cloud_edge_robot_arm.simulation.phase9_1.verification "
+        "import _generate_mujoco_reference_artifact; "
+        f"Path({str(artifact_path)!r}).write_text("
+        "json.dumps(_generate_mujoco_reference_artifact(), sort_keys=True, indent=2) + '\\n', "
+        "encoding='utf-8')"
+    )
+    result = subprocess.run(
+        [core_python, "-c", code],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=_core_python_env(),
+        timeout=60,
+    )
+    if result.returncode != 0:
+        Path(output_dir / "mujoco_reference_error.log").write_text(
+            _sanitize_text(
+                f"{type(original_error).__name__}: {original_error}\n"
+                f"stdout:\n{result.stdout[-1000:]}\n"
+                f"stderr:\n{result.stderr[-1000:]}\n"
+            ),
+            encoding="utf-8",
+        )
+        return {}
+    return _load_json(artifact_path)
+
+
 def run_safety_pressure(output_dir: Path, *, trials: int = 500) -> dict[str, object]:
+    try:
+        return _run_safety_pressure_local(output_dir, trials=trials)
+    except (ImportError, ModuleNotFoundError) as exc:
+        core_python = _core_python_executable()
+        if Path(core_python).resolve() == Path(sys.executable).resolve():
+            raise
+        return _run_safety_pressure_with_core_python(
+            output_dir, trials=trials, python_executable=core_python, original_error=exc
+        )
+
+
+def _run_safety_pressure_local(output_dir: Path, *, trials: int) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     illegal = 0
     emergency_stop_post_command_count = 0
@@ -550,6 +637,88 @@ def run_safety_pressure(output_dir: Path, *, trials: int = 500) -> dict[str, obj
     return payload
 
 
+def _run_safety_pressure_with_core_python(
+    output_dir: Path,
+    *,
+    trials: int,
+    python_executable: str,
+    original_error: ImportError,
+) -> dict[str, object]:
+    code = (
+        "import sys; "
+        "from pathlib import Path; "
+        "sys.path.insert(0, 'src'); "
+        "from cloud_edge_robot_arm.simulation.phase9_1.verification "
+        "import _run_safety_pressure_local; "
+        f"_run_safety_pressure_local(Path({str(output_dir)!r}), trials={trials})"
+    )
+    result = subprocess.run(
+        [python_executable, "-c", code],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=_core_python_env(),
+        timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            "core Python safety pressure fallback failed after "
+            f"{type(original_error).__name__}: {original_error}; "
+            f"stdout={_sanitize_text(result.stdout[-1000:])}; "
+            f"stderr={_sanitize_text(result.stderr[-1000:])}"
+        )
+    payload = _load_json(output_dir / "safety_pressure.json")
+    if not payload:
+        raise RuntimeError("core Python safety pressure fallback wrote no artifact")
+    payload["python_fallback"] = str(Path(python_executable).name)
+    (output_dir / "safety_pressure.json").write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def _core_python_executable() -> str:
+    conda_prefix = os.environ.get("CONDA_PREFIX", "")
+    if "/envs/" in conda_prefix:
+        candidate = Path(conda_prefix.split("/envs/", maxsplit=1)[0]) / "bin" / "python"
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
+def _core_python_env() -> dict[str, str]:
+    env = os.environ.copy()
+    active_conda_prefix = env.get("CONDA_PREFIX", "")
+    for key in (
+        "AMENT_PREFIX_PATH",
+        "COLCON_PREFIX_PATH",
+        "CMAKE_PREFIX_PATH",
+        "PYTHONPATH",
+        "ROS_DISTRO",
+        "ROS_DOMAIN_ID",
+        "ROS_PYTHON_VERSION",
+        "ROS_VERSION",
+        "RMW_IMPLEMENTATION",
+    ):
+        env.pop(key, None)
+    if active_conda_prefix and "/envs/" in active_conda_prefix:
+        env.pop("CONDA_PREFIX", None)
+        env.pop("CONDA_DEFAULT_ENV", None)
+        env.pop("CONDA_PROMPT_MODIFIER", None)
+        path_entries = env.get("PATH", "").split(os.pathsep)
+        filtered_path = [
+            entry
+            for entry in path_entries
+            if entry
+            and not entry.startswith(active_conda_prefix)
+            and "bigsmall_runtime/ros2_ws/install" not in entry
+        ]
+        core_bin = str(Path(_core_python_executable()).parent)
+        env["PATH"] = os.pathsep.join([core_bin, *filtered_path])
+    return env
+
+
 def run_mujoco_physical_trial(*args: Any, **kwargs: Any) -> Any:
     from cloud_edge_robot_arm.simulation.evaluation.metrics import (
         run_mujoco_physical_trial as _run_mujoco_physical_trial,
@@ -587,6 +756,8 @@ def _evidence_has_required_runtime_fields(
     evidence: dict[str, Any],
     required_checks: tuple[str, ...],
 ) -> bool:
+    if not _process_logs_are_clean(evidence):
+        return False
     checks = evidence.get("checks", {})
     if not isinstance(checks, dict):
         return False
@@ -603,7 +774,166 @@ def _evidence_has_required_runtime_fields(
             return False
         if not isinstance(item.get("observed_result"), dict):
             return False
+        if name in ROS2_RUNTIME_CHECKS:
+            if not _ros2_observed_result_is_valid(name, item["observed_result"]):
+                return False
+        if name in MOVEIT_SAFETY_CHECKS:
+            if not _moveit_observed_result_is_valid(name, item["observed_result"]):
+                return False
     return True
+
+
+def _process_logs_are_clean(evidence: dict[str, Any]) -> bool:
+    integrity = evidence.get("log_integrity", {})
+    if not isinstance(integrity, dict) or not integrity.get("passed"):
+        return False
+    violations = integrity.get("violations", [])
+    if not isinstance(violations, list):
+        return False
+    if any(str(item) for item in violations):
+        return False
+    checks = evidence.get("checks", {})
+    if not isinstance(checks, dict):
+        return False
+    for item in checks.values():
+        if not isinstance(item, dict):
+            return False
+        log_path = item.get("log_path")
+        if not isinstance(log_path, str) or not log_path:
+            return False
+        try:
+            text = Path(log_path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        if any(marker in text for marker in FORBIDDEN_LOG_MARKERS):
+            return False
+    return True
+
+
+def _ros2_observed_result_is_valid(name: str, observed_result: dict[str, Any]) -> bool:
+    if name == "node_crash":
+        return {"pid", "return_code", "bridge_log"}.issubset(observed_result)
+    if name == "node_restart_reconnect":
+        return {"status", "accepted", "bridge_log"}.issubset(observed_result) and bool(
+            observed_result.get("accepted")
+        )
+    if name == "custom_service":
+        return {"load_scenario_status", "emergency_stop_status"}.issubset(observed_result)
+    return True
+
+
+def _moveit_observed_result_is_valid(name: str, observed_result: dict[str, Any]) -> bool:
+    if name == "collision_path_rejection_or_valid_replanning":
+        return _collision_path_observed_result_is_valid(observed_result)
+    if name == "planning_timeout":
+        return _planning_timeout_observed_result_is_valid(observed_result)
+    if name == "collision_object_insertion":
+        return _collision_object_insertion_observed_result_is_valid(observed_result)
+    return True
+
+
+def _collision_object_insertion_observed_result_is_valid(
+    observed_result: dict[str, Any],
+) -> bool:
+    collision_object = observed_result.get("collision_object")
+    planning_scene_object = observed_result.get("planning_scene_object")
+    return (
+        observed_result.get("success") is True
+        and isinstance(collision_object, dict)
+        and {"id", "frame_id", "dimensions", "pose"}.issubset(collision_object)
+        and isinstance(planning_scene_object, dict)
+        and {"id", "frame_id", "dimensions", "pose"}.issubset(planning_scene_object)
+        and planning_scene_object.get("id") == observed_result.get("object_id")
+        and planning_scene_object.get("id") == collision_object.get("id")
+        and _numeric_lists_match(
+            planning_scene_object.get("dimensions"), collision_object.get("dimensions")
+        )
+        and _poses_match(planning_scene_object.get("pose"), collision_object.get("pose"))
+        and observed_result.get("planning_scene_confirmed") is True
+    )
+
+
+def _collision_path_observed_result_is_valid(observed_result: dict[str, Any]) -> bool:
+    baseline_plan = observed_result.get("baseline_plan")
+    collision_object = observed_result.get("collision_object")
+    planning_scene_object = observed_result.get("planning_scene_object")
+    trajectory_delta = observed_result.get("trajectory_delta")
+    return (
+        isinstance(baseline_plan, dict)
+        and {"moveit_error_code", "trajectory_points", "joint_space_path_length"}.issubset(
+            baseline_plan
+        )
+        and isinstance(collision_object, dict)
+        and {"id", "frame_id", "dimensions", "pose"}.issubset(collision_object)
+        and isinstance(planning_scene_object, dict)
+        and {"id", "frame_id", "dimensions", "pose"}.issubset(planning_scene_object)
+        and planning_scene_object.get("id") == collision_object.get("id")
+        and _numeric_lists_match(
+            planning_scene_object.get("dimensions"), collision_object.get("dimensions")
+        )
+        and _poses_match(planning_scene_object.get("pose"), collision_object.get("pose"))
+        and observed_result.get("planning_scene_confirmed") is True
+        and observed_result.get("replanned_or_rejected") in {"valid_replanning", "rejected"}
+        and isinstance(trajectory_delta, dict)
+        and {
+            "point_count_delta",
+            "joint_space_path_length_delta",
+            "max_joint_delta",
+            "changed",
+        }.issubset(trajectory_delta)
+        and "moveit_error_code" in observed_result
+        and "process_provenance" in observed_result
+    )
+
+
+def _planning_timeout_observed_result_is_valid(observed_result: dict[str, Any]) -> bool:
+    required = {
+        "configured_timeout_ms",
+        "planning_start_wall_time",
+        "planning_end_wall_time",
+        "planning_elapsed_ms",
+        "moveit_error_code",
+        "normal_budget_success",
+        "timeout_budget_result",
+    }
+    if not required.issubset(observed_result):
+        return False
+    if observed_result.get("normal_budget_success") is not True:
+        return False
+    timeout_result = str(observed_result.get("timeout_budget_result", ""))
+    if timeout_result in {"TIMED_OUT", "timed_out"}:
+        return True
+    if (
+        timeout_result == "TIME_BUDGET_EXHAUSTED"
+        and observed_result.get("alternative_timeout_criterion") == "same-target-short-budget"
+        and observed_result.get("target_reused_from_normal_budget") is True
+        and int(observed_result.get("moveit_error_code", 0)) != 1
+    ):
+        return True
+    return False
+
+
+def _numeric_lists_match(left: Any, right: Any, *, tolerance: float = 1e-9) -> bool:
+    if not isinstance(left, list) or not isinstance(right, list) or len(left) != len(right):
+        return False
+    try:
+        return all(
+            abs(float(left_value) - float(right_value)) <= tolerance
+            for left_value, right_value in zip(left, right, strict=True)
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _poses_match(left: Any, right: Any, *, tolerance: float = 1e-9) -> bool:
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    try:
+        return all(
+            abs(float(left[axis]) - float(right[axis])) <= tolerance for axis in ("x", "y", "z")
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _python_import_available(module: str) -> bool:
@@ -695,7 +1025,15 @@ def _run_emergency_stop_command_record(seed: int) -> int:
 
 def _run(argv: list[str], *, timeout: float = 20) -> CommandEvidence:
     try:
-        result = subprocess.run(argv, check=False, text=True, capture_output=True, timeout=timeout)
+        command_env = _core_python_env() if argv[0] == _core_python_executable() else None
+        result = subprocess.run(
+            argv,
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            env=command_env,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return CommandEvidence(argv=argv, exit_code=124, stdout="", stderr=str(exc))
     return CommandEvidence(
@@ -725,12 +1063,13 @@ def _run_ros_env(
 
 def _ros_domain_for_output(output_dir: Path) -> int:
     encoded = sum(ord(char) for char in str(output_dir))
-    return 100 + encoded % 120
+    return 20 + encoded % 70
 
 
 def _sanitize_text(value: str) -> str:
     home = str(Path.home())
     sanitized = value.replace(sys.executable, "python")
+    sanitized = sanitized.replace(_core_python_executable(), "python")
     if home:
         sanitized = sanitized.replace(home, "$HOME")
     sanitized = re.sub(r"/home/[A-Za-z0-9_.-]+", "$HOME", sanitized)

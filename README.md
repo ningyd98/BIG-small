@@ -1,8 +1,8 @@
 # BIG-small
 
-BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用”云端智能规划、边缘安全执行”架构。当前版本完成 Phase 0–9 core：仓库初始化、配置、数据契约、结构化错误/日志、MockRobotAdapter、技能注册表、边缘执行运行时、可追溯状态机、边缘安全盾、云端规划/监督/重规划、PCSC、ETEAC、Skill Cache、RiskEvaluator、AUTO 双模式选择、ModeTransition 持久化、Phase 8.2 周期闭环和真实检测延迟修复，以及 Phase 9 MuJoCo 物理仿真、物理指标、Domain Randomization 和 Sim2Real readiness 验证。
+BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用”云端智能规划、边缘安全执行”架构。当前版本完成 Phase 0–9 core：仓库初始化、配置、数据契约、结构化错误/日志、MockRobotAdapter、技能注册表、边缘执行运行时、可追溯状态机、边缘安全盾、云端规划/监督/重规划、PCSC、ETEAC、Skill Cache、RiskEvaluator、AUTO 双模式选择、ModeTransition 持久化、Phase 8.2 周期闭环和真实检测延迟修复，以及 Phase 9 MuJoCo 物理仿真、物理指标、Domain Randomization 和 Sim2Real readiness 验证；Phase 9.1 已完成 ROS 2 runtime validation 和 MoveIt 2 safety validation，并保留 Isaac Sim 与 cross-backend 的环境阻塞状态。
 
-Phase 9 当前状态是 `PHASE9_CORE_ACCEPTED + ISAAC_VALIDATION_BLOCKED_BY_ENV`。本仓库没有连接真实机械臂，不声明真实硬件验证完成。真实机械臂 SDK、实体急停、真实相机标定和真实物理性能验证属于 Phase 10。
+Phase 9.1 当前状态是 `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`：ROS 2 runtime 为 `ROS2_INTEGRATION_VALIDATED`，MoveIt 2 safety 为 `MOVEIT_SAFETY_VALIDATED`，Isaac Sim 为 `BLOCKED_BY_ENV`，cross-backend comparison 为 `BLOCKED_BY_ENV`。本仓库没有连接真实机械臂，real robot validation not started，不声明真实硬件验证完成。真实机械臂 SDK、实体急停、真实相机标定和真实物理性能验证属于 Phase 10。
 
 ## 仓库现状
 
@@ -36,7 +36,8 @@ Phase 9 当前状态是 `PHASE9_CORE_ACCEPTED + ISAAC_VALIDATION_BLOCKED_BY_ENV`
 - Phase 8 可复现实验：新增强类型实验模型、离散事件虚拟时钟、seed 驱动网络仿真、15 个故障场景、PCSC/ETEAC/AUTO 统一运行接口、Skill Cache 与 AUTO 信号消融、安全 shadow counterfactual、统计汇总、artifact 导出、Markdown 报告和 `scripts/verify_phase8.py`。
 - Phase 8.1 实验真实性修复：`RuntimeExperimentHarness` 将 Phase 8 实验接入真实 `TaskExecutor`、`SafetyShield`、`PeriodicSupervisorService`、`EventTriggeredModeController`、`LocalReplanningService`、`ReplanApplyService` 和 `ModeTransitionService`；故障交错、命令一致性、崩溃恢复和事件溯源指标都来自正式运行证据。
 - Phase 8.2 周期闭环和实验敏感性：PCSC tick 使用虚拟时钟周期调度并与步骤交错；fault detected 不再由 fault injected 直接产生；AUTO 在安全边界提交；S15 覆盖 9 个 crash point；实验 guard 检查 mode/network/seed 敏感性。
-- Phase 9 MuJoCo 物理仿真：新增 `SimulatorBackend`、`MuJoCoPhysicsBackend`、`PhysicsRobotAdapter`、物理 sensor/contact/metric provenance、Domain Randomization、Phase 9 benchmark runner 和环境探测。Isaac Sim、ROS 2、MoveIt 2 路径为 guarded integration，当前主机缺环境时输出 `BLOCKED_BY_ENV`。
+- Phase 9 MuJoCo 物理仿真：新增 `SimulatorBackend`、`MuJoCoPhysicsBackend`、`PhysicsRobotAdapter`、物理 sensor/contact/metric provenance、Domain Randomization、Phase 9 benchmark runner 和环境探测。Isaac Sim、ROS 2、MoveIt 2 路径为 guarded integration，缺环境时输出 `BLOCKED_BY_ENV`。
+- Phase 9.1 ROS 2 / MoveIt runtime acceptance：ROS 2 已通过真实 rclpy runtime evidence，覆盖 QoS、namespace、timestamp、action success/timeout/cancel、stale feedback、node crash 和 reconnect；MoveIt 2 已通过真实 safety evidence，覆盖 reachability、unreachable target、joint limit rejection、PlanningScene collision object insertion、collision-path rejection/replanning、planning timeout、execution cancellation、emergency-stop boundary 和 BIG-small execution boundary。Isaac Sim 与 cross-backend comparison 仍仅因宿主环境缺失保持 `BLOCKED_BY_ENV`，不计为 pass。
 - 结构化 JSON 日志工具和 `.env.example`。
 
 ## 目录结构
@@ -97,6 +98,10 @@ python scripts/verify_phase8.py
 python scripts/verify_phase8_1.py
 python scripts/verify_phase8_2.py
 python scripts/verify_phase9.py
+source scripts/phase9/activate_ros2_moveit_env.sh
+python scripts/verify_phase9_1_ros2_integration.py --output artifacts/phase9_1/ros2
+python scripts/verify_phase9_1_moveit_safety.py --output artifacts/phase9_1/moveit
+python scripts/verify_phase9_1.py --output artifacts/phase9_1
 python -m pip check
 ```
 
@@ -127,6 +132,10 @@ python scripts/verify_phase8.py
 python scripts/verify_phase8_1.py
 python scripts/verify_phase8_2.py
 python scripts/verify_phase9.py
+source scripts/phase9/activate_ros2_moveit_env.sh
+python scripts/verify_phase9_1_ros2_integration.py --output artifacts/phase9_1/ros2
+python scripts/verify_phase9_1_moveit_safety.py --output artifacts/phase9_1/moveit
+python scripts/verify_phase9_1.py --output artifacts/phase9_1
 python -m pip check
 ```
 
@@ -147,4 +156,5 @@ python -m pip check
 - Phase 8：已完成可复现仿真实验框架、双模式/AUTO 对比、故障注入、消融、统计和 artifact 导出；当前仍没有真实硬件、真实相机模型、生产 LLM CI 或真实物理 benchmark。
 - Phase 8.1：已完成实验真实性和生产执行链路接入修复，Phase 8 实验现在通过真实 runtime chain 产出 evidence；当前仍是 mock/sim 证据，不是硬件验证。
 - Phase 8.2：已完成周期闭环、真实故障检测延迟、安全边界切换、多 crash point 恢复和实验敏感性 guard，见 `docs/phase8_2_design.md`、`docs/phase8_2_acceptance.md` 和 `docs/phase8_2_report.md`。
-- Phase 9：已完成 MuJoCo core readiness，见 `docs/phase9_design.md`、`docs/phase9_mujoco_backend.md`、`docs/phase9_experiment_design.md`、`docs/phase9_report.md` 和 `docs/phase9_sim2real_readiness.md`。Isaac/ROS/MoveIt 在当前主机为 `BLOCKED_BY_ENV`。
+- Phase 9：已完成 MuJoCo core readiness，见 `docs/phase9_design.md`、`docs/phase9_mujoco_backend.md`、`docs/phase9_experiment_design.md`、`docs/phase9_report.md` 和 `docs/phase9_sim2real_readiness.md`。
+- Phase 9.1：已完成 ROS 2 runtime validation 和 MoveIt 2 safety validation；当前主机因 Isaac Sim 与 cross-backend comparison 环境缺失保持 `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`，见 `docs/phase9_1_acceptance.md` 和 `docs/phase9_1_report.md`。

@@ -15,7 +15,7 @@ Level: `CORE_READY`
 - `cpu`: AMD Ryzen 7 5800X 8-Core Processor
 - `cpu_count`: 16
 - `cuda_visible`: True
-- `disk_available`: 194G
+- `disk_available`: 193G
 - `display`: <unset>
 - `docker`: <unset>
 - `egl_available`: False

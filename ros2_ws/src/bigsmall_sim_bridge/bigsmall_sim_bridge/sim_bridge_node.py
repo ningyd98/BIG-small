@@ -29,7 +29,10 @@ from rclpy.action import (  # type: ignore[import-not-found]
     GoalResponse,
 )
 from rclpy.callback_groups import ReentrantCallbackGroup  # type: ignore[import-not-found]
-from rclpy.executors import MultiThreadedExecutor  # type: ignore[import-not-found]
+from rclpy.executors import (  # type: ignore[import-not-found]
+    ExternalShutdownException,
+    MultiThreadedExecutor,
+)
 from rclpy.node import Node  # type: ignore[import-not-found]
 from rclpy.qos import (  # type: ignore[import-not-found]
     DurabilityPolicy,
@@ -68,6 +71,7 @@ class BridgeState:
     physics_steps: int = 0
     sensor_frames: int = 0
     emergency_stopped: bool = False
+    shutdown_requested: bool = False
     motion_active: bool = False
     backend_connected: bool = False
     last_command_seq: dict[str, int] = field(default_factory=dict)
@@ -100,11 +104,13 @@ class BigsmallSimBridgeNode(Node):
             SafetyEvent, "/bigsmall/safety_event", command_qos()
         )
         self._fault_pub = self.create_publisher(FaultEvent, "/bigsmall/fault_event", command_qos())
-        self.create_service(EmergencyStop, "/bigsmall/emergency_stop", self._emergency_stop)
-        self.create_service(Stop, "/bigsmall/stop", self._stop)
-        self.create_service(ResetWorld, "/bigsmall/reset_world", self._reset_world)
-        self.create_service(LoadScenario, "/bigsmall/load_scenario", self._load_scenario)
-        self.create_service(InjectFault, "/bigsmall/inject_fault", self._inject_fault)
+        self._services = [
+            self.create_service(EmergencyStop, "/bigsmall/emergency_stop", self._emergency_stop),
+            self.create_service(Stop, "/bigsmall/stop", self._stop),
+            self.create_service(ResetWorld, "/bigsmall/reset_world", self._reset_world),
+            self.create_service(LoadScenario, "/bigsmall/load_scenario", self._load_scenario),
+            self.create_service(InjectFault, "/bigsmall/inject_fault", self._inject_fault),
+        ]
         self._move_to_pose_server = ActionServer(
             self,
             MoveToPose,
@@ -123,7 +129,16 @@ class BigsmallSimBridgeNode(Node):
             cancel_callback=self._cancel_callback,
             callback_group=self._callback_group,
         )
-        self.create_timer(0.02, self._publish_status)
+        self._status_timer = self.create_timer(0.02, self._publish_status)
+
+    def close(self) -> None:
+        self._state.shutdown_requested = True
+        self._state.motion_active = False
+        self._move_to_pose_server.destroy()
+        self._follow_joint_trajectory_server.destroy()
+        self.destroy_timer(self._status_timer)
+        for service in self._services:
+            self.destroy_service(service)
 
     def _accept_once(self, task_id: str, command_seq: int) -> bool:
         last = self._state.last_command_seq.get(task_id, -1)
@@ -148,6 +163,9 @@ class BigsmallSimBridgeNode(Node):
 
     def _stop(self, request: Stop.Request, response: Stop.Response) -> Stop.Response:
         accepted = self._accept_once(request.header.task_id, request.header.command_seq)
+        if accepted:
+            self._state.shutdown_requested = True
+            self._state.motion_active = False
         response.accepted = accepted
         response.status = "STOPPED" if accepted else "DUPLICATE_REJECTED"
         response.stopped_sim_time_s = self._state.simulation_time_s
@@ -249,6 +267,8 @@ class BigsmallSimBridgeNode(Node):
 
     def _goal_callback(self, goal_request: Any) -> GoalResponse:
         header = goal_request.header
+        if self._state.shutdown_requested:
+            return GoalResponse.REJECT
         if self._state.emergency_stopped:
             return GoalResponse.REJECT
         if not self._accept_once(header.task_id, header.command_seq):
@@ -284,6 +304,12 @@ class BigsmallSimBridgeNode(Node):
                 goal_handle.canceled()
                 result.success = False
                 result.status = "CANCELED"
+                result.final_sim_time_s = self._state.simulation_time_s
+                return result
+            if self._state.shutdown_requested:
+                goal_handle.abort()
+                result.success = False
+                result.status = "SHUTDOWN_REQUESTED"
                 result.final_sim_time_s = self._state.simulation_time_s
                 return result
             if self._state.emergency_stopped:
@@ -359,6 +385,12 @@ class BigsmallSimBridgeNode(Node):
                 result.status = "CANCELED"
                 result.final_sim_time_s = self._state.simulation_time_s
                 return result
+            if self._state.shutdown_requested:
+                goal_handle.abort()
+                result.success = False
+                result.status = "SHUTDOWN_REQUESTED"
+                result.final_sim_time_s = self._state.simulation_time_s
+                return result
             if self._state.emergency_stopped:
                 goal_handle.abort()
                 result.success = False
@@ -410,8 +442,15 @@ def main() -> None:
     executor.add_node(node)
     try:
         executor.spin()
+    except ExternalShutdownException:
+        node.get_logger().info("bigsmall_sim_bridge shutdown requested")
+    except Exception as exc:
+        if type(exc).__name__ != "RCLError":
+            raise
+        node.get_logger().info("bigsmall_sim_bridge shutdown requested")
     finally:
         executor.shutdown()
+        node.close()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

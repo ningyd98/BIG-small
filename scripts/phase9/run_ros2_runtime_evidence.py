@@ -24,6 +24,7 @@ from bigsmall_interfaces.srv import (  # type: ignore[import-not-found]
     EmergencyStop,
     LoadScenario,
     ResetWorld,
+    Stop,
 )
 from builtin_interfaces.msg import Duration, Time  # type: ignore[import-not-found]
 from rclpy.action import ActionClient  # type: ignore[import-not-found]
@@ -55,11 +56,18 @@ ROS2_RUNTIME_CHECKS = (
     "node_restart_reconnect",
 )
 
+FORBIDDEN_LOG_MARKERS = (
+    "Traceback",
+    "Segmentation fault",
+    "RCLError",
+    "process exited unexpectedly",
+)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run real Phase 9.1 ROS 2 runtime evidence.")
     parser.add_argument("--output", type=Path, default=Path("artifacts/phase9_1/ros2"))
-    parser.add_argument("--startup-timeout", type=float, default=10.0)
+    parser.add_argument("--startup-timeout", type=float, default=20.0)
     args = parser.parse_args()
 
     runner = Ros2RuntimeEvidenceRunner(args.output, startup_timeout=args.startup_timeout)
@@ -82,6 +90,7 @@ class Ros2RuntimeEvidenceRunner:
         self.bridge_log_path = self.logs_dir / "bigsmall_sim_bridge.log"
         self.bridge_start_count = 0
         self.latest_status: SimulationStatus | None = None
+        self.subscription: Any | None = None
 
     def run(self) -> dict[str, Any]:
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -90,7 +99,7 @@ class Ros2RuntimeEvidenceRunner:
         rclpy.init()
         try:
             self.node = rclpy.create_node("phase9_1_ros2_runtime_evidence")
-            self.node.create_subscription(
+            self.subscription = self.node.create_subscription(
                 SimulationStatus,
                 "/bigsmall/simulation/status",
                 self._status_callback,
@@ -115,12 +124,20 @@ class Ros2RuntimeEvidenceRunner:
             ):
                 checks[name] = self._record_check(name, callback)
         finally:
+            self._request_bridge_stop()
             self._stop_bridge()
             self._sanitize_process_logs()
             if self.node is not None:
+                if self.subscription is not None:
+                    self.node.destroy_subscription(self.subscription)
+                    self.subscription = None
                 self.node.destroy_node()
-            rclpy.shutdown()
-        required_passed = all(checks[name]["passed"] for name in ROS2_RUNTIME_CHECKS)
+            if rclpy.ok():
+                rclpy.shutdown()
+        log_integrity = _log_integrity((self.bridge_log_path,))
+        required_passed = all(checks[name]["passed"] for name in ROS2_RUNTIME_CHECKS) and bool(
+            log_integrity["passed"]
+        )
         return {
             "status": "ROS2_INTEGRATION_VALIDATED" if required_passed else "INCOMPLETE",
             "validation_claimed": required_passed,
@@ -132,6 +149,7 @@ class Ros2RuntimeEvidenceRunner:
                 "rmw_implementation": os.environ.get("RMW_IMPLEMENTATION", ""),
                 "ros_domain_id": os.environ.get("ROS_DOMAIN_ID", ""),
             },
+            "log_integrity": log_integrity,
             "checks": checks,
         }
 
@@ -159,20 +177,41 @@ class Ros2RuntimeEvidenceRunner:
             stderr=subprocess.STDOUT,
             text=True,
             env=os.environ.copy(),
+            preexec_fn=os.setsid,
         )
 
     def _stop_bridge(self) -> None:
         if self.bridge_process is not None and self.bridge_process.poll() is None:
-            self.bridge_process.terminate()
             try:
+                os.killpg(os.getpgid(self.bridge_process.pid), signal.SIGTERM)
                 self.bridge_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.bridge_process.kill()
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(os.getpgid(self.bridge_process.pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 self.bridge_process.wait(timeout=5)
         if self.bridge_log_handle is not None:
             self.bridge_log_handle.close()
         self.bridge_process = None
         self.bridge_log_handle = None
+
+    def _request_bridge_stop(self) -> None:
+        if self.bridge_process is None or self.bridge_process.poll() is not None:
+            return
+        if self.node is None:
+            return
+        try:
+            client = self.node.create_client(Stop, "/bigsmall/stop")
+            if not client.wait_for_service(timeout_sec=1.0):
+                return
+            request = Stop.Request()
+            request.header = _header("ros2-runtime-shutdown", 900)
+            future = client.call_async(request)
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=2.0)
+            self.node.destroy_client(client)
+        except Exception:
+            return
 
     def _sanitize_process_logs(self) -> None:
         _sanitize_log_file(self.bridge_log_path)
@@ -395,7 +434,7 @@ class Ros2RuntimeEvidenceRunner:
         if self.bridge_process is None or self.bridge_process.poll() is not None:
             raise RuntimeError("bridge process is not running")
         pid = self.bridge_process.pid
-        os.kill(pid, signal.SIGKILL)
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
         return_code = self.bridge_process.wait(timeout=5)
         if self.bridge_log_handle is not None:
             self.bridge_log_handle.close()
@@ -564,6 +603,25 @@ def _display_path(path: Path) -> str:
         return str(path.relative_to(Path.cwd()))
     except ValueError:
         return str(path).replace(str(Path.home()), "$HOME")
+
+
+def _log_integrity(paths: tuple[Path, ...]) -> dict[str, Any]:
+    violations: list[dict[str, str]] = []
+    checked_logs: list[str] = []
+    for path in paths:
+        checked_logs.append(_display_path(path))
+        if not path.exists():
+            violations.append({"path": _display_path(path), "marker": "missing_log"})
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for marker in FORBIDDEN_LOG_MARKERS:
+            if marker in text:
+                violations.append({"path": _display_path(path), "marker": marker})
+    return {
+        "passed": not violations,
+        "violations": violations,
+        "checked_logs": checked_logs,
+    }
 
 
 def _sanitize_log_file(path: Path) -> None:
