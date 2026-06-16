@@ -48,6 +48,7 @@ def main() -> int:
     history = _run_history(args.output) if not args.skip_history else _skipped_history()
     install_readiness = _collect_install_readiness(args.output / "install")
     process_protocol_guard = _run_process_protocol_guard(args.output / "process_protocol")
+    isaac_backend_guard = _run_isaac_backend_guard(args.output / "isaac_backend")
     ros_interface_guard = _run_ros_interface_guard(args.output / "ros_interfaces")
     ros_bridge_source_guard = _run_ros_bridge_source_guard(args.output / "ros_bridge_sources")
     moveit_source_guard = _run_moveit_source_guard(args.output / "moveit_sources")
@@ -68,6 +69,7 @@ def main() -> int:
         history["returncode"] != 0
         or safety_pressure["status"] != "PASSED"
         or process_protocol_guard["status"] != "PASSED"
+        or isaac_backend_guard["status"] != "PASSED"
         or ros_interface_guard["status"] != "PASSED"
         or ros_bridge_source_guard["status"] != "PASSED"
         or moveit_source_guard["status"] != "PASSED"
@@ -89,6 +91,7 @@ def main() -> int:
         "safety_pressure": safety_pressure,
         "install_readiness": install_readiness,
         "process_protocol_guard": process_protocol_guard,
+        "isaac_backend_guard": isaac_backend_guard,
         "ros_interface_guard": ros_interface_guard,
         "ros_bridge_source_guard": ros_bridge_source_guard,
         "moveit_source_guard": moveit_source_guard,
@@ -187,6 +190,29 @@ def _run_process_protocol_guard(output_dir: Path) -> dict[str, object]:
         "stderr_tail": _sanitize_text(result.stderr[-4000:]),
     }
     (output_dir / "process_protocol_guard.json").write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def _run_isaac_backend_guard(output_dir: Path) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_isaac_backend.py"]
+    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    payload: dict[str, object] = {
+        "status": "PASSED" if result.returncode == 0 else "FAILED",
+        "validation_claimed": False,
+        "purpose": (
+            "verifies IsaacSimBackend SimulatorBackend protocol adapter; "
+            "not an Isaac runtime validation"
+        ),
+        "command": command,
+        "returncode": result.returncode,
+        "stdout_tail": _sanitize_text(result.stdout[-4000:]),
+        "stderr_tail": _sanitize_text(result.stderr[-4000:]),
+    }
+    (output_dir / "isaac_backend_guard.json").write_text(
         json.dumps(payload, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )

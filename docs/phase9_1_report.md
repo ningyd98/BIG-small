@@ -10,6 +10,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - Cross-backend: MuJoCo reference generated; Isaac comparison not run because Isaac is blocked by environment
 - Install readiness: dry-run plans generated for ROS 2 Jazzy, MoveIt 2, Vulkan, and Isaac compatibility without modifying the core Python environment
 - Isaac process protocol guard: JSONL handshake, command acknowledgement, movement skill trajectory mapping, and replay-runtime rejection pass in a subprocess fixture; this is not counted as Isaac validation
+- Isaac backend guard: `IsaacSimBackend` implements the shared `SimulatorBackend` protocol over an external JSONL process and refuses missing telemetry; this is not counted as Isaac runtime validation
 - Isaac standalone app entrypoint: `scripts/phase9/isaac_standalone_app.py` exists for the official Isaac Python runtime and is checked by the Isaac smoke verifier; current host reports blocked because Isaac Python modules are unavailable
 - ROS 2 interface guard: `bigsmall_interfaces` defines Phase 9.1 message, service, and action sources with timestamps and command identity; this is not counted as ROS 2 runtime validation
 - ROS 2 bridge source guard: `bigsmall_sim_bridge` now includes an rclpy node with explicit QoS, `/clock`, simulation status, fault/safety publishers, command identity, duplicate rejection, action timeout/cancel handling, feedback stale accounting, reconnect state, and frame-conversion time-domain envelopes; this is not counted as ROS 2 runtime validation
@@ -31,6 +32,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - `artifacts/phase9_1/cross_backend/cross_backend_verification.json`
 - `artifacts/phase9_1/safety_pressure/safety_pressure.json`
 - `artifacts/phase9_1/process_protocol/process_protocol_guard.json`
+- `artifacts/phase9_1/isaac_backend/isaac_backend_guard.json`
 - `artifacts/phase9_1/ros_interfaces/ros_interface_guard.json`
 - `artifacts/phase9_1/ros_bridge_sources/ros_bridge_source_guard.json`
 - `artifacts/phase9_1/moveit_sources/moveit_source_guard.json`
