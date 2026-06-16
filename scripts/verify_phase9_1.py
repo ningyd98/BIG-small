@@ -57,7 +57,7 @@ def main() -> int:
     moveit = verify_moveit_safety(args.output / "moveit")
     isaac = verify_isaac_smoke(args.output / "isaac")
     cross_backend = verify_cross_backend(args.output / "cross_backend")
-    safety_pressure = run_safety_pressure(args.output / "safety_pressure", trials=100)
+    safety_pressure = run_safety_pressure(args.output / "safety_pressure", trials=500)
 
     components = {
         "ros2": ros2.to_jsonable(),
