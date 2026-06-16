@@ -13,6 +13,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - Isaac standalone app entrypoint: `scripts/phase9/isaac_standalone_app.py` exists for the official Isaac Python runtime and is checked by the Isaac smoke verifier; current host reports blocked because Isaac Python modules are unavailable
 - ROS 2 interface guard: `bigsmall_interfaces` defines Phase 9.1 message, service, and action sources with timestamps and command identity; this is not counted as ROS 2 runtime validation
 - ROS 2 bridge source guard: `bigsmall_sim_bridge` now includes an rclpy node with explicit QoS, `/clock`, simulation status, fault/safety publishers, command identity, duplicate rejection, action timeout/cancel handling, feedback stale accounting, reconnect state, and frame-conversion time-domain envelopes; this is not counted as ROS 2 runtime validation
+- MoveIt source guard: `bigsmall_robot_bridge` now includes a MoveIt boundary node that checks reachability, joint limits, collision-scene update, planning failure, execution cancellation, emergency-stop boundary, and delegates trajectories through BIG-small execution instead of direct MoveIt execution; this is not counted as MoveIt 2 runtime validation
 
 ## Environment Blockers
 
@@ -32,6 +33,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - `artifacts/phase9_1/process_protocol/process_protocol_guard.json`
 - `artifacts/phase9_1/ros_interfaces/ros_interface_guard.json`
 - `artifacts/phase9_1/ros_bridge_sources/ros_bridge_source_guard.json`
+- `artifacts/phase9_1/moveit_sources/moveit_source_guard.json`
 - `artifacts/phase9_1/install/install_readiness.json`
 - `artifacts/phase9_1/install/install_plan.json`
 - `artifacts/phase9_1/install/vulkan_install_plan.json`

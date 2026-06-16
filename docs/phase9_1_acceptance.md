@@ -39,6 +39,7 @@ python scripts/verify_phase9_1.py --skip-history
 - `scripts/phase9/isaac_standalone_app.py --check-imports` must run in the selected Python environment and record whether Isaac runtime imports and `SimulationApp` startup are available.
 - ROS 2 interface source guards may prove message/action/service coverage only; they do not prove ROS build or runtime validation.
 - ROS 2 bridge source guards may prove rclpy node, action timeout/cancel, feedback stale, reconnect state, and frame-conversion source coverage only; they do not prove ROS runtime validation.
+- MoveIt source guards may prove planning-boundary source coverage only; they do not prove MoveIt 2 planning or execution validation.
 - Isaac Sim validation requires a real Isaac run count greater than zero before `validation_claimed=true`.
 - Cross-backend validation remains `NOT_RUN_BLOCKED_BY_ENV` unless Isaac Sim is available.
 

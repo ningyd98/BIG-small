@@ -11,7 +11,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cloud_edge_robot_arm.simulation.phase9_1.verification import (
+from cloud_edge_robot_arm.simulation.phase9_1.verification import (  # type: ignore[import-untyped]
     run_safety_pressure,
     verify_cross_backend,
     verify_isaac_smoke,
@@ -50,6 +50,7 @@ def main() -> int:
     process_protocol_guard = _run_process_protocol_guard(args.output / "process_protocol")
     ros_interface_guard = _run_ros_interface_guard(args.output / "ros_interfaces")
     ros_bridge_source_guard = _run_ros_bridge_source_guard(args.output / "ros_bridge_sources")
+    moveit_source_guard = _run_moveit_source_guard(args.output / "moveit_sources")
     ros2 = verify_ros2_integration(args.output / "ros2")
     moveit = verify_moveit_safety(args.output / "moveit")
     isaac = verify_isaac_smoke(args.output / "isaac")
@@ -69,6 +70,7 @@ def main() -> int:
         or process_protocol_guard["status"] != "PASSED"
         or ros_interface_guard["status"] != "PASSED"
         or ros_bridge_source_guard["status"] != "PASSED"
+        or moveit_source_guard["status"] != "PASSED"
     )
     any_blocked = any(status == "BLOCKED_BY_ENV" for status in component_statuses.values())
     status = (
@@ -89,6 +91,7 @@ def main() -> int:
         "process_protocol_guard": process_protocol_guard,
         "ros_interface_guard": ros_interface_guard,
         "ros_bridge_source_guard": ros_bridge_source_guard,
+        "moveit_source_guard": moveit_source_guard,
         "history": history,
         "time_domains": TIME_DOMAINS,
         "validation_claimed": status == "PHASE9_1_ACCEPTED",
@@ -228,6 +231,29 @@ def _run_ros_bridge_source_guard(output_dir: Path) -> dict[str, object]:
         "stderr_tail": _sanitize_text(result.stderr[-4000:]),
     }
     (output_dir / "ros_bridge_source_guard.json").write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def _run_moveit_source_guard(output_dir: Path) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_moveit_sources.py"]
+    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    payload: dict[str, object] = {
+        "status": "PASSED" if result.returncode == 0 else "FAILED",
+        "validation_claimed": False,
+        "purpose": (
+            "verifies MoveIt boundary node source coverage; "
+            "not a MoveIt 2 build or runtime validation"
+        ),
+        "command": command,
+        "returncode": result.returncode,
+        "stdout_tail": _sanitize_text(result.stdout[-4000:]),
+        "stderr_tail": _sanitize_text(result.stderr[-4000:]),
+    }
+    (output_dir / "moveit_source_guard.json").write_text(
         json.dumps(payload, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
