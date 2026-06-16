@@ -65,7 +65,6 @@ def main() -> int:
         "isaac": isaac.to_jsonable(),
     }
     component_statuses = {name: item["status"] for name, item in components.items()}
-    all_validated = all(item["validation_claimed"] is True for item in components.values())
     any_rejected = (
         history["returncode"] != 0
         or safety_pressure["status"] != "PASSED"
@@ -77,11 +76,17 @@ def main() -> int:
         or moveit_source_guard["status"] != "PASSED"
     )
     any_blocked = any(status == "BLOCKED_BY_ENV" for status in component_statuses.values())
+    accepted_ready = _phase9_1_acceptance_ready(
+        components=components,
+        cross_backend=cross_backend,
+        isaac_benchmark_guard=isaac_benchmark_guard,
+        safety_pressure=safety_pressure,
+    )
     status = (
         "PHASE9_1_REJECTED"
         if any_rejected
         else "PHASE9_1_ACCEPTED"
-        if all_validated and cross_backend["status"] == "CROSS_BACKEND_VALIDATED"
+        if accepted_ready
         else "PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK"
         if any_blocked
         else "PHASE9_1_REJECTED"
@@ -139,6 +144,72 @@ def _skipped_history() -> dict[str, object]:
         "stderr_tail": "",
         "skipped": True,
     }
+
+
+def _phase9_1_acceptance_ready(
+    *,
+    components: dict[str, dict[str, object]],
+    cross_backend: dict[str, object],
+    isaac_benchmark_guard: dict[str, object],
+    safety_pressure: dict[str, object],
+) -> bool:
+    ros2 = components["ros2"]
+    moveit = components["moveit"]
+    isaac = components["isaac"]
+    ros_required = (
+        "qos_checked",
+        "namespace_checked",
+        "timestamp_checked",
+        "action_timeout_checked",
+        "cancel_checked",
+        "node_crash_reconnect_checked",
+    )
+    moveit_required = (
+        "reachability_checked",
+        "joint_limits_checked",
+        "collision_scene_checked",
+        "planning_failure_checked",
+        "execution_cancel_checked",
+        "emergency_stop_boundary_checked",
+    )
+    cross_required = (
+        "success_rate_delta",
+        "completion_time_delta",
+        "joint_rmse",
+        "tcp_rmse",
+        "collision_count_delta",
+        "state_machine_final_state_consistency",
+    )
+    return (
+        ros2.get("validation_claimed") is True
+        and all(ros2.get(key) is True for key in ros_required)
+        and moveit.get("validation_claimed") is True
+        and all(moveit.get(key) is True for key in moveit_required)
+        and isaac.get("validation_claimed") is True
+        and _int_value(isaac.get("real_isaac_run_count", 0)) > 0
+        and isaac_benchmark_guard.get("validation_claimed") is True
+        and isaac_benchmark_guard.get("benchmark_status") == "PASSED"
+        and cross_backend.get("validation_claimed") is True
+        and cross_backend.get("artifact_provenance_complete") is True
+        and all(key in cross_backend for key in cross_required)
+        and safety_pressure.get("status") == "PASSED"
+        and _int_value(safety_pressure.get("trial_count", 0)) >= 500
+        and _int_value(safety_pressure.get("illegal_collision_count", -1)) == 0
+        and _int_value(safety_pressure.get("emergency_stop_post_command_count", -1)) == 0
+        and _int_value(safety_pressure.get("unique_result_hash_count", 0)) > 1
+    )
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        return int(value)
+    return 0
 
 
 def _collect_install_readiness(output_dir: Path) -> dict[str, object]:

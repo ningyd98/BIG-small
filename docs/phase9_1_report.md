@@ -7,6 +7,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - Status: `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`
 - Core Phase 9 history: passed through `scripts/verify_phase9.py`
 - Safety pressure: 500 MuJoCo near-miss trials, 0 illegal collisions
+- Safety pressure now derives `emergency_stop_post_command_count` from command records and reports `unique_result_hash_count`; it is not a fixed zero.
 - Cross-backend: MuJoCo reference generated; Isaac comparison not run because Isaac is blocked by environment
 - Install readiness: dry-run plans generated for ROS 2 Jazzy, MoveIt 2, Vulkan, and Isaac compatibility without modifying the core Python environment
 - Isaac process protocol guard: JSONL handshake, command acknowledgement, movement skill trajectory mapping, and replay-runtime rejection pass in a subprocess fixture; this is not counted as Isaac validation
@@ -61,3 +62,11 @@ python scripts/verify_phase9_1.py --output artifacts/phase9_1
 ```
 
 The result may only become `PHASE9_1_ACCEPTED` if the component verifiers actually run and write `validation_claimed=true`.
+
+Environment readiness is not runtime validation. A future compatible host must provide:
+
+- `ros2_runtime_evidence.json` for QoS, namespace, timestamp, action timeout, cancel, and reconnect checks.
+- `moveit_safety_evidence.json` for reachability, joint limits, collision scene, planning failure, cancellation, and emergency-stop boundary checks.
+- `isaac_smoke_evidence.json` with process provenance, stage load, physics steps, robot state, and RGB/depth/contact samples.
+- Real MuJoCo and Isaac cross-backend artifacts with backend names, run ids, process provenance, `validation_claimed=true`, and computed metric deltas.
+- A real Isaac benchmark artifact; the current blocked smoke entrypoint is not sufficient.

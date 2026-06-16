@@ -6,7 +6,7 @@ The current host is accepted only for core MuJoCo readiness. ROS 2, MoveIt 2, an
 
 ## Status Vocabulary
 
-- `PHASE9_1_ACCEPTED`: core Phase 9 checks pass and ROS 2, MoveIt 2, Isaac Sim, and cross-backend validation all run on a compatible host.
+- `PHASE9_1_ACCEPTED`: core Phase 9 checks pass and ROS 2, MoveIt 2, Isaac Sim, Isaac benchmark, and cross-backend validation all run on a compatible host with complete runtime evidence artifacts.
 - `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`: core Phase 9 checks pass, but one or more ROS 2, MoveIt 2, or Isaac Sim checks are blocked by host environment.
 - `PHASE9_1_REJECTED`: core regression, safety pressure, artifact integrity, or verifier execution fails.
 
@@ -33,6 +33,10 @@ python scripts/verify_phase9_1.py --skip-history
 
 - A blocked ROS 2, MoveIt 2, or Isaac Sim check exits successfully only to indicate the verifier itself worked.
 - The artifact must still contain `status=BLOCKED_BY_ENV` and `validation_claimed=false`.
+- `ROS2_INTEGRATION_VALIDATED` requires `ros2_runtime_evidence.json` with passed evidence for QoS, namespace, timestamp, action timeout, cancel, and node crash/reconnect.
+- `MOVEIT_SAFETY_VALIDATED` requires `moveit_safety_evidence.json` with passed evidence for reachability, joint limits, collision scene, planning failure, execution cancellation, and emergency-stop boundary.
+- `ISAAC_SMOKE_VALIDATED` requires `isaac_smoke_evidence.json` proving an independent Isaac process loaded the stage, advanced physics, returned robot state, and produced RGB, depth, and contact sensor samples.
+- Software availability alone may only produce `NOT_RUN`, `MOVEIT_READY`, `ISAAC_READY`, or `INCOMPLETE`; it must never set `validation_claimed=true`.
 - Every blocked component records the actual commands, exit codes, stdout, and stderr that established the blocker.
 - Install readiness is dry-run by default and must record that core Python remains unchanged.
 - Independent-process protocol tests may prove JSONL handshake/replay rejection only; they do not prove Isaac validation.
@@ -43,7 +47,8 @@ python scripts/verify_phase9_1.py --skip-history
 - ROS 2 bridge source guards may prove rclpy node, action timeout/cancel, feedback stale, reconnect state, and frame-conversion source coverage only; they do not prove ROS runtime validation.
 - MoveIt source guards may prove planning-boundary source coverage only; they do not prove MoveIt 2 planning or execution validation.
 - Isaac Sim validation requires a real Isaac run count greater than zero before `validation_claimed=true`.
-- Cross-backend validation remains `NOT_RUN_BLOCKED_BY_ENV` unless Isaac Sim is available.
+- Cross-backend validation requires real MuJoCo and Isaac artifacts with `backend_name`, `run_id`, `process_provenance`, `validation_claimed=true`, and comparable metrics. `env.level=ISAAC_READY` alone is not sufficient.
+- `PHASE9_1_ACCEPTED` also requires a validated Isaac benchmark artifact, completed cross-backend deltas, complete artifact provenance, safety pressure `trial_count>=500`, `illegal_collision_count=0`, `emergency_stop_post_command_count=0`, and non-static result hashes.
 
 ## Current Host Result
 

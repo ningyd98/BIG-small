@@ -39,6 +39,7 @@ class MuJoCoPhysicsBackend:
         self._last_contacts: list[ContactSnapshot] = []
         self._sensor_frame = SensorFrame(frame_id="camera", sim_time_s=0.0, width=0, height=0)
         self._rng = np.random.default_rng(0)
+        self._command_records: list[dict[str, object]] = []
 
     @property
     def total_physics_steps(self) -> int:
@@ -47,6 +48,10 @@ class MuJoCoPhysicsBackend:
     @property
     def estop_engaged(self) -> bool:
         return self._estop_engaged
+
+    @property
+    def command_records(self) -> list[dict[str, object]]:
+        return [dict(record) for record in self._command_records]
 
     def initialize(self, config: SimulatorConfig) -> None:
         if find_spec("mujoco") is None:
@@ -75,6 +80,7 @@ class MuJoCoPhysicsBackend:
         self._gripper_open = True
         self._total_physics_steps = 0
         self._last_contacts = []
+        self._command_records = []
         self._set_free_body_pose("object", scenario.object_pose)
         self._set_body_mass("object", scenario.object_mass_kg)
         self._set_geom_friction("object_geom", scenario.friction_coefficient)
@@ -143,14 +149,17 @@ class MuJoCoPhysicsBackend:
 
     def apply_joint_targets(self, targets: JointCommand) -> None:
         if self._estop_engaged:
+            self._record_command("joint_target", accepted=False, reason="emergency_stop")
             return
         if len(targets.positions) != 7:
             raise ValueError("Franka Panda profile requires exactly 7 joint targets")
         clipped = np.clip(np.array(targets.positions, dtype=float), -2.8, 2.8)
         self._target_positions = clipped
+        self._record_command("joint_target", accepted=True, reason="")
 
     def apply_gripper_command(self, command: GripperCommand) -> None:
         if self._estop_engaged:
+            self._record_command("gripper", accepted=False, reason="emergency_stop")
             return
         self._gripper_open = command.open
         assert self._data is not None
@@ -158,9 +167,11 @@ class MuJoCoPhysicsBackend:
         if self._data.ctrl.shape[0] >= 9:
             self._data.ctrl[7] = target
             self._data.ctrl[8] = target
+        self._record_command("gripper", accepted=True, reason="")
 
     def emergency_stop(self) -> None:
         self._estop_engaged = True
+        self._record_command("emergency_stop", accepted=True, reason="")
         if self._data is not None:
             self._data.ctrl[:] = 0.0
 
@@ -255,6 +266,17 @@ class MuJoCoPhysicsBackend:
             ],
             latency_ms=abs(noise) * 1000.0,
             ground_truth_used_for_control=False,
+        )
+
+    def _record_command(self, command_type: str, *, accepted: bool, reason: str) -> None:
+        self._command_records.append(
+            {
+                "type": command_type,
+                "accepted": accepted,
+                "reason": reason,
+                "after_emergency_stop": self._estop_engaged and command_type != "emergency_stop",
+                "sim_time_s": self.get_sim_time() if self._data is not None else 0.0,
+            }
         )
 
 
