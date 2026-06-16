@@ -10,6 +10,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - Cross-backend: MuJoCo reference generated; Isaac comparison not run because Isaac is blocked by environment
 - Install readiness: dry-run plans generated for ROS 2 Jazzy, MoveIt 2, Vulkan, and Isaac compatibility without modifying the core Python environment
 - Isaac process protocol guard: JSONL handshake, command acknowledgement, movement skill trajectory mapping, and replay-runtime rejection pass in a subprocess fixture; this is not counted as Isaac validation
+- Isaac standalone app entrypoint: `scripts/phase9/isaac_standalone_app.py` exists for the official Isaac Python runtime and is checked by the Isaac smoke verifier; current host reports blocked because Isaac Python modules are unavailable
 
 ## Environment Blockers
 

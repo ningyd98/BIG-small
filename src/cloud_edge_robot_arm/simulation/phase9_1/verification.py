@@ -155,6 +155,7 @@ def verify_isaac_smoke(output_dir: Path) -> ComponentVerification:
             ]
         ),
         _run(["bash", "-lc", 'test -n "$ISAAC_SIM_ROOT"']),
+        _run([sys.executable, "scripts/phase9/isaac_standalone_app.py", "--check-imports"]),
     ]
     if isaac_python:
         commands.append(_run(["bash", "-lc", f"test -d {root!r}"]))
