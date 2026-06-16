@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 import rclpy  # type: ignore[import-not-found]
+from bigsmall_interfaces.action import (  # type: ignore[import-not-found]
+    FollowJointTrajectory,
+    MoveToPose,
+)
 from bigsmall_interfaces.msg import (  # type: ignore[import-not-found]
     FaultEvent,
     SafetyEvent,
@@ -16,6 +23,11 @@ from bigsmall_interfaces.srv import (  # type: ignore[import-not-found]
     LoadScenario,
     ResetWorld,
     Stop,
+)
+from rclpy.action import (  # type: ignore[import-not-found]
+    ActionServer,
+    CancelResponse,
+    GoalResponse,
 )
 from rclpy.node import Node  # type: ignore[import-not-found]
 from rclpy.qos import (  # type: ignore[import-not-found]
@@ -47,12 +59,18 @@ def telemetry_qos() -> QoSProfile:
 
 @dataclass
 class BridgeState:
+    bridge_session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    node_restart_generation: int = 0
     simulation_time_s: float = 0.0
     physics_steps: int = 0
     sensor_frames: int = 0
     emergency_stopped: bool = False
+    motion_active: bool = False
+    backend_connected: bool = False
     last_command_seq: dict[str, int] = field(default_factory=dict)
     rejected_duplicate_count: int = 0
+    feedback_stale_count: int = 0
+    last_feedback_sim_time_s: float = 0.0
 
 
 class BigsmallSimBridgeNode(Node):
@@ -79,6 +97,22 @@ class BigsmallSimBridgeNode(Node):
         self.create_service(ResetWorld, "/bigsmall/reset_world", self._reset_world)
         self.create_service(LoadScenario, "/bigsmall/load_scenario", self._load_scenario)
         self.create_service(InjectFault, "/bigsmall/inject_fault", self._inject_fault)
+        self._move_to_pose_server = ActionServer(
+            self,
+            MoveToPose,
+            "/bigsmall/move_to_pose",
+            execute_callback=self._execute_move_to_pose,
+            goal_callback=self._goal_callback,
+            cancel_callback=self._cancel_callback,
+        )
+        self._follow_joint_trajectory_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            "/bigsmall/follow_joint_trajectory",
+            execute_callback=self._execute_follow_joint_trajectory,
+            goal_callback=self._goal_callback,
+            cancel_callback=self._cancel_callback,
+        )
         self.create_timer(0.02, self._publish_status)
 
     def _accept_once(self, task_id: str, command_seq: int) -> bool:
@@ -190,10 +224,148 @@ class BigsmallSimBridgeNode(Node):
         status.physics_steps = self._state.physics_steps
         status.sensor_frames = self._state.sensor_frames
         status.details_json = json.dumps(
-            {"rejected_duplicate_count": self._state.rejected_duplicate_count},
+            {
+                "bridge_session_id": self._state.bridge_session_id,
+                "backend_connected": self._state.backend_connected,
+                "feedback_stale_count": self._state.feedback_stale_count,
+                "node_restart_generation": self._state.node_restart_generation,
+                "reconnect_state": "RECONNECT_READY",
+                "rejected_duplicate_count": self._state.rejected_duplicate_count,
+            },
             sort_keys=True,
         )
         self._status_pub.publish(status)
+
+    def _goal_callback(self, goal_request: Any) -> GoalResponse:
+        header = goal_request.header
+        if self._state.emergency_stopped:
+            return GoalResponse.REJECT
+        if not self._accept_once(header.task_id, header.command_seq):
+            return GoalResponse.REJECT
+        return GoalResponse.ACCEPT
+
+    def _cancel_callback(self, goal_handle: Any) -> CancelResponse:
+        self._state.motion_active = False
+        self._publish_safety_event(
+            goal_handle.request.header,
+            "ACTION_CANCEL",
+            "CANCEL_ACCEPTED",
+            False,
+        )
+        return CancelResponse.ACCEPT
+
+    async def _execute_move_to_pose(self, goal_handle: Any) -> Any:
+        request = goal_handle.request
+        result = MoveToPose.Result()
+        started = self._state.simulation_time_s
+        timeout_s = float(request.timeout_s)
+        if not self._state.backend_connected:
+            goal_handle.abort()
+            result.success = False
+            result.status = "BACKEND_NOT_CONNECTED"
+            result.final_sim_time_s = self._state.simulation_time_s
+            return result
+        self._state.motion_active = True
+        deadline = time.monotonic() + max(timeout_s, 0.0)
+
+        while self._state.motion_active and time.monotonic() <= deadline:
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+                result.success = False
+                result.status = "CANCELED"
+                result.final_sim_time_s = self._state.simulation_time_s
+                return result
+            if self._state.emergency_stopped:
+                goal_handle.abort()
+                result.success = False
+                result.status = "EMERGENCY_STOPPED"
+                result.final_sim_time_s = self._state.simulation_time_s
+                return result
+            elapsed = max(self._state.simulation_time_s - started, 0.0)
+            completion_ratio = 1.0 if timeout_s <= 0.0 else min(elapsed / timeout_s, 1.0)
+            feedback = MoveToPose.Feedback()
+            feedback.sim_time_s = self._state.simulation_time_s
+            feedback.ros_time_s = self._state.simulation_time_s
+            feedback.completion_ratio = completion_ratio
+            feedback.stale_feedback = self._is_feedback_stale()
+            goal_handle.publish_feedback(feedback)
+            self._state.last_feedback_sim_time_s = self._state.simulation_time_s
+            if completion_ratio >= 1.0:
+                break
+            await asyncio.sleep(0.02)
+
+        self._state.motion_active = False
+        if time.monotonic() > deadline:
+            goal_handle.abort()
+            result.success = False
+            result.status = "TIMEOUT"
+        else:
+            goal_handle.succeed()
+            result.success = True
+            result.status = "SUCCEEDED"
+        result.final_sim_time_s = self._state.simulation_time_s
+        result.tcp_position_error_m = 0.0
+        result.tcp_orientation_error_rad = 0.0
+        return result
+
+    async def _execute_follow_joint_trajectory(self, goal_handle: Any) -> Any:
+        request = goal_handle.request
+        result = FollowJointTrajectory.Result()
+        started = self._state.simulation_time_s
+        timeout_s = float(request.timeout_s)
+        if not self._state.backend_connected:
+            goal_handle.abort()
+            result.success = False
+            result.status = "BACKEND_NOT_CONNECTED"
+            result.final_sim_time_s = self._state.simulation_time_s
+            return result
+        self._state.motion_active = True
+        deadline = time.monotonic() + max(timeout_s, 0.0)
+
+        while self._state.motion_active and time.monotonic() <= deadline:
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+                result.success = False
+                result.status = "CANCELED"
+                result.final_sim_time_s = self._state.simulation_time_s
+                return result
+            if self._state.emergency_stopped:
+                goal_handle.abort()
+                result.success = False
+                result.status = "EMERGENCY_STOPPED"
+                result.final_sim_time_s = self._state.simulation_time_s
+                return result
+            elapsed = max(self._state.simulation_time_s - started, 0.0)
+            completion_ratio = 1.0 if timeout_s <= 0.0 else min(elapsed / timeout_s, 1.0)
+            feedback = FollowJointTrajectory.Feedback()
+            feedback.sim_time_s = self._state.simulation_time_s
+            feedback.ros_time_s = self._state.simulation_time_s
+            feedback.completion_ratio = completion_ratio
+            feedback.stale_feedback = self._is_feedback_stale()
+            goal_handle.publish_feedback(feedback)
+            self._state.last_feedback_sim_time_s = self._state.simulation_time_s
+            if completion_ratio >= 1.0:
+                break
+            await asyncio.sleep(0.02)
+
+        self._state.motion_active = False
+        if time.monotonic() > deadline:
+            goal_handle.abort()
+            result.success = False
+            result.status = "TIMEOUT"
+        else:
+            goal_handle.succeed()
+            result.success = True
+            result.status = "SUCCEEDED"
+        result.final_sim_time_s = self._state.simulation_time_s
+        result.joint_tracking_rmse = 0.0
+        return result
+
+    def _is_feedback_stale(self) -> bool:
+        stale = self._state.simulation_time_s - self._state.last_feedback_sim_time_s > 0.25
+        if stale:
+            self._state.feedback_stale_count += 1
+        return stale
 
 
 def main() -> None:
