@@ -1,0 +1,9 @@
+builtin_interfaces/Time stamp
+string state
+bool emergency_stopped
+bool motion_active
+float64 sim_time_s
+float64 ros_time_s
+float64 wall_time_s
+uint64 command_seq
+uint64 plan_version

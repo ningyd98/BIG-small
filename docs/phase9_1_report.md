@@ -11,6 +11,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - Install readiness: dry-run plans generated for ROS 2 Jazzy, MoveIt 2, Vulkan, and Isaac compatibility without modifying the core Python environment
 - Isaac process protocol guard: JSONL handshake, command acknowledgement, movement skill trajectory mapping, and replay-runtime rejection pass in a subprocess fixture; this is not counted as Isaac validation
 - Isaac standalone app entrypoint: `scripts/phase9/isaac_standalone_app.py` exists for the official Isaac Python runtime and is checked by the Isaac smoke verifier; current host reports blocked because Isaac Python modules are unavailable
+- ROS 2 interface guard: `bigsmall_interfaces` defines Phase 9.1 message, service, and action sources with timestamps and command identity; this is not counted as ROS 2 runtime validation
 
 ## Environment Blockers
 
@@ -28,6 +29,7 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - `artifacts/phase9_1/cross_backend/cross_backend_verification.json`
 - `artifacts/phase9_1/safety_pressure/safety_pressure.json`
 - `artifacts/phase9_1/process_protocol/process_protocol_guard.json`
+- `artifacts/phase9_1/ros_interfaces/ros_interface_guard.json`
 - `artifacts/phase9_1/install/install_readiness.json`
 - `artifacts/phase9_1/install/install_plan.json`
 - `artifacts/phase9_1/install/vulkan_install_plan.json`

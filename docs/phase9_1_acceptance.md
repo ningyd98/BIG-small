@@ -37,6 +37,7 @@ python scripts/verify_phase9_1.py --skip-history
 - Install readiness is dry-run by default and must record that core Python remains unchanged.
 - Independent-process protocol tests may prove JSONL handshake/replay rejection only; they do not prove Isaac validation.
 - `scripts/phase9/isaac_standalone_app.py --check-imports` must run in the selected Python environment and record whether Isaac runtime imports and `SimulationApp` startup are available.
+- ROS 2 interface source guards may prove message/action/service coverage only; they do not prove ROS build or runtime validation.
 - Isaac Sim validation requires a real Isaac run count greater than zero before `validation_claimed=true`.
 - Cross-backend validation remains `NOT_RUN_BLOCKED_BY_ENV` unless Isaac Sim is available.
 

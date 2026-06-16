@@ -48,6 +48,7 @@ def main() -> int:
     history = _run_history(args.output) if not args.skip_history else _skipped_history()
     install_readiness = _collect_install_readiness(args.output / "install")
     process_protocol_guard = _run_process_protocol_guard(args.output / "process_protocol")
+    ros_interface_guard = _run_ros_interface_guard(args.output / "ros_interfaces")
     ros2 = verify_ros2_integration(args.output / "ros2")
     moveit = verify_moveit_safety(args.output / "moveit")
     isaac = verify_isaac_smoke(args.output / "isaac")
@@ -65,6 +66,7 @@ def main() -> int:
         history["returncode"] != 0
         or safety_pressure["status"] != "PASSED"
         or process_protocol_guard["status"] != "PASSED"
+        or ros_interface_guard["status"] != "PASSED"
     )
     any_blocked = any(status == "BLOCKED_BY_ENV" for status in component_statuses.values())
     status = (
@@ -83,6 +85,7 @@ def main() -> int:
         "safety_pressure": safety_pressure,
         "install_readiness": install_readiness,
         "process_protocol_guard": process_protocol_guard,
+        "ros_interface_guard": ros_interface_guard,
         "history": history,
         "time_domains": TIME_DOMAINS,
         "validation_claimed": status == "PHASE9_1_ACCEPTED",
@@ -178,6 +181,28 @@ def _run_process_protocol_guard(output_dir: Path) -> dict[str, object]:
         "stderr_tail": _sanitize_text(result.stderr[-4000:]),
     }
     (output_dir / "process_protocol_guard.json").write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def _run_ros_interface_guard(output_dir: Path) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command = ["python", "-m", "pytest", "-q", "tests/test_phase9_1_ros2_interfaces.py"]
+    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    payload: dict[str, object] = {
+        "status": "PASSED" if result.returncode == 0 else "FAILED",
+        "validation_claimed": False,
+        "purpose": (
+            "verifies ROS 2 interface source coverage; not a ROS 2 build or runtime validation"
+        ),
+        "command": command,
+        "returncode": result.returncode,
+        "stdout_tail": _sanitize_text(result.stdout[-4000:]),
+        "stderr_tail": _sanitize_text(result.stderr[-4000:]),
+    }
+    (output_dir / "ros_interface_guard.json").write_text(
         json.dumps(payload, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )

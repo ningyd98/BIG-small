@@ -1,0 +1,9 @@
+builtin_interfaces/Time stamp
+string backend
+string status
+float64 simulation_time_s
+float64 ros_time_s
+float64 wall_time_s
+uint64 physics_steps
+uint64 sensor_frames
+string details_json
