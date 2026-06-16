@@ -4,22 +4,47 @@ on:
   workflow_dispatch:
 
 jobs:
-  isaac:
+  phase9_1:
     runs-on: [self-hosted, Linux, NVIDIA, Isaac]
+    env:
+      BIGSMALL_CONDA_ENV: bigsmall-ros2-jazzy-moveit
+      ROS_DOMAIN_ID: "91"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Isaac environment
-        run: python scripts/phase9/check_isaac_sim.py
+      - name: Check Isaac environment without fallback
+        run: |
+          python scripts/phase9/check_isaac_sim.py
 
-      - name: Run Isaac smoke
-        run: python scripts/verify_phase9_isaac.py
+      - name: Build persistent ROS 2 workspace
+        shell: bash
+        run: |
+          CONDA_BASE="$(conda info --base)"
+          source "$CONDA_BASE/etc/profile.d/conda.sh"
+          conda activate "$BIGSMALL_CONDA_ENV"
+          export ROS_DOMAIN_ID="$ROS_DOMAIN_ID"
+          export RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION"
+          scripts/phase9/build_ros2_workspace.sh
 
-      - name: Run ROS 2 bridge smoke
-        run: python scripts/verify_phase9_ros2.py
+      - name: Run Phase 9.1 ROS 2 runtime verifier
+        shell: bash
+        run: |
+          source scripts/phase9/activate_ros2_moveit_env.sh
+          python scripts/verify_phase9_1_ros2_integration.py --output artifacts/phase9_1/ros2
 
-      - name: Upload Phase 9 summary
+      - name: Run Phase 9.1 MoveIt safety verifier
+        shell: bash
+        run: |
+          source scripts/phase9/activate_ros2_moveit_env.sh
+          python scripts/verify_phase9_1_moveit_safety.py --output artifacts/phase9_1/moveit
+
+      - name: Run Phase 9.1 aggregate verifier
+        run: python scripts/verify_phase9_1.py --output artifacts/phase9_1
+
+      - name: Upload Phase 9.1 artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase9-isaac-summary
-          path: artifacts/phase9/
+          name: phase9-1-runtime-evidence
+          path: artifacts/phase9_1/

@@ -2,7 +2,7 @@
 
 Phase 9.1 tightens the ROS 2, MoveIt 2, Isaac Sim, and cross-backend verification boundary introduced in Phase 9.
 
-The current host is accepted only for core MuJoCo readiness. ROS 2, MoveIt 2, and Isaac Sim validation remain blocked by environment and must not be reported as completed.
+The current host has completed ROS 2 and MoveIt 2 runtime validation, but Phase 9.1 remains accepted only as `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK` because Isaac Sim, Isaac benchmark validation, and cross-backend comparison are still blocked by environment.
 
 ## Status Vocabulary
 
@@ -60,6 +60,9 @@ PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK
 
 Blocked components:
 
-- ROS 2: ROS 2 CLI, Jazzy environment, `rclpy`, `colcon`, and `rosdep` are unavailable.
-- MoveIt 2: MoveIt 2 packages and the built `bigsmall_franka_moveit_config` workspace are unavailable.
 - Isaac Sim: `ISAAC_SIM_ROOT` is not set and Vulkan tooling is unavailable.
+
+Validated components:
+
+- ROS 2: `ROS2_INTEGRATION_VALIDATED` with `ros2_runtime_evidence.json`.
+- MoveIt 2: `MOVEIT_SAFETY_VALIDATED` with `moveit_safety_evidence.json`.

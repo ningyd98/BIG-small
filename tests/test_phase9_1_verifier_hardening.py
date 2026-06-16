@@ -11,8 +11,20 @@ from cloud_edge_robot_arm.simulation.phase9_1 import verification
 from cloud_edge_robot_arm.simulation.phase9_1.verification import CommandEvidence
 
 
-def _ok(argv: list[str]) -> CommandEvidence:
-    return CommandEvidence(argv=argv, exit_code=0, stdout="ok", stderr="")
+def _ok(argv: list[str], *, timeout: float = 20) -> CommandEvidence:
+    stdout = "jazzy\nrmw_fastrtps_cpp\n91" if "printenv ROS_DISTRO" in " ".join(argv) else "ok"
+    return CommandEvidence(argv=argv, exit_code=0, stdout=stdout, stderr="")
+
+
+def test_phase9_1_ros_moveit_verifiers_do_not_require_core_mujoco_imports() -> None:
+    source = Path("src/cloud_edge_robot_arm/simulation/phase9_1/verification.py").read_text(
+        encoding="utf-8"
+    )
+    ros_moveit_section = source.split("def verify_cross_backend", maxsplit=1)[0]
+
+    assert (
+        "simulation.evaluation.metrics import run_mujoco_physical_trial" not in ros_moveit_section
+    )
 
 
 def test_ros2_env_ready_without_runtime_evidence_is_not_validated(
@@ -24,7 +36,7 @@ def test_ros2_env_ready_without_runtime_evidence_is_not_validated(
     result = verification.verify_ros2_integration(tmp_path)
     payload = result.to_jsonable()
 
-    assert payload["status"] in {"NOT_RUN", "INCOMPLETE"}
+    assert payload["status"] == "ROS2_READY"
     assert payload["validation_claimed"] is False
     for key in (
         "qos_checked",
@@ -42,7 +54,6 @@ def test_moveit_ready_without_safety_evidence_is_not_validated(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(verification, "_run", _ok)
-    monkeypatch.setattr(verification.shutil, "which", lambda name: "/usr/bin/ros2")
 
     result = verification.verify_moveit_safety(tmp_path)
     payload = result.to_jsonable()

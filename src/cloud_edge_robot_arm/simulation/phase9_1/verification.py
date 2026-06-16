@@ -2,15 +2,57 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
+import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
 from cloud_edge_robot_arm.simulation.environment import detect_environment
-from cloud_edge_robot_arm.simulation.evaluation.metrics import run_mujoco_physical_trial
+
+ROS2_RUNTIME_CHECKS = (
+    "custom_message",
+    "custom_service",
+    "qos_compatible",
+    "qos_incompatible",
+    "namespace_isolation",
+    "ros_timestamp",
+    "sensor_timestamp",
+    "action_success",
+    "action_timeout",
+    "action_cancel",
+    "stale_feedback",
+    "node_crash",
+    "node_restart_reconnect",
+)
+
+MOVEIT_SAFETY_CHECKS = (
+    "reachable_target_planning_success",
+    "unreachable_target_planning_failure",
+    "joint_limit_violation_rejection",
+    "collision_object_insertion",
+    "collision_path_rejection_or_valid_replanning",
+    "execution_cancellation",
+    "planning_timeout",
+    "emergency_stop_boundary",
+    "post_emergency_stop_trajectory_rejection",
+    "bigsmall_boundary_enforced",
+)
+
+RUNTIME_EVIDENCE_FIELDS = (
+    "command",
+    "exit_code",
+    "start_wall_time",
+    "end_wall_time",
+    "ros_time",
+    "log_path",
+    "observed_result",
+)
+
+ROS_ENV_ACTIVATION_SCRIPT = Path("scripts/phase9/activate_ros2_moveit_env.sh")
 
 
 @dataclass(frozen=True)
@@ -70,44 +112,89 @@ class ComponentVerification:
         )
 
 
-def verify_ros2_integration(output_dir: Path) -> ComponentVerification:
+def verify_ros2_integration(
+    output_dir: Path, *, run_runtime: bool = False
+) -> ComponentVerification:
     commands = [
-        _run(["bash", "-lc", "command -v ros2"]),
-        _run(["bash", "-lc", "ros2 --version"]),
-        _run([sys.executable, "-c", "import rclpy; print(rclpy.__version__)"]),
-        _run(["bash", "-lc", "command -v colcon && colcon --version"]),
-        _run(["bash", "-lc", "command -v rosdep && rosdep --version"]),
-        _run(["bash", "-lc", "printenv ROS_DISTRO RMW_IMPLEMENTATION ROS_DOMAIN_ID"]),
+        _run_ros_env("command -v ros2"),
+        _run_ros_env("ros2 pkg prefix rclpy"),
+        _run_ros_env("python -c 'import rclpy; print(\"rclpy-importable\")'"),
+        _run_ros_env(
+            "python -c 'from ament_index_python.packages import get_package_prefix; "
+            'print(get_package_prefix("rclpy"))\''
+        ),
+        _run_ros_env("command -v colcon && colcon --help >/dev/null"),
+        _run_ros_env("command -v rosdep && rosdep --version"),
+        _run_ros_env("command -v vcs && vcs --version"),
+        _run_ros_env("ros2 pkg prefix bigsmall_sim_bridge"),
+        _run_ros_env("printenv ROS_DISTRO RMW_IMPLEMENTATION ROS_DOMAIN_ID"),
     ]
     blockers = []
-    if os.environ.get("ROS_DISTRO") != "jazzy":
+    if "jazzy" not in commands[8].stdout.splitlines():
         blockers.append("ROS_DISTRO is not jazzy")
     if commands[0].exit_code != 0:
         blockers.append("ros2 CLI is not available")
+    if commands[1].exit_code != 0:
+        blockers.append("rclpy package prefix is not available")
     if commands[2].exit_code != 0:
         blockers.append("rclpy is not importable in this Python environment")
     if commands[3].exit_code != 0:
-        blockers.append("colcon is not available")
+        blockers.append("ament index is not available")
     if commands[4].exit_code != 0:
+        blockers.append("colcon is not available")
+    if commands[5].exit_code != 0:
         blockers.append("rosdep is not available")
+    if commands[6].exit_code != 0:
+        blockers.append("vcstool is not available")
+    if commands[7].exit_code != 0:
+        blockers.append("bigsmall_sim_bridge is not built in a sourced ROS workspace")
+    ready = not blockers
+    if run_runtime and ready:
+        commands.append(
+            _run_ros_env(
+                "python scripts/phase9/run_ros2_runtime_evidence.py "
+                f"--output {shlex.quote(str(output_dir))}",
+                ros_domain_id=_ros_domain_for_output(output_dir),
+                timeout=60,
+            )
+        )
     evidence = _load_json(output_dir / "ros2_runtime_evidence.json")
     runtime_checks = _runtime_check_flags(
         evidence,
         {
-            "qos_checked": "qos",
-            "namespace_checked": "namespace",
-            "timestamp_checked": "timestamp",
+            "custom_message_checked": "custom_message",
+            "custom_service_checked": "custom_service",
+            "qos_compatible_checked": "qos_compatible",
+            "qos_incompatible_checked": "qos_incompatible",
+            "namespace_isolation_checked": "namespace_isolation",
+            "ros_timestamp_checked": "ros_timestamp",
+            "sensor_timestamp_checked": "sensor_timestamp",
+            "action_success_checked": "action_success",
             "action_timeout_checked": "action_timeout",
-            "cancel_checked": "cancel",
-            "node_crash_reconnect_checked": "node_crash_reconnect",
+            "action_cancel_checked": "action_cancel",
+            "stale_feedback_checked": "stale_feedback",
+            "node_crash_checked": "node_crash",
+            "node_crash_reconnect_checked": "node_restart_reconnect",
         },
     )
+    compatibility_metrics = {
+        "custom_interfaces_checked": runtime_checks["custom_message_checked"]
+        and runtime_checks["custom_service_checked"]
+        and runtime_checks["action_success_checked"],
+        "qos_checked": runtime_checks["qos_compatible_checked"]
+        and runtime_checks["qos_incompatible_checked"],
+        "namespace_checked": runtime_checks["namespace_isolation_checked"],
+        "timestamp_checked": runtime_checks["ros_timestamp_checked"]
+        and runtime_checks["sensor_timestamp_checked"],
+        "cancel_checked": runtime_checks["action_cancel_checked"],
+    }
     missing_runtime_checks = [key for key, checked in runtime_checks.items() if not checked]
-    ready = not blockers
+    complete_runtime_evidence = _evidence_has_required_runtime_fields(evidence, ROS2_RUNTIME_CHECKS)
     validation_claimed = (
         ready
         and bool(evidence.get("validation_claimed"))
         and bool(evidence.get("artifact_provenance_complete"))
+        and complete_runtime_evidence
         and not missing_runtime_checks
     )
     if blockers:
@@ -118,7 +205,7 @@ def verify_ros2_integration(output_dir: Path) -> ComponentVerification:
         status = "INCOMPLETE"
         blockers.append("ROS 2 runtime evidence is incomplete")
     else:
-        status = "NOT_RUN"
+        status = "ROS2_READY"
         blockers.append("ROS 2 runtime evidence not found")
     result = ComponentVerification(
         component="ros2",
@@ -128,7 +215,9 @@ def verify_ros2_integration(output_dir: Path) -> ComponentVerification:
         validation_claimed=validation_claimed,
         metrics={
             **runtime_checks,
+            **compatibility_metrics,
             "environment_ready": ready,
+            "runtime_evidence_complete": complete_runtime_evidence,
             "runtime_evidence_path": str(output_dir / "ros2_runtime_evidence.json"),
         },
     )
@@ -136,39 +225,75 @@ def verify_ros2_integration(output_dir: Path) -> ComponentVerification:
     return result
 
 
-def verify_moveit_safety(output_dir: Path) -> ComponentVerification:
+def verify_moveit_safety(output_dir: Path, *, run_runtime: bool = False) -> ComponentVerification:
     commands = [
-        _run(["bash", "-lc", "ros2 pkg prefix moveit_ros_planning_interface"]),
-        _run(["bash", "-lc", "ros2 pkg prefix moveit_planners_ompl"]),
-        _run(["bash", "-lc", "ros2 pkg prefix bigsmall_franka_moveit_config"]),
+        _run_ros_env("command -v ros2"),
+        _run_ros_env("ros2 pkg prefix moveit_ros_move_group"),
+        _run_ros_env("ros2 pkg prefix moveit_msgs"),
+        _run_ros_env("ros2 pkg prefix moveit_configs_utils"),
+        _run_ros_env("ros2 pkg prefix moveit_resources_panda_moveit_config"),
+        _run_ros_env("python -c 'import moveit_configs_utils; print(\"importable\")'"),
+        _run_ros_env("ros2 pkg prefix bigsmall_franka_moveit_config"),
+        _run_ros_env("ros2 pkg prefix bigsmall_robot_bridge"),
     ]
     blockers = []
-    if shutil.which("ros2") is None:
-        blockers.append("ros2 CLI is not available")
     if commands[0].exit_code != 0:
-        blockers.append("MoveIt 2 planning interface package is not available")
+        blockers.append("ros2 CLI is not available")
     if commands[1].exit_code != 0:
-        blockers.append("MoveIt 2 OMPL planner package is not available")
+        blockers.append("moveit_ros_move_group package is not available")
     if commands[2].exit_code != 0:
+        blockers.append("moveit_msgs package is not available")
+    if commands[3].exit_code != 0:
+        blockers.append("moveit_configs_utils package is not available")
+    if commands[4].exit_code != 0:
+        blockers.append("moveit_resources_panda_moveit_config package is not available")
+    if commands[5].exit_code != 0:
+        blockers.append("moveit_configs_utils is not importable")
+    if commands[6].exit_code != 0:
         blockers.append("bigsmall_franka_moveit_config is not built in a sourced ROS workspace")
+    if commands[7].exit_code != 0:
+        blockers.append("bigsmall_robot_bridge is not built in a sourced ROS workspace")
+    ready = not blockers
+    if run_runtime and ready:
+        commands.append(
+            _run_ros_env(
+                "python scripts/phase9/run_moveit_safety_evidence.py "
+                f"--output {shlex.quote(str(output_dir))}",
+                ros_domain_id=_ros_domain_for_output(output_dir),
+                timeout=90,
+            )
+        )
     evidence = _load_json(output_dir / "moveit_safety_evidence.json")
     runtime_checks = _runtime_check_flags(
         evidence,
         {
-            "reachability_checked": "reachability",
-            "joint_limits_checked": "joint_limits",
-            "collision_scene_checked": "collision_scene",
-            "planning_failure_checked": "planning_failure",
-            "execution_cancel_checked": "execution_cancel",
+            "reachability_checked": "reachable_target_planning_success",
+            "unreachable_target_checked": "unreachable_target_planning_failure",
+            "joint_limits_checked": "joint_limit_violation_rejection",
+            "collision_object_checked": "collision_object_insertion",
+            "collision_path_checked": "collision_path_rejection_or_valid_replanning",
+            "execution_cancel_checked": "execution_cancellation",
+            "planning_timeout_checked": "planning_timeout",
             "emergency_stop_boundary_checked": "emergency_stop_boundary",
+            "post_estop_rejection_checked": "post_emergency_stop_trajectory_rejection",
+            "bigsmall_boundary_checked": "bigsmall_boundary_enforced",
         },
     )
+    compatibility_metrics = {
+        "collision_scene_checked": runtime_checks["collision_object_checked"]
+        and runtime_checks["collision_path_checked"],
+        "planning_failure_checked": runtime_checks["unreachable_target_checked"]
+        and runtime_checks["planning_timeout_checked"],
+    }
     missing_runtime_checks = [key for key, checked in runtime_checks.items() if not checked]
-    ready = not blockers
+    complete_runtime_evidence = _evidence_has_required_runtime_fields(
+        evidence, MOVEIT_SAFETY_CHECKS
+    )
     validation_claimed = (
         ready
         and bool(evidence.get("validation_claimed"))
         and bool(evidence.get("artifact_provenance_complete"))
+        and complete_runtime_evidence
         and not missing_runtime_checks
     )
     if blockers:
@@ -189,7 +314,9 @@ def verify_moveit_safety(output_dir: Path) -> ComponentVerification:
         validation_claimed=validation_claimed,
         metrics={
             **runtime_checks,
+            **compatibility_metrics,
             "environment_ready": ready,
+            "runtime_evidence_complete": complete_runtime_evidence,
             "runtime_evidence_path": str(output_dir / "moveit_safety_evidence.json"),
         },
     )
@@ -423,6 +550,14 @@ def run_safety_pressure(output_dir: Path, *, trials: int = 500) -> dict[str, obj
     return payload
 
 
+def run_mujoco_physical_trial(*args: Any, **kwargs: Any) -> Any:
+    from cloud_edge_robot_arm.simulation.evaluation.metrics import (
+        run_mujoco_physical_trial as _run_mujoco_physical_trial,
+    )
+
+    return _run_mujoco_physical_trial(*args, **kwargs)
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -446,6 +581,52 @@ def _runtime_check_flags(evidence: dict[str, Any], required: dict[str, str]) -> 
         else:
             flags[metric_name] = False
     return flags
+
+
+def _evidence_has_required_runtime_fields(
+    evidence: dict[str, Any],
+    required_checks: tuple[str, ...],
+) -> bool:
+    checks = evidence.get("checks", {})
+    if not isinstance(checks, dict):
+        return False
+    for name in required_checks:
+        item = checks.get(name)
+        if not isinstance(item, dict) or not item.get("passed"):
+            return False
+        for field_name in RUNTIME_EVIDENCE_FIELDS:
+            if field_name not in item or item[field_name] in ("", None, [], {}):
+                return False
+        if int(item.get("exit_code", -1)) != 0:
+            return False
+        if not isinstance(item.get("command"), list):
+            return False
+        if not isinstance(item.get("observed_result"), dict):
+            return False
+    return True
+
+
+def _python_import_available(module: str) -> bool:
+    try:
+        return find_spec(module) is not None
+    except (ImportError, AttributeError, ValueError):
+        return False
+
+
+def _package_prefix(package: str) -> str:
+    try:
+        from ament_index_python.packages import get_package_prefix
+    except ModuleNotFoundError:
+        get_package_prefix = None
+    if get_package_prefix is not None:
+        try:
+            return str(get_package_prefix(package))
+        except Exception:
+            pass
+    result = _run(["bash", "-lc", f"ros2 pkg prefix {package}"])
+    if result.exit_code == 0:
+        return result.stdout.strip()
+    return ""
 
 
 def _backend_artifact_valid(artifact: dict[str, Any], *, expected_backend: str) -> bool:
@@ -512,9 +693,9 @@ def _run_emergency_stop_command_record(seed: int) -> int:
         backend.shutdown()
 
 
-def _run(argv: list[str]) -> CommandEvidence:
+def _run(argv: list[str], *, timeout: float = 20) -> CommandEvidence:
     try:
-        result = subprocess.run(argv, check=False, text=True, capture_output=True, timeout=20)
+        result = subprocess.run(argv, check=False, text=True, capture_output=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return CommandEvidence(argv=argv, exit_code=124, stdout="", stderr=str(exc))
     return CommandEvidence(
@@ -525,9 +706,42 @@ def _run(argv: list[str]) -> CommandEvidence:
     )
 
 
+def _run_ros_env(
+    command: str,
+    *,
+    timeout: float = 20,
+    ros_domain_id: int | None = None,
+) -> CommandEvidence:
+    if ROS_ENV_ACTIVATION_SCRIPT.exists():
+        script = shlex.quote(str(ROS_ENV_ACTIVATION_SCRIPT))
+        if ros_domain_id is None:
+            command = f"source {script} >/dev/null && {command}"
+        else:
+            command = (
+                f"source {script} >/dev/null && export ROS_DOMAIN_ID={ros_domain_id} && {command}"
+            )
+    return _run(["bash", "-lc", command], timeout=timeout)
+
+
+def _ros_domain_for_output(output_dir: Path) -> int:
+    encoded = sum(ord(char) for char in str(output_dir))
+    return 100 + encoded % 120
+
+
 def _sanitize_text(value: str) -> str:
     home = str(Path.home())
     sanitized = value.replace(sys.executable, "python")
     if home:
         sanitized = sanitized.replace(home, "$HOME")
+    sanitized = re.sub(r"/home/[A-Za-z0-9_.-]+", "$HOME", sanitized)
+    for env_name in ("USER", "LOGNAME"):
+        env_value = os.environ.get(env_name, "")
+        if env_value:
+            sanitized = sanitized.replace(env_value, f"${env_name}")
+    sanitized = re.sub(r"(https?://)[^/\s:@]+:[^/\s@]+@", r"\1<redacted>@", sanitized)
+    sanitized = re.sub(
+        r"(?i)\b(token|password|secret|https?_proxy)=([^\s]+)",
+        lambda match: f"{match.group(1)}=<redacted>",
+        sanitized,
+    )
     return sanitized

@@ -31,10 +31,24 @@ def test_phase9_1_env_block_artifact_records_commands_and_exit_codes(tmp_path: P
     assert summary["status"] == "PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK"
     for component in ("ros2", "moveit", "isaac"):
         artifact = summary["components"][component]
-        assert artifact["status"] == "BLOCKED_BY_ENV"
         assert artifact["commands"], component
         assert all("argv" in command and "exit_code" in command for command in artifact["commands"])
-        assert artifact["validation_claimed"] is False
+    assert summary["components"]["ros2"]["status"] in {
+        "BLOCKED_BY_ENV",
+        "ROS2_INTEGRATION_VALIDATED",
+    }
+    assert summary["components"]["moveit"]["status"] in {
+        "BLOCKED_BY_ENV",
+        "MOVEIT_SAFETY_VALIDATED",
+    }
+    assert summary["components"]["isaac"]["status"] == "BLOCKED_BY_ENV"
+    assert summary["components"]["isaac"]["validation_claimed"] is False
+    if summary["components"]["ros2"]["status"] == "ROS2_INTEGRATION_VALIDATED":
+        assert summary["components"]["ros2"]["validation_claimed"] is True
+        assert summary["components"]["ros2"]["runtime_evidence_complete"] is True
+    if summary["components"]["moveit"]["status"] == "MOVEIT_SAFETY_VALIDATED":
+        assert summary["components"]["moveit"]["validation_claimed"] is True
+        assert summary["components"]["moveit"]["runtime_evidence_complete"] is True
 
 
 def test_phase9_1_time_domains_are_explicit_in_blocked_artifact(tmp_path: Path) -> None:

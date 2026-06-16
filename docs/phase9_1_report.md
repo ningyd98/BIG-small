@@ -1,6 +1,6 @@
 # Phase 9.1 Report
 
-Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Isaac Sim, and cross-backend validation. It does not claim real hardware validation, and it does not claim Isaac Sim validation on this host.
+Phase 9.1 adds explicit verification for ROS 2, MoveIt 2, Isaac Sim, and cross-backend validation. It does not claim real hardware validation, and it does not claim Isaac Sim validation on this host.
 
 ## Current Result
 
@@ -8,6 +8,8 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 - Core Phase 9 history: passed through `scripts/verify_phase9.py`
 - Safety pressure: 500 MuJoCo near-miss trials, 0 illegal collisions
 - Safety pressure now derives `emergency_stop_post_command_count` from command records and reports `unique_result_hash_count`; it is not a fixed zero.
+- ROS 2 runtime evidence: `ROS2_INTEGRATION_VALIDATED`
+- MoveIt 2 runtime evidence: `MOVEIT_SAFETY_VALIDATED`
 - Cross-backend: MuJoCo reference generated; Isaac comparison not run because Isaac is blocked by environment
 - Install readiness: dry-run plans generated for ROS 2 Jazzy, MoveIt 2, Vulkan, and Isaac compatibility without modifying the core Python environment
 - Isaac process protocol guard: JSONL handshake, command acknowledgement, movement skill trajectory mapping, and replay-runtime rejection pass in a subprocess fixture; this is not counted as Isaac validation
@@ -20,8 +22,6 @@ Phase 9.1 adds explicit environment-blocked verification for ROS 2, MoveIt 2, Is
 
 ## Environment Blockers
 
-- ROS 2: `ros2` CLI unavailable, `ROS_DISTRO` is not `jazzy`, `rclpy` unavailable, `colcon` unavailable, `rosdep` unavailable.
-- MoveIt 2: `moveit_ros_planning_interface`, `moveit_planners_ompl`, and `bigsmall_franka_moveit_config` are not available from a sourced ROS workspace.
 - Isaac Sim: `ISAAC_SIM_ROOT` is unset and `vulkaninfo` is unavailable.
 
 ## Evidence Artifacts

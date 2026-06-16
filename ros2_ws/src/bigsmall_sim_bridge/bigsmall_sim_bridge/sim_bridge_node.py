@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 import uuid
@@ -29,6 +28,8 @@ from rclpy.action import (  # type: ignore[import-not-found]
     CancelResponse,
     GoalResponse,
 )
+from rclpy.callback_groups import ReentrantCallbackGroup  # type: ignore[import-not-found]
+from rclpy.executors import MultiThreadedExecutor  # type: ignore[import-not-found]
 from rclpy.node import Node  # type: ignore[import-not-found]
 from rclpy.qos import (  # type: ignore[import-not-found]
     DurabilityPolicy,
@@ -37,6 +38,8 @@ from rclpy.qos import (  # type: ignore[import-not-found]
     ReliabilityPolicy,
 )
 from rosgraph_msgs.msg import Clock  # type: ignore[import-not-found]
+
+from bigsmall_sim_bridge.safety_limits import trajectory_joint_limit_violation
 
 
 def command_qos() -> QoSProfile:
@@ -84,6 +87,11 @@ class BigsmallSimBridgeNode(Node):
     def __init__(self) -> None:
         super().__init__("bigsmall_sim_bridge")
         self._state = BridgeState()
+        self._callback_group = ReentrantCallbackGroup()
+        self.declare_parameter("backend_connected", True)
+        self._state.backend_connected = bool(
+            self.get_parameter("backend_connected").get_parameter_value().bool_value
+        )
         self._clock_pub = self.create_publisher(Clock, "/clock", telemetry_qos())
         self._status_pub = self.create_publisher(
             SimulationStatus, "/bigsmall/simulation/status", telemetry_qos()
@@ -104,6 +112,7 @@ class BigsmallSimBridgeNode(Node):
             execute_callback=self._execute_move_to_pose,
             goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback,
+            callback_group=self._callback_group,
         )
         self._follow_joint_trajectory_server = ActionServer(
             self,
@@ -112,6 +121,7 @@ class BigsmallSimBridgeNode(Node):
             execute_callback=self._execute_follow_joint_trajectory,
             goal_callback=self._goal_callback,
             cancel_callback=self._cancel_callback,
+            callback_group=self._callback_group,
         )
         self.create_timer(0.02, self._publish_status)
 
@@ -151,7 +161,8 @@ class BigsmallSimBridgeNode(Node):
     ) -> ResetWorld.Response:
         accepted = self._accept_once(request.header.task_id, request.header.command_seq)
         if accepted:
-            self._state = BridgeState()
+            backend_connected = self._state.backend_connected
+            self._state = BridgeState(backend_connected=backend_connected)
         response.accepted = accepted
         response.status = "RESET" if accepted else "DUPLICATE_REJECTED"
         response.reset_sim_time_s = self._state.simulation_time_s
@@ -254,7 +265,7 @@ class BigsmallSimBridgeNode(Node):
         )
         return CancelResponse.ACCEPT
 
-    async def _execute_move_to_pose(self, goal_handle: Any) -> Any:
+    def _execute_move_to_pose(self, goal_handle: Any) -> Any:
         request = goal_handle.request
         result = MoveToPose.Result()
         started = self._state.simulation_time_s
@@ -266,7 +277,7 @@ class BigsmallSimBridgeNode(Node):
             result.final_sim_time_s = self._state.simulation_time_s
             return result
         self._state.motion_active = True
-        deadline = time.monotonic() + max(timeout_s, 0.0)
+        deadline = time.monotonic() + (max(timeout_s * 2.0, 1.0) if timeout_s > 0.0 else 0.0)
 
         while self._state.motion_active and time.monotonic() <= deadline:
             if goal_handle.is_cancel_requested:
@@ -292,10 +303,15 @@ class BigsmallSimBridgeNode(Node):
             self._state.last_feedback_sim_time_s = self._state.simulation_time_s
             if completion_ratio >= 1.0:
                 break
-            await asyncio.sleep(0.02)
+            time.sleep(0.02)
 
+        canceled = goal_handle.is_cancel_requested or not self._state.motion_active
         self._state.motion_active = False
-        if time.monotonic() > deadline:
+        if canceled:
+            goal_handle.canceled()
+            result.success = False
+            result.status = "CANCELED"
+        elif time.monotonic() > deadline:
             goal_handle.abort()
             result.success = False
             result.status = "TIMEOUT"
@@ -308,11 +324,25 @@ class BigsmallSimBridgeNode(Node):
         result.tcp_orientation_error_rad = 0.0
         return result
 
-    async def _execute_follow_joint_trajectory(self, goal_handle: Any) -> Any:
+    def _execute_follow_joint_trajectory(self, goal_handle: Any) -> Any:
         request = goal_handle.request
         result = FollowJointTrajectory.Result()
         started = self._state.simulation_time_s
         timeout_s = float(request.timeout_s)
+        violation = trajectory_joint_limit_violation(request.trajectory)
+        if violation is not None:
+            goal_handle.abort()
+            result.success = False
+            result.status = "JOINT_LIMIT_REJECTED"
+            result.final_sim_time_s = self._state.simulation_time_s
+            result.joint_tracking_rmse = 0.0
+            self._publish_safety_event(
+                request.header,
+                "JOINT_LIMIT_REJECTED",
+                json.dumps(violation, sort_keys=True),
+                False,
+            )
+            return result
         if not self._state.backend_connected:
             goal_handle.abort()
             result.success = False
@@ -320,7 +350,7 @@ class BigsmallSimBridgeNode(Node):
             result.final_sim_time_s = self._state.simulation_time_s
             return result
         self._state.motion_active = True
-        deadline = time.monotonic() + max(timeout_s, 0.0)
+        deadline = time.monotonic() + (max(timeout_s * 2.0, 1.0) if timeout_s > 0.0 else 0.0)
 
         while self._state.motion_active and time.monotonic() <= deadline:
             if goal_handle.is_cancel_requested:
@@ -346,10 +376,15 @@ class BigsmallSimBridgeNode(Node):
             self._state.last_feedback_sim_time_s = self._state.simulation_time_s
             if completion_ratio >= 1.0:
                 break
-            await asyncio.sleep(0.02)
+            time.sleep(0.02)
 
+        canceled = goal_handle.is_cancel_requested or not self._state.motion_active
         self._state.motion_active = False
-        if time.monotonic() > deadline:
+        if canceled:
+            goal_handle.canceled()
+            result.success = False
+            result.status = "CANCELED"
+        elif time.monotonic() > deadline:
             goal_handle.abort()
             result.success = False
             result.status = "TIMEOUT"
@@ -371,8 +406,12 @@ class BigsmallSimBridgeNode(Node):
 def main() -> None:
     rclpy.init()
     node = BigsmallSimBridgeNode()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
+        executor.shutdown()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

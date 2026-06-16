@@ -21,7 +21,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    result = verify_ros2_integration(args.output)
+    result = verify_ros2_integration(args.output, run_runtime=True)
     payload = result.to_jsonable()
     print(json.dumps(payload, sort_keys=True, indent=2))
     return 0

@@ -1,82 +1,129 @@
 {
-  "action_timeout_checked": false,
-  "blockers": [
-    "ROS_DISTRO is not jazzy",
-    "ros2 CLI is not available",
-    "rclpy is not importable in this Python environment",
-    "colcon is not available",
-    "rosdep is not available"
-  ],
-  "cancel_checked": false,
+  "action_cancel_checked": true,
+  "action_success_checked": true,
+  "action_timeout_checked": true,
+  "blockers": [],
+  "cancel_checked": true,
   "commands": [
     {
       "argv": [
         "bash",
         "-lc",
-        "command -v ros2"
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && command -v ros2"
       ],
-      "exit_code": 1,
+      "exit_code": 0,
       "stderr": "",
-      "stdout": ""
+      "stdout": "$HOME/anaconda3/envs/bigsmall-ros2-jazzy-moveit/bin/ros2"
     },
     {
       "argv": [
         "bash",
         "-lc",
-        "ros2 --version"
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && ros2 pkg prefix rclpy"
       ],
-      "exit_code": 127,
-      "stderr": "bash: line 1: ros2: command not found",
-      "stdout": ""
-    },
-    {
-      "argv": [
-        "python",
-        "-c",
-        "import rclpy; print(rclpy.__version__)"
-      ],
-      "exit_code": 1,
-      "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'rclpy'",
-      "stdout": ""
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "$HOME/anaconda3/envs/bigsmall-ros2-jazzy-moveit"
     },
     {
       "argv": [
         "bash",
         "-lc",
-        "command -v colcon && colcon --version"
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && python -c 'import rclpy; print(\"rclpy-importable\")'"
       ],
-      "exit_code": 1,
+      "exit_code": 0,
       "stderr": "",
-      "stdout": ""
+      "stdout": "rclpy-importable"
     },
     {
       "argv": [
         "bash",
         "-lc",
-        "command -v rosdep && rosdep --version"
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && python -c 'from ament_index_python.packages import get_package_prefix; print(get_package_prefix(\"rclpy\"))'"
       ],
-      "exit_code": 1,
+      "exit_code": 0,
       "stderr": "",
-      "stdout": ""
+      "stdout": "$HOME/anaconda3/envs/bigsmall-ros2-jazzy-moveit"
     },
     {
       "argv": [
         "bash",
         "-lc",
-        "printenv ROS_DISTRO RMW_IMPLEMENTATION ROS_DOMAIN_ID"
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && command -v colcon && colcon --help >/dev/null"
       ],
-      "exit_code": 1,
+      "exit_code": 0,
       "stderr": "",
-      "stdout": ""
+      "stdout": "$HOME/anaconda3/envs/bigsmall-ros2-jazzy-moveit/bin/colcon"
+    },
+    {
+      "argv": [
+        "bash",
+        "-lc",
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && command -v rosdep && rosdep --version"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "$HOME/anaconda3/envs/bigsmall-ros2-jazzy-moveit/bin/rosdep\n0.26.0"
+    },
+    {
+      "argv": [
+        "bash",
+        "-lc",
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && command -v vcs && vcs --version"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "$HOME/anaconda3/envs/bigsmall-ros2-jazzy-moveit/bin/vcs\nvcs 1.1.7"
+    },
+    {
+      "argv": [
+        "bash",
+        "-lc",
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && ros2 pkg prefix bigsmall_sim_bridge"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "$HOME/bigsmall_runtime/ros2_ws/install"
+    },
+    {
+      "argv": [
+        "bash",
+        "-lc",
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && printenv ROS_DISTRO RMW_IMPLEMENTATION ROS_DOMAIN_ID"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "jazzy\nrmw_fastrtps_cpp\n91"
+    },
+    {
+      "argv": [
+        "bash",
+        "-lc",
+        "source scripts/phase9/activate_ros2_moveit_env.sh >/dev/null && export ROS_DOMAIN_ID=115 && python scripts/phase9/run_ros2_runtime_evidence.py --output artifacts/phase9_1/ros2"
+      ],
+      "exit_code": 0,
+      "stderr": "[WARN] [1781610773.603616312] [phase9_1_ros2_runtime_evidence]: New subscription discovered on topic '/bigsmall/qos_incompatible_probe', requesting incompatible QoS. No messages will be sent to it. Last incompatible policy: RELIABILITY\n[WARN] [1781610773.603924730] [phase9_1_ros2_runtime_evidence]: New publisher discovered on topic '/bigsmall/qos_incompatible_probe', offering incompatible QoS. No messages will be received from it. Last incompatible policy: RELIABILITY",
+      "stdout": "  \"command\": [\n        \"python\",\n        \"scripts/phase9/run_ros2_runtime_evidence.py\",\n        \"--check\",\n        \"node_restart_reconnect\"\n      ],\n      \"end_wall_time\": \"2026-06-16T11:52:56.610378Z\",\n      \"exit_code\": 0,\n      \"log_path\": \"artifacts/phase9_1/ros2/logs/node_restart_reconnect.json\",\n      \"observed_result\": {\n        \"accepted\": true,\n        \"bridge_log\": \"artifacts/phase9_1/ros2/logs/bigsmall_sim_bridge.log\",\n        \"status\": \"SCENARIO_LOADED\"\n      },\n      \"passed\": true,\n      \"ros_time\": {\n        \"nanosec\": 220000000,\n        \"sec\": 3\n      },\n      \"start_wall_time\": \"2026-06-16T11:52:56.597861Z\"\n    },\n    \"qos_compatible\": {\n      \"command\": [\n        \"python\",\n        \"scripts/phase9/run_ros2_runtime_evidence.py\",\n        \"--check\",\n        \"qos_compatible\"\n      ],\n      \"end_wall_time\": \"2026-06-16T11:52:53.390271Z\",\n      \"exit_code\": 0,\n      \"log_path\": \"artifacts/phase9_1/ros2/logs/qos_compatible.json\",\n      \"observed_result\": {\n        \"physics_steps\": 11,\n        \"service_status\": \"RESET\",\n        \"status\": \"RUNNING\"\n      },\n      \"passed\": true,\n      \"ros_time\": {\n        \"nanosec\": 219999999,\n        \"sec\": 0\n      },\n      \"start_wall_time\": \"2026-06-16T11:52:53.369351Z\"\n    },\n    \"qos_incompatible\": {\n      \"command\": [\n        \"python\",\n        \"scripts/phase9/run_ros2_runtime_evidence.py\",\n        \"--check\",\n        \"qos_incompatible\"\n      ],\n      \"end_wall_time\": \"2026-06-16T11:52:54.109505Z\",\n      \"exit_code\": 0,\n      \"log_path\": \"artifacts/phase9_1/ros2/logs/qos_incompatible.json\",\n      \"observed_result\": {\n        \"expected\": \"reliable subscriber rejects best-effort-only publisher\",\n        \"received_count\": 0\n      },\n      \"passed\": true,\n      \"ros_time\": {\n        \"nanosec\": 720000000,\n        \"sec\": 0\n      },\n      \"start_wall_time\": \"2026-06-16T11:52:53.390532Z\"\n    },\n    \"ros_timestamp\": {\n      \"command\": [\n        \"python\",\n        \"scripts/phase9/run_ros2_runtime_evidence.py\",\n        \"--check\",\n        \"ros_timestamp\"\n      ],\n      \"end_wall_time\": \"2026-06-16T11:52:54.849218Z\",\n      \"exit_code\": 0,\n      \"log_path\": \"artifacts/phase9_1/ros2/logs/ros_timestamp.json\",\n      \"observed_result\": {\n        \"ros_time_s\": 1.4600000000000009,\n        \"stamp\": {\n          \"nanosec\": 460000000,\n          \"sec\": 1\n        }\n      },\n      \"passed\": true,\n      \"ros_time\": {\n        \"nanosec\": 460000000,\n        \"sec\": 1\n      },\n      \"start_wall_time\": \"2026-06-16T11:52:54.829938Z\"\n    },\n    \"sensor_timestamp\": {\n      \"command\": [\n        \"python\",\n        \"scripts/phase9/run_ros2_runtime_evidence.py\",\n        \"--check\",\n        \"sensor_timestamp\"\n      ],\n      \"end_wall_time\": \"2026-06-16T11:52:55.569555Z\",\n      \"exit_code\": 0,\n      \"log_path\": \"artifacts/phase9_1/ros2/logs/sensor_timestamp.json\",\n      \"observed_result\": {\n        \"received_count\": 1,\n        \"stamp\": {\n          \"nanosec\": 123000000,\n          \"sec\": 7\n        }\n      },\n      \"passed\": true,\n      \"ros_time\": {\n        \"nanosec\": 180000000,\n        \"sec\": 2\n      },\n      \"start_wall_time\": \"2026-06-16T11:52:54.849432Z\"\n    },\n    \"stale_feedback\": {\n      \"command\": [\n        \"python\",\n        \"scripts/phase9/run_ros2_runtime_evidence.py\",\n        \"--check\",\n        \"stale_feedback\"\n      ],\n      \"end_wall_time\": \"2026-06-16T11:52:56.594097Z\",\n      \"exit_code\": 0,\n      \"log_path\": \"artifacts/phase9_1/ros2/logs/stale_feedback.json\",\n      \"observed_result\": {\n        \"feedback_count\": 21,\n        \"stale_feedback_samples\": 1,\n        \"status\": \"SUCCEEDED\"\n      },\n      \"passed\": true,\n      \"ros_time\": {\n        \"nanosec\": 200000000,\n        \"sec\": 3\n      },\n      \"start_wall_time\": \"2026-06-16T11:52:55.784956Z\"\n    }\n  },\n  \"process_provenance\": {\n    \"node\": \"bigsmall_sim_bridge\",\n    \"rmw_implementation\": \"rmw_fastrtps_cpp\",\n    \"ros_distro\": \"jazzy\",\n    \"ros_domain_id\": \"115\",\n    \"runtime\": \"ros2-rclpy\"\n  },\n  \"status\": \"ROS2_INTEGRATION_VALIDATED\",\n  \"validation_claimed\": true\n}"
     }
   ],
   "component": "ros2",
-  "environment_ready": false,
-  "namespace_checked": false,
-  "node_crash_reconnect_checked": false,
-  "qos_checked": false,
+  "custom_interfaces_checked": true,
+  "custom_message_checked": true,
+  "custom_service_checked": true,
+  "environment_ready": true,
+  "namespace_checked": true,
+  "namespace_isolation_checked": true,
+  "node_crash_checked": true,
+  "node_crash_reconnect_checked": true,
+  "qos_checked": true,
+  "qos_compatible_checked": true,
+  "qos_incompatible_checked": true,
+  "ros_timestamp_checked": true,
+  "runtime_evidence_complete": true,
   "runtime_evidence_path": "artifacts/phase9_1/ros2/ros2_runtime_evidence.json",
-  "status": "BLOCKED_BY_ENV",
-  "timestamp_checked": false,
-  "validation_claimed": false
+  "sensor_timestamp_checked": true,
+  "stale_feedback_checked": true,
+  "status": "ROS2_INTEGRATION_VALIDATED",
+  "timestamp_checked": true,
+  "validation_claimed": true
 }

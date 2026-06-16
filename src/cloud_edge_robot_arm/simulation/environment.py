@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import importlib.util
 import json
 import os
 import platform
@@ -43,6 +44,15 @@ class EnvironmentReport:
 
 
 def detect_environment() -> EnvironmentReport:
+    ros2_ready, ros_details, ros_blockers = _detect_ros2()
+    moveit_ready, moveit_details, moveit_blockers = _detect_moveit()
+    ros_installation_mode = _ros_installation_mode(
+        {
+            **ros_details.get("ros_package_prefixes", {}),
+            **moveit_details.get("moveit_package_prefixes", {}),
+        }
+    )
+    ros_details["ros_installation_mode"] = ros_installation_mode
     details: dict[str, Any] = {
         "os": platform.platform(),
         "kernel": platform.release(),
@@ -71,36 +81,38 @@ def detect_environment() -> EnvironmentReport:
         "ros_domain_id": os.environ.get("ROS_DOMAIN_ID", ""),
         "colcon": shutil.which("colcon") or "",
         "rosdep": shutil.which("rosdep") or "",
+        "vcstool": shutil.which("vcs") or "",
         "docker": shutil.which("docker") or "",
         "isaac_sim_root": os.environ.get("ISAAC_SIM_ROOT", ""),
         "isaac_sim_version": _isaac_version(),
-        "moveit2_available": _ros_package_available("moveit_ros_planning_interface"),
         "mujoco_version": _package_version("mujoco"),
         "headless_egl_supported": os.environ.get("MUJOCO_GL") == "egl"
         or shutil.which("nvidia-smi") is not None,
         "camera_rendering_conditions": shutil.which("vulkaninfo") is not None
         or bool(os.environ.get("DISPLAY")),
+        "core_ready": False,
+        "ros2_ready": ros2_ready,
+        "moveit_ready": moveit_ready,
+        **ros_details,
+        **moveit_details,
     }
     blockers: list[str] = []
     if not sys.version.startswith("3.12"):
         blockers.append("Python 3.12 is required for CORE_READY")
     if not details["mujoco_version"]:
         blockers.append("MuJoCo Python package is required for CORE_READY")
-    level = "CORE_READY" if not blockers else "BLOCKED_BY_ENV"
-
-    ros_blockers = []
-    if details["ros_distro"] != "jazzy":
-        ros_blockers.append("ROS_DISTRO is not jazzy")
-    if not details["colcon"]:
-        ros_blockers.append("colcon is not available")
-    if not details["rosdep"]:
-        ros_blockers.append("rosdep is not available")
-    if not details["moveit2_available"]:
-        ros_blockers.append("MoveIt 2 package not found")
-    if level == "CORE_READY" and not ros_blockers:
-        level = "ROS_READY"
+    core_ready = not blockers
+    details["core_ready"] = core_ready
+    if moveit_ready:
+        level = "MOVEIT_READY"
+    elif ros2_ready:
+        level = "ROS2_READY"
+    elif core_ready:
+        level = "CORE_READY"
     else:
-        details["ros_blockers"] = ros_blockers
+        level = "BLOCKED_BY_ENV"
+    details["ros_blockers"] = ros_blockers
+    details["moveit_blockers"] = moveit_blockers
 
     isaac_blockers = []
     if not details["isaac_sim_root"]:
@@ -109,7 +121,7 @@ def detect_environment() -> EnvironmentReport:
         isaac_blockers.append("NVIDIA GPU is not visible")
     if not details["vulkan_available"]:
         isaac_blockers.append("vulkaninfo is not available")
-    if level == "ROS_READY" and not isaac_blockers:
+    if not isaac_blockers:
         level = "ISAAC_READY"
     else:
         details["isaac_blockers"] = isaac_blockers
@@ -136,6 +148,88 @@ def _command(argv: list[str]) -> str:
     return result.stdout.strip()
 
 
+def _python_import_available(module: str) -> bool:
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, AttributeError, ValueError):
+        return False
+
+
+def _ros_package_prefix(package: str) -> str:
+    try:
+        from ament_index_python.packages import get_package_prefix
+    except ModuleNotFoundError:
+        get_package_prefix = None
+    if get_package_prefix is not None:
+        try:
+            return str(get_package_prefix(package))
+        except Exception:
+            pass
+    if shutil.which("ros2") is None:
+        return ""
+    return _command(["bash", "-lc", f"ros2 pkg prefix {package} 2>/dev/null"])
+
+
+def _detect_ros2() -> tuple[bool, dict[str, Any], list[str]]:
+    ros2_cli = shutil.which("ros2") or ""
+    packages = {
+        "rclpy": _ros_package_prefix("rclpy"),
+    }
+    details: dict[str, Any] = {
+        "ros2_cli": ros2_cli,
+        "rclpy_importable": _python_import_available("rclpy"),
+        "ament_index_importable": _python_import_available("ament_index_python"),
+        "ros_package_prefixes": packages,
+        "ros_installation_mode": "unknown",
+    }
+    blockers: list[str] = []
+    if os.environ.get("ROS_DISTRO") != "jazzy":
+        blockers.append("ROS_DISTRO is not jazzy")
+    if not ros2_cli:
+        blockers.append("ros2 CLI is not available")
+    if not details["rclpy_importable"]:
+        blockers.append("rclpy is not importable in this Python environment")
+    if not details["ament_index_importable"]:
+        blockers.append("ament_index_python is not importable")
+    if not packages["rclpy"]:
+        blockers.append("rclpy package prefix is not available through ament index")
+    return not blockers, details, blockers
+
+
+def _detect_moveit() -> tuple[bool, dict[str, Any], list[str]]:
+    required_packages = (
+        "moveit_ros_move_group",
+        "moveit_msgs",
+        "moveit_configs_utils",
+        "moveit_resources_panda_moveit_config",
+    )
+    prefixes = {package: _ros_package_prefix(package) for package in required_packages}
+    details: dict[str, Any] = {
+        "moveit_configs_utils_importable": _python_import_available("moveit_configs_utils"),
+        "moveit_package_prefixes": prefixes,
+        "moveit2_available": all(prefixes.values()),
+    }
+    blockers: list[str] = []
+    if not details["moveit_configs_utils_importable"]:
+        blockers.append("moveit_configs_utils is not importable")
+    for package, prefix in prefixes.items():
+        if not prefix:
+            blockers.append(f"{package} package prefix is not available")
+    return not blockers, details, blockers
+
+
+def _ros_installation_mode(packages: dict[str, str]) -> str:
+    prefixes = [prefix for prefix in packages.values() if prefix]
+    conda_prefix = os.environ.get("CONDA_PREFIX", "")
+    if conda_prefix and any(prefix.startswith(conda_prefix) for prefix in prefixes):
+        return "conda-robostack"
+    if any(prefix.startswith("/opt/ros/") for prefix in prefixes):
+        return "system-apt"
+    if prefixes:
+        return "sourced-workspace"
+    return "unknown"
+
+
 def _isaac_version() -> str:
     root = os.environ.get("ISAAC_SIM_ROOT")
     if not root:
@@ -148,7 +242,4 @@ def _isaac_version() -> str:
 
 
 def _ros_package_available(package: str) -> bool:
-    if shutil.which("ros2") is None:
-        return False
-    result = _command(["bash", "-lc", f"ros2 pkg prefix {package} >/dev/null 2>&1 && echo yes"])
-    return result == "yes"
+    return bool(_ros_package_prefix(package))

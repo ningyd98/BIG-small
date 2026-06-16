@@ -4,10 +4,8 @@ Status: `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`
 
 ## Components
 
-- `ros2`: `BLOCKED_BY_ENV`, validation_claimed=False
-  blockers: ROS_DISTRO is not jazzy, ros2 CLI is not available, rclpy is not importable in this Python environment, colcon is not available, rosdep is not available
-- `moveit`: `BLOCKED_BY_ENV`, validation_claimed=False
-  blockers: ros2 CLI is not available, MoveIt 2 planning interface package is not available, MoveIt 2 OMPL planner package is not available, bigsmall_franka_moveit_config is not built in a sourced ROS workspace
+- `ros2`: `ROS2_INTEGRATION_VALIDATED`, validation_claimed=True
+- `moveit`: `MOVEIT_SAFETY_VALIDATED`, validation_claimed=True
 - `isaac`: `BLOCKED_BY_ENV`, validation_claimed=False
   blockers: ISAAC_SIM_ROOT is not set, vulkaninfo is not available or Vulkan runtime is not usable
 

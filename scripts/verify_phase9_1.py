@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -53,8 +55,10 @@ def main() -> int:
     ros_interface_guard = _run_ros_interface_guard(args.output / "ros_interfaces")
     ros_bridge_source_guard = _run_ros_bridge_source_guard(args.output / "ros_bridge_sources")
     moveit_source_guard = _run_moveit_source_guard(args.output / "moveit_sources")
-    ros2 = verify_ros2_integration(args.output / "ros2")
-    moveit = verify_moveit_safety(args.output / "moveit")
+    ros2 = verify_ros2_integration(args.output / "ros2", run_runtime=True)
+    if ros2.status == "ROS2_INTEGRATION_VALIDATED":
+        time.sleep(2.0)
+    moveit = verify_moveit_safety(args.output / "moveit", run_runtime=True)
     isaac = verify_isaac_smoke(args.output / "isaac")
     cross_backend = verify_cross_backend(args.output / "cross_backend")
     safety_pressure = run_safety_pressure(args.output / "safety_pressure", trials=500)
@@ -157,6 +161,7 @@ def _phase9_1_acceptance_ready(
     moveit = components["moveit"]
     isaac = components["isaac"]
     ros_required = (
+        "custom_interfaces_checked",
         "qos_checked",
         "namespace_checked",
         "timestamp_checked",
@@ -402,6 +407,17 @@ def _sanitize_text(value: str) -> str:
     sanitized = value.replace(sys.executable, "python")
     if home:
         sanitized = sanitized.replace(home, "$HOME")
+    sanitized = re.sub(r"/home/[A-Za-z0-9_.-]+", "$HOME", sanitized)
+    for env_name in ("USER", "LOGNAME"):
+        env_value = os.environ.get(env_name, "")
+        if env_value:
+            sanitized = sanitized.replace(env_value, f"${env_name}")
+    sanitized = re.sub(r"(https?://)[^/\s:@]+:[^/\s@]+@", r"\1<redacted>@", sanitized)
+    sanitized = re.sub(
+        r"(?i)\b(token|password|secret|https?_proxy)=([^\s]+)",
+        lambda match: f"{match.group(1)}=<redacted>",
+        sanitized,
+    )
     return sanitized
 
 

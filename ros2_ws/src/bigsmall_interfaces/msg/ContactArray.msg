@@ -1,2 +1,2 @@
 builtin_interfaces/Time stamp
-Contact[] contacts
+bigsmall_interfaces/Contact[] contacts
