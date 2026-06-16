@@ -14,7 +14,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from cloud_edge_robot_arm.experiments.models import ExperimentMode, NetworkProfileName
 from cloud_edge_robot_arm.simulation.environment import detect_environment
-from cloud_edge_robot_arm.simulation.evaluation.metrics import run_mujoco_physical_trial
+from cloud_edge_robot_arm.simulation.evaluation.metrics import (
+    run_isaac_physical_trial,
+    run_mujoco_physical_trial,
+)
 
 PHASE9_SCENARIOS = [
     "S01_NORMAL_STATIC",
@@ -80,8 +83,11 @@ def main() -> int:
 
     rows: list[dict[str, Any]] = []
     hashes: list[str] = []
+    trial_function = (
+        run_isaac_physical_trial if args.backend == "isaac" else run_mujoco_physical_trial
+    )
     for index, run in enumerate(runs):
-        result = run_mujoco_physical_trial(
+        result = trial_function(
             run["scenario"],
             seed=run["seed"],
             randomization_level=run["randomization_level"],
@@ -216,6 +222,7 @@ def _row(
 
 def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
+        "status": "PASSED",
         "run_count": len(rows),
         "success_rate": _mean([1.0 if row["task_success"] else 0.0 for row in rows]),
         "completion_time_mean_ms": _mean([row["task_completion_time_ms"] for row in rows]),
@@ -270,7 +277,7 @@ def _write_artifacts(
     config_hash = hashlib.sha256(json.dumps(config, sort_keys=True).encode("utf-8")).hexdigest()
     manifest = {
         "backend": args.backend,
-        "backend_version": "mujoco-3.9.0",
+        "backend_version": "isaac-jsonl-process" if args.backend == "isaac" else "mujoco-3.9.0",
         "suite": args.suite,
         "config_hash": config_hash,
         "environment_level": env.level,

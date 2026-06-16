@@ -49,6 +49,7 @@ def main() -> int:
     install_readiness = _collect_install_readiness(args.output / "install")
     process_protocol_guard = _run_process_protocol_guard(args.output / "process_protocol")
     isaac_backend_guard = _run_isaac_backend_guard(args.output / "isaac_backend")
+    isaac_benchmark_guard = _run_isaac_benchmark_guard(args.output / "isaac_benchmark")
     ros_interface_guard = _run_ros_interface_guard(args.output / "ros_interfaces")
     ros_bridge_source_guard = _run_ros_bridge_source_guard(args.output / "ros_bridge_sources")
     moveit_source_guard = _run_moveit_source_guard(args.output / "moveit_sources")
@@ -70,6 +71,7 @@ def main() -> int:
         or safety_pressure["status"] != "PASSED"
         or process_protocol_guard["status"] != "PASSED"
         or isaac_backend_guard["status"] != "PASSED"
+        or isaac_benchmark_guard["status"] == "FAILED"
         or ros_interface_guard["status"] != "PASSED"
         or ros_bridge_source_guard["status"] != "PASSED"
         or moveit_source_guard["status"] != "PASSED"
@@ -92,6 +94,7 @@ def main() -> int:
         "install_readiness": install_readiness,
         "process_protocol_guard": process_protocol_guard,
         "isaac_backend_guard": isaac_backend_guard,
+        "isaac_benchmark_guard": isaac_benchmark_guard,
         "ros_interface_guard": ros_interface_guard,
         "ros_bridge_source_guard": ros_bridge_source_guard,
         "moveit_source_guard": moveit_source_guard,
@@ -213,6 +216,43 @@ def _run_isaac_backend_guard(output_dir: Path) -> dict[str, object]:
         "stderr_tail": _sanitize_text(result.stderr[-4000:]),
     }
     (output_dir / "isaac_backend_guard.json").write_text(
+        json.dumps(payload, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return payload
+
+
+def _run_isaac_benchmark_guard(output_dir: Path) -> dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command = [
+        "python",
+        "scripts/run_phase9_benchmarks.py",
+        "--backend",
+        "isaac",
+        "--suite",
+        "smoke",
+        "--output",
+        str(output_dir),
+    ]
+    result = subprocess.run(command, check=False, text=True, capture_output=True)
+    summary_path = output_dir / "phase9_smoke_isaac" / "summary.json"
+    benchmark_status = "MISSING_SUMMARY"
+    if summary_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        benchmark_status = str(summary.get("status", summary.get("acceptance_status", "")))
+    payload: dict[str, object] = {
+        "status": "PASSED" if result.returncode == 0 else "FAILED",
+        "benchmark_status": benchmark_status,
+        "validation_claimed": benchmark_status == "PASSED",
+        "purpose": (
+            "runs Isaac smoke benchmark entrypoint; blocked hosts must not fall back to MuJoCo"
+        ),
+        "command": command,
+        "returncode": result.returncode,
+        "stdout_tail": _sanitize_text(result.stdout[-4000:]),
+        "stderr_tail": _sanitize_text(result.stderr[-4000:]),
+    }
+    (output_dir / "isaac_benchmark_guard.json").write_text(
         json.dumps(payload, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
