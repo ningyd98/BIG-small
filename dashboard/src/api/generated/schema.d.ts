@@ -3,10 +3,2985 @@
  * Do not make direct changes to the file.
  */
 
-export type paths = Record<string, never>;
+export interface paths {
+  "/api/v1/auto-mode/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Auto Mode Capabilities */
+    get: operations["auto_mode_capabilities_api_v1_auto_mode_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/acceptance": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Acceptance */
+    get: operations["acceptance_api_v1_dashboard_acceptance_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/audit-events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Audit Events */
+    get: operations["audit_events_api_v1_dashboard_audit_events_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Capabilities */
+    get: operations["capabilities_api_v1_dashboard_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/comparisons": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Comparisons */
+    get: operations["comparisons_api_v1_dashboard_comparisons_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/evidence": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Evidence */
+    get: operations["evidence_api_v1_dashboard_evidence_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/evidence-errors": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Evidence Errors */
+    get: operations["evidence_errors_api_v1_dashboard_evidence_errors_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/evidence/{evidence_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Evidence Detail */
+    get: operations["evidence_detail_api_v1_dashboard_evidence__evidence_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/evidence/{evidence_id}/download": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Evidence Download */
+    get: operations["evidence_download_api_v1_dashboard_evidence__evidence_id__download_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/evidence/{left_evidence_id}/compare/{right_evidence_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Evidence Compare */
+    get: operations["evidence_compare_api_v1_dashboard_evidence__left_evidence_id__compare__right_evidence_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/experiments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Experiments */
+    get: operations["experiments_api_v1_dashboard_experiments_get"];
+    put?: never;
+    /** Start Experiment */
+    post: operations["start_experiment_api_v1_dashboard_experiments_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/experiments/{experiment_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Experiment Detail */
+    get: operations["experiment_detail_api_v1_dashboard_experiments__experiment_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/experiments/{experiment_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Experiment */
+    post: operations["cancel_experiment_api_v1_dashboard_experiments__experiment_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/runtime": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Runtime */
+    get: operations["runtime_api_v1_dashboard_runtime_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/safety": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Safety */
+    get: operations["safety_api_v1_dashboard_safety_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/safety/review-notes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Safety Review Note */
+    post: operations["safety_review_note_api_v1_dashboard_safety_review_notes_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/dashboard/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Summary */
+    get: operations["summary_api_v1_dashboard_summary_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/event-control/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Event Control Capabilities */
+    get: operations["event_control_capabilities_api_v1_event_control_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/events/{event_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Event */
+    get: operations["get_event_api_v1_events__event_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/failure-summaries/{summary_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Failure Summary */
+    get: operations["get_failure_summary_api_v1_failure_summaries__summary_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/planning/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Capabilities */
+    get: operations["capabilities_api_v1_planning_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/planning/schemas/task-contract": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Task Contract Schema */
+    get: operations["task_contract_schema_api_v1_planning_schemas_task_contract_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Plan */
+    post: operations["create_plan_api_v1_plans_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{plan_id}/replan": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Replan Plan */
+    post: operations["replan_plan_api_v1_plans__plan_id__replan_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{plan_id}/supervise": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Supervise Plan */
+    post: operations["supervise_plan_api_v1_plans__plan_id__supervise_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{plan_id}/supervision/decisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Supervision Decisions */
+    get: operations["list_supervision_decisions_api_v1_plans__plan_id__supervision_decisions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{plan_id}/supervision/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start Supervision */
+    post: operations["start_supervision_api_v1_plans__plan_id__supervision_start_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{plan_id}/supervision/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Supervision Status */
+    get: operations["supervision_status_api_v1_plans__plan_id__supervision_status_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{plan_id}/supervision/stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stop Supervision */
+    post: operations["stop_supervision_api_v1_plans__plan_id__supervision_stop_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{planning_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Plan */
+    get: operations["get_plan_api_v1_plans__planning_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/plans/{planning_id}/dispatch": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Dispatch Plan */
+    post: operations["dispatch_plan_api_v1_plans__planning_id__dispatch_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/replanning/requests/{request_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Replan Request */
+    get: operations["get_replan_request_api_v1_replanning_requests__request_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/replanning/requests/{request_id}/result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Replan Result */
+    get: operations["get_replan_result_api_v1_replanning_requests__request_id__result_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/robots/{robot_id}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Post Event */
+    post: operations["post_event_api_v1_robots__robot_id__events_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/robots/{robot_id}/plans/{plan_id}/replan": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Replan Plan */
+    post: operations["replan_plan_api_v1_robots__robot_id__plans__plan_id__replan_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/robots/{robot_id}/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Ingest Robot Status */
+    post: operations["ingest_robot_status_api_v1_robots__robot_id__status_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skill-cache/templates": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Skill Templates */
+    get: operations["list_skill_templates_api_v1_skill_cache_templates_get"];
+    put?: never;
+    /** Create Skill Template */
+    post: operations["create_skill_template_api_v1_skill_cache_templates_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skill-cache/templates/{template_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Skill Template */
+    get: operations["get_skill_template_api_v1_skill_cache_templates__template_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skill-cache/templates/{template_id}/execution-records": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Record Skill Execution */
+    post: operations["record_skill_execution_api_v1_skill_cache_templates__template_id__execution_records_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skill-cache/templates/{template_id}/invalidate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Invalidate Skill Template */
+    post: operations["invalidate_skill_template_api_v1_skill_cache_templates__template_id__invalidate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skill-cache/templates/{template_id}/statistics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Skill Statistics */
+    get: operations["get_skill_statistics_api_v1_skill_cache_templates__template_id__statistics_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/supervision/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Supervision Capabilities */
+    get: operations["supervision_capabilities_api_v1_supervision_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/auto-mode/decide": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Decide Auto Mode */
+    post: operations["decide_auto_mode_api_v1_tasks__task_id__auto_mode_decide_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/auto-mode/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Auto Mode Status */
+    get: operations["get_auto_mode_status_api_v1_tasks__task_id__auto_mode_status_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/completion": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Task Completion */
+    get: operations["get_task_completion_api_v1_tasks__task_id__completion_get"];
+    put?: never;
+    /** Post Task Completion */
+    post: operations["post_task_completion_api_v1_tasks__task_id__completion_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Task Events */
+    get: operations["list_task_events_api_v1_tasks__task_id__events_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/failure-summaries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Post Failure Summary */
+    post: operations["post_failure_summary_api_v1_tasks__task_id__failure_summaries_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/mode-transitions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Prepare Mode Transition */
+    post: operations["prepare_mode_transition_api_v1_tasks__task_id__mode_transitions_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/mode-transitions/{transition_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Mode Transition */
+    get: operations["get_mode_transition_api_v1_tasks__task_id__mode_transitions__transition_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/risk/evaluate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Evaluate Task Risk */
+    post: operations["evaluate_task_risk_api_v1_tasks__task_id__risk_evaluate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/tasks/{task_id}/risk/latest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Latest Task Risk */
+    get: operations["latest_task_risk_api_v1_tasks__task_id__risk_latest_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Health */
+    get: operations["health_health_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+}
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: never;
+  schemas: {
+    /** AcceptanceLevelItem */
+    AcceptanceLevelItem: {
+      /** Blockers */
+      blockers?: string[];
+      /** Definition */
+      definition: string;
+      /**
+       * Evidence Complete
+       * @default false
+       */
+      evidence_complete: boolean;
+      /**
+       * Hardware Motion Allowed
+       * @default false
+       */
+      hardware_motion_allowed: boolean;
+      /** Level */
+      level: string;
+      /**
+       * Locked
+       * @default true
+       */
+      locked: boolean;
+      /**
+       * Prerequisite Complete
+       * @default false
+       */
+      prerequisite_complete: boolean;
+    };
+    /** AcceptanceLevelSnapshot */
+    AcceptanceLevelSnapshot: {
+      /** Blocked Reasons */
+      blocked_reasons?: string[];
+      /**
+       * Config Hash
+       * @default
+       */
+      config_hash: string;
+      /**
+       * Current Level
+       * @default NONE
+       */
+      current_level: string;
+      /**
+       * Evidence Complete
+       * @default false
+       */
+      evidence_complete: boolean;
+      /**
+       * Hardware Motion Allowed
+       * @default false
+       */
+      hardware_motion_allowed: boolean;
+      /**
+       * Level Definition
+       * @default Level 0 read-only status and e-stop observation.
+       */
+      level_definition: string;
+      /** Levels */
+      levels?: components["schemas"]["AcceptanceLevelItem"][];
+      /**
+       * Next Level
+       * @default LEVEL_0
+       */
+      next_level: string;
+      /**
+       * Prerequisite Complete
+       * @default false
+       */
+      prerequisite_complete: boolean;
+      /**
+       * Robot Identity Hash
+       * @default
+       */
+      robot_identity_hash: string;
+      /**
+       * Validation Claimed
+       * @default false
+       */
+      validation_claimed: boolean;
+    };
+    /** AuditEventResponse */
+    AuditEventResponse: {
+      /** Events */
+      events: components["schemas"]["DashboardEvent"][];
+    };
+    /** AutoModeCapabilitiesResponse */
+    AutoModeCapabilitiesResponse: {
+      /** Auto Mode Enabled */
+      auto_mode_enabled: boolean;
+      /** Configured */
+      configured: boolean;
+      /**
+       * Policy Version
+       * @default
+       */
+      policy_version: string;
+      /** Supported Control Modes */
+      supported_control_modes?: string[];
+      /** Supported Decisions */
+      supported_decisions?: string[];
+    };
+    /** AutoModeDecisionRequest */
+    AutoModeDecisionRequest: {
+      /** Active Contract Complete */
+      active_contract_complete: boolean;
+      /**
+       * Atomic Step Active
+       * @default false
+       */
+      atomic_step_active: boolean;
+      cache_key?: components["schemas"]["SkillCacheKey"] | null;
+      /** Checkpoint Persisted */
+      checkpoint_persisted: boolean;
+      /** Event Autonomy Ready */
+      event_autonomy_ready: boolean;
+      /** Supervision Available */
+      supervision_available: boolean;
+    };
+    /**
+     * AutoModeDecisionResponse
+     * @description Response body for AUTO selector decisions.
+     */
+    AutoModeDecisionResponse: {
+      action: components["schemas"]["AutoModeDecisionType"];
+      /** Confidence */
+      confidence: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      current_mode: components["schemas"]["ControlMode"];
+      /** Decision Id */
+      decision_id: string;
+      /**
+       * Decision Version
+       * @default 1
+       */
+      decision_version: number;
+      /** Input Snapshot Hash */
+      input_snapshot_hash: string;
+      /** Policy Version */
+      policy_version: string;
+      /** Reason Codes */
+      reason_codes?: string[];
+      /** Risk Score */
+      risk_score: number;
+      selected_mode?: components["schemas"]["ControlMode"] | null;
+      /** Task Id */
+      task_id: string;
+      /**
+       * Valid Until
+       * Format: date-time
+       */
+      valid_until: string;
+    };
+    /**
+     * AutoModeDecisionType
+     * @enum {string}
+     */
+    AutoModeDecisionType:
+      | "KEEP_CURRENT_MODE"
+      | "SWITCH_TO_PERIODIC_CLOUD_SUPERVISION"
+      | "SWITCH_TO_EVENT_TRIGGERED_EDGE_AUTONOMY"
+      | "PAUSE_TASK"
+      | "SAFE_STOP"
+      | "REQUEST_MORE_OBSERVATION";
+    /** AutoModeStatus */
+    AutoModeStatus: {
+      current_mode: components["schemas"]["ControlMode"];
+      /**
+       * Last Decision Id
+       * @default
+       */
+      last_decision_id: string;
+      /** Last Switch At */
+      last_switch_at?: string | null;
+      /** Mode Version */
+      mode_version: number;
+      /**
+       * Policy Version
+       * @default
+       */
+      policy_version: string;
+      /**
+       * Switch Count
+       * @default 0
+       */
+      switch_count: number;
+      /** Task Id */
+      task_id: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at?: string;
+    };
+    /**
+     * AutoModeTransitionStatus
+     * @enum {string}
+     */
+    AutoModeTransitionStatus:
+      | "PREPARED"
+      | "COMMITTED"
+      | "ABORTED"
+      | "ROLLED_BACK";
+    /**
+     * CommandAckStatus
+     * @enum {string}
+     */
+    CommandAckStatus:
+      | "ACCEPTED"
+      | "ACCEPTED_WITH_LIMITS"
+      | "REJECTED_EXPIRED"
+      | "REJECTED_DUPLICATE"
+      | "REJECTED_OUT_OF_ORDER"
+      | "REJECTED_PLAN_VERSION_MISMATCH"
+      | "REJECTED_SCENE_MISMATCH"
+      | "REJECTED_TASK_MISMATCH"
+      | "REJECTED_ROBOT_MISMATCH"
+      | "REJECTED_SCHEMA_INVALID"
+      | "REJECTED_SEMANTIC_INVALID"
+      | "REJECTED_SAFETY_CONFLICT";
+    /** ComparisonResponse */
+    ComparisonResponse: {
+      /** Metrics */
+      metrics: {
+        [key: string]: unknown;
+      }[];
+    };
+    /** CompletionEvidenceRequest */
+    CompletionEvidenceRequest: {
+      /**
+       * Cloud Replan Count
+       * @default 0
+       */
+      cloud_replan_count: number;
+      /** Command Seq */
+      command_seq: number;
+      /** Completed Step Ids */
+      completed_step_ids?: string[];
+      /** Completion Criteria Results */
+      completion_criteria_results?: {
+        [key: string]: boolean;
+      };
+      /**
+       * Correlation Id
+       * @default
+       */
+      correlation_id: string;
+      /** Final Robot State */
+      final_robot_state?: {
+        [key: string]: unknown;
+      };
+      /** Final Safety Decision */
+      final_safety_decision: string;
+      /** Final Target State */
+      final_target_state?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Local Retry Count
+       * @default 0
+       */
+      local_retry_count: number;
+      /** Plan Id */
+      plan_id: string;
+      /** Plan Version */
+      plan_version: number;
+      /**
+       * Scene Timestamp
+       * Format: date-time
+       */
+      scene_timestamp: string;
+      /** Scene Version */
+      scene_version: number;
+      /** Task Id */
+      task_id: string;
+    };
+    /** CompletionReportResponse */
+    CompletionReportResponse: {
+      /**
+       * Cloud Replan Count
+       * @default 0
+       */
+      cloud_replan_count: number;
+      /** Completed At */
+      completed_at?: string | null;
+      /**
+       * Local Retry Count
+       * @default 0
+       */
+      local_retry_count: number;
+      /** Result */
+      result: string;
+      /** Summary Id */
+      summary_id: string;
+      /** Task Id */
+      task_id: string;
+      /**
+       * Total Duration Ms
+       * @default 0
+       */
+      total_duration_ms: number;
+    };
+    /**
+     * ControlMode
+     * @enum {string}
+     */
+    ControlMode:
+      | "PERIODIC_CLOUD_SUPERVISION"
+      | "EVENT_TRIGGERED_EDGE_AUTONOMY"
+      | "AUTO";
+    /**
+     * DashboardEnvironment
+     * @enum {string}
+     */
+    DashboardEnvironment:
+      | "MOCK"
+      | "MUJOCO"
+      | "ISAAC_SIM"
+      | "ROS2_MOVEIT"
+      | "MOVEIT_DRY_RUN"
+      | "REAL_ROBOT_READ_ONLY"
+      | "REAL_ROBOT_LOW_SPEED"
+      | "REAL_ROBOT_OPERATIONAL";
+    /** DashboardEvent */
+    DashboardEvent: {
+      /** Event Id */
+      event_id: string;
+      /** Event Type */
+      event_type: string;
+      /**
+       * Experiment Id
+       * @default
+       */
+      experiment_id: string;
+      /** Payload */
+      payload?: {
+        [key: string]: unknown;
+      };
+      /** Sequence */
+      sequence: number;
+      /** Source */
+      source: string;
+      /**
+       * Task Id
+       * @default
+       */
+      task_id: string;
+      /**
+       * Timestamp
+       * Format: date-time
+       */
+      timestamp: string;
+    };
+    /** DashboardSummary */
+    DashboardSummary: {
+      /** Active Experiments */
+      active_experiments?: components["schemas"]["ExperimentJobRecord"][];
+      /** Blockers */
+      blockers?: string[];
+      /** @default MOVEIT_DRY_RUN */
+      current_environment: components["schemas"]["DashboardEnvironment"];
+      /**
+       * Current Project Status
+       * @default UNKNOWN
+       */
+      current_project_status: string;
+      /**
+       * Generated At
+       * Format: date-time
+       */
+      generated_at: string;
+      /** @default NONE */
+      hardware_claim: components["schemas"]["HardwareClaim"];
+      /**
+       * Highest Acceptance Level
+       * @default NONE
+       */
+      highest_acceptance_level: string;
+      /** Latest Evidence */
+      latest_evidence?: components["schemas"]["EvidenceIndexRecord"][];
+      /**
+       * Real Robot Validation
+       * @default NOT_STARTED
+       */
+      real_robot_validation: string;
+      /**
+       * Runtime Profile
+       * @default local
+       */
+      runtime_profile: string;
+      safety_summary: components["schemas"]["SafetyGateSnapshot"];
+      /** Services */
+      services?: components["schemas"]["ServiceHealth"][];
+      /**
+       * Software Commit
+       * @default
+       */
+      software_commit: string;
+      /**
+       * Source Tree Hash
+       * @default
+       */
+      source_tree_hash: string;
+      /** Worktree Clean */
+      worktree_clean?: boolean | null;
+    };
+    /**
+     * DispatchRequest
+     * @description Empty dispatch command body.
+     */
+    DispatchRequest: Record<string, never>;
+    /** DispatchResponse */
+    DispatchResponse: {
+      /** Dispatched */
+      dispatched: boolean;
+      /** Edge Accepted */
+      edge_accepted?: boolean | null;
+      /** Edge Reason */
+      edge_reason?: string | null;
+      /** Request Id */
+      request_id: string;
+      /** Task Id */
+      task_id: string;
+    };
+    /** EdgeEventListResponse */
+    EdgeEventListResponse: {
+      /** Events */
+      events?: components["schemas"]["EdgeEventResponse"][];
+      /** Task Id */
+      task_id: string;
+    };
+    /** EdgeEventRequest */
+    EdgeEventRequest: {
+      /**
+       * Command Seq
+       * @default 0
+       */
+      command_seq: number;
+      /** Details */
+      details?: {
+        [key: string]: unknown;
+      };
+      /** Event Id */
+      event_id: string;
+      /** Event Type */
+      event_type: string;
+      /**
+       * Plan Id
+       * @default
+       */
+      plan_id: string;
+      /**
+       * Plan Version
+       * @default 0
+       */
+      plan_version: number;
+      /**
+       * Reason Code
+       * @default
+       */
+      reason_code: string;
+      /**
+       * Reason Detail
+       * @default
+       */
+      reason_detail: string;
+      /**
+       * Robot Id
+       * @default
+       */
+      robot_id: string;
+      /**
+       * Scene Version
+       * @default 0
+       */
+      scene_version: number;
+      /**
+       * Severity
+       * @default ERROR
+       */
+      severity: string;
+      /** Step Id */
+      step_id?: string | null;
+      /** Task Id */
+      task_id: string;
+    };
+    /** EdgeEventResponse */
+    EdgeEventResponse: {
+      /** Details */
+      details?: {
+        [key: string]: unknown;
+      };
+      /** Detected At */
+      detected_at?: string | null;
+      /** Event Id */
+      event_id: string;
+      /** Event Type */
+      event_type: string;
+      /**
+       * Reason Code
+       * @default
+       */
+      reason_code: string;
+      /**
+       * Reason Detail
+       * @default
+       */
+      reason_detail: string;
+      /** Severity */
+      severity: string;
+      /** Step Id */
+      step_id?: string | null;
+      /** Task Id */
+      task_id: string;
+    };
+    /**
+     * EdgeStatusSnapshotRequest
+     * @description Request body alias for persisted edge status snapshots.
+     */
+    EdgeStatusSnapshotRequest: {
+      /** Command Seq */
+      command_seq: number;
+      /** Completed Step Ids */
+      completed_step_ids?: string[];
+      /** Current Skill */
+      current_skill?: string | null;
+      /** Current Step Id */
+      current_step_id?: string | null;
+      /**
+       * Execution Status
+       * @default EXECUTING
+       */
+      execution_status: string;
+      last_command_ack?: components["schemas"]["CommandAckStatus"] | null;
+      /** Network State */
+      network_state?: {
+        [key: string]: unknown;
+      };
+      /** Obstacle State */
+      obstacle_state?: {
+        [key: string]: unknown;
+      };
+      /** Plan Version */
+      plan_version: number;
+      /** Robot Id */
+      robot_id: string;
+      /** Robot State */
+      robot_state?: {
+        [key: string]: unknown;
+      };
+      /** Safety State */
+      safety_state?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Scene Confidence
+       * @default 1
+       */
+      scene_confidence: number;
+      /** Scene Version */
+      scene_version: number;
+      /** Target State */
+      target_state?: {
+        [key: string]: unknown;
+      };
+      /** Task Id */
+      task_id: string;
+      /** Telemetry */
+      telemetry?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Timestamp
+       * Format: date-time
+       */
+      timestamp: string;
+    };
+    /** EventControlCapabilitiesResponse */
+    EventControlCapabilitiesResponse: {
+      /**
+       * Configured
+       * @default true
+       */
+      configured: boolean;
+      /**
+       * Max Local Retries
+       * @default 3
+       */
+      max_local_retries: number;
+      /**
+       * Mode
+       * @default EVENT_TRIGGERED_EDGE_AUTONOMY
+       */
+      mode: string;
+      /** Supported Event Types */
+      supported_event_types?: string[];
+      /** Supported Recovery Actions */
+      supported_recovery_actions?: string[];
+      /** Supported Replan Scopes */
+      supported_replan_scopes?: string[];
+    };
+    /** EvidenceDetailResponse */
+    EvidenceDetailResponse: {
+      /** Content */
+      content:
+        | {
+            [key: string]: unknown;
+          }
+        | unknown[]
+        | string;
+      record: components["schemas"]["EvidenceIndexRecord"];
+    };
+    /** EvidenceIndexErrorRecord */
+    EvidenceIndexErrorRecord: {
+      /** Error */
+      error: string;
+      /** Path */
+      path: string;
+    };
+    /** EvidenceIndexRecord */
+    EvidenceIndexRecord: {
+      /**
+       * Backend
+       * @default
+       */
+      backend: string;
+      /** Blockers */
+      blockers?: string[];
+      /**
+       * Config Hash
+       * @default
+       */
+      config_hash: string;
+      /**
+       * Environment Hash
+       * @default
+       */
+      environment_hash: string;
+      /** Evidence Id */
+      evidence_id: string;
+      /**
+       * Evidence Type
+       * @default artifact
+       */
+      evidence_type: string;
+      /**
+       * Generated At
+       * @default
+       */
+      generated_at: string;
+      /**
+       * Generated From Commit
+       * @default
+       */
+      generated_from_commit: string;
+      /** @default NONE */
+      hardware_claim: components["schemas"]["HardwareClaim"];
+      /**
+       * Phase
+       * @default unknown
+       */
+      phase: string;
+      /** Relative Path */
+      relative_path: string;
+      /**
+       * Source Tree Hash
+       * @default
+       */
+      source_tree_hash: string;
+      /** @default UNKNOWN */
+      status: components["schemas"]["EvidenceStatus"];
+      /**
+       * Summary
+       * @default
+       */
+      summary: string;
+      /** Worktree Clean */
+      worktree_clean?: boolean | null;
+    };
+    /** EvidenceListResponse */
+    EvidenceListResponse: {
+      /** Records */
+      records: components["schemas"]["EvidenceIndexRecord"][];
+    };
+    /** EvidenceParseErrorResponse */
+    EvidenceParseErrorResponse: {
+      /** Errors */
+      errors: components["schemas"]["EvidenceIndexErrorRecord"][];
+    };
+    /**
+     * EvidenceStatus
+     * @enum {string}
+     */
+    EvidenceStatus:
+      | "ACCEPTED"
+      | "REJECTED"
+      | "DEVELOPMENT_EVIDENCE"
+      | "BLOCKED_BY_ENV"
+      | "UNKNOWN";
+    /** ExperimentCreateRequest */
+    ExperimentCreateRequest: {
+      /** Control Mode */
+      control_mode: string;
+      /**
+       * Fault Profile
+       * @default none
+       */
+      fault_profile: string;
+      kind: components["schemas"]["ExperimentKind"];
+      /**
+       * Network Profile
+       * @default NORMAL
+       */
+      network_profile: string;
+      /**
+       * Repetitions
+       * @default 1
+       */
+      repetitions: number;
+      /** Scenario Id */
+      scenario_id: string;
+      /** Seed */
+      seed: number;
+    } & {
+      [key: string]: unknown;
+    };
+    /** ExperimentJobRecord */
+    ExperimentJobRecord: {
+      /** Blockers */
+      blockers?: string[];
+      /** Completed At */
+      completed_at?: string | null;
+      /** Control Mode */
+      control_mode: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Evidence Id
+       * @default
+       */
+      evidence_id: string;
+      /**
+       * Evidence Path
+       * @default
+       */
+      evidence_path: string;
+      /** Exit Code */
+      exit_code?: number | null;
+      /** Experiment Id */
+      experiment_id: string;
+      hardware_claim: components["schemas"]["HardwareClaim"];
+      kind: components["schemas"]["ExperimentKind"];
+      /** Scenario Id */
+      scenario_id: string;
+      /** Seed */
+      seed: number;
+      /** Started At */
+      started_at?: string | null;
+      status: components["schemas"]["ExperimentJobStatus"];
+      /**
+       * Stderr
+       * @default
+       */
+      stderr: string;
+      /**
+       * Stdout
+       * @default
+       */
+      stdout: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * ExperimentJobStatus
+     * @enum {string}
+     */
+    ExperimentJobStatus:
+      | "QUEUED"
+      | "STARTING"
+      | "RUNNING"
+      | "SUCCEEDED"
+      | "FAILED"
+      | "CANCELLED"
+      | "BLOCKED_BY_ENV";
+    /**
+     * ExperimentKind
+     * @enum {string}
+     */
+    ExperimentKind:
+      | "MOCK_SOFTWARE"
+      | "MUJOCO_SMOKE"
+      | "SYNTHETIC_DRY_RUN"
+      | "MOVEIT_RUNTIME_DRY_RUN";
+    /** ExperimentListResponse */
+    ExperimentListResponse: {
+      /** Jobs */
+      jobs: components["schemas"]["ExperimentJobRecord"][];
+    };
+    /** FailureSummaryRequest */
+    FailureSummaryRequest: {
+      /**
+       * Command Seq
+       * @default 0
+       */
+      command_seq: number;
+      /** Completed Step Ids */
+      completed_step_ids?: string[];
+      /** Failed Step Id */
+      failed_step_id: string;
+      /** Failure Event Id */
+      failure_event_id: string;
+      /**
+       * Failure Type
+       * @default
+       */
+      failure_type: string;
+      /**
+       * Local Retry Count
+       * @default 0
+       */
+      local_retry_count: number;
+      /**
+       * Plan Version
+       * @default 0
+       */
+      plan_version: number;
+      /** Reason */
+      reason: string;
+      /**
+       * Recovery Hint
+       * @default request_cloud_replan
+       */
+      recovery_hint: string;
+      /**
+       * Requested Replan Scope
+       * @default FAILED_STEP_AND_REMAINING
+       */
+      requested_replan_scope: string;
+      /**
+       * Retry Limit
+       * @default 0
+       */
+      retry_limit: number;
+      /**
+       * Severity
+       * @default ERROR
+       */
+      severity: string;
+      /** Summary Id */
+      summary_id: string;
+      /** Task Id */
+      task_id: string;
+    };
+    /** FailureSummaryResponse */
+    FailureSummaryResponse: {
+      /** Completed Step Ids */
+      completed_step_ids?: string[];
+      /** Failed Step Id */
+      failed_step_id: string;
+      /** Failure Event Id */
+      failure_event_id: string;
+      /**
+       * Failure Type
+       * @default
+       */
+      failure_type: string;
+      /** Generated At */
+      generated_at?: string | null;
+      /**
+       * Local Retry Count
+       * @default 0
+       */
+      local_retry_count: number;
+      /**
+       * Reason
+       * @default
+       */
+      reason: string;
+      /**
+       * Recovery Hint
+       * @default
+       */
+      recovery_hint: string;
+      /**
+       * Requested Replan Scope
+       * @default
+       */
+      requested_replan_scope: string;
+      /**
+       * Severity
+       * @default
+       */
+      severity: string;
+      /** Summary Id */
+      summary_id: string;
+      /** Task Id */
+      task_id: string;
+    };
+    /**
+     * FreshnessStatus
+     * @enum {string}
+     */
+    FreshnessStatus: "FRESH" | "STALE" | "MISSING" | "UNKNOWN";
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components["schemas"]["ValidationError"][];
+    };
+    /**
+     * HardwareClaim
+     * @enum {string}
+     */
+    HardwareClaim:
+      | "NONE"
+      | "SIMULATION_ONLY"
+      | "PLANNING_ONLY"
+      | "HARDWARE_READ_ONLY"
+      | "HARDWARE_MOTION";
+    /** HealthResponse */
+    HealthResponse: {
+      /** Status */
+      status: string;
+      /**
+       * Timestamp
+       * Format: date-time
+       */
+      timestamp: string;
+      /** Version */
+      version: string;
+    };
+    /** ModeTransitionCreateRequest */
+    ModeTransitionCreateRequest: {
+      /** Decision Id */
+      decision_id: string;
+      /** Expected Mode Version */
+      expected_mode_version: number;
+      /** From Mode */
+      from_mode: string;
+      /** Idempotency Key */
+      idempotency_key: string;
+      /** Reason */
+      reason: string;
+      /** To Mode */
+      to_mode: string;
+    };
+    /**
+     * ModeTransitionResponse
+     * @description Response body for mode transition lifecycle records.
+     */
+    ModeTransitionResponse: {
+      /** Aborted At */
+      aborted_at?: string | null;
+      /** Committed At */
+      committed_at?: string | null;
+      /**
+       * Decision Id
+       * @default
+       */
+      decision_id: string;
+      /** Expected Mode Version */
+      expected_mode_version: number;
+      from_mode: components["schemas"]["ControlMode"];
+      /** Idempotency Key */
+      idempotency_key: string;
+      /** New Mode Version */
+      new_mode_version: number;
+      /**
+       * Payload Hash
+       * @default
+       */
+      payload_hash: string;
+      /**
+       * Prepared At
+       * Format: date-time
+       */
+      prepared_at: string;
+      /**
+       * Reason
+       * @default
+       */
+      reason: string;
+      status: components["schemas"]["AutoModeTransitionStatus"];
+      /** Task Id */
+      task_id: string;
+      to_mode: components["schemas"]["ControlMode"];
+      /** Transition Id */
+      transition_id: string;
+    };
+    /** PlanningRequest */
+    PlanningRequest: {
+      capabilities?: components["schemas"]["RobotCapabilities"];
+      /**
+       * Control Mode
+       * @default EVENT_TRIGGERED_EDGE_AUTONOMY
+       */
+      control_mode: string;
+      /** Request Id */
+      request_id: string;
+      safety_policy?: components["schemas"]["SafetyPolicyReference"] | null;
+      scene: components["schemas"]["SceneSummary"];
+      /** User Instruction */
+      user_instruction: string;
+    };
+    /** PlanningResponse */
+    PlanningResponse: {
+      /**
+       * Attempt Count
+       * @default 0
+       */
+      attempt_count: number;
+      /** Contract */
+      contract?: {
+        [key: string]: unknown;
+      } | null;
+      /** Created At */
+      created_at: string;
+      /** Outcome */
+      outcome: string;
+      /** Reason */
+      reason?: string | null;
+      /** Request Id */
+      request_id: string;
+      /** Validation Errors */
+      validation_errors?: {
+        [key: string]: unknown;
+      }[];
+      /** Validation Warnings */
+      validation_warnings?: {
+        [key: string]: unknown;
+      }[];
+    };
+    /** Pose */
+    Pose: {
+      /** X */
+      x: number;
+      /** Y */
+      y: number;
+      /** Z */
+      z: number;
+    };
+    /** ReplanRequest */
+    ReplanRequest: {
+      /** Completed Step Ids */
+      completed_step_ids?: string[];
+      /** Current Command Seq */
+      current_command_seq: number;
+      /** Current Plan Version */
+      current_plan_version: number;
+      /** Current Scene Version */
+      current_scene_version: number;
+      /**
+       * Failed Step Id
+       * @default
+       */
+      failed_step_id: string;
+      /**
+       * Failure Summary Id
+       * @default
+       */
+      failure_summary_id: string;
+      /**
+       * Idempotency Key
+       * @default
+       */
+      idempotency_key: string;
+      /**
+       * Last Successful Step Id
+       * @default
+       */
+      last_successful_step_id: string;
+      /**
+       * Plan Id
+       * @default
+       */
+      plan_id: string;
+      /**
+       * Requested Replan Scope
+       * @default FAILED_STEP_AND_REMAINING
+       */
+      requested_replan_scope: string;
+      /** Robot Id */
+      robot_id: string;
+      /**
+       * Scene Confidence
+       * @default 0.5
+       */
+      scene_confidence: number;
+      /** Task Id */
+      task_id: string;
+      /** Trigger Event Id */
+      trigger_event_id: string;
+    };
+    /** ReplanResponse */
+    ReplanResponse: {
+      /** Created At */
+      created_at?: string | null;
+      /**
+       * New Command Seq
+       * @default 0
+       */
+      new_command_seq: number;
+      /**
+       * New Plan Version
+       * @default 0
+       */
+      new_plan_version: number;
+      /** New Steps */
+      new_steps?: {
+        [key: string]: unknown;
+      }[];
+      /** Outcome */
+      outcome: string;
+      /**
+       * Planner Name
+       * @default
+       */
+      planner_name: string;
+      /**
+       * Prompt Version
+       * @default
+       */
+      prompt_version: string;
+      /**
+       * Reason
+       * @default
+       */
+      reason: string;
+      /** Request Id */
+      request_id: string;
+    };
+    /** RiskComponentScores */
+    RiskComponentScores: {
+      /** Execution Risk */
+      execution_risk: number;
+      /** Network Risk */
+      network_risk: number;
+      /** Perception Risk */
+      perception_risk: number;
+      /** Safety Risk */
+      safety_risk: number;
+      /** Scene Dynamics Risk */
+      scene_dynamics_risk: number;
+      /** Task Risk */
+      task_risk: number;
+    };
+    /**
+     * RiskEvaluateRequest
+     * @description Request body for deterministic risk evaluation.
+     */
+    RiskEvaluateRequest: {
+      /** Cache Confidence */
+      cache_confidence?: number | null;
+      /** Cache Match Type */
+      cache_match_type?: string | null;
+      /** Cloud Available */
+      cloud_available?: boolean | null;
+      current_mode: components["schemas"]["ControlMode"];
+      /**
+       * Current Time
+       * Format: date-time
+       */
+      current_time: string;
+      /** Disconnected Seconds */
+      disconnected_seconds?: number | null;
+      /** Edge Capability Ready */
+      edge_capability_ready?: boolean | null;
+      /** Estop Engaged */
+      estop_engaged?: boolean | null;
+      /** Event Autonomy Ready */
+      event_autonomy_ready?: boolean | null;
+      /** Execution Failures */
+      execution_failures?: number | null;
+      /** Has Complete Contract */
+      has_complete_contract?: boolean | null;
+      /** Last Heartbeat At */
+      last_heartbeat_at?: string | null;
+      /** Network Jitter Ms */
+      network_jitter_ms?: number | null;
+      /** Network Latency Ms */
+      network_latency_ms?: number | null;
+      /** Obstacle Change Rate */
+      obstacle_change_rate?: number | null;
+      /** Obstacle Count */
+      obstacle_count?: number | null;
+      /** Packet Loss Rate */
+      packet_loss_rate?: number | null;
+      /** Policy Version */
+      policy_version: string;
+      /** Remaining Steps Persisted */
+      remaining_steps_persisted?: boolean | null;
+      /** Replans Count */
+      replans_count?: number | null;
+      /** Safety Decision */
+      safety_decision?: string | null;
+      /** Safety Rejections */
+      safety_rejections?: number | null;
+      /** Scene Confidence */
+      scene_confidence?: number | null;
+      /** Scene Updated At */
+      scene_updated_at?: string | null;
+      /** Scene Version */
+      scene_version: number;
+      /** Skill Name */
+      skill_name: string;
+      /** Supervision Available */
+      supervision_available?: boolean | null;
+      /** Target Confidence */
+      target_confidence?: number | null;
+      /** Target Lost */
+      target_lost?: boolean | null;
+      /** Target Moved */
+      target_moved?: boolean | null;
+      /** Task Id */
+      task_id: string;
+      /** Task Type */
+      task_type: string;
+      /** Timeout Count */
+      timeout_count?: number | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /**
+     * RiskLevel
+     * @enum {string}
+     */
+    RiskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "INSUFFICIENT_EVIDENCE";
+    /**
+     * RiskSnapshotResponse
+     * @description Response body for persisted risk snapshots.
+     */
+    RiskSnapshotResponse: {
+      component_scores: components["schemas"]["RiskComponentScores"];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Data Freshness */
+      data_freshness?: {
+        [key: string]: number;
+      };
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Input Hash */
+      input_hash: string;
+      /** Missing Inputs */
+      missing_inputs?: string[];
+      /** Policy Version */
+      policy_version: string;
+      /** Reason Codes */
+      reason_codes?: string[];
+      risk_level: components["schemas"]["RiskLevel"];
+      /** Snapshot Id */
+      snapshot_id: string;
+      /** Task Id */
+      task_id: string;
+      /** Total Score */
+      total_score: number;
+    };
+    /**
+     * RobotCapabilities
+     * @description Declared capabilities the edge publishes for cloud awareness.
+     */
+    RobotCapabilities: {
+      /**
+       * Grip Force N
+       * @default 10
+       */
+      grip_force_N: number;
+      /**
+       * Has Gripper
+       * @default true
+       */
+      has_gripper: boolean;
+      /**
+       * Max Acceleration
+       * @default 5
+       */
+      max_acceleration: number;
+      /**
+       * Max Joint Velocity
+       * @default 2
+       */
+      max_joint_velocity: number;
+      /**
+       * Max Reach M
+       * @default 0.65
+       */
+      max_reach_m: number;
+      /**
+       * Max Tcp Velocity
+       * @default 1
+       */
+      max_tcp_velocity: number;
+      /** Supported Skills */
+      supported_skills?: string[];
+    };
+    /** RobotStatusIngestResponse */
+    RobotStatusIngestResponse: {
+      /** Accepted */
+      accepted: boolean;
+      /** Robot Id */
+      robot_id: string;
+      /** Scene Version */
+      scene_version: number;
+      /** Task Id */
+      task_id: string;
+    };
+    /** RuntimeSnapshot */
+    RuntimeSnapshot: {
+      /** Backend Readiness */
+      backend_readiness: components["schemas"]["ServiceHealth"][];
+      /** Commit */
+      commit: string;
+      /** Environment Blockers */
+      environment_blockers: string[];
+      /** Runtime Profile */
+      runtime_profile: string;
+      /** Service Health */
+      service_health: components["schemas"]["ServiceHealth"][];
+      /** Source Tree Hash */
+      source_tree_hash: string;
+      /** Worktree Clean */
+      worktree_clean: boolean | null;
+    };
+    /**
+     * SafetyDecision
+     * @enum {string}
+     */
+    SafetyDecision:
+      | "ALLOW"
+      | "ALLOW_WITH_LIMITS"
+      | "PAUSE"
+      | "REQUEST_CORRECTION"
+      | "REJECT"
+      | "EMERGENCY_STOP";
+    /** SafetyGateSnapshot */
+    SafetyGateSnapshot: {
+      /**
+       * Allowed
+       * @default false
+       */
+      allowed: boolean;
+      /** Controller Connected */
+      controller_connected?: boolean | null;
+      /**
+       * Current Acceptance Level
+       * @default NONE
+       */
+      current_acceptance_level: string;
+      /**
+       * Decided At
+       * Format: date-time
+       */
+      decided_at: string;
+      /**
+       * Emergency Stop State
+       * @default UNKNOWN
+       */
+      emergency_stop_state: string;
+      /**
+       * Execution Mode
+       * @default DRY_RUN
+       */
+      execution_mode: string;
+      /**
+       * Hardware Motion Authorized
+       * @default false
+       */
+      hardware_motion_authorized: boolean;
+      /**
+       * Operator Confirmation State
+       * @default NOT_REQUIRED_FOR_READINESS_VIEW
+       */
+      operator_confirmation_state: string;
+      /** Reason Codes */
+      reason_codes?: string[];
+      /**
+       * Requested Acceleration Scale
+       * @default 0
+       */
+      requested_acceleration_scale: number;
+      /**
+       * Requested Velocity Scale
+       * @default 0
+       */
+      requested_velocity_scale: number;
+      /**
+       * Required Acceptance Level
+       * @default LEVEL_0
+       */
+      required_acceptance_level: string;
+      /** @default UNKNOWN */
+      safety_shield_state: components["schemas"]["ServiceStatus"];
+      /** @default UNKNOWN */
+      telemetry_freshness: components["schemas"]["FreshnessStatus"];
+    };
+    /**
+     * SafetyPolicyReference
+     * @description Edge safety policy metadata — cloud must respect these bounds.
+     */
+    SafetyPolicyReference: {
+      /** Hard Limit Max Acceleration */
+      hard_limit_max_acceleration: number;
+      /** Hard Limit Max Joint Velocity */
+      hard_limit_max_joint_velocity: number;
+      /** Hard Limit Max Tcp Velocity */
+      hard_limit_max_tcp_velocity: number;
+      /** Minimum Safe Height */
+      minimum_safe_height: number;
+      /** Obstacle Safety Distance */
+      obstacle_safety_distance: number;
+      /** Policy Hash */
+      policy_hash: string;
+      /** Policy Version */
+      policy_version: string;
+    };
+    /** SafetyReviewNoteRequest */
+    SafetyReviewNoteRequest: {
+      /** Note */
+      note: string;
+      /**
+       * Related Evidence Id
+       * @default
+       */
+      related_evidence_id: string;
+    };
+    /** SafetyReviewNoteResponse */
+    SafetyReviewNoteResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Hardware Motion Authorized
+       * @default false
+       */
+      hardware_motion_authorized: boolean;
+      /** Note */
+      note: string;
+      /** Note Id */
+      note_id: string;
+      /**
+       * Related Evidence Id
+       * @default
+       */
+      related_evidence_id: string;
+      role: components["schemas"]["UserRole"];
+    };
+    /**
+     * SceneObjectSummary
+     * @description A light-weight scene object visible to the cloud planner.
+     */
+    SceneObjectSummary: {
+      /** Object Class */
+      object_class: string;
+      /** Object Id */
+      object_id: string;
+      pose?: components["schemas"]["Pose"] | null;
+      /**
+       * Pose Confidence
+       * @default 0
+       */
+      pose_confidence: number;
+      /** Region Id */
+      region_id?: string | null;
+    };
+    /**
+     * SceneSummary
+     * @description Structured scene view sent from edge to cloud for planning.
+     */
+    SceneSummary: {
+      /** Objects */
+      objects?: components["schemas"]["SceneObjectSummary"][];
+      /** Obstacles */
+      obstacles?: {
+        [key: string]: unknown;
+      }[];
+      /** Regions */
+      regions?: components["schemas"]["TargetRegionSummary"][];
+      /** Robot State */
+      robot_state?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Scene Confidence
+       * @default 1
+       */
+      scene_confidence: number;
+      /** Scene Version */
+      scene_version: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** ServiceHealth */
+    ServiceHealth: {
+      /**
+       * Detail
+       * @default
+       */
+      detail: string;
+      /** Name */
+      name: string;
+      /** @default UNKNOWN */
+      status: components["schemas"]["ServiceStatus"];
+    };
+    /**
+     * ServiceStatus
+     * @enum {string}
+     */
+    ServiceStatus:
+      | "READY"
+      | "DEGRADED"
+      | "BLOCKED_BY_ENV"
+      | "NOT_CONFIGURED"
+      | "FAILED"
+      | "UNKNOWN";
+    /** SkillCacheKey */
+    SkillCacheKey: {
+      /** Calibration Version */
+      calibration_version: string;
+      /** End Effector Type */
+      end_effector_type: string;
+      /** Object Class */
+      object_class: string;
+      /** Parameter Schema Version */
+      parameter_schema_version: string;
+      /** Robot Capability Hash */
+      robot_capability_hash: string;
+      /** Robot Model */
+      robot_model: string;
+      /** Safety Policy Hash */
+      safety_policy_hash: string;
+      skill_name: components["schemas"]["SkillName"];
+      /** Task Intent */
+      task_intent: string;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /**
+     * SkillExecutionRecordRequest
+     * @description Skill execution audit record body.
+     */
+    SkillExecutionRecordRequest: {
+      /** Cloud Replan Count */
+      cloud_replan_count: number;
+      /** Duration Ms */
+      duration_ms: number;
+      /** Evidence Hash */
+      evidence_hash: string;
+      /**
+       * Executed At
+       * Format: date-time
+       */
+      executed_at: string;
+      /** Execution Id */
+      execution_id: string;
+      /**
+       * Failure Reason
+       * @default
+       */
+      failure_reason: string;
+      /** Local Retry Count */
+      local_retry_count: number;
+      /** Network Quality */
+      network_quality: number;
+      /** Plan Id */
+      plan_id: string;
+      safety_decision: components["schemas"]["SafetyDecision"];
+      /** Scene Confidence */
+      scene_confidence: number;
+      /** Step Id */
+      step_id: string;
+      /** Success */
+      success: boolean;
+      /** Task Id */
+      task_id: string;
+      /** Template Id */
+      template_id: string;
+    };
+    /**
+     * SkillName
+     * @enum {string}
+     */
+    SkillName:
+      | "HOME"
+      | "OBSERVE"
+      | "LOCATE_OBJECT"
+      | "MOVE_ABOVE"
+      | "APPROACH"
+      | "GRASP"
+      | "LIFT"
+      | "MOVE_TO_REGION"
+      | "PLACE"
+      | "RELEASE"
+      | "RETREAT"
+      | "VERIFY_RESULT"
+      | "SAFE_STOP";
+    /**
+     * SkillStatisticsResponse
+     * @description Skill cache statistics response body.
+     */
+    SkillStatisticsResponse: {
+      /**
+       * Average Duration Ms
+       * @default 0
+       */
+      average_duration_ms: number;
+      /**
+       * Confidence Score
+       * @default 0
+       */
+      confidence_score: number;
+      /**
+       * Consecutive Failures
+       * @default 0
+       */
+      consecutive_failures: number;
+      /**
+       * Failed Executions
+       * @default 0
+       */
+      failed_executions: number;
+      /** Last Failure At */
+      last_failure_at?: string | null;
+      /** Last Success At */
+      last_success_at?: string | null;
+      /**
+       * Recent Success Rate
+       * @default 0
+       */
+      recent_success_rate: number;
+      /**
+       * Safety Rejection Count
+       * @default 0
+       */
+      safety_rejection_count: number;
+      /**
+       * Successful Executions
+       * @default 0
+       */
+      successful_executions: number;
+      /**
+       * Timeout Count
+       * @default 0
+       */
+      timeout_count: number;
+      /**
+       * Total Executions
+       * @default 0
+       */
+      total_executions: number;
+    };
+    /** SkillTemplateListResponse */
+    SkillTemplateListResponse: {
+      /** Templates */
+      templates?: components["schemas"]["SkillTemplateResponse"][];
+    };
+    /**
+     * SkillTemplateRequest
+     * @description Skill cache template creation body.
+     */
+    SkillTemplateRequest: {
+      cache_key: components["schemas"]["SkillCacheKey"];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Expected Duration Ms */
+      expected_duration_ms: number;
+      /** Expected Success Conditions */
+      expected_success_conditions?: string[];
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Parameter Template */
+      parameter_template?: {
+        [key: string]: unknown;
+      };
+      /** Required Preconditions */
+      required_preconditions?: string[];
+      skill_name: components["schemas"]["SkillName"];
+      /** Source Contract Id */
+      source_contract_id: string;
+      /** Source Plan Version */
+      source_plan_version: number;
+      /** @default CANDIDATE */
+      status: components["schemas"]["SkillTemplateStatus"];
+      /** Template Id */
+      template_id: string;
+      /**
+       * Template Version
+       * @default 1
+       */
+      template_version: number;
+      /** Timeout Ms */
+      timeout_ms: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * SkillTemplateResponse
+     * @description Skill cache template response body.
+     */
+    SkillTemplateResponse: {
+      cache_key: components["schemas"]["SkillCacheKey"];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Expected Duration Ms */
+      expected_duration_ms: number;
+      /** Expected Success Conditions */
+      expected_success_conditions?: string[];
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Parameter Template */
+      parameter_template?: {
+        [key: string]: unknown;
+      };
+      /** Required Preconditions */
+      required_preconditions?: string[];
+      skill_name: components["schemas"]["SkillName"];
+      /** Source Contract Id */
+      source_contract_id: string;
+      /** Source Plan Version */
+      source_plan_version: number;
+      /** @default CANDIDATE */
+      status: components["schemas"]["SkillTemplateStatus"];
+      /** Template Id */
+      template_id: string;
+      /**
+       * Template Version
+       * @default 1
+       */
+      template_version: number;
+      /** Timeout Ms */
+      timeout_ms: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * SkillTemplateStatus
+     * @enum {string}
+     */
+    SkillTemplateStatus:
+      | "CANDIDATE"
+      | "TRUSTED"
+      | "QUARANTINED"
+      | "INVALIDATED"
+      | "EXPIRED";
+    /** SupervisionCapabilitiesResponse */
+    SupervisionCapabilitiesResponse: {
+      /** Allowed Periods Ms */
+      allowed_periods_ms: number[];
+      /** Command Ttl Ms */
+      command_ttl_ms: number;
+      /** Configured Period Ms */
+      configured_period_ms: number;
+      /** Supported Decisions */
+      supported_decisions: string[];
+    };
+    /**
+     * SupervisionConfig
+     * @description Configurable parameters for the periodic supervision loop.
+     */
+    SupervisionConfig: {
+      /**
+       * Allow Finish Current Atomic Skill
+       * @default true
+       */
+      allow_finish_current_atomic_skill: boolean;
+      /**
+       * Command Ttl Ms
+       * @default 2500
+       */
+      command_ttl_ms: number;
+      /**
+       * Max Missed Supervision Cycles
+       * @default 3
+       */
+      max_missed_supervision_cycles: number;
+      /**
+       * Min Scene Confidence
+       * @default 0.5
+       */
+      min_scene_confidence: number;
+      /**
+       * Pause On Unknown Risk
+       * @default true
+       */
+      pause_on_unknown_risk: boolean;
+      /**
+       * Planner Max Retries
+       * @default 2
+       */
+      planner_max_retries: number;
+      /**
+       * Planner Timeout Ms
+       * @default 30000
+       */
+      planner_timeout_ms: number;
+      /**
+       * Stale State Threshold Ms
+       * @default 5000
+       */
+      stale_state_threshold_ms: number;
+      /**
+       * Supervision Period Ms
+       * @default 1000
+       */
+      supervision_period_ms: number;
+      /**
+       * Supervision Timeout Ms
+       * @default 5000
+       */
+      supervision_timeout_ms: number;
+      /**
+       * Target Displacement Threshold M
+       * @default 0.02
+       */
+      target_displacement_threshold_m: number;
+    };
+    /** SupervisionDecisionListResponse */
+    SupervisionDecisionListResponse: {
+      /** Decisions */
+      decisions?: components["schemas"]["SupervisoryDecision"][];
+    };
+    /**
+     * SupervisionReasonCode
+     * @enum {string}
+     */
+    SupervisionReasonCode:
+      | "SCENE_STABLE"
+      | "TARGET_MOVED_CURRENT_STEP"
+      | "TARGET_MOVED_REMAINING_PLAN"
+      | "OBSTACLE_BLOCKS_CURRENT_PATH"
+      | "OBSTACLE_BLOCKS_REMAINING_PATH"
+      | "EDGE_STATE_STALE"
+      | "SCENE_CONFIDENCE_LOW"
+      | "ROBOT_STATE_INVALID"
+      | "NETWORK_DEGRADED"
+      | "SAFETY_RISK_INCREASED"
+      | "PLAN_ALREADY_COMPLETED"
+      | "PLAN_VERSION_MISMATCH"
+      | "UNSUPPORTED_STATE_TRANSITION"
+      | "SUPERVISOR_INTERNAL_ERROR"
+      | "COLLISION_RISK_DETECTED"
+      | "PATH_CHANGED";
+    /** SupervisionStartRequest */
+    SupervisionStartRequest: {
+      config?: components["schemas"]["SupervisionConfig"] | null;
+    };
+    /** SupervisionStatusResponse */
+    SupervisionStatusResponse: {
+      /** Last Command Seq */
+      last_command_seq: number;
+      /** Last Plan Version */
+      last_plan_version: number;
+      /** Running */
+      running: boolean;
+      /** Task Id */
+      task_id: string;
+    };
+    /**
+     * SupervisoryDecision
+     * @description The structured output of one supervision cycle.
+     */
+    SupervisoryDecision: {
+      /** Based On Plan Version */
+      based_on_plan_version: number;
+      /**
+       * Cloud Decision Timestamp
+       * Format: date-time
+       */
+      cloud_decision_timestamp: string;
+      /** Command Seq */
+      command_seq: number;
+      /** Command Ttl Ms */
+      command_ttl_ms: number;
+      /** Correlation Id */
+      correlation_id: string;
+      /**
+       * Cycle Latency Ms
+       * @default 0
+       */
+      cycle_latency_ms: number;
+      decision: components["schemas"]["SupervisoryDecisionType"];
+      /** Decision Id */
+      decision_id: string;
+      /**
+       * Edge State Timestamp
+       * Format: date-time
+       */
+      edge_state_timestamp: string;
+      /**
+       * Idempotency Key
+       * @default
+       */
+      idempotency_key: string;
+      /**
+       * Input State Hash
+       * @default
+       */
+      input_state_hash: string;
+      /**
+       * Output Decision Hash
+       * @default
+       */
+      output_decision_hash: string;
+      /** Planner Adapter */
+      planner_adapter?: string | null;
+      /**
+       * Planner Invoked
+       * @default false
+       */
+      planner_invoked: boolean;
+      /**
+       * Policy Hash
+       * @default
+       */
+      policy_hash: string;
+      /**
+       * Policy Version
+       * @default 1.0
+       */
+      policy_version: string;
+      /** Previous Command Seq */
+      previous_command_seq: number;
+      /** Prompt Version */
+      prompt_version?: string | null;
+      reason_code: components["schemas"]["SupervisionReasonCode"];
+      /**
+       * Reason Detail
+       * @default
+       */
+      reason_detail: string;
+      /** Resulting Plan Version */
+      resulting_plan_version: number;
+      /** Robot Id */
+      robot_id: string;
+      /** Scene Version */
+      scene_version: number;
+      /** Task Id */
+      task_id: string;
+      /** Updated Steps */
+      updated_steps?: components["schemas"]["TaskStep"][];
+      /**
+       * Valid Until
+       * Format: date-time
+       */
+      valid_until: string;
+    };
+    /**
+     * SupervisoryDecisionType
+     * @enum {string}
+     */
+    SupervisoryDecisionType:
+      | "KEEP_CURRENT_PLAN"
+      | "UPDATE_CURRENT_STEP"
+      | "REPLACE_REMAINING_STEPS"
+      | "PAUSE_TASK"
+      | "REQUEST_MORE_OBSERVATION"
+      | "ABORT_TASK";
+    /**
+     * TargetRegionSummary
+     * @description A workspace region known to the cloud planner.
+     */
+    TargetRegionSummary: {
+      center: components["schemas"]["Pose"];
+      /**
+       * Radius M
+       * @default 0.08
+       */
+      radius_m: number;
+      /** Region Id */
+      region_id: string;
+    };
+    /** TaskContractSchemaResponse */
+    TaskContractSchemaResponse: {
+      /** Task Contract Schema */
+      task_contract_schema: {
+        [key: string]: unknown;
+      };
+      /** Version */
+      version: string;
+    };
+    /** TaskStep */
+    TaskStep: {
+      /** Expected Duration Ms */
+      expected_duration_ms: number;
+      /** Parameters */
+      parameters?: {
+        [key: string]: unknown;
+      };
+      /** Preconditions */
+      preconditions?: string[];
+      /** Retry Limit */
+      retry_limit: number;
+      skill: components["schemas"]["SkillName"];
+      /** Step Id */
+      step_id: string;
+      /** Success Conditions */
+      success_conditions?: string[];
+      /** Timeout Ms */
+      timeout_ms: number;
+    };
+    /**
+     * UserRole
+     * @enum {string}
+     */
+    UserRole: "VIEWER" | "EXPERIMENT_OPERATOR" | "SAFETY_REVIEWER";
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
+    /** CapabilitiesResponse */
+    cloud_edge_robot_arm__cloud__api__schemas__CapabilitiesResponse: {
+      /** Model Name */
+      model_name: string;
+      /** Planner Name */
+      planner_name: string;
+      /** Supported Control Modes */
+      supported_control_modes: string[];
+      /** Supported Skills */
+      supported_skills: string[];
+    };
+    /** CapabilitiesResponse */
+    cloud_edge_robot_arm__dashboard__models__CapabilitiesResponse: {
+      /** Allowed Write Operations */
+      allowed_write_operations: string[];
+      /**
+       * Api Schema Version
+       * @default phase10.2b.v1
+       */
+      api_schema_version: string;
+      /** Backends */
+      backends: string[];
+      /** Experiments */
+      experiments: string[];
+      /** Hardware Write Operations */
+      hardware_write_operations: string[];
+      /** Pages */
+      pages: string[];
+      /** Websocket */
+      websocket: boolean;
+    };
+  };
   responses: never;
   parameters: never;
   requestBodies: never;
@@ -14,4 +2989,1607 @@ export interface components {
   pathItems: never;
 }
 export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export interface operations {
+  auto_mode_capabilities_api_v1_auto_mode_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AutoModeCapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  acceptance_api_v1_dashboard_acceptance_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AcceptanceLevelSnapshot"];
+        };
+      };
+    };
+  };
+  audit_events_api_v1_dashboard_audit_events_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditEventResponse"];
+        };
+      };
+    };
+  };
+  capabilities_api_v1_dashboard_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["cloud_edge_robot_arm__dashboard__models__CapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  comparisons_api_v1_dashboard_comparisons_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ComparisonResponse"];
+        };
+      };
+    };
+  };
+  evidence_api_v1_dashboard_evidence_get: {
+    parameters: {
+      query?: {
+        phase?: string | null;
+        status?: string | null;
+        backend?: string | null;
+        sort?: "generated_at" | "relative_path" | "status" | "phase";
+        order?: "asc" | "desc";
+        limit?: number;
+        offset?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EvidenceListResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  evidence_errors_api_v1_dashboard_evidence_errors_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EvidenceParseErrorResponse"];
+        };
+      };
+    };
+  };
+  evidence_detail_api_v1_dashboard_evidence__evidence_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        evidence_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EvidenceDetailResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  evidence_download_api_v1_dashboard_evidence__evidence_id__download_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        evidence_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  evidence_compare_api_v1_dashboard_evidence__left_evidence_id__compare__right_evidence_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        left_evidence_id: string;
+        right_evidence_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  experiments_api_v1_dashboard_experiments_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentListResponse"];
+        };
+      };
+    };
+  };
+  start_experiment_api_v1_dashboard_experiments_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExperimentCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentJobRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  experiment_detail_api_v1_dashboard_experiments__experiment_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        experiment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentJobRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  cancel_experiment_api_v1_dashboard_experiments__experiment_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        experiment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExperimentJobRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  runtime_api_v1_dashboard_runtime_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeSnapshot"];
+        };
+      };
+    };
+  };
+  safety_api_v1_dashboard_safety_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SafetyGateSnapshot"];
+        };
+      };
+    };
+  };
+  safety_review_note_api_v1_dashboard_safety_review_notes_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SafetyReviewNoteRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SafetyReviewNoteResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  summary_api_v1_dashboard_summary_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DashboardSummary"];
+        };
+      };
+    };
+  };
+  event_control_capabilities_api_v1_event_control_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventControlCapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  get_event_api_v1_events__event_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        event_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EdgeEventResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_failure_summary_api_v1_failure_summaries__summary_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        summary_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FailureSummaryResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  capabilities_api_v1_planning_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["cloud_edge_robot_arm__cloud__api__schemas__CapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  task_contract_schema_api_v1_planning_schemas_task_contract_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TaskContractSchemaResponse"];
+        };
+      };
+    };
+  };
+  create_plan_api_v1_plans_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PlanningRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PlanningResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  replan_plan_api_v1_plans__plan_id__replan_post: {
+    parameters: {
+      query?: {
+        robot_id?: string | null;
+      };
+      header?: never;
+      path: {
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplanRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReplanResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  supervise_plan_api_v1_plans__plan_id__supervise_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EdgeStatusSnapshotRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SupervisoryDecision"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_supervision_decisions_api_v1_plans__plan_id__supervision_decisions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SupervisionDecisionListResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  start_supervision_api_v1_plans__plan_id__supervision_start_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json":
+          | components["schemas"]["SupervisionStartRequest"]
+          | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SupervisionStatusResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  supervision_status_api_v1_plans__plan_id__supervision_status_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SupervisionStatusResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  stop_supervision_api_v1_plans__plan_id__supervision_stop_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SupervisionStatusResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_plan_api_v1_plans__planning_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        planning_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PlanningResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  dispatch_plan_api_v1_plans__planning_id__dispatch_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        planning_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["DispatchRequest"] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DispatchResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_replan_request_api_v1_replanning_requests__request_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReplanResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_replan_result_api_v1_replanning_requests__request_id__result_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReplanResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  post_event_api_v1_robots__robot_id__events_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        robot_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EdgeEventRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EdgeEventResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  replan_plan_api_v1_robots__robot_id__plans__plan_id__replan_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        plan_id: string;
+        robot_id: string | null;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplanRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReplanResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  ingest_robot_status_api_v1_robots__robot_id__status_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        robot_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EdgeStatusSnapshotRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RobotStatusIngestResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_skill_templates_api_v1_skill_cache_templates_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillTemplateListResponse"];
+        };
+      };
+    };
+  };
+  create_skill_template_api_v1_skill_cache_templates_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SkillTemplateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillTemplateResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_skill_template_api_v1_skill_cache_templates__template_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        template_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillTemplateResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  record_skill_execution_api_v1_skill_cache_templates__template_id__execution_records_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        template_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SkillExecutionRecordRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillExecutionRecordRequest"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  invalidate_skill_template_api_v1_skill_cache_templates__template_id__invalidate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        template_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillTemplateResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_skill_statistics_api_v1_skill_cache_templates__template_id__statistics_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        template_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillStatisticsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  supervision_capabilities_api_v1_supervision_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SupervisionCapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  decide_auto_mode_api_v1_tasks__task_id__auto_mode_decide_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AutoModeDecisionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AutoModeDecisionResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_auto_mode_status_api_v1_tasks__task_id__auto_mode_status_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AutoModeStatus"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_task_completion_api_v1_tasks__task_id__completion_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CompletionReportResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  post_task_completion_api_v1_tasks__task_id__completion_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompletionEvidenceRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CompletionReportResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_task_events_api_v1_tasks__task_id__events_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EdgeEventListResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  post_failure_summary_api_v1_tasks__task_id__failure_summaries_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FailureSummaryRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FailureSummaryResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  prepare_mode_transition_api_v1_tasks__task_id__mode_transitions_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModeTransitionCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModeTransitionResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_mode_transition_api_v1_tasks__task_id__mode_transitions__transition_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+        transition_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModeTransitionResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  evaluate_task_risk_api_v1_tasks__task_id__risk_evaluate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RiskEvaluateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RiskSnapshotResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  latest_task_risk_api_v1_tasks__task_id__risk_latest_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RiskSnapshotResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  health_health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HealthResponse"];
+        };
+      };
+    };
+  };
+}

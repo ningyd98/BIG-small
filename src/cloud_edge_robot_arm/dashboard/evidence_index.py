@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,19 +17,28 @@ from cloud_edge_robot_arm.dashboard.redaction import redact
 ALLOWED_EXTENSIONS = {".json", ".jsonl", ".md", ".txt", ".log"}
 
 
+@dataclass
+class EvidenceIndexError:
+    path: str
+    error: str
+
+
 class EvidenceIndex:
     def __init__(self, root: Path, *, max_bytes: int = 2_000_000) -> None:
         self.root = root
         self.max_bytes = max_bytes
         self._records: dict[str, EvidenceIndexRecord] = {}
+        self.errors: list[EvidenceIndexError] = []
 
     def refresh(self) -> list[EvidenceIndexRecord]:
         self._records.clear()
+        self.errors.clear()
         if not self.root.exists():
             return []
         for path in sorted(self.root.rglob("*")):
             if not path.is_file() or path.suffix not in ALLOWED_EXTENSIONS:
                 continue
+            relative_path = path.relative_to(self.root).as_posix()
             try:
                 resolved = path.resolve(strict=True)
                 if self.root.resolve() not in resolved.parents and resolved != self.root.resolve():
@@ -37,7 +47,11 @@ class EvidenceIndex:
                     continue
             except OSError:
                 continue
-            record = self._record_for(path)
+            try:
+                record = self._record_for(path)
+            except Exception as exc:  # pragma: no cover - defensive evidence path
+                self.errors.append(EvidenceIndexError(path=relative_path, error=str(exc)))
+                continue
             self._records[record.evidence_id] = record
         return list(self._records.values())
 
@@ -66,6 +80,17 @@ class EvidenceIndex:
         relative_path = path.relative_to(self.root).as_posix()
         evidence_id = hashlib.sha256(relative_path.encode("utf-8")).hexdigest()[:16]
         payload = _load_jsonish(path) if path.suffix in {".json", ".jsonl"} else {}
+        if isinstance(payload, dict) and "parse_error" in payload:
+            self.errors.append(
+                EvidenceIndexError(relative_path, str(payload.get("parse_error", "")))
+            )
+        if isinstance(payload, list):
+            for item in payload:
+                if isinstance(item, dict) and "parse_error" in item:
+                    self.errors.append(
+                        EvidenceIndexError(relative_path, str(item.get("parse_error", "")))
+                    )
+                    break
         if isinstance(payload, list):
             payload = payload[0] if payload and isinstance(payload[0], dict) else {}
         payload = payload if isinstance(payload, dict) else {}
@@ -89,9 +114,7 @@ class EvidenceIndex:
             environment_hash=str(provenance.get("environment_hash", "")),
             relative_path=relative_path,
             summary=str(payload.get("status", path.name)),
-            blockers=[
-                str(item) for item in payload.get("blockers", []) if isinstance(item, str)
-            ],
+            blockers=[str(item) for item in payload.get("blockers", []) if isinstance(item, str)],
         )
 
 
@@ -101,9 +124,15 @@ def _load_jsonish(path: Path) -> dict[str, Any] | list[Any] | str:
         rows: list[Any] = []
         for line in text.splitlines():
             if line.strip():
-                rows.append(json.loads(line))
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError as exc:
+                    rows.append({"parse_error": str(exc), "raw_line": line})
         return rows
-    loaded: dict[str, Any] | list[Any] | str = json.loads(text)
+    try:
+        loaded: dict[str, Any] | list[Any] | str = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return {"parse_error": str(exc), "raw_text": text[:2048]}
     return loaded
 
 
@@ -120,8 +149,16 @@ def _evidence_status(status: str) -> EvidenceStatus:
 
 
 def _hardware_claim(payload: dict[str, Any]) -> HardwareClaim:
+    raw_claim = str(payload.get("hardware_claim", ""))
+    if raw_claim:
+        try:
+            return HardwareClaim(raw_claim)
+        except ValueError:
+            pass
     if payload.get("hardware_motion_observed") is True:
         return HardwareClaim.HARDWARE_MOTION
+    if str(payload.get("status", "")).startswith("PHASE10_MOVEIT_DRY_RUN_ACCEPTED"):
+        return HardwareClaim.PLANNING_ONLY
     if payload.get("moveit_runtime_used") is True:
         return HardwareClaim.PLANNING_ONLY
     if payload.get("real_robot_validation") == "NOT_STARTED":

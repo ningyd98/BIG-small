@@ -12,6 +12,10 @@ type OverviewPageViewProps = {
 };
 
 export function OverviewPageView({ summary }: OverviewPageViewProps) {
+  const blockers = summary.blockers ?? [];
+  const latestEvidence = summary.latest_evidence ?? [];
+  const reasonCodes = summary.safety_summary.reason_codes ?? [];
+
   return (
     <Space orientation="vertical" size="large" style={{ width: "100%" }}>
       <Card>
@@ -37,16 +41,16 @@ export function OverviewPageView({ summary }: OverviewPageViewProps) {
         <Col xs={24} lg={12}>
           <SafetyGateCard
             hardwareMotionAuthorized={
-              summary.safety_summary.hardware_motion_authorized
+              summary.safety_summary.hardware_motion_authorized ?? false
             }
-            reasonCodes={summary.safety_summary.reason_codes}
+            reasonCodes={reasonCodes}
           />
         </Col>
         <Col xs={24} lg={12}>
           <ProvenanceCard
             commit={summary.software_commit}
             sourceTreeHash={summary.source_tree_hash}
-            worktreeClean={summary.worktree_clean}
+            worktreeClean={summary.worktree_clean ?? false}
           />
         </Col>
       </Row>
@@ -54,19 +58,19 @@ export function OverviewPageView({ summary }: OverviewPageViewProps) {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
           <Card title="阻塞项" size="small">
-            <BlockerList blockers={summary.blockers} />
+            <BlockerList blockers={blockers} />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card title="最新证据" size="small">
-            {summary.latest_evidence.length === 0 ? (
+            {latestEvidence.length === 0 ? (
               <Empty
                 description="暂无证据"
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             ) : (
               <ul className="plain-list compact-list">
-                {summary.latest_evidence.map((record) => (
+                {latestEvidence.map((record) => (
                   <li key={record.evidence_id}>
                     <Space wrap>
                       <Typography.Text>{record.phase}</Typography.Text>

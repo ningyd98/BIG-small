@@ -8,6 +8,7 @@ import { Layout, Menu, Space, Typography } from "antd";
 import { Link, useLocation } from "react-router-dom";
 
 import { useDashboardSummary } from "../api/queries";
+import { useDashboardSocket } from "../api/useWebSocket";
 import { EnvironmentBanner } from "../components/EnvironmentBanner";
 import { DashboardRoutes } from "./router";
 
@@ -43,6 +44,7 @@ const navItems = [
 export function App() {
   const location = useLocation();
   const summary = useDashboardSummary();
+  const socket = useDashboardSocket();
   const projectStatus = summary.data?.current_project_status ?? "UNKNOWN";
   const realRobotValidation = summary.data?.real_robot_validation ?? "UNKNOWN";
   const highestAcceptanceLevel =
@@ -76,7 +78,19 @@ export function App() {
         >
           <Space>
             <Typography.Text strong>连接状态</Typography.Text>
+            <Typography.Text>
+              {socket.connected
+                ? "connected"
+                : socket.stale
+                  ? "stale"
+                  : "disconnected"}
+            </Typography.Text>
             <Typography.Text>轮询可用，WebSocket 可兜底</Typography.Text>
+            {socket.lastEvent && (
+              <Typography.Text>
+                last: {socket.lastEvent.event_type}
+              </Typography.Text>
+            )}
           </Space>
         </Layout.Header>
         <Layout.Content style={{ padding: 24 }}>

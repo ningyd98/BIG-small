@@ -96,6 +96,20 @@ class SafetyGateSnapshot(BaseModel):
     decided_at: datetime
 
 
+class SafetyReviewNoteRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=1000)
+    related_evidence_id: str = ""
+
+
+class SafetyReviewNoteResponse(BaseModel):
+    note_id: str
+    role: UserRole
+    note: str
+    related_evidence_id: str = ""
+    hardware_motion_authorized: bool = False
+    created_at: datetime
+
+
 class AcceptanceLevelItem(BaseModel):
     level: str
     definition: str
@@ -145,8 +159,8 @@ class DashboardSummary(BaseModel):
     worktree_clean: bool | None = None
     runtime_profile: str = "local"
     current_environment: DashboardEnvironment = DashboardEnvironment.MOVEIT_DRY_RUN
-    current_project_status: str = "PHASE10_MOVEIT_DRY_RUN_ACCEPTED"
-    hardware_claim: HardwareClaim = HardwareClaim.PLANNING_ONLY
+    current_project_status: str = "UNKNOWN"
+    hardware_claim: HardwareClaim = HardwareClaim.NONE
     real_robot_validation: str = "NOT_STARTED"
     highest_acceptance_level: str = "NONE"
     services: list[ServiceHealth] = Field(default_factory=list)
@@ -190,6 +204,12 @@ class ExperimentJobRecord(BaseModel):
     created_at: datetime
     updated_at: datetime
     evidence_id: str = ""
+    evidence_path: str = ""
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    exit_code: int | None = None
+    stdout: str = ""
+    stderr: str = ""
     blockers: list[str] = Field(default_factory=list)
 
 
@@ -222,6 +242,11 @@ class EvidenceDetailResponse(BaseModel):
     content: dict[str, Any] | list[Any] | str
 
 
+class EvidenceIndexErrorRecord(BaseModel):
+    path: str
+    error: str
+
+
 class ExperimentListResponse(BaseModel):
     jobs: list[ExperimentJobRecord]
 
@@ -232,3 +257,7 @@ class ComparisonResponse(BaseModel):
 
 class AuditEventResponse(BaseModel):
     events: list[DashboardEvent]
+
+
+class EvidenceParseErrorResponse(BaseModel):
+    errors: list[EvidenceIndexErrorRecord]

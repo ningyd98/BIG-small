@@ -21,10 +21,25 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,sim-mujoco]"
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: dashboard
+        run: npx playwright install --with-deps chromium
 
       - name: Compile check
         run: python -m compileall src scripts tests
@@ -88,6 +103,9 @@ jobs:
           python scripts/verify_phase10_0.py
           python scripts/verify_phase10_1.py
           python scripts/verify_phase10_2a.py --skip-runtime
+
+      - name: Phase 10.2B dashboard console verification
+        run: python scripts/verify_phase10_2b.py
 
       - name: Dependency check
         run: python -m pip check

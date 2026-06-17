@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -25,10 +26,15 @@ def test_dashboard_summary_never_claims_real_hardware(
     monkeypatch.setenv("DASHBOARD_ARTIFACT_ROOT", str(tmp_path / "artifacts"))
     summary = DashboardService.from_environment().summary()
 
-    assert summary.current_project_status == "PHASE10_MOVEIT_DRY_RUN_ACCEPTED"
-    assert summary.hardware_claim == "PLANNING_ONLY"
+    assert summary.current_project_status == "UNKNOWN"
+    assert summary.hardware_claim == "NONE"
     assert summary.real_robot_validation == "NOT_STARTED"
     assert summary.highest_acceptance_level == "NONE"
+    assert {service.name: service.status for service in summary.services} == {
+        "SafetyShield": "UNKNOWN",
+        "HardwareExecutionGate": "NOT_CONFIGURED",
+        "RealRobotController": "NOT_CONFIGURED",
+    }
     assert summary.safety_summary.hardware_motion_authorized is False
 
 
@@ -42,6 +48,8 @@ def test_evidence_index_rejects_path_traversal_symlink_and_large_files(tmp_path:
         json.dumps({"status": "ACCEPTED", "provenance": {"worktree_clean": True}}),
         encoding="utf-8",
     )
+    malformed = root / "malformed.json"
+    malformed.write_text('{"status": ', encoding="utf-8")
     outside = tmp_path / "secret.json"
     outside.write_text('{"token": "raw-secret"}', encoding="utf-8")
     (root / "escape.json").symlink_to(outside)
@@ -50,19 +58,33 @@ def test_evidence_index_rejects_path_traversal_symlink_and_large_files(tmp_path:
     index = EvidenceIndex(root, max_bytes=1024)
     records = index.refresh()
 
-    assert len(records) == 1
-    assert records[0].relative_path == "phase10_summary.json"
+    assert {record.relative_path for record in records} == {
+        "malformed.json",
+        "phase10_summary.json",
+    }
+    malformed_record = next(
+        record for record in records if record.relative_path == "malformed.json"
+    )
+    detail = index.get_detail(malformed_record.evidence_id)
+    assert isinstance(detail.content, dict)
+    assert "parse_error" in detail.content
+    assert index.errors
+    assert index.errors[0].path == "malformed.json"
     with pytest.raises(ValueError, match="path traversal"):
         index.resolve_user_path("../secret.json")
     with pytest.raises(FileNotFoundError):
         index.get_detail("missing")
 
 
-def test_experiment_job_manager_allowlist_blocks_shell_script_env_and_runs_mock(
+def test_experiment_job_manager_uses_async_state_machine_and_runs_mock(
     tmp_path: Path,
 ) -> None:
     from cloud_edge_robot_arm.dashboard.experiment_jobs import ExperimentJobManager
-    from cloud_edge_robot_arm.dashboard.models import ExperimentCreateRequest, ExperimentKind
+    from cloud_edge_robot_arm.dashboard.models import (
+        ExperimentCreateRequest,
+        ExperimentJobStatus,
+        ExperimentKind,
+    )
 
     manager = ExperimentJobManager(artifact_root=tmp_path, writes_enabled=True)
     job = manager.start(
@@ -75,9 +97,42 @@ def test_experiment_job_manager_allowlist_blocks_shell_script_env_and_runs_mock(
         )
     )
 
-    assert job.status == "SUCCEEDED"
+    assert job.status in {
+        ExperimentJobStatus.QUEUED,
+        ExperimentJobStatus.STARTING,
+        ExperimentJobStatus.RUNNING,
+    }
     assert job.hardware_claim == "SIMULATION_ONLY"
-    assert job.evidence_id
+
+    deadline = time.monotonic() + 10.0
+    observed_statuses = {job.status}
+    terminal = job
+    while time.monotonic() < deadline:
+        latest = manager.get(job.experiment_id)
+        assert latest is not None
+        observed_statuses.add(latest.status)
+        if latest.status in {
+            ExperimentJobStatus.SUCCEEDED,
+            ExperimentJobStatus.FAILED,
+            ExperimentJobStatus.CANCELLED,
+            ExperimentJobStatus.BLOCKED_BY_ENV,
+        }:
+            terminal = latest
+            break
+        time.sleep(0.02)
+
+    assert ExperimentJobStatus.RUNNING in observed_statuses
+    assert terminal.status == ExperimentJobStatus.SUCCEEDED
+    assert terminal.evidence_id
+    evidence = manager.evidence_index.get_detail(terminal.evidence_id)
+    assert evidence.record.hardware_claim == "SIMULATION_ONLY"
+    assert isinstance(evidence.content, dict)
+    assert evidence.content["status"] == "SUCCEEDED"
+    assert evidence.content["exit_code"] == 0
+    assert evidence.content["runner_kind"] == "MOCK_SOFTWARE"
+    assert evidence.content["hardware_motion_observed"] is False
+    assert "stdout" in evidence.content
+    assert "stderr" in evidence.content
 
     for forbidden in ("command", "script", "executable", "shell", "environment", "path"):
         with pytest.raises(ValueError, match="forbidden experiment field"):
@@ -107,6 +162,72 @@ def test_experiment_job_manager_allowlist_blocks_shell_script_env_and_runs_mock(
                 }
             )
         )
+
+
+def test_experiment_job_manager_cancel_only_running_software_jobs(tmp_path: Path) -> None:
+    from cloud_edge_robot_arm.dashboard.experiment_jobs import ExperimentJobManager
+    from cloud_edge_robot_arm.dashboard.models import (
+        ExperimentCreateRequest,
+        ExperimentJobStatus,
+        ExperimentKind,
+    )
+
+    manager = ExperimentJobManager(artifact_root=tmp_path, writes_enabled=True)
+    job = manager.start(
+        ExperimentCreateRequest(
+            kind=ExperimentKind.MOCK_SOFTWARE,
+            scenario_id="S01_NORMAL_STATIC",
+            seed=2,
+            control_mode="PCSC",
+            repetitions=1,
+        )
+    )
+
+    cancelled = manager.cancel(job.experiment_id)
+
+    assert cancelled.status == ExperimentJobStatus.CANCELLED
+    assert cancelled.blockers == ["cancelled by operator"]
+
+
+def test_experiment_job_manager_cancel_does_not_rewrite_terminal_jobs(tmp_path: Path) -> None:
+    from cloud_edge_robot_arm.dashboard.experiment_jobs import ExperimentJobManager
+    from cloud_edge_robot_arm.dashboard.models import (
+        ExperimentCreateRequest,
+        ExperimentJobStatus,
+        ExperimentKind,
+    )
+
+    manager = ExperimentJobManager(artifact_root=tmp_path, writes_enabled=True)
+    job = manager.start(
+        ExperimentCreateRequest(
+            kind=ExperimentKind.MOCK_SOFTWARE,
+            scenario_id="S01_NORMAL_STATIC",
+            seed=3,
+            control_mode="PCSC",
+            repetitions=1,
+        )
+    )
+
+    deadline = time.monotonic() + 10.0
+    terminal = job
+    while time.monotonic() < deadline:
+        latest = manager.get(job.experiment_id)
+        assert latest is not None
+        if latest.status in {
+            ExperimentJobStatus.SUCCEEDED,
+            ExperimentJobStatus.FAILED,
+            ExperimentJobStatus.CANCELLED,
+            ExperimentJobStatus.BLOCKED_BY_ENV,
+        }:
+            terminal = latest
+            break
+        time.sleep(0.02)
+
+    assert terminal.status == ExperimentJobStatus.SUCCEEDED
+    cancelled = manager.cancel(job.experiment_id)
+
+    assert cancelled.status == ExperimentJobStatus.SUCCEEDED
+    assert cancelled.evidence_id == terminal.evidence_id
 
 
 def test_dashboard_api_capabilities_summary_safety_acceptance_evidence(
@@ -153,6 +274,11 @@ def test_dashboard_api_capabilities_summary_safety_acceptance_evidence(
     assert "raw-secret" not in detail.text
     assert client.get("/api/v1/dashboard/evidence/..%2Fsecret").status_code in {400, 404}
 
+    (artifact_root / "bad.json").write_text("{", encoding="utf-8")
+    errors = client.get("/api/v1/dashboard/evidence-errors")
+    assert errors.status_code == 200
+    assert errors.json()["errors"]
+
 
 def test_dashboard_api_write_default_disabled_and_auth_roles(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -161,6 +287,7 @@ def test_dashboard_api_write_default_disabled_and_auth_roles(
 
     response = client.post(
         "/api/v1/dashboard/experiments",
+        headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
         json={
             "kind": "MOCK_SOFTWARE",
             "scenario_id": "S01_NORMAL_STATIC",
@@ -171,6 +298,48 @@ def test_dashboard_api_write_default_disabled_and_auth_roles(
     )
     assert response.status_code == 403
     assert "disabled" in response.text
+
+    viewer_response = client.post(
+        "/api/v1/dashboard/experiments",
+        headers={"x-dashboard-role": "VIEWER"},
+        json={
+            "kind": "MOCK_SOFTWARE",
+            "scenario_id": "S01_NORMAL_STATIC",
+            "seed": 0,
+            "control_mode": "PCSC",
+            "repetitions": 1,
+        },
+    )
+    assert viewer_response.status_code == 403
+    assert "role" in viewer_response.text
+
+
+def test_dashboard_safety_review_notes_are_reviewer_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("DASHBOARD_EXPERIMENT_WRITES_ENABLED", "true")
+    client = _dashboard_client(monkeypatch, tmp_path)
+    body = {"note": "Reviewed dry-run blockers; no hardware motion authorized."}
+
+    viewer_response = client.post(
+        "/api/v1/dashboard/safety/review-notes",
+        headers={"x-dashboard-role": "VIEWER"},
+        json=body,
+    )
+    reviewer_response = client.post(
+        "/api/v1/dashboard/safety/review-notes",
+        headers={"x-dashboard-role": "SAFETY_REVIEWER"},
+        json=body,
+    )
+    audit_response = client.get("/api/v1/dashboard/audit-events")
+
+    assert viewer_response.status_code == 403
+    assert reviewer_response.status_code == 201
+    assert reviewer_response.json()["hardware_motion_authorized"] is False
+    assert reviewer_response.json()["role"] == "SAFETY_REVIEWER"
+    assert any(
+        event["event_type"] == "safety_review_note" for event in audit_response.json()["events"]
+    )
 
 
 def test_dashboard_dev_app_exposes_dashboard_routes(
