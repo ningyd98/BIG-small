@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -173,7 +174,52 @@ def test_acceptance_levels_are_persistent_and_block_higher_level_skills(tmp_path
     assert store.current_level() == RealRobotAcceptanceLevel.NONE
     assert store.is_allowed(RealRobotAcceptanceLevel.LEVEL_2) is False
 
-    store.mark_passed(RealRobotAcceptanceLevel.LEVEL_1, evidence_path="artifact.json")
+    level0 = tmp_path / "level0.json"
+    level0.write_text(
+        json.dumps(
+            {
+                "status": "ACCEPTED",
+                "requested_level": "LEVEL_0",
+                "config_hash": "cfg",
+                "source_tree_hash": "tree",
+                "robot_identity_hash": "robot",
+                "operator_confirmation": {"confirmation_id": "session-1"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store.mark_passed(
+        RealRobotAcceptanceLevel.LEVEL_0,
+        evidence_path=level0,
+        config_hash="cfg",
+        source_tree_hash="tree",
+        robot_identity_hash="robot",
+        operator_confirmation={"confirmation_id": "session-1"},
+    )
+    level1 = tmp_path / "level1.json"
+    level1.write_text(
+        json.dumps(
+            {
+                "status": "ACCEPTED",
+                "requested_level": "LEVEL_1",
+                "config_hash": "cfg",
+                "source_tree_hash": "tree",
+                "robot_identity_hash": "robot",
+                "operator_confirmation": {"confirmation_id": "session-2"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store.mark_passed(
+        RealRobotAcceptanceLevel.LEVEL_1,
+        evidence_path=level1,
+        config_hash="cfg",
+        source_tree_hash="tree",
+        robot_identity_hash="robot",
+        operator_confirmation={"confirmation_id": "session-2"},
+    )
     assert RealRobotAcceptanceStore(tmp_path / "acceptance_state.json").current_level() == (
         RealRobotAcceptanceLevel.LEVEL_1
     )

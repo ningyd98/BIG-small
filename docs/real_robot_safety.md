@@ -8,6 +8,8 @@ Physical robot motion is fail-closed.
 - Active emergency stop, stale telemetry, missing controller, unhealthy
   SafetyShield, missing operator token, or insufficient acceptance level rejects
   motion.
+- Operator confirmation is short-lived, action-bound, and one-time use. The raw
+  token is never written to artifacts.
 - Mock, FakeSystem, MuJoCo, Isaac, and dry-run evidence cannot be labeled as
   `HARDWARE_EXECUTED`.
 

@@ -2,14 +2,18 @@
 
 ## Current Result
 
-Current expected software-only result is `PHASE10_DRY_RUN_ACCEPTED`.
+Current expected software-only result on a host with ROS 2 / MoveIt available is
+`PHASE10_MOVEIT_DRY_RUN_ACCEPTED`.
 
 Completed:
 
 - Real robot configuration model and hash/source tracking.
 - Fail-closed hardware execution gate.
 - Environment-blocked read-only adapter framework.
-- Dry-run validation with `PLANNED_ONLY` hardware status.
+- Synthetic dry-run validation with `PLANNED_ONLY` hardware status.
+- MoveIt runtime dry-run planning evidence without execution.
+- Evidence provenance with source tree hash.
+- One-time operator confirmation model.
 - Single-level real robot acceptance framework.
 - Sim-to-real paired result schema.
 

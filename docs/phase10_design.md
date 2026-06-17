@@ -19,10 +19,10 @@ action.
 
 ## Status Target
 
-The ordinary host target is `PHASE10_DRY_RUN_ACCEPTED`. That means the real
-robot configuration model, execution gate, dry-run path, acceptance-level
-framework, audit evidence, and documentation are ready. It does not mean any
-physical arm moved.
+The ordinary host target is split by planner evidence. Synthetic-only dry-run
+produces `PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED`; real ROS 2 / MoveIt planning
+without execution produces `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`. Both keep
+`hardware_motion_observed=false` and do not mean any physical arm moved.
 
 ## Implementation Boundary
 
@@ -30,7 +30,8 @@ physical arm moved.
   execution mode validation.
 - `cloud_edge_robot_arm.real_robot.gate` owns fail-closed motion authorization.
 - `cloud_edge_robot_arm.real_robot.dry_run` validates contracts without sending
-  commands to hardware.
+  commands to hardware and consumes either a synthetic or MoveIt dry-run
+  planner.
 - `cloud_edge_robot_arm.real_robot.acceptance` persists the highest physical
   acceptance level.
 - `cloud_edge_robot_arm.real_robot.adapter` provides read-only adapter

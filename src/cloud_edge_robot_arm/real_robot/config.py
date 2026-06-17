@@ -124,11 +124,6 @@ class RealRobotRuntimeSettings(BaseModel):
                 raise ValueError("simulation runtime_profile cannot access real robot hardware")
             if self.config is None:
                 raise ValueError("hardware execution modes require real robot configuration")
-        if self.execution_mode in {
-            ExecutionMode.HARDWARE_LOW_SPEED,
-            ExecutionMode.HARDWARE_OPERATIONAL,
-        } and not (self.operator_confirmation_token or self.local_start_parameter):
-            raise ValueError("hardware motion requires operator confirmation token")
         return self
 
 

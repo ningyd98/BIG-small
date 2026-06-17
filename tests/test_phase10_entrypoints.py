@@ -24,7 +24,8 @@ def test_phase10_0_entrypoint_reports_gate_ready_without_hardware(tmp_path: Path
     assert payload["status"] == "PHASE10_IMPLEMENTATION_READY_ENV_BLOCKED"
     assert payload["validation_claimed"] is True
     assert payload["hardware_motion_observed"] is False
-    assert set(payload["safety_fault_coverage"]) >= {
+    coverage = {item["check_id"]: item for item in payload["safety_fault_coverage"]}
+    assert set(coverage) >= {
         "emergency_stop_active",
         "emergency_stop_during_run",
         "telemetry_stale",
@@ -44,6 +45,7 @@ def test_phase10_0_entrypoint_reports_gate_ready_without_hardware(tmp_path: Path
         "safety_shield_bypass_attempt",
         "acceptance_level_insufficient",
     }
+    assert all(item["executed"] and item["passed"] for item in coverage.values())
 
 
 def test_phase10_1_entrypoint_reports_dry_run_accepted(tmp_path: Path) -> None:
@@ -61,8 +63,9 @@ def test_phase10_1_entrypoint_reports_dry_run_accepted(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
-    assert payload["status"] == "PHASE10_DRY_RUN_ACCEPTED"
+    assert payload["status"] == "PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED"
     assert payload["dry_run_status"] == "DRY_RUN_VALIDATED"
+    assert payload["moveit_runtime_used"] is False
     assert payload["real_robot_validation"] == "NOT_STARTED"
     assert payload["hardware_motion_observed"] is False
 

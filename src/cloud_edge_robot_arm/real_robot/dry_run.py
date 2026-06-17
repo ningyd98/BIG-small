@@ -4,29 +4,25 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from cloud_edge_robot_arm.contracts import Pose, RobotState, TaskContract
+from cloud_edge_robot_arm.contracts import RobotState
 from cloud_edge_robot_arm.edge.contract_validator import EdgeContractValidator
 from cloud_edge_robot_arm.edge.safety.providers import TelemetrySample
 from cloud_edge_robot_arm.edge.safety.shield import SafetyShield
 from cloud_edge_robot_arm.real_robot.config import ExecutionMode, RealRobotRuntimeSettings
+from cloud_edge_robot_arm.real_robot.planners import (
+    MoveItDryRunPlanner,
+    PlannerSafetyMargin,
+    PlannerTrajectorySummary,
+    SyntheticDryRunPlanner,
+)
 
 
-class TrajectorySummary(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    point_count: int
-    path_length_m: float
-    planning_time_ms: int
-    max_velocity_scale: float
-    max_acceleration_scale: float
+class TrajectorySummary(PlannerTrajectorySummary):
+    pass
 
 
-class SafetyMarginSummary(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    minimum_distance_m: float
-    workspace_margin_m: float
-    limiting_rule: str
+class SafetyMarginSummary(PlannerSafetyMargin):
+    pass
 
 
 class DryRunValidationResult(BaseModel):
@@ -38,6 +34,10 @@ class DryRunValidationResult(BaseModel):
     sent_to_hardware: bool
     trajectory_summary: TrajectorySummary
     safety_margin: SafetyMarginSummary
+    planner_backend: str
+    moveit_runtime_used: bool
+    collision_validation_claimed: bool
+    hardware_readiness_claimed: bool
     step_count: int
     audit_events: list[dict[str, object]]
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -50,12 +50,14 @@ class DryRunValidationService:
         shield: SafetyShield,
         runtime_settings: RealRobotRuntimeSettings,
         telemetry_sample: TelemetrySample,
+        planner: MoveItDryRunPlanner | None = None,
     ) -> None:
         if runtime_settings.execution_mode != ExecutionMode.DRY_RUN:
             raise ValueError("DryRunValidationService requires DRY_RUN execution mode")
         self._shield = shield
         self._settings = runtime_settings
         self._telemetry = telemetry_sample
+        self._planner: MoveItDryRunPlanner = planner or SyntheticDryRunPlanner()
 
     def validate(self, payload: dict[str, object]) -> DryRunValidationResult:
         accepted = EdgeContractValidator(min_plan_version=1).accept_payload(payload)
@@ -88,18 +90,22 @@ class DryRunValidationService:
             if not result.allowed:
                 return self._rejected_result("SAFETY_REJECTED")
 
-        trajectory = self._trajectory_summary(contract)
+        plan_result = self._planner.plan_step(contract)
         return DryRunValidationResult(
             status="DRY_RUN_VALIDATED",
             validation_claimed=True,
             hardware_execution_status="PLANNED_ONLY",
             sent_to_hardware=False,
-            trajectory_summary=trajectory,
-            safety_margin=SafetyMarginSummary(
-                minimum_distance_m=0.05,
-                workspace_margin_m=0.05,
-                limiting_rule="SUMMARY",
+            trajectory_summary=TrajectorySummary.model_validate(
+                plan_result.trajectory_summary.model_dump()
             ),
+            safety_margin=SafetyMarginSummary.model_validate(
+                plan_result.safety_margin.model_dump()
+            ),
+            planner_backend=plan_result.planner_backend,
+            moveit_runtime_used=plan_result.moveit_runtime_used,
+            collision_validation_claimed=plan_result.collision_validation_claimed,
+            hardware_readiness_claimed=plan_result.hardware_readiness_claimed,
             step_count=len(contract.steps),
             audit_events=[
                 {
@@ -107,6 +113,7 @@ class DryRunValidationService:
                     "hardware_motion_observed": False,
                     "safety_decisions": safety_results,
                     "execution_mode": self._settings.execution_mode.value,
+                    "planner_backend": plan_result.planner_backend,
                 }
             ],
         )
@@ -129,6 +136,10 @@ class DryRunValidationService:
                 workspace_margin_m=0.0,
                 limiting_rule="REJECTED",
             ),
+            planner_backend=getattr(self._planner, "planner_backend", "UNKNOWN"),
+            moveit_runtime_used=False,
+            collision_validation_claimed=False,
+            hardware_readiness_claimed=False,
             step_count=0,
             audit_events=[
                 {
@@ -138,20 +149,3 @@ class DryRunValidationService:
                 }
             ],
         )
-
-    def _trajectory_summary(self, contract: TaskContract) -> TrajectorySummary:
-        poses = [_target_pose_for_step(index) for index, _ in enumerate(contract.steps)]
-        path_length = sum(
-            poses[index].distance_xy_to(poses[index - 1]) for index in range(1, len(poses))
-        )
-        return TrajectorySummary(
-            point_count=max(1, len(contract.steps)),
-            path_length_m=round(path_length, 6),
-            planning_time_ms=max(1, len(contract.steps) * 3),
-            max_velocity_scale=0.05,
-            max_acceleration_scale=0.05,
-        )
-
-
-def _target_pose_for_step(index: int) -> Pose:
-    return Pose(x=0.05 * index, y=0.0, z=0.18)

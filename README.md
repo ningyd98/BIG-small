@@ -1,12 +1,12 @@
 # BIG-small
 
-BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用”云端智能规划、边缘安全执行”架构。当前版本完成 Phase 0–9 core：仓库初始化、配置、数据契约、结构化错误/日志、MockRobotAdapter、技能注册表、边缘执行运行时、可追溯状态机、边缘安全盾、云端规划/监督/重规划、PCSC、ETEAC、Skill Cache、RiskEvaluator、AUTO 双模式选择、ModeTransition 持久化、Phase 8.2 周期闭环和真实检测延迟修复，以及 Phase 9 MuJoCo 物理仿真、物理指标、Domain Randomization 和 Sim2Real readiness 验证；Phase 9.1 已完成 ROS 2 runtime validation 和 MoveIt 2 safety validation。Phase 9.2 已完成 Isaac Sim 6.0 standalone smoke validation、Isaac benchmark、MuJoCo-Isaac paired comparison 和最终 aggregate verifier，本机 Phase 9.2 final 状态为 `PHASE9_2_ACCEPTED`。Phase 10 已建立真实机械臂安全接入前的配置门禁、dry-run 验证和分级验收框架，普通环境目标状态为 `PHASE10_DRY_RUN_ACCEPTED`。
+BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用”云端智能规划、边缘安全执行”架构。当前版本完成 Phase 0–9 core：仓库初始化、配置、数据契约、结构化错误/日志、MockRobotAdapter、技能注册表、边缘执行运行时、可追溯状态机、边缘安全盾、云端规划/监督/重规划、PCSC、ETEAC、Skill Cache、RiskEvaluator、AUTO 双模式选择、ModeTransition 持久化、Phase 8.2 周期闭环和真实检测延迟修复，以及 Phase 9 MuJoCo 物理仿真、物理指标、Domain Randomization 和 Sim2Real readiness 验证；Phase 9.1 已完成 ROS 2 runtime validation 和 MoveIt 2 safety validation。Phase 9.2 已完成 Isaac Sim 6.0 standalone smoke validation、Isaac benchmark、MuJoCo-Isaac paired comparison 和最终 aggregate verifier，本机 Phase 9.2 final 状态为 `PHASE9_2_ACCEPTED`。Phase 10 已建立真实机械臂安全接入前的配置门禁、dry-run 验证和分级验收框架；Phase 10.2A 将 synthetic dry-run 与 MoveIt runtime dry-run 分离，当前具备 MoveIt 环境时目标状态为 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`。
 
 Phase 9.1 当前状态是 `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`：ROS 2 runtime 为 `ROS2_INTEGRATION_VALIDATED`，MoveIt 2 safety 为 `MOVEIT_SAFETY_VALIDATED`，Isaac Sim 为 `BLOCKED_BY_ENV`，cross-backend comparison 为 `BLOCKED_BY_ENV`。本仓库没有连接真实机械臂，real robot validation not started，不声明真实硬件验证完成。真实机械臂 SDK、实体急停、真实相机标定和真实物理性能验证属于 Phase 10。
 
 Phase 9.2 当前主机状态是 `PHASE9_2_ACCEPTED`：Vulkan tooling 可用，本机 auto-detected standalone runtime `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1` 已完成 Isaac Sim 6.0 `SimulationApp` 启动、MJCF Panda/Franka stage 加载、physics step、robot state、RGB/depth/contact sensor 采样、reset、emergency stop、graceful shutdown、6 场景 Isaac benchmark 和 30 个 MuJoCo-Isaac paired runs。该状态仍不是真实机械臂验证。
 
-Phase 10 当前普通环境状态是 `PHASE10_DRY_RUN_ACCEPTED`：真实机械臂配置模型、hardware execution gate、只读 adapter 框架、dry-run evidence、Level 0–6 分级验收框架、Sim-to-Real schema 和文档已准备好；没有连接真实机械臂，没有读取真实控制器状态，没有执行真实机械臂运动，当前最高实机验收级别为 `NONE`。
+Phase 10 当前普通环境状态拆分为 synthetic framework dry-run 和 MoveIt dry-run：synthetic evidence 只能产生 `PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED`；真实 ROS 2 / MoveIt 规划服务生成 dry-run 轨迹且未执行时才能产生 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`。没有连接真实机械臂，没有读取真实控制器状态，没有执行真实机械臂运动，当前最高实机验收级别为 `NONE`。
 
 ## 仓库现状
 
@@ -116,6 +116,8 @@ python scripts/run_phase9_2_cross_backend.py --output artifacts/phase9_2/cross_b
 python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
 python scripts/verify_phase10_0.py
 python scripts/verify_phase10_1.py
+python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/moveit_dry_run
+python scripts/verify_phase10_2a.py
 python -m pip check
 ```
 

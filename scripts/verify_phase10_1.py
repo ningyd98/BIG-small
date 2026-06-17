@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from cloud_edge_robot_arm.real_robot.verification import (  # noqa: E402
-    PHASE10_DRY_RUN_ACCEPTED,
+    PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED,
     verify_phase10_1,
 )
 
@@ -24,7 +24,7 @@ def main() -> int:
     args = parser.parse_args()
     payload = verify_phase10_1(args.output)
     print(json.dumps(payload, sort_keys=True, indent=2))
-    return 0 if payload["status"] == PHASE10_DRY_RUN_ACCEPTED else 1
+    return 0 if payload["status"] == PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED else 1
 
 
 if __name__ == "__main__":

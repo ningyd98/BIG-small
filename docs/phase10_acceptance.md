@@ -3,7 +3,9 @@
 Allowed final statuses:
 
 - `PHASE10_IMPLEMENTATION_READY_ENV_BLOCKED`
-- `PHASE10_DRY_RUN_ACCEPTED`
+- `PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED`
+- `PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED_WITH_MOVEIT_ENV_BLOCK`
+- `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`
 - `PHASE10_HARDWARE_READ_ONLY_ACCEPTED`
 - `PHASE10_LOW_SPEED_MOTION_ACCEPTED`
 - `PHASE10_REAL_TASK_ACCEPTED`
@@ -23,9 +25,13 @@ python scripts/verify_phase9_1.py --skip-history
 python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
 python scripts/verify_phase10_0.py
 python scripts/verify_phase10_1.py
+python scripts/verify_phase10_2a.py
+python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/moveit_dry_run
 ```
 
-Expected current-host result: `PHASE10_DRY_RUN_ACCEPTED`.
+Expected current-host result with ROS 2 / MoveIt available:
+`PHASE10_MOVEIT_DRY_RUN_ACCEPTED`. Without MoveIt, the expected result is
+`PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED_WITH_MOVEIT_ENV_BLOCK`.
 
 ## Hardware Verification
 
