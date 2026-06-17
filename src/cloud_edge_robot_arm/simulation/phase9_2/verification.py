@@ -629,7 +629,7 @@ def _write_command_log(path: Path, result: CommandResult) -> None:
     path.write_text(
         "\n".join(
             [
-                f"$ {' '.join(result.argv)}",
+                f"$ {' '.join(_sanitize_argv(result.argv))}",
                 f"exit_code={result.exit_code}",
                 "--- stdout ---",
                 _sanitize_text(result.stdout) or "<empty>",
