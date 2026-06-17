@@ -132,6 +132,30 @@ private modules or `rclpy`; environment verifiers mark those paths
 `BLOCKED_BY_ENV` unless the host is actually ready. Ground truth is evaluation
 data only and is not formal control input.
 
+## Phase 9.2 Isaac and paired-backend layer
+
+Phase 9.2 keeps the same boundary but adds a real Isaac runtime acceptance path:
+
+```text
+Core Python
+  -> IsaacSimBackend / IsaacSimProcessClient
+  -> JSONL protocol
+  -> ISAAC_SIM_ROOT/python.sh or Isaac Sim 6.0 container
+  -> SimulationApp / USD stage / Franka articulation / RGB-D / contacts
+```
+
+The standalone Isaac process owns all Isaac imports and writes smoke evidence
+under `artifacts/phase9_2/isaac`. Core Python only validates protocol messages,
+artifact provenance, sensor presence, forbidden log markers, and process
+identity. Source guards and protocol fixtures do not count as runtime
+validation.
+
+Cross-backend validation pairs MuJoCo and Isaac artifacts by scenario and seed.
+It checks backend identity, run id uniqueness, commit SHA, config hash, result
+hash, process/environment provenance, required metric completeness, and metric
+deltas. Isaac failures are rejected; MuJoCo fallback is never accepted as Isaac
+evidence.
+
 ## Production boundary
 
 Production mode must explicitly configure durable and real integrations. Test defaults may use mock adapters, fake clocks, and in-memory repositories, but production constructors reject missing durable dependencies where production mode is enforced.
@@ -150,3 +174,5 @@ When `AUTO_MODE_ENABLED=true` in production, `SKILL_CACHE_BACKEND`, `SKILL_CACHE
 - Phase 8.1 experimental validity: `scripts/verify_phase8_1.py`.
 - Phase 8.2 sensitivity and closed-loop validity: `scripts/verify_phase8_2.py`.
 - Phase 9 MuJoCo readiness and guarded Isaac/ROS checks: `scripts/verify_phase9.py`.
+- Phase 9.1 ROS 2 / MoveIt runtime acceptance: `scripts/verify_phase9_1.py`.
+- Phase 9.2 Isaac and MuJoCo-Isaac acceptance: `scripts/verify_phase9_2_environment.py`, `scripts/verify_phase9_2_isaac_smoke.py`, `scripts/run_phase9_2_cross_backend.py`, and `scripts/verify_phase9_2.py`.
