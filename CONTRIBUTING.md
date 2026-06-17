@@ -1,6 +1,6 @@
-# Contributing
+# 贡献说明
 
-## Development Environment
+## 开发环境
 
 ```bash
 python3 -m venv .venv
@@ -8,13 +8,13 @@ python3 -m venv .venv
 python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
 ```
 
-## Branch and Commit Rules
+## 分支和提交规则
 
-- Use a topic branch unless the maintainer explicitly asks for direct `main` work.
-- Use Conventional Commit prefixes: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `ci:`, `chore:`.
-- Do not rewrite pushed `main` history, squash pushed commits, or force push.
+- 除非维护者明确要求直接改 `main`，否则使用 topic branch。
+- 提交信息使用 Conventional Commit 前缀：`feat:`、`fix:`、`refactor:`、`test:`、`docs:`、`ci:`、`chore:`。
+- 不要 rewrite 已推送的 `main` 历史，不要 squash 已推送 commit，也不要 force push。
 
-## Required Checks
+## 必跑检查
 
 ```bash
 python -m ruff format --check .
@@ -24,23 +24,23 @@ python -m pytest -q
 python scripts/check_docs.py
 ```
 
-Run environment-specific verifiers only on hosts that satisfy their documented requirements.
+环境相关 verifier 只在满足对应文档要求的主机上运行。
 
-## Documentation Rules
+## 文档规则
 
-- Update docs when behavior, public entrypoints, safety boundaries, or verifier status changes.
-- Keep README concise; put detailed command lists in `docs/verification.md`.
-- Do not claim real robot validation without authoritative hardware evidence.
+- 行为、公开入口、安全边界或 verifier 状态变化时，同步更新文档。
+- README 保持简洁；详细命令列表放在 `docs/verification.md`。
+- 没有权威硬件证据时，不得宣称真实机械臂验证完成。
 
-## Artifact Rules
+## Artifact 规则
 
-- Accepted artifacts may be committed only when they are part of an explicit validation task.
-- Do not commit large caches, private site data, real controller IPs, serial numbers, credentials, or raw operator tokens.
-- Generated logs and authoritative evidence must be clearly distinguished.
+- accepted artifact 只有在明确验证任务要求时才可以提交。
+- 不要提交大缓存、私有现场数据、真实 controller IP、serial number、credential 或原始 operator token。
+- generated log 和 authoritative evidence 必须清楚区分。
 
-## Safety-related Changes
+## 安全相关变更
 
-Any change to SafetyShield, HardwareExecutionGate, real robot acceptance levels, operator confirmation, or real hardware scripts must update:
+任何涉及 `SafetyShield`、`HardwareExecutionGate`、真实机械臂验收级别、operator confirmation 或真实硬件脚本的变更，都必须同步更新：
 
 - tests
 - safety docs
@@ -48,8 +48,8 @@ Any change to SafetyShield, HardwareExecutionGate, real robot acceptance levels,
 - verifier behavior
 - changelog
 
-## Real Robot Review Rules
+## 真实机械臂审查规则
 
-Real robot code must fail closed by default. It must not silently fall back to Mock, MuJoCo, Isaac, or simulation adapters in production/hardware mode.
+真实机械臂代码默认必须 fail closed。在 production/hardware mode 下，不能静默回退到 Mock、MuJoCo、Isaac 或 simulation adapter。
 
-Never add a script that automatically runs multiple hardware motion levels. Hardware motion requires explicit site configuration and operator approval.
+不要新增自动连续运行多个硬件运动级别的脚本。硬件运动必须有显式现场配置和操作员批准。

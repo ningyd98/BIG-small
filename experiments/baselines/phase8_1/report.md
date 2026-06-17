@@ -1,25 +1,25 @@
-# Phase 8.1 Baseline Report
+# Phase 8.1 基线报告
 
-This baseline summarizes the Phase 8.1 runtime-harness experiment run. It stores only small reproducibility artifacts; raw `raw_runs.jsonl` and `events.jsonl` files are intentionally excluded from version control.
+本基线总结 Phase 8.1 runtime-harness 实验运行。仓库只保存小体积可复现 artifact，原始 `raw_runs.jsonl` 和 `events.jsonl` 文件有意不纳入版本控制。
 
-## Executed Suites
+## 已执行套件
 
-| Suite | Runs | Successes | Success Rate |
+| 套件 | 运行次数 | 成功任务数 | 成功率 |
 | --- | ---: | ---: | ---: |
 | smoke | 45 | 33 | 0.733333 |
 | validation | 675 | 495 | 0.733333 |
 | full | 2250 | 1650 | 0.733333 |
 
-## Full Benchmark Scope
+## Full Benchmark 范围
 
-- Scenarios: S01-S15
-- Modes: PCSC, ETEAC, AUTO
-- Networks: GOOD, NORMAL, DEGRADED, POOR, SEVERE
-- Seeds: 0 through 9
-- Total runs: 2250
+- 场景：S01-S15
+- 模式：PCSC、ETEAC、AUTO
+- 网络：GOOD、NORMAL、DEGRADED、POOR、SEVERE
+- Seed：0 到 9
+- 总运行次数：2250
 
-## Evidence Boundary
+## 证据边界
 
-Phase 8.1 drives the production-style mock runtime chain through `RuntimeExperimentHarness`: contract validation, SafetyShield, TaskExecutor, MockRobotAdapter, command ACK classification, PCSC supervision, ETEAC replan/CAS paths, mode transition lifecycle, and restart recovery. Metrics are derived from structured runtime events and repositories.
+Phase 8.1 通过 `RuntimeExperimentHarness` 驱动接近生产形态的 mock runtime chain：contract validation、`SafetyShield`、`TaskExecutor`、`MockRobotAdapter`、command ACK classification、PCSC supervision、ETEAC replan/CAS path、mode transition lifecycle 和 restart recovery。指标来自结构化 runtime event 和 repository。
 
-These are Mock/simulation experiments. They do not represent real robot performance, real camera performance, ROS 2/MoveIt 2 integration, or production LLM behavior. Simulated zero-collision outcomes are not a proof of physical hardware safety. Phase 9 remains required for hardware validation.
+这些仍是 Mock/仿真实验，不代表真实机械臂性能、真实相机性能、ROS 2/MoveIt 2 集成或生产 LLM 行为。仿真零碰撞不能证明物理硬件安全。硬件验证仍然需要 Phase 9 及后续流程。

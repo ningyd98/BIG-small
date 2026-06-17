@@ -113,6 +113,10 @@ def create_app(
     app.state.auto_mode_policy = auto_mode_policy or AutoModePolicy(version="auto-v1")
     app.state.clock = clock or (lambda: datetime.now(UTC))
 
+    from cloud_edge_robot_arm.cloud.api.dashboard import router as dashboard_router
+
+    app.include_router(dashboard_router)
+
     # ── Health ───────────────────────────────────────────────────────────
 
     @app.get("/health", response_model=HealthResponse)

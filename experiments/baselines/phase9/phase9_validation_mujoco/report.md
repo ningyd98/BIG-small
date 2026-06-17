@@ -1,9 +1,9 @@
-# Phase 9 Benchmark Report
+# Phase 9 Benchmark 报告
 
-Suite: `validation`
+套件：`validation`
 
-Backend: `mujoco`
+后端：`mujoco`
 
-Runs: `2250`
+运行次数：`2250`
 
-Acceptance status: `PHASE9_CORE_ACCEPTED_ISAAC_VALIDATION_BLOCKED_BY_ENV`
+验收状态：`PHASE9_CORE_ACCEPTED_ISAAC_VALIDATION_BLOCKED_BY_ENV`

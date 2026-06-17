@@ -1,12 +1,12 @@
-# Shared Workspace
+# Shared 工作区
 
-Shared Phase 0/1 constants live in `src/cloud_edge_robot_arm/shared`.
+Phase 0/1 共享常量位于 `src/cloud_edge_robot_arm/shared`。
 
-Frozen Phase 0/1 route:
+Phase 0/1 冻结路线：
 
-- Async runtime: Python `asyncio`
-- Deterministic tests: `MockRobotAdapter`
-- Physics simulation target: MuJoCo
-- Cloud model calls: disabled
-- MQTT: disabled
-- Real robot control: disabled
+- 异步运行时：Python `asyncio`
+- 确定性测试：`MockRobotAdapter`
+- 物理仿真目标：MuJoCo
+- 云模型调用：禁用
+- MQTT：禁用
+- 真实机械臂控制：禁用

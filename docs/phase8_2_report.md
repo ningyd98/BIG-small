@@ -1,77 +1,77 @@
-# Phase 8.2 Report
+# Phase 8.2 报告
 
-## Scope
+## 范围
 
-Phase 8.2 stays in the virtual-clock mock experiment environment. It does not include ROS 2, MoveIt 2, real sensors, or real robot hardware.
+Phase 8.2 仍处在虚拟时钟和 mock 实验环境内，不包含 ROS 2、MoveIt 2、真实传感器或真实机械臂硬件。
 
-## Implementation Summary
+## 实现概要
 
-- PCSC supervision now runs as a periodic virtual-clock loop.
-- PCSC ticks interleave with atomic task steps and observe dynamic scene/network state.
-- Fault injection no longer records detection directly.
-- Fault detection latency is computed from real detection events.
-- AUTO mode transitions are prepared/deferred and committed only after a step safe boundary.
-- S15 restart recovery covers nine crash points.
-- Experiment summaries include mode, network, scenario, and seed sensitivity views.
+- PCSC supervision 改为按虚拟时钟周期运行。
+- PCSC tick 会与原子任务步骤交错执行，并观察动态场景和网络状态。
+- 故障注入不再直接记录检测结果。
+- 故障检测延迟由真实检测事件计算。
+- AUTO mode transition 先 prepare/defer，只能在步骤安全边界后 commit。
+- S15 restart recovery 覆盖 9 个崩溃点。
+- 实验 summary 增加 mode、network、scenario 和 seed sensitivity 视图。
 
-## Data
+## 数据
 
-The Phase 8.2 baseline artifacts are written to `experiments/baselines/phase8_2/`.
+Phase 8.2 基线 artifact 写入 `experiments/baselines/phase8_2/`。
 
-Executed suites:
+已执行套件：
 
-- Smoke: 45 runs, 33 successful tasks.
-- Validation: 675 runs, 495 successful tasks.
-- Full benchmark: 2250 runs, 1650 successful tasks.
+- Smoke：45 次运行，33 个任务成功。
+- Validation：675 次运行，495 个任务成功。
+- Full benchmark：2250 次运行，1650 个任务成功。
 
-The report should be read with:
+阅读报告时使用：
 
-- `summary.csv` for per-run metrics.
-- `summary.json` for grouped metrics and validity guards.
-- `report.md` for generated experiment notes.
-- `events.jsonl` for tick, detection, recovery, transition, and crash-point timelines.
+- `summary.csv`：逐 run 指标。
+- `summary.json`：分组指标和 validity guard。
+- `report.md`：生成的实验说明。
+- `events.jsonl`：tick、detection、recovery、transition 和 crash-point 时间线。
 
-## Timing Evidence
+## 时序证据
 
-Representative PCSC target-moved run:
+代表性的 PCSC target-moved run：
 
-- Step starts: `step-home` at 0 ms, `step-move-above` at 100 ms, `step-approach` at 200 ms, `step-grasp` at 300 ms, `step-lift` at 400 ms, `step-move-region` at 500 ms.
-- PCSC ticks: 301 ms, 601 ms, 901 ms.
-- Fault injected: `TARGET_MOVED` at 700 ms.
-- Fault detected: `TARGET_MOVED` at 901 ms by `PeriodicSupervisorService`.
-- Detection latency: 201 ms.
+- 步骤开始：`step-home` 在 0 ms，`step-move-above` 在 100 ms，`step-approach` 在 200 ms，`step-grasp` 在 300 ms，`step-lift` 在 400 ms，`step-move-region` 在 500 ms。
+- PCSC tick：301 ms、601 ms、901 ms。
+- 故障注入：`TARGET_MOVED` 在 700 ms。
+- 故障检测：`PeriodicSupervisorService` 在 901 ms 检测到 `TARGET_MOVED`。
+- 检测延迟：201 ms。
 
-S15 recovery covered all nine crash points and completed with `SUCCESS`; repeated completed step count was 0.
+S15 recovery 覆盖全部 9 个崩溃点，最终状态为 `SUCCESS`；已完成步骤重复执行计数为 0。
 
-## Full Benchmark Sensitivity
+## Full Benchmark 敏感性
 
-Mode cloud invocation means:
+按 mode 统计的平均云端调用次数：
 
-- AUTO: 0.0
-- ETEAC: 0.0667
-- PCSC: 2.8667
+- AUTO：0.0
+- ETEAC：0.0667
+- PCSC：2.8667
 
-Network completion-time means:
+按 network 统计的平均完成时间：
 
-- GOOD: 1539.4 ms
-- NORMAL: 1576.96 ms
-- DEGRADED: 1649.18 ms
-- POOR: 1733.64 ms
-- SEVERE: 1889.2 ms
+- GOOD：1539.4 ms
+- NORMAL：1576.96 ms
+- DEGRADED：1649.18 ms
+- POOR：1733.64 ms
+- SEVERE：1889.2 ms
 
-Seed variability did not change mean completion time in the full aggregate, but it changed network-sensitive metrics. Mean communication bytes ranged from 143.90 to 195.38 across seeds; mean recovery latency ranged from 605.98 ms to 657.03 ms.
+full aggregate 中，seed variability 没有改变平均完成时间，但改变了网络敏感指标。不同 seed 下平均通信字节数范围为 143.90 到 195.38，平均恢复延迟范围为 605.98 ms 到 657.03 ms。
 
-The full benchmark `validity_guard` passed all checks: modes, networks, and seeds were not identical; fault detection latency was not all zero; PCSC included multi-tick tasks.
+full benchmark 的 `validity_guard` 全部通过：mode、network 和 seed 不完全相同；fault detection latency 不是全零；PCSC 包含多 tick 任务。
 
-## Supported Assumptions
+## 已支持的判断
 
-- PCSC dynamic supervision produces multiple ticks and observes post-injection scene state.
-- PCSC and ETEAC differ in cloud invocation mechanism.
-- Network profile changes affect completion/recovery/communication metrics.
-- Different seeds produce reproducible differences in network-sensitive metrics.
-- Multi-crash restart recovery can reach a legal terminal state without repeating completed steps.
+- PCSC 动态 supervision 会产生多次 tick，并能观察注入后的场景状态。
+- PCSC 与 ETEAC 的云端调用机制不同。
+- network profile 会影响 completion、recovery 和 communication 指标。
+- 不同 seed 会在网络敏感指标上产生可复现差异。
+- 多崩溃点 restart recovery 可以在不重复已完成步骤的情况下到达合法终态。
 
-## Unsupported Assumptions
+## 尚不支持的判断
 
-- Aggregate completion time did not vary by seed in this benchmark; seed effects were visible in communication and recovery metrics instead.
-- No real hardware safety or performance claim is supported by Phase 8.2 data.
+- 本 benchmark 中聚合完成时间没有随 seed 变化；seed 影响主要体现在通信和恢复指标。
+- Phase 8.2 数据不支持任何真实硬件安全或性能结论。

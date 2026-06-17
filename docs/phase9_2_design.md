@@ -1,41 +1,41 @@
-# Phase 9.2 Design
+# Phase 9.2 设计
 
-Phase 9.2 closes the simulation validation stack above the Phase 9 MuJoCo core and Phase 9.1 ROS 2 / MoveIt runtime acceptance.
+Phase 9.2 关闭的是 Phase 9 MuJoCo 核心之上的仿真验证栈，以及 Phase 9.1 ROS 2 / MoveIt 运行时验收之上的补充验证。
 
-The target success state is `PHASE9_2_ACCEPTED`, meaning:
+目标状态是 `PHASE9_2_ACCEPTED`，也就是：
 
-- ROS 2 remains `ROS2_INTEGRATION_VALIDATED`.
-- MoveIt 2 remains `MOVEIT_SAFETY_VALIDATED`.
-- A real Isaac Sim 6.0 process produces `ISAAC_SMOKE_VALIDATED`.
-- Isaac benchmark artifacts are `PASSED`.
-- MuJoCo and Isaac paired artifacts produce `CROSS_BACKEND_VALIDATED`.
-- Phase 9.1 aggregate can advance to `PHASE9_1_ACCEPTED`.
-- Safety pressure remains passed with complete artifact provenance.
+- ROS 2 仍然是 `ROS2_INTEGRATION_VALIDATED`。
+- MoveIt 2 仍然是 `MOVEIT_SAFETY_VALIDATED`。
+- 真正的 Isaac Sim 6.0 进程产出 `ISAAC_SMOKE_VALIDATED`。
+- Isaac benchmark artifact 结果是 `PASSED`。
+- MuJoCo 与 Isaac 的成对 artifact 产出 `CROSS_BACKEND_VALIDATED`。
+- Phase 9.1 aggregate 可以推进到 `PHASE9_1_ACCEPTED`。
+- 安全压力测试保持通过，并且 artifact 溯源完整。
 
-## Runtime Boundaries
+## 运行边界
 
-Isaac Sim is never imported into the core Python or conda environment. The only supported runtime paths are:
+Isaac Sim 永远不会被导入到核心 Python 或 conda 环境。唯一支持的运行路径是：
 
-- Standalone: `ISAAC_RUNTIME_MODE=standalone` and `ISAAC_SIM_ROOT/python.sh`.
-- Container: `ISAAC_RUNTIME_MODE=container` and a fixed Isaac Sim 6.0 image tag plus recorded digest.
+- Standalone：`ISAAC_RUNTIME_MODE=standalone`，使用 `ISAAC_SIM_ROOT/python.sh`。
+- Container：`ISAAC_RUNTIME_MODE=container`，并使用固定的 Isaac Sim 6.0 镜像 tag 和记录过的 digest。
 
-The core package talks to Isaac through an external JSONL process protocol. Source guards and protocol fixtures are useful for CI, but they are not runtime validation.
+核心包通过外部 JSONL 进程协议和 Isaac 通信。源码守卫和协议 fixture 对 CI 有帮助，但不能代替运行时验证。
 
-## Evidence Flow
+## 证据流
 
 ```text
-Compatibility check
+兼容性检查
   -> Isaac standalone app
-  -> Isaac smoke artifacts
-  -> Isaac benchmark artifacts
-  -> MuJoCo / Isaac paired runs
+  -> Isaac smoke artifact
+  -> Isaac benchmark artifact
+  -> MuJoCo / Isaac 成对运行
   -> Phase 9.2 aggregate verifier
 ```
 
-`scripts/phase9/isaac_standalone_app.py` owns the real Isaac `SimulationApp` lifecycle. It creates or loads a USD stage, adds a Panda/Franka articulation, table, target, obstacle, RGB-D camera, and contact sensor, advances physics, and writes process provenance plus sensor artifacts.
+`scripts/phase9/isaac_standalone_app.py` 负责真实 Isaac `SimulationApp` 生命周期。它会创建或加载 USD stage，添加 Panda/Franka articulation、table、target、obstacle、RGB-D camera 和 contact sensor，推进物理，并写入进程溯源和传感器 artifact。
 
-The BIG-small boundary remains unchanged: MoveIt plans; execution continues through the edge safety boundary.
+BIG-small 的边界保持不变：MoveIt 只负责规划；执行仍然经过边缘安全边界。
 
-## Non-Goals
+## 非目标
 
-Phase 9.2 does not validate a real robot. It does not claim real camera calibration, hardware emergency-stop wiring, or physical manipulator performance.
+Phase 9.2 不验证真实机械臂。它不声明真实相机标定、硬件急停接线或物理机械臂性能。

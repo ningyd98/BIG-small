@@ -1,23 +1,19 @@
-# Real Robot Acceptance Levels
+# 真实硬件分级验收
 
-Current highest real hardware acceptance level is `NONE`. Documentation
-governance does not promote acceptance levels.
+当前最高真实硬件验收级别是 `NONE`。文档治理不会提升验收级别。
 
-Phase 10 defines physical hardware acceptance as a single-level-at-a-time
-process. The CLI never runs all levels automatically.
+Phase 10 的真实硬件验收必须一次只推进一个级别。CLI 不会自动连续运行所有级别。
 
-| Level | Scope | Motion |
+| 级别 | 范围 | 运动情况 |
 | --- | --- | --- |
-| LEVEL_0 | Read joint, TCP, controller, emergency stop, and fault state | No |
-| LEVEL_1 | SAFE_STOP and controller enable/disable checks | No displacement |
-| LEVEL_2 | Single-joint small motion | Low-speed, independently confirmed |
-| LEVEL_3 | Small TCP free-space motion | Low-speed, away from people/obstacles |
-| LEVEL_4 | HOME and named safe poses | Verified named poses only |
-| LEVEL_5 | Empty grasp flow | No object contact |
-| LEVEL_6 | Soft object, fixed position, low-speed grasp | Controlled contact |
+| `LEVEL_0` | 读取关节、TCP、控制器、急停和故障状态 | 无运动 |
+| `LEVEL_1` | SAFE_STOP 和控制器 enable/disable 检查 | 无位移 |
+| `LEVEL_2` | 单关节小幅运动 | 低速，独立确认 |
+| `LEVEL_3` | TCP 小幅自由空间运动 | 低速，远离人员和障碍物 |
+| `LEVEL_4` | HOME 和命名安全姿态 | 只允许已验证命名姿态 |
+| `LEVEL_5` | 空夹爪流程 | 不接触物体 |
+| `LEVEL_6` | 固定位置软物体低速抓取 | 受控接触 |
 
-The highest passed level is persisted with full history, source tree hash,
-config hash, robot identity hash, evidence path, and operator confirmation
-metadata. Levels cannot be skipped: `NONE` can only advance to `LEVEL_0`, then
-to `LEVEL_1`, and so on. Current repository evidence has no passed physical
-level; real hardware validation is `NOT_STARTED`.
+通过的最高级别会带完整历史、source tree hash、config hash、robot identity hash、证据路径和操作员确认元数据一起持久化。
+
+级别不能跳过：`NONE` 只能升到 `LEVEL_0`，然后是 `LEVEL_1`，依次推进。当前仓库证据中没有任何已通过的物理级别；真实硬件验证仍是 `NOT_STARTED`。

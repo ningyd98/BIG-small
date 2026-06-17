@@ -1,119 +1,50 @@
-# Phase 8.1 Gap Analysis
+# Phase 8.1 差距分析
 
-Phase 8 added a deterministic experiment framework, but its runner still mixes
-formal production services with synthetic experiment-side outcomes. Phase 8.1
-keeps the Phase 8 models, CLI, scenarios, artifacts, and reproducibility
-surface, and replaces those synthetic outcomes with a runtime harness that
-drives the Phase 3-7 control chain.
+Phase 8 已经提供了确定性的实验框架，但 runner 里仍混有一部分实验侧的合成结果。Phase 8.1 不改 Phase 8 的模型、CLI、场景、artifact 和复现实验入口，重点是把这些合成结果替换为真正驱动 Phase 3-7 控制链的运行时 harness。
 
-## Synthetic Behavior Found
+## 已发现的合成行为
 
-- `ExperimentRunner._run_network_warmup()` schedules network deliveries and then
-  calls `VirtualClock.run_until_idle()` before task execution. Because scenario
-  faults are already scheduled on the same clock, dynamic faults fire before any
-  atomic step starts.
-- `ExperimentRunner._execute_step()` advances virtual time, records telemetry and
-  commands, records `SafetyDecision.ALLOW`, marks completed steps, and recursively
-  simulates grasp retry. It does not call `TaskExecutor`.
-- Scenario branches in `_execute_scenario()` directly set safety, replan, cache,
-  SQLite restart, and command rejection counters.
-- S10 currently records stale, duplicate, and reordered command counters without
-  delivering malformed or stale commands to the edge command validation path.
-- `_cloud_invocations()` derives cloud calls from completed step counts and mode
-  formulas instead of supervisor, planner, or replanning service records.
-- Fault detection and recovery latency are assigned constants in `_apply_fault()`
-  rather than derived from fault, detection, ACK, and recovery events.
-- `_switch_mode()` calls `ModeTransitionService.prepare()` and then immediately
-  mutates `current_mode`; no persisted status commit/abort boundary is exercised.
-- `_simulate_sqlite_restart()` only reopens auto-mode and event-autonomy
-  repositories after a minimal write; it does not continue through crash points
-  involving risk snapshots, decisions, transitions, replans, checkpoints, outbox,
-  command ACKs, or skill execution statistics.
+- `ExperimentRunner._run_network_warmup()` 会先安排网络投递，再调用 `VirtualClock.run_until_idle()`。场景故障也挂在同一个时钟上，因此动态故障可能在任何原子步骤开始前就触发。
+- `ExperimentRunner._execute_step()` 直接推进虚拟时间、记录遥测和命令、写入 `SafetyDecision.ALLOW`、标记步骤完成，并用递归方式模拟抓取重试；它没有调用 `TaskExecutor`。
+- `_execute_scenario()` 中的场景分支直接设置 safety、replan、cache、SQLite restart 和 command rejection 计数。
+- S10 目前只记录 stale、duplicate 和 reordered command 计数，没有把异常或过期命令交给边缘命令校验路径。
+- `_cloud_invocations()` 根据已完成步骤数和模式公式推导云端调用次数，而不是读取 supervisor、planner 或 replanning service 的真实记录。
+- `_apply_fault()` 用常量填充故障检测和恢复延迟，没有从故障、检测、ACK 和恢复事件中计算。
+- `_switch_mode()` 调用 `ModeTransitionService.prepare()` 后立即修改 `current_mode`，没有真正经历持久化状态的 commit/abort 边界。
+- `_simulate_sqlite_restart()` 只对 auto-mode 和 event-autonomy repository 做最小写入后重开，没有覆盖 risk snapshot、decision、transition、replan、checkpoint、outbox、command ACK 或技能执行统计等崩溃点。
 
-## Existing Production Entrypoints
+## 可复用的生产入口
 
-- Contract validation and command acceptance:
-  `edge.contract_validator.EdgeContractValidator.accept_payload()` and
-  `TaskRepository.accept_command()` in `repositories.memory` and
-  `repositories.sqlite`.
-- Execution:
-  `edge.runtime.task_executor.TaskExecutor.submit_contract()` already performs
-  `TaskContract -> EdgeContractValidator -> TaskStateMachine -> SafetyShield ->
-  SafetySkillExecutor -> SkillRegistry -> MockRobotAdapter -> repositories`.
-- Safety:
-  `edge.safety.shield.SafetyShield` and `edge.safety.safety_skill_executor`
-  emit safety audit events into the runtime repository.
-- PCSC:
-  `cloud.supervision.service.PeriodicSupervisorService.evaluate_snapshot()` and
-  `cloud.supervision.repository.*SupervisionRepository` persist snapshots,
-  supervisor decisions, planner invocation flags, version CAS, and audit events.
-- ETEAC:
-  `edge.event_mode.controller.EventTriggeredModeController`,
-  `edge.recovery.retry_budget.RetryBudgetService`,
-  `cloud.replanning.service.LocalReplanningService`, and
-  `cloud.replanning.apply_service.ReplanApplyService` cover event detection,
-  retry budget consumption, failure summaries, outbox, cloud replan, CAS apply,
-  ACK persistence, checkpoint merge, and resume.
-- Mode switching:
-  `auto_mode.selector.AutoModeSelector`, `auto_mode.transition_service`, and
-  `auto_mode.repository.*AutoModeRepository` support persisted risk snapshots,
-  decisions, prepared transitions, statuses, commit, abort, idempotency, and
-  restart lookup.
-- Skill cache:
-  `skill_cache.repository.*SkillCacheRepository` supports trusted lookup,
-  execution records, promotion, quarantine, invalidation, CAS, idempotency, and
-  SQLite restart.
-- SQLite recovery:
-  Runtime, supervision, event autonomy, auto-mode, and skill-cache repositories
-  already have persistent implementations; Phase 8.1 needs an experiment-level
-  restart harness that closes and reconstructs services around the same files.
+- 合约校验与命令接收：`edge.contract_validator.EdgeContractValidator.accept_payload()`，以及 `repositories.memory`、`repositories.sqlite` 中的 `TaskRepository.accept_command()`。
+- 执行链路：`edge.runtime.task_executor.TaskExecutor.submit_contract()` 已经串起 `TaskContract -> EdgeContractValidator -> TaskStateMachine -> SafetyShield -> SafetySkillExecutor -> SkillRegistry -> MockRobotAdapter -> repositories`。
+- 安全链路：`edge.safety.shield.SafetyShield` 和 `edge.safety.safety_skill_executor` 会向 runtime repository 写入 safety audit event。
+- PCSC：`cloud.supervision.service.PeriodicSupervisorService.evaluate_snapshot()` 与 `cloud.supervision.repository.*SupervisionRepository` 已覆盖 snapshot、supervisor decision、planner invocation flag、version CAS 和 audit event。
+- ETEAC：`edge.event_mode.controller.EventTriggeredModeController`、`edge.recovery.retry_budget.RetryBudgetService`、`cloud.replanning.service.LocalReplanningService` 和 `cloud.replanning.apply_service.ReplanApplyService` 已覆盖事件检测、重试预算、失败摘要、outbox、云端重规划、CAS apply、ACK 持久化、checkpoint 合并和恢复执行。
+- 模式切换：`auto_mode.selector.AutoModeSelector`、`auto_mode.transition_service` 和 `auto_mode.repository.*AutoModeRepository` 已支持持久化 risk snapshot、decision、prepared transition、status、commit、abort、幂等和重启查询。
+- 技能缓存：`skill_cache.repository.*SkillCacheRepository` 已支持可信查找、执行记录、promotion、quarantine、invalidation、CAS、幂等和 SQLite 重启。
+- SQLite 恢复：runtime、supervision、event autonomy、auto-mode 和 skill-cache repository 都已有持久化实现；Phase 8.1 只需要一个实验级重启 harness，在相同文件上关闭并重建服务。
 
-## Integration Strategy
+## 集成策略
 
-- Add `RuntimeExperimentHarness` as the only experiment assembly layer. It will
-  construct real contracts, repositories, `TaskExecutor`, `SafetyShield`,
-  `MockRobotAdapter`, `PeriodicSupervisorService`,
-  `EventTriggeredModeController`, `LocalReplanningService`,
-  `ReplanApplyService`, `RiskEvaluator`, `AutoModeSelector`,
-  `ModeTransitionService`, and cache repositories.
-- Add optional observer hooks to production execution components with no default
-  behavior change. The hooks will mirror repository/audit facts into experiment
-  events and advance `VirtualClock` during mock action execution.
-- Remove pre-task `run_until_idle()`. Faults use absolute virtual time and run
-  only when task execution or explicit network delivery advances the clock.
-- Make command consistency experiments call a harness command-ingress method that
-  uses `EdgeContractValidator`, repository command acceptance, scene-version
-  checks, and persisted `CommandAck` records.
-- Make AUTO transitions persist decision and prepared transition first, then
-  commit or abort only through harness methods at a step boundary. The current
-  mode is read from committed `AutoModeStatus`.
-- Add `ExperimentMetricsCollector` to rebuild metrics from formal events,
-  runtime repositories, command ACKs, supervisor decisions, replan/apply records,
-  mode transition records, safety audit events, network events, and cache records.
+- 新增 `RuntimeExperimentHarness`，作为实验侧唯一的组装层。它负责构造真实合约、repository、`TaskExecutor`、`SafetyShield`、`MockRobotAdapter`、`PeriodicSupervisorService`、`EventTriggeredModeController`、`LocalReplanningService`、`ReplanApplyService`、`RiskEvaluator`、`AutoModeSelector`、`ModeTransitionService` 和缓存 repository。
+- 给生产执行组件增加可选 observer hook，默认行为不变。hook 只把 repository/audit 事实镜像到实验事件中，并在 mock action 执行期间推进 `VirtualClock`。
+- 移除任务前的 `run_until_idle()`。故障使用绝对虚拟时间，只在任务执行或显式网络投递推进时钟时触发。
+- 命令一致性实验通过 harness 的 command-ingress 方法进入，必须走 `EdgeContractValidator`、repository 命令接收、scene-version 检查和持久化 `CommandAck` 记录。
+- AUTO transition 先持久化 decision 和 prepared transition，再在步骤边界通过 harness 方法 commit 或 abort。当前模式从已提交的 `AutoModeStatus` 读取。
+- 新增 `ExperimentMetricsCollector`，从正式事件、runtime repository、command ACK、supervisor decision、replan/apply 记录、mode transition、safety audit、network event 和 cache record 里重建指标。
 
-## Required Adapters And Fixtures
+## 必要适配器与夹具
 
-- `VirtualClockAdapter`: exposes `now()` and `monotonic()` for services that use
-  clock protocols.
-- `ExperimentTelemetryProvider` and `ExperimentSceneProvider`: deterministic
-  safety providers backed by virtual time, `MockRobotAdapter`, and
-  `SimulatedWorld`.
-- `ExperimentExecutionObserver`: records step start/completion/failure, safety
-  evaluations, and task terminal evidence without deciding outcomes.
-- `ObservableMockRobotAdapter`: or optional `MockRobotAdapter` callbacks for
-  action start/finish and virtual action duration advancement.
-- `CountingPlannerAdapter` and `CountingReplannerAdapter`: deterministic mock
-  adapters that emit formal cloud invocation events while keeping planner output
-  high level.
-- Temporary SQLite fixture directories for S15 crash points C1-C9. The fixture
-  must close and recreate repositories/services rather than reusing old objects.
+- `VirtualClockAdapter`：向使用 clock protocol 的服务暴露 `now()` 和 `monotonic()`。
+- `ExperimentTelemetryProvider` 与 `ExperimentSceneProvider`：基于虚拟时间、`MockRobotAdapter` 和 `SimulatedWorld` 的确定性安全 provider。
+- `ExperimentExecutionObserver`：记录步骤开始、完成、失败、安全评估和任务终态证据，但不决定结果。
+- `ObservableMockRobotAdapter`：或在 `MockRobotAdapter` 上提供可选 callback，用于记录动作开始/结束并推进虚拟动作时长。
+- `CountingPlannerAdapter` 与 `CountingReplannerAdapter`：确定性 mock adapter，输出正式云端调用事件，同时保持 planner 输出的高层语义。
+- S15 崩溃点 C1-C9 需要临时 SQLite 目录。夹具必须关闭并重建 repository/service，不能复用旧对象。
 
-## Compatibility Notes
+## 兼容性约束
 
-- Phase 3-7 data models do not need incompatible field changes.
-- Optional observer/clock parameters must default to current behavior so existing
-  constructors, serialization, SQLite payloads, and tests remain compatible.
-- `AUTO` remains an experiment mode selector only; committed runtime states are
-  still `PERIODIC_CLOUD_SUPERVISION` or `EVENT_TRIGGERED_EDGE_AUTONOMY`.
-- Safety counterfactual metrics stay shadow-only and must never feed unchecked
-  actions into `TaskExecutor`.
+- Phase 3-7 的数据模型不需要破坏性字段变更。
+- 新增的 observer/clock 参数必须有默认值，保持现有构造函数、序列化、SQLite payload 和测试兼容。
+- `AUTO` 仍只是实验模式选择器；提交后的 runtime 状态仍为 `PERIODIC_CLOUD_SUPERVISION` 或 `EVENT_TRIGGERED_EDGE_AUTONOMY`。
+- 安全反事实指标只允许作为 shadow metric，绝不能把未检查动作送进 `TaskExecutor`。

@@ -1,29 +1,29 @@
-# BIG-small Architecture
+# BIG-small 架构
 
-BIG-small 采用云端智能规划、边缘安全执行架构。云端只产生高层任务契约、监督决策和重规划建议；边缘端负责契约校验、安全盾、状态机执行、恢复策略和最终执行拒绝权。
+BIG-small 采用“云端智能规划、边缘安全执行”的架构。云端只生成高层任务契约、监督决策和重规划建议；边缘端负责契约校验、安全盾、状态机执行、恢复策略，并保留最终执行拒绝权。
 
 ## 1. 总体分层
 
-- **Contract Layer**: `TaskContract`、Telemetry、CloudCommand、FailureSummary 和 schema/provenance 字段。
-- **Cloud Intelligence Layer**: planning、supervision、local replanning、risk-aware scheduling。
-- **Edge Runtime Layer**: `EdgeContractValidator`、`TaskExecutor`、SkillRegistry、Repository、AuditLog。
-- **Safety Layer**: `SafetyShield`、StopController、telemetry/scene providers、safety rules。
-- **Coordination Mode Layer**: `PCSC`、`ETEAC` 和 `AUTO 双模式选择器`。
-- **Experiment and Evidence Layer**: Phase 8+ experiments、artifacts、statistics、source tree hash 和 verifier。
-- **Simulation and Robotics Integration Layer**: Mock、MuJoCo、Isaac Sim、ROS 2 / MoveIt。
-- **Real Robot Safety Boundary**: RealRobotConfig、HardwareExecutionGate、OperatorConfirmation、acceptance levels。
-- **Future Dashboard Layer**: reserved `dashboard/` for Phase 10.2B console only.
+- **契约层**：`TaskContract`、telemetry、`CloudCommand`、`FailureSummary`，以及 schema/provenance 字段。
+- **云端智能层**：planning、supervision、本地重规划和风险感知调度。
+- **边缘运行时层**：`EdgeContractValidator`、`TaskExecutor`、`SkillRegistry`、repository 和 audit log。
+- **安全层**：`SafetyShield`、`StopController`、telemetry/scene provider 和 safety rule。
+- **协同模式层**：`PCSC`、`ETEAC` 和 `AUTO 双模式选择器`。
+- **实验与证据层**：Phase 8+ experiment、artifact、statistics、source tree hash 和 verifier。
+- **仿真与机器人集成层**：Mock、MuJoCo、Isaac Sim、ROS 2 / MoveIt。
+- **真实机械臂安全边界**：`RealRobotConfig`、`HardwareExecutionGate`、`OperatorConfirmation` 和 acceptance level。
+- **控制台预留层**：`dashboard/` 仅用于 Phase 10.2B 实验与安全验收控制台。
 
-## 2. System Overview
+## 2. 系统总览
 
 ```mermaid
 flowchart LR
-  User[User / Task] --> Cloud[Cloud Intelligence Layer]
+  User[用户 / 任务] --> Cloud[云端智能层]
   Cloud --> Contract[TaskContract]
-  Contract --> Validator[Edge Contract Validator]
+  Contract --> Validator[边缘契约校验]
   Validator --> Shield[SafetyShield]
   Shield --> Executor[TaskExecutor]
-  Executor --> Adapter[RobotAdapter Boundary]
+  Executor --> Adapter[RobotAdapter 边界]
   Adapter --> Mock[Mock]
   Adapter --> MuJoCo[MuJoCo]
   Adapter --> Isaac[Isaac Sim]
@@ -31,61 +31,61 @@ flowchart LR
   Adapter --> Real[RealRobotAdapter]
   Real --> Gate[HardwareExecutionGate]
   Gate --> Confirm[OperatorConfirmation]
-  Executor --> Evidence[Evidence Pipeline]
-  Evidence --> Verifiers[Verifiers and Reports]
+  Executor --> Evidence[证据流水线]
+  Evidence --> Verifiers[验证器与报告]
 ```
 
-No browser, cloud model, or user instruction can directly command joints. All action paths pass through the edge runtime and safety boundary.
+浏览器、云模型或用户指令都不能直接命令关节。所有动作路径都必须经过边缘运行时和安全边界。
 
-## 3. PCSC Sequence
+## 3. PCSC 序列
 
 ```mermaid
 sequenceDiagram
-  participant Edge
-  participant Cloud
-  participant Safety
-  Edge->>Cloud: periodic state summary
-  Cloud->>Edge: supervision decision
-  Edge->>Safety: validate next action
-  Safety-->>Edge: allow / reject / safe stop
-  Edge->>Edge: execute accepted atomic step
+  participant Edge as 边缘端
+  participant Cloud as 云端
+  participant Safety as 安全边界
+  Edge->>Cloud: 周期状态摘要
+  Cloud->>Edge: 监督决策
+  Edge->>Safety: 校验下一步动作
+  Safety-->>Edge: 允许 / 拒绝 / 安全停止
+  Edge->>Edge: 执行已接受原子步骤
 ```
 
-`PCSC` is periodic supervision. It does not bypass the edge executor.
+`PCSC` 表示周期云端监督。它不会绕过边缘 executor。
 
-## 4. ETEAC Sequence
+## 4. ETEAC 序列
 
 ```mermaid
 sequenceDiagram
-  participant Executor
-  participant Detector
-  participant Recovery
-  participant Cloud
-  Executor->>Detector: step result and telemetry
-  Detector-->>Recovery: event detected
-  Recovery-->>Executor: retry / local recovery
-  Recovery->>Cloud: local replanning request when budget exhausted
-  Cloud-->>Executor: patched high-level contract
+  participant Executor as 执行器
+  participant Detector as 事件检测
+  participant Recovery as 本地恢复
+  participant Cloud as 云端
+  Executor->>Detector: 步骤结果与 telemetry
+  Detector-->>Recovery: 检测到事件
+  Recovery-->>Executor: retry / 本地恢复
+  Recovery->>Cloud: 预算耗尽后请求本地重规划
+  Cloud-->>Executor: 修补后的高层契约
 ```
 
-`ETEAC` keeps local recovery deterministic and only escalates high-level replanning.
+`ETEAC` 让本地恢复保持确定性，只在需要高层重规划时升级到云端。
 
-## 5. AUTO Boundary
+## 5. AUTO 边界
 
 ```mermaid
 flowchart TD
-  Risk[RiskSnapshot] --> Auto[AUTO Selector]
-  Cache[Skill Cache Signal] --> Auto
-  Safety[Safety Boundary] --> Auto
-  Auto --> Keep[Keep Current Mode]
+  Risk[RiskSnapshot] --> Auto[AUTO 选择器]
+  Cache[Skill Cache 信号] --> Auto
+  Safety[安全边界] --> Auto
+  Auto --> Keep[保持当前模式]
   Auto --> PCSC[PERIODIC_CLOUD_SUPERVISION]
   Auto --> ETEAC[EVENT_TRIGGERED_EDGE_AUTONOMY]
-  Auto --> Pause[Pause / Request Observation / Safe Stop]
+  Auto --> Pause[暂停 / 请求观测 / 安全停止]
 ```
 
-AUTO is not a third execution engine. It selects between PCSC and ETEAC under dwell time, cooldown, switch limit, and safety constraints.
+AUTO 不是第三种执行引擎。它在 dwell time、cooldown、switch limit 和安全约束下，在 PCSC 与 ETEAC 之间做选择。
 
-## 6. Phase 10 Dry-Run and Hardware Boundary
+## 6. Phase 10 Dry-Run 与硬件边界
 
 ```mermaid
 flowchart LR
@@ -95,15 +95,15 @@ flowchart LR
   Planner --> Synthetic[SyntheticDryRunPlanner]
   Planner --> MoveIt[MoveItRuntimeDryRunPlanner]
   MoveIt --> Planned[PLANNED_ONLY]
-  Synthetic --> Framework[Framework Evidence]
+  Synthetic --> Framework[框架证据]
   Planned --> Gate[HardwareExecutionGate]
-  Gate -->|not enabled| Reject[Fail Closed]
-  Gate -->|site approved future path| Real[RealRobotAdapter]
+  Gate -->|未启用| Reject[Fail Closed]
+  Gate -->|未来现场批准路径| Real[RealRobotAdapter]
 ```
 
-Phase 10.2A status is `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`: MoveIt runtime planning evidence exists, `sent_to_hardware=false`, `hardware_motion_observed=false`, no real controller is contacted, and no execute call is made.
+Phase 10.2A 状态为 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`：已有 MoveIt runtime planning evidence，`sent_to_hardware=false`，`hardware_motion_observed=false`，没有联系真实 controller，也没有调用 execute。
 
-## 7. Evidence Provenance Flow
+## 7. 证据溯源流
 
 ```mermaid
 flowchart LR
@@ -115,27 +115,27 @@ flowchart LR
   Check --> Status[Accepted / Rejected / Development Evidence]
 ```
 
-Phase 10 evidence records `generated_from_commit`, `source_tree_hash`, `worktree_clean`, `diff_hash`, verifier version, command, config hash, environment hash, and timestamp.
+Phase 10 evidence 记录 `generated_from_commit`、`source_tree_hash`、`worktree_clean`、`diff_hash`、verifier version、command、config hash、environment hash 和 timestamp。
 
-## 8. Robotics Integration
+## 8. 机器人集成
 
-- MuJoCo is the CI-friendly physical simulation backend.
-- Isaac Sim 6.0 runtime validation is independent-process based and writes Phase 9.2 evidence.
-- ROS 2 / MoveIt safety validation is runtime evidence, not a source guard.
-- MoveIt Runtime Dry-Run plans but does not execute.
-- Real Robot Read-Only and Real Robot Motion remain not started.
+- MuJoCo 是适合 CI 的物理仿真后端。
+- Isaac Sim 6.0 runtime validation 基于独立进程，并写入 Phase 9.2 evidence。
+- ROS 2 / MoveIt safety validation 是 runtime evidence，不是源码守卫。
+- MoveIt Runtime Dry-Run 只规划，不执行。
+- Real Robot Read-Only 和 Real Robot Motion 仍未开始。
 
-## 9. Dashboard Reservation
+## 9. 控制台预留
 
-`dashboard/` is reserved for Phase 10.2B Experiment and Safety Acceptance Console. The frontend may call FastAPI/WebSocket APIs for status, gates, and evidence browsing. It must not connect directly to ROS 2 trajectory topics, MoveIt execute, or a real controller.
+`dashboard/` 预留给 Phase 10.2B 实验与安全验收控制台。前端可以调用 FastAPI/WebSocket API 读取 status、gate 和 evidence，但不能直接连接 ROS 2 trajectory topic、MoveIt execute 或真实 controller。
 
-## 10. Verification References
+## 10. 验证入口
 
-- Core checks: `scripts/verify_project.py --profile ci`
-- Phase 9 core: `scripts/verify_phase9.py`
-- Phase 9.1 ROS 2 / MoveIt: `scripts/verify_phase9_1.py --skip-history`
-- Phase 9.2 Isaac/cross-backend: `scripts/verify_phase9_2.py --output artifacts/phase9_2/final`
-- Phase 10 config/gate: `scripts/verify_phase10_0.py`
-- Phase 10 Synthetic Dry-Run: `scripts/verify_phase10_1.py`
-- Phase 10 MoveIt Runtime Dry-Run: `scripts/verify_phase10_moveit_dry_run.py`
-- Phase 10.2A aggregate: `scripts/verify_phase10_2a.py`
+- 核心检查：`scripts/verify_project.py --profile ci`
+- Phase 9 core：`scripts/verify_phase9.py`
+- Phase 9.1 ROS 2 / MoveIt：`scripts/verify_phase9_1.py --skip-history`
+- Phase 9.2 Isaac/cross-backend：`scripts/verify_phase9_2.py --output artifacts/phase9_2/final`
+- Phase 10 config/gate：`scripts/verify_phase10_0.py`
+- Phase 10 Synthetic Dry-Run：`scripts/verify_phase10_1.py`
+- Phase 10 MoveIt Runtime Dry-Run：`scripts/verify_phase10_moveit_dry_run.py`
+- Phase 10.2A aggregate：`scripts/verify_phase10_2a.py`

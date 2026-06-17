@@ -1,23 +1,19 @@
-# Phase 8 Reproducibility
+# Phase 8 可复现性
 
-Run a smoke suite:
+运行 smoke 套件：
 
 ```bash
 python scripts/run_phase8_experiments.py --suite smoke --output experiments/results/smoke
 ```
 
-Run the full suite:
+运行完整套件：
 
 ```bash
 python scripts/run_phase8_experiments.py --suite full --seeds 0:9 --output experiments/results/full
 ```
 
-The normalized config hash ignores artifact directory paths and includes mode,
-scenario, seed, network, cache policy, risk policy, timeout, and ablations.
+归一化 config hash 会忽略 artifact 目录路径，但包含 mode、scenario、seed、network、cache policy、risk policy、timeout 和 ablation。
 
-Seed propagation covers network jitter/loss/duplication/reordering, scenario
-fault ordering, simulated retries, and deterministic result hashes. Wall-clock
-timestamps are not part of reproducibility comparisons.
+seed 传播覆盖网络 jitter/loss/duplication/reordering、场景故障顺序、模拟重试和确定性结果 hash。wall-clock 时间戳不参与可复现性比较。
 
-Each run writes `run_manifest.json`, `raw_runs.jsonl`, `events.jsonl`,
-`summary.csv`, `summary.json`, and `report.md`.
+每次运行写入 `run_manifest.json`、`raw_runs.jsonl`、`events.jsonl`、`summary.csv`、`summary.json` 和 `report.md`。

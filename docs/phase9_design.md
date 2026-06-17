@@ -1,9 +1,11 @@
-# Phase 9 Design
+# Phase 9 设计
 
-Phase 9 adds a simulator boundary below the existing `TaskExecutor`, `SafetyShield`, and skill registry:
+Phase 9 在既有 `TaskExecutor`、`SafetyShield` 和技能注册表下方增加仿真边界：
 
-`TaskContract -> EdgeContractValidator -> SafetyShield -> TaskExecutor -> SkillExecutor -> PhysicsRobotAdapter -> SimulatorBackend -> physics state / contacts / sensors`.
+```text
+TaskContract -> EdgeContractValidator -> SafetyShield -> TaskExecutor -> SkillExecutor -> PhysicsRobotAdapter -> SimulatorBackend -> physics state / contacts / sensors
+```
 
-The formal backend protocol is `cloud_edge_robot_arm.simulation.backend.SimulatorBackend`. The MuJoCo implementation owns `mujoco.MjModel`, `mujoco.MjData`, actuator targets, simulation time, contact extraction, and sensor-frame generation. The adapter maps the 13 high-level skills to backend commands without exposing MuJoCo types to the upper stack.
+正式后端协议是 `cloud_edge_robot_arm.simulation.backend.SimulatorBackend`。MuJoCo 实现持有 `mujoco.MjModel`、`mujoco.MjData`、执行器目标、仿真时间、接触提取和传感器帧生成。adapter 把 13 个高层技能映射为后端命令，不把 MuJoCo 类型暴露给上层。
 
-Isaac Sim is intentionally decoupled. The core package provides protocol/client/stage/sensor/fault bridge modules and environment checks, but does not import Isaac private modules at package import time.
+Isaac Sim 故意解耦。核心包只提供协议、client、stage、sensor、fault bridge 模块和环境检查；包导入时不导入 Isaac 私有模块。

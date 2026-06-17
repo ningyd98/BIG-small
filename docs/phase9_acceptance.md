@@ -1,6 +1,6 @@
-# Phase 9 Acceptance
+# Phase 9 验收
 
-Core acceptance commands:
+核心验收命令：
 
 ```bash
 python -m compileall src scripts tests
@@ -13,4 +13,4 @@ python scripts/verify_phase9.py
 python -m pip check
 ```
 
-Current status is expected to be `PHASE9_CORE_ACCEPTED + ISAAC_VALIDATION_BLOCKED_BY_ENV` on hosts without ROS 2 Jazzy / MoveIt 2 / Isaac Sim.
+在没有 ROS 2 Jazzy / MoveIt 2 / Isaac Sim 的主机上，当前预期状态是 `PHASE9_CORE_ACCEPTED + ISAAC_VALIDATION_BLOCKED_BY_ENV`。

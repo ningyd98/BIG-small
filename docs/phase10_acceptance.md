@@ -1,10 +1,8 @@
-# Phase 10 Acceptance
+# Phase 10 验收说明
 
-Repository governance status `PHASE10_2A_REPOSITORY_DOCUMENTATION_ACCEPTED`
-means documentation, verification entrypoints, CI checks, and repository
-structure are consistent. It does not change runtime acceptance status.
+仓库治理状态 `PHASE10_2A_REPOSITORY_DOCUMENTATION_ACCEPTED` 只表示文档、验证入口、CI 检查和仓库结构一致。它不改变运行时验收状态。
 
-Allowed final statuses:
+允许出现的最终状态如下：
 
 - `PHASE10_IMPLEMENTATION_READY_ENV_BLOCKED`
 - `PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED`
@@ -14,10 +12,9 @@ Allowed final statuses:
 - `PHASE10_LOW_SPEED_MOTION_ACCEPTED`
 - `PHASE10_REAL_TASK_ACCEPTED`
 
-Without authoritative real hardware evidence, the verifier must not output
-`PHASE10_REAL_TASK_ACCEPTED`.
+没有权威真实硬件证据时，验证器不得输出 `PHASE10_REAL_TASK_ACCEPTED`。
 
-## Ordinary Verification
+## 常规验证
 
 ```bash
 python -m ruff format --check .
@@ -33,17 +30,14 @@ python scripts/verify_phase10_2a.py --skip-runtime
 python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/moveit_dry_run
 ```
 
-Expected current-host result with ROS 2 / MoveIt available:
-`PHASE10_MOVEIT_DRY_RUN_ACCEPTED`. Without MoveIt, the expected result is
-`PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED_WITH_MOVEIT_ENV_BLOCK`.
+当前主机如果具备 ROS 2 / MoveIt 环境，预期软件侧结果是 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`。如果 MoveIt 不可用，预期结果是 `PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED_WITH_MOVEIT_ENV_BLOCK`。
 
-## Hardware Verification
+## 真实硬件验证
 
-Hardware verification is manual and level-gated:
+真实硬件验证必须人工触发，并且按级别推进：
 
 ```bash
 python scripts/run_phase10_acceptance_level.py --level LEVEL_0 --output artifacts/phase10/acceptance
 ```
 
-Only one level may be requested per command. A site operator must confirm the
-workspace, emergency stop, and physical isolation before any motion level.
+每条命令只能请求一个级别。进入任何运动级别前，现场操作员必须确认工作空间、急停和物理隔离条件。

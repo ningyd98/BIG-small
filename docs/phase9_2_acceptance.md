@@ -1,14 +1,14 @@
-# Phase 9.2 Acceptance
+# Phase 9.2 验收
 
-## Statuses
+## 状态
 
-- `PHASE9_2_ACCEPTED`: Isaac smoke, Isaac benchmark, MuJoCo-Isaac cross-backend validation, Phase 9.1 full acceptance, safety pressure, ROS 2, MoveIt 2, and artifact provenance all pass.
-- `PHASE9_2_REJECTED`: any runtime artifact is missing, incomplete, stale, forged, or fails validation.
-- `BLOCKED_BY_ENV`: only component-level compatibility checks may use this when a required host runtime is genuinely absent.
+- `PHASE9_2_ACCEPTED`：Isaac smoke、Isaac benchmark、MuJoCo-Isaac 跨后端验证、Phase 9.1 完整验收、安全压力、ROS 2、MoveIt 2 和 artifact 溯源全部通过。
+- `PHASE9_2_REJECTED`：任一 runtime artifact 缺失、不完整、过期、伪造或校验失败。
+- `BLOCKED_BY_ENV`：仅组件级兼容性检查可以在确实缺少主机 runtime 时使用。
 
-`BLOCKED_BY_ENV` is not a pass and cannot produce `PHASE9_2_ACCEPTED`.
+`BLOCKED_BY_ENV` 不是通过状态，也不能产生 `PHASE9_2_ACCEPTED`。
 
-## Ordinary Environment
+## 普通环境
 
 ```bash
 python -m ruff format --check .
@@ -24,9 +24,9 @@ python scripts/run_phase9_2_cross_backend.py --output artifacts/phase9_2/cross_b
 python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
 ```
 
-On a non-Isaac host the expected Phase 9.2 final status is rejected or blocked by component artifacts. The verifier must not claim Isaac runtime validation.
+在非 Isaac 主机上，Phase 9.2 最终状态应为 rejected，或由组件 artifact 标明受环境阻塞。verifier 不得声称已经完成 Isaac runtime 验证。
 
-## Compatible Isaac Host
+## 兼容 Isaac 主机
 
 ```bash
 python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/environment
@@ -36,7 +36,7 @@ python scripts/run_phase9_2_cross_backend.py --run-experiments --output artifact
 python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
 ```
 
-The compatible host path must also keep the Phase 9.1 validation chain intact:
+兼容主机路径还必须保持 Phase 9.1 验证链完整：
 
 ```bash
 python scripts/verify_phase9.py
@@ -46,4 +46,4 @@ python scripts/verify_phase9_1_moveit_safety.py --output artifacts/phase9_1/move
 python scripts/verify_phase9_1.py --output artifacts/phase9_1
 ```
 
-Phase 9.2 success requires `ISAAC_SMOKE_VALIDATED`, `CROSS_BACKEND_VALIDATED`, `PHASE9_1_ACCEPTED`, and `PHASE9_2_ACCEPTED`.
+Phase 9.2 通过要求同时满足 `ISAAC_SMOKE_VALIDATED`、`CROSS_BACKEND_VALIDATED`、`PHASE9_1_ACCEPTED` 和 `PHASE9_2_ACCEPTED`。

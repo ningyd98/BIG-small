@@ -1,26 +1,26 @@
-# Phase 0 Acceptance
+# Phase 0 验收
 
-## Status
+## 状态
 
-Phase 0 is complete when the commands below pass.
+以下命令通过时，Phase 0 视为完成。
 
-## Acceptance Items
+## 验收项
 
-| Item | Status | Evidence |
+| 项目 | 状态 | 证据 |
 | --- | --- | --- |
-| Python package configuration | COMPLETE | `pyproject.toml` |
-| Ruff, MyPy, Pytest configuration | COMPLETE | `pyproject.toml` |
-| `.env.example` | COMPLETE | `.env.example` |
-| Structured JSON logging | COMPLETE | `src/cloud_edge_robot_arm/logging_utils.py` |
-| Required Pydantic models | COMPLETE | `src/cloud_edge_robot_arm/contracts/models.py` |
-| JSON Schema exports | COMPLETE | `model_json_schema()` tests |
-| Five valid contract examples | COMPLETE | `contracts/examples/valid` |
-| Five invalid contract examples | COMPLETE | `contracts/examples/invalid` |
-| Automated contract validation script | COMPLETE | `scripts/validate_contract_examples.py` |
-| Cloud model integration | BLOCKED | Intentionally deferred until after Phase 1 acceptance |
-| Real robot integration | BLOCKED | Intentionally deferred until Phase 9 |
+| Python 包配置 | 完成 | `pyproject.toml` |
+| Ruff、MyPy、Pytest 配置 | 完成 | `pyproject.toml` |
+| `.env.example` | 完成 | `.env.example` |
+| 结构化 JSON 日志 | 完成 | `src/cloud_edge_robot_arm/logging_utils.py` |
+| 必需 Pydantic 模型 | 完成 | `src/cloud_edge_robot_arm/contracts/models.py` |
+| JSON Schema 导出 | 完成 | `model_json_schema()` 测试 |
+| 五个有效契约示例 | 完成 | `contracts/examples/valid` |
+| 五个无效契约示例 | 完成 | `contracts/examples/invalid` |
+| 自动契约验证脚本 | 完成 | `scripts/validate_contract_examples.py` |
+| 云端模型集成 | 阻塞 | 明确推迟到 Phase 1 验收之后 |
+| 真实机械臂集成 | 阻塞 | 明确推迟到 Phase 9 |
 
-## Commands
+## 命令
 
 ```bash
 ruff check .

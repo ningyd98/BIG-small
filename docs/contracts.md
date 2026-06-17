@@ -1,6 +1,6 @@
-# Contract Models
+# 契约模型
 
-## Required Phase 0 Models
+## Phase 0 必需模型
 
 - `TaskContract`
 - `Telemetry`
@@ -12,23 +12,23 @@
 - `ActionResult`
 - `Pose`
 
-All traceable messages include `task_id`, `plan_version`, `command_seq`, and timezone-aware `timestamp`.
+所有可追踪消息都包含 `task_id`、`plan_version`、`command_seq` 和带时区的 `timestamp`。
 
 ## JSON Schema
 
-Schemas are generated from Pydantic with `model_json_schema()`. The acceptance tests verify that each required model exports an object schema with declared properties.
+Schema 由 Pydantic 的 `model_json_schema()` 生成。验收测试会确认每个必需模型都导出对象 schema，并声明属性。
 
-## Examples
+## 示例
 
-Contract examples live under:
+契约示例位于：
 
 - `contracts/examples/valid`
 - `contracts/examples/invalid`
 
-Validate them with:
+验证示例：
 
 ```bash
 python scripts/validate_contract_examples.py
 ```
 
-The validator accepts valid examples through `TaskContract` and `EdgeContractValidator`, and confirms invalid examples are rejected by schema or edge validation.
+验证器通过 `TaskContract` 和 `EdgeContractValidator` 接受有效示例，并确认无效示例会被 schema 或边缘校验拒绝。

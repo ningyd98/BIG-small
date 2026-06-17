@@ -1,33 +1,33 @@
-# Phase 9 Report
+# Phase 9 报告
 
-Status: `PHASE9_CORE_ACCEPTED + ISAAC_VALIDATION_BLOCKED_BY_ENV`.
+状态：`PHASE9_CORE_ACCEPTED + ISAAC_VALIDATION_BLOCKED_BY_ENV`。
 
-Environment summary from `verify_phase9.py`:
+`verify_phase9.py` 记录的环境摘要：
 
-- OS: Linux 7.0.0-22-generic x86_64
-- CPU: AMD Ryzen 7 5800X
-- GPU: NVIDIA GeForce RTX 4070 Ti SUPER
-- Driver: 595.71.05
-- Python: 3.12.7
-- MuJoCo: 3.9.0
-- ROS 2 / MoveIt 2: blocked by environment
-- Isaac Sim: blocked by environment
+- OS：Linux 7.0.0-22-generic x86_64
+- CPU：AMD Ryzen 7 5800X
+- GPU：NVIDIA GeForce RTX 4070 Ti SUPER
+- Driver：595.71.05
+- Python：3.12.7
+- MuJoCo：3.9.0
+- ROS 2 / MoveIt 2：环境阻塞
+- Isaac Sim：环境阻塞
 
-MuJoCo runs:
+MuJoCo 运行：
 
-- smoke: 18
-- validation: 2250
-- full: 11250
-- fixed normal static acceptance: 20/20 illegal-collision-free trials
+- smoke：18
+- validation：2250
+- full：11250
+- 固定 normal static 验收：20/20 次试验无非法碰撞
 
-Full benchmark metrics:
+完整 benchmark 指标：
 
-- success rate: 0.92
-- mean completion time: 972.0 ms
-- illegal collisions: 0
-- PCSC/GOOD: cloud calls 3.0, detection latency 100.0 ms, completion 845.0 ms
-- ETEAC/SEVERE: cloud calls 1.0, detection latency 640.0 ms, recovery 840.0 ms, retransmissions 3.0
-- AUTO/NORMAL: cloud calls 2.0, mode switches 1.0, completion 840.0 ms
-- seed 0 vs seed 9: joint RMSE mean 0.262719 vs 0.269485; sensor latency mean 6.369358 ms vs 19.24065 ms
+- 成功率：0.92
+- 平均完成时间：972.0 ms
+- 非法碰撞：0
+- PCSC/GOOD：云端调用 3.0，检测延迟 100.0 ms，完成时间 845.0 ms
+- ETEAC/SEVERE：云端调用 1.0，检测延迟 640.0 ms，恢复时间 840.0 ms，重传 3.0
+- AUTO/NORMAL：云端调用 2.0，模式切换 1.0，完成时间 840.0 ms
+- seed 0 vs seed 9：joint RMSE 平均值 0.262719 vs 0.269485；sensor latency 平均值 6.369358 ms vs 19.24065 ms
 
-Isaac and ROS results are not claimed; their artifacts record blocked environment reasons.
+Isaac 和 ROS 结果没有被声明为通过；对应 artifact 只记录环境阻塞原因。

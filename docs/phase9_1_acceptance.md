@@ -1,16 +1,16 @@
-# Phase 9.1 Acceptance
+# Phase 9.1 验收
 
-Phase 9.1 tightens the ROS 2, MoveIt 2, Isaac Sim, and cross-backend verification boundary introduced in Phase 9.
+Phase 9.1 收紧 Phase 9 引入的 ROS 2、MoveIt 2、Isaac Sim 和跨后端验证边界。
 
-The current host has completed ROS 2 and MoveIt 2 runtime validation, but Phase 9.1 remains accepted only as `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK` because Isaac Sim, Isaac benchmark validation, and cross-backend comparison are still blocked by environment.
+当前主机已经完成 ROS 2 和 MoveIt 2 runtime 验证，但因为 Isaac Sim、Isaac benchmark 验证和跨后端对比仍受环境阻塞，Phase 9.1 只能接受为 `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`。
 
-## Status Vocabulary
+## 状态词汇
 
-- `PHASE9_1_ACCEPTED`: core Phase 9 checks pass and ROS 2, MoveIt 2, Isaac Sim, Isaac benchmark, and cross-backend validation all run on a compatible host with complete runtime evidence artifacts.
-- `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`: core Phase 9 checks pass, ROS 2 is `ROS2_INTEGRATION_VALIDATED`, MoveIt 2 is `MOVEIT_SAFETY_VALIDATED`, and only Isaac Sim plus Isaac-dependent cross-backend comparison are blocked by host environment.
-- `PHASE9_1_REJECTED`: core regression, safety pressure, artifact integrity, or verifier execution fails.
+- `PHASE9_1_ACCEPTED`：核心 Phase 9 检查通过，并且 ROS 2、MoveIt 2、Isaac Sim、Isaac benchmark、跨后端验证都在兼容主机上真实运行，运行证据完整。
+- `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`：核心 Phase 9 检查通过，ROS 2 为 `ROS2_INTEGRATION_VALIDATED`，MoveIt 2 为 `MOVEIT_SAFETY_VALIDATED`，只有 Isaac Sim 和依赖 Isaac 的跨后端对比受主机环境阻塞。
+- `PHASE9_1_REJECTED`：核心回归、安全压力、artifact 完整性或验证器执行失败。
 
-## Required Commands
+## 必需命令
 
 ```bash
 scripts/phase9/install_ros2_jazzy.sh --artifact-dir artifacts/phase9_1/install
@@ -23,7 +23,7 @@ python scripts/verify_phase9_1_isaac_smoke.py
 python scripts/verify_phase9_1_cross_backend.py
 ```
 
-Full local Phase 9.1 runtime acceptance sequence:
+完整本地 Phase 9.1 runtime 验收顺序：
 
 ```bash
 python -m ruff format --check .
@@ -37,55 +37,55 @@ python scripts/verify_phase9_1_moveit_safety.py --output artifacts/phase9_1/move
 python scripts/verify_phase9_1.py --output artifacts/phase9_1
 ```
 
-For CI artifact-shape validation without rerunning Phase 9 history:
+只在 CI 中检查 artifact 结构、不重跑 Phase 9 历史时：
 
 ```bash
 python scripts/verify_phase9_1.py --skip-history
 ```
 
-## Guardrails
+## 守卫规则
 
-- A blocked ROS 2, MoveIt 2, or Isaac Sim check exits successfully only to indicate the verifier itself worked.
-- The artifact must still contain `status=BLOCKED_BY_ENV` and `validation_claimed=false`.
-- `ROS2_INTEGRATION_VALIDATED` requires `ros2_runtime_evidence.json` with passed evidence for QoS, namespace, timestamp, action timeout, cancel, and node crash/reconnect.
-- `MOVEIT_SAFETY_VALIDATED` requires `moveit_safety_evidence.json` with passed evidence for reachability, joint limits, collision scene, planning failure, execution cancellation, and emergency-stop boundary.
-- When ROS 2 is available on the host, only `ROS2_INTEGRATION_VALIDATED` can satisfy core acceptance; `ROS2_READY`, `INCOMPLETE`, `FAILED`, and unknown statuses force `PHASE9_1_REJECTED`.
-- When MoveIt 2 is available on the host, only `MOVEIT_SAFETY_VALIDATED` can satisfy core acceptance; `MOVEIT_READY`, `INCOMPLETE`, `FAILED`, and unknown statuses force `PHASE9_1_REJECTED`.
-- `BLOCKED_BY_ENV` is allowed only for components that are actually missing required host runtime dependencies. Isaac `BLOCKED_BY_ENV` must not mask missing ROS 2 or MoveIt runtime evidence.
-- MoveIt collision evidence must include a baseline plan, inserted collision object, PlanningScene confirmation with object ID/position/dimensions, replanning or rejection result, collision-free basis, trajectory delta, MoveIt error code, observed result, process provenance, and clean logs.
-- Planning timeout evidence must prove the same target succeeds under normal budget before using an extreme short budget; generic unreachable-target or invalid-constraint failures are rejected as timeout evidence.
-- Runtime evidence logs are incomplete if they contain non-whitelisted `Traceback`, `Segmentation fault`, `RCLError`, or `process exited unexpectedly`.
-- `ISAAC_SMOKE_VALIDATED` requires `isaac_smoke_evidence.json` proving an independent Isaac process loaded the stage, advanced physics, returned robot state, and produced RGB, depth, and contact sensor samples.
-- Software availability alone may only produce `NOT_RUN`, `MOVEIT_READY`, `ISAAC_READY`, or `INCOMPLETE`; it must never set `validation_claimed=true`.
-- Every blocked component records the actual commands, exit codes, stdout, and stderr that established the blocker.
-- Install readiness is dry-run by default and must record that core Python remains unchanged.
-- Independent-process protocol tests may prove JSONL handshake/replay rejection only; they do not prove Isaac validation.
-- Isaac backend guards may prove `SimulatorBackend` protocol adaptation over JSONL only; they do not prove Isaac runtime validation.
-- Isaac benchmark guards must run the `--backend isaac` entrypoint and must not fall back to MuJoCo when the host is blocked.
-- `scripts/phase9/isaac_standalone_app.py --check-imports` must run in the selected Python environment and record whether Isaac runtime imports and `SimulationApp` startup are available.
-- ROS 2 interface source guards may prove message/action/service coverage only; they do not prove ROS build or runtime validation.
-- ROS 2 bridge source guards may prove rclpy node, action timeout/cancel, feedback stale, reconnect state, and frame-conversion source coverage only; they do not prove ROS runtime validation.
-- MoveIt source guards may prove planning-boundary source coverage only; they do not prove MoveIt 2 planning or execution validation.
-- Isaac Sim validation requires a real Isaac run count greater than zero before `validation_claimed=true`.
-- Cross-backend validation requires real MuJoCo and Isaac artifacts with `backend_name`, `run_id`, `process_provenance`, `validation_claimed=true`, and comparable metrics. `env.level=ISAAC_READY` alone is not sufficient.
-- `PHASE9_1_ACCEPTED` also requires a validated Isaac benchmark artifact, completed cross-backend deltas, complete artifact provenance, safety pressure `trial_count>=500`, `illegal_collision_count=0`, `emergency_stop_post_command_count=0`, and non-static result hashes.
+- ROS 2、MoveIt 2 或 Isaac Sim 检查被环境阻塞时，命令可以成功退出，但这只表示验证器本身正常工作。
+- artifact 仍必须写入 `status=BLOCKED_BY_ENV` 和 `validation_claimed=false`。
+- `ROS2_INTEGRATION_VALIDATED` 需要 `ros2_runtime_evidence.json`，其中 QoS、namespace、timestamp、action timeout、cancel 和 node crash/reconnect 证据都通过。
+- `MOVEIT_SAFETY_VALIDATED` 需要 `moveit_safety_evidence.json`，其中可达性、关节限制、碰撞场景、规划失败、执行取消和急停边界证据都通过。
+- 主机可用 ROS 2 时，只有 `ROS2_INTEGRATION_VALIDATED` 能满足核心验收；`ROS2_READY`、`INCOMPLETE`、`FAILED` 和未知状态都会导致 `PHASE9_1_REJECTED`。
+- 主机可用 MoveIt 2 时，只有 `MOVEIT_SAFETY_VALIDATED` 能满足核心验收；`MOVEIT_READY`、`INCOMPLETE`、`FAILED` 和未知状态都会导致 `PHASE9_1_REJECTED`。
+- `BLOCKED_BY_ENV` 只允许用于确实缺少主机 runtime 依赖的组件。Isaac 的 `BLOCKED_BY_ENV` 不能掩盖缺失的 ROS 2 或 MoveIt runtime 证据。
+- MoveIt 碰撞证据必须包含 baseline plan、插入的 collision object、带对象 ID/位置/尺寸的 PlanningScene 确认、重规划或拒绝结果、collision-free 依据、trajectory delta、MoveIt error code、观测结果、进程溯源和干净日志。
+- 规划超时证据必须先证明同一目标在正常预算下成功，再使用极短预算；普通不可达目标或无效约束失败不能冒充超时证据。
+- runtime 证据日志如果包含非白名单的 `Traceback`、`Segmentation fault`、`RCLError` 或 `process exited unexpectedly`，则证据不完整。
+- `ISAAC_SMOKE_VALIDATED` 需要 `isaac_smoke_evidence.json` 证明独立 Isaac 进程加载 stage、推进物理、返回机器人状态，并产生 RGB、depth 和 contact sensor 样本。
+- 软件可用性本身只能产生 `NOT_RUN`、`MOVEIT_READY`、`ISAAC_READY` 或 `INCOMPLETE`，绝不能设置 `validation_claimed=true`。
+- 每个受阻组件都要记录确认阻塞的实际命令、退出码、stdout 和 stderr。
+- 安装准备默认 dry-run，并必须记录核心 Python 未被修改。
+- 独立进程协议测试只能证明 JSONL handshake 和 replay 拒绝，不能证明 Isaac 验证。
+- Isaac 后端守卫只能证明 JSONL 上的 `SimulatorBackend` 协议适配，不能证明 Isaac runtime 验证。
+- Isaac benchmark 守卫必须运行 `--backend isaac` 入口；主机受阻时不能回退到 MuJoCo。
+- `scripts/phase9/isaac_standalone_app.py --check-imports` 必须在选定 Python 环境中运行，并记录 Isaac runtime import 和 `SimulationApp` startup 是否可用。
+- ROS 2 接口源码守卫只能证明 message/action/service 覆盖，不能证明 ROS build 或 runtime 验证。
+- ROS 2 bridge 源码守卫只能证明 rclpy node、action timeout/cancel、feedback stale、reconnect state 和 frame-conversion 源码覆盖，不能证明 ROS runtime 验证。
+- MoveIt 源码守卫只能证明 planning-boundary 源码覆盖，不能证明 MoveIt 2 规划或执行验证。
+- Isaac Sim 验证必须有大于 0 的真实 Isaac run count，才允许 `validation_claimed=true`。
+- 跨后端验证需要真实 MuJoCo 和 Isaac artifact，包含 `backend_name`、`run_id`、`process_provenance`、`validation_claimed=true` 和可比较指标。只有 `env.level=ISAAC_READY` 不够。
+- `PHASE9_1_ACCEPTED` 还要求已验证的 Isaac benchmark artifact、完整 cross-backend deltas、完整 artifact 溯源、安全压力 `trial_count>=500`、`illegal_collision_count=0`、`emergency_stop_post_command_count=0`，以及非静态 result hashes。
 
-## Current Host Result
+## 当前主机结果
 
-The current result is:
+当前结果是：
 
 ```text
 PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK
 ```
 
-Blocked components:
+阻塞组件：
 
-- Isaac Sim: `ISAAC_SIM_ROOT` is not set and Vulkan tooling is unavailable.
-- Cross-backend comparison: blocked by the same missing Isaac runtime and missing real Isaac artifact.
+- Isaac Sim：`ISAAC_SIM_ROOT` 未设置，Vulkan 工具不可用。
+- 跨后端对比：同样缺少 Isaac runtime 和真实 Isaac artifact。
 
-Validated components:
+已验证组件：
 
-- ROS 2: `ROS2_INTEGRATION_VALIDATED` with `ros2_runtime_evidence.json`.
-- MoveIt 2: `MOVEIT_SAFETY_VALIDATED` with `moveit_safety_evidence.json`.
+- ROS 2：`ROS2_INTEGRATION_VALIDATED`，证据为 `ros2_runtime_evidence.json`。
+- MoveIt 2：`MOVEIT_SAFETY_VALIDATED`，证据为 `moveit_safety_evidence.json`。
 
-Real robot validation has not started. MoveIt remains a planner/safety-evidence runtime; execution still goes through the BIG-small edge safety boundary.
+真实机械臂验证尚未开始。MoveIt 仍是规划和安全证据 runtime；执行仍经过 BIG-small 边缘安全边界。

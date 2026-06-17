@@ -1,20 +1,16 @@
-# Sim-to-Real Evaluation
+# Sim-to-Real 评估
 
-Phase 10 prepares paired simulation and hardware result schemas. A valid pair
-must reference the same task contract hash, software commit, simulation backend,
-and real hardware backend identity.
+Phase 10 准备了仿真结果和真实硬件结果的成对 schema。一组有效配对必须引用同一个任务契约哈希、软件提交、仿真后端身份和真实硬件后端身份。
 
-Required metrics:
+必需指标包括：
 
-- planning time
-- actual execution time
-- TCP trajectory length
-- final position error
-- skill duration
-- safety interventions
-- retry count
-- success rate
+- 规划时间。
+- 实际执行时间。
+- TCP 轨迹长度。
+- 最终位置误差。
+- 技能耗时。
+- 安全介入次数。
+- 重试次数。
+- 成功率。
 
-Reports must separate model, perception, control, timing, contact, and friction
-gaps. Mock, MuJoCo, Isaac, or dry-run results cannot be used as the real backend
-side of a pair.
+报告必须分别说明模型、感知、控制、时序、接触和摩擦差距。Mock、MuJoCo、Isaac 或 dry-run 结果不能冒充一组成对结果中的真实硬件侧。

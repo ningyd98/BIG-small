@@ -1,39 +1,39 @@
-# Phase 9.2 Report
+# Phase 9.2 报告
 
-## Current Host Result
+## 当前主机结果
 
-The current host result is `PHASE9_2_ACCEPTED`.
+当前主机结果是 `PHASE9_2_ACCEPTED`。
 
-- Vulkan tooling is available through the user conda environment.
-- A local Isaac venv is auto-detected at `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1`.
-- The Phase 9.2 checker invokes `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python`.
-- Isaac Sim 6.0 `SimulationApp` starts headless and loads a local MJCF Panda/Franka stage.
-- The smoke run advances physics, samples robot state, RGB, depth, and contact sensor data, executes reset and emergency stop, and shuts down cleanly.
-- The Isaac benchmark runs 6 representative Phase 9.2 scenarios.
-- The paired MuJoCo-Isaac comparison runs 6 scenarios across 5 seeds each, for 30 paired runs.
+- 可以通过用户 conda 环境使用 Vulkan 工具。
+- 系统自动检测到本地 Isaac 虚拟环境：`$HOME/.venvs/bigsmall-isaacsim-6.0.0.1`。
+- Phase 9.2 检查器使用的是 `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python`。
+- Isaac Sim 6.0 `SimulationApp` 能以 headless 方式启动，并加载本地 MJCF Panda/Franka stage。
+- smoke 运行会推进物理、采样机器人状态、RGB、depth 和 contact sensor 数据，执行 reset 和 emergency stop，然后干净退出。
+- Isaac benchmark 会运行 6 个代表性 Phase 9.2 场景。
+- MuJoCo-Isaac 成对对比会运行 6 个场景，每个场景 5 个 seed，共 30 次成对运行。
 
-The existing authoritative completed state remains:
+现有已经确认的状态仍然是：
 
-- ROS 2: `ROS2_INTEGRATION_VALIDATED`
-- MoveIt 2: `MOVEIT_SAFETY_VALIDATED`
-- Phase 9 MuJoCo core: passed
-- Phase 9.1 source aggregate: `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`
-- Phase 9.2 final aggregate: `PHASE9_2_ACCEPTED`
+- ROS 2：`ROS2_INTEGRATION_VALIDATED`
+- MoveIt 2：`MOVEIT_SAFETY_VALIDATED`
+- Phase 9 MuJoCo 核心：通过
+- Phase 9.1 源码汇总：`PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`
+- Phase 9.2 最终汇总：`PHASE9_2_ACCEPTED`
 
-## Phase 9.2 Evidence
+## Phase 9.2 证据
 
-- Compatibility report under `artifacts/phase9_2/environment`.
-- Isaac smoke evidence under `artifacts/phase9_2/isaac`.
-- Isaac benchmark summary and runs under `artifacts/phase9_2/isaac_benchmark`.
-- Cross-backend paired artifacts under `artifacts/phase9_2/cross_backend`.
-- Final aggregate summary under `artifacts/phase9_2/final`.
-- `isaac_runtime` pytest marker for real Isaac-only tests.
+- 兼容性报告位于 `artifacts/phase9_2/environment`。
+- Isaac smoke 证据位于 `artifacts/phase9_2/isaac`。
+- Isaac benchmark 汇总和 run 记录位于 `artifacts/phase9_2/isaac_benchmark`。
+- 跨后端成对 artifact 位于 `artifacts/phase9_2/cross_backend`。
+- 最终汇总位于 `artifacts/phase9_2/final`。
+- `isaac_runtime` pytest marker 用于只在真实 Isaac 环境运行的测试。
 
-## Accepted Runtime States
+## 已接受的运行状态
 
 - `ISAAC_SMOKE_VALIDATED`
 - `CROSS_BACKEND_VALIDATED`
 - `PHASE9_1_ACCEPTED`
 - `PHASE9_2_ACCEPTED`
 
-No real robot validation has been started.
+没有开始真实机械臂验证。

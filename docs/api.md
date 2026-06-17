@@ -1,8 +1,8 @@
-# API
+# API 说明
 
-This repository exposes a FastAPI application for planning, supervision, event autonomy, replanning, and completion reporting.
+仓库提供一个 FastAPI 应用，覆盖云端规划、周期监督、事件触发自治、重规划和完成证据上报。接口说明只描述软件边界，不表示浏览器或云端模型可以直接控制机械臂。
 
-## Planning API
+## 规划接口
 
 - `GET /api/v1/planning/capabilities`
 - `GET /api/v1/planning/schemas/task-contract`
@@ -10,7 +10,7 @@ This repository exposes a FastAPI application for planning, supervision, event a
 - `GET /api/v1/plans/{planning_id}`
 - `POST /api/v1/plans/{planning_id}/dispatch`
 
-Supported planning control modes currently advertised by the API:
+当前 API 对外声明的规划控制模式是：
 
 ```json
 [
@@ -19,9 +19,9 @@ Supported planning control modes currently advertised by the API:
 ]
 ```
 
-`AUTO` is not advertised in Phase 6.1.
+`AUTO` 是后续策略层，不在 Phase 6.1 的规划能力里对外声明。
 
-## Supervision API
+## 周期监督接口
 
 - `GET /api/v1/supervision/capabilities`
 - `POST /api/v1/robots/{robot_id}/status`
@@ -31,9 +31,9 @@ Supported planning control modes currently advertised by the API:
 - `POST /api/v1/plans/{plan_id}/supervision/stop`
 - `GET /api/v1/plans/{plan_id}/supervision/status`
 
-Supervision uses the configured repository for persistence and version compare-and-set.
+监督状态通过配置好的 repository 持久化，版本更新使用 compare-and-set，避免旧结果覆盖新状态。
 
-## Event autonomy API
+## 事件自治接口
 
 - `GET /api/v1/event-control/capabilities`
 - `POST /api/v1/robots/{robot_id}/events`
@@ -47,15 +47,15 @@ Supervision uses the configured repository for persistence and version compare-a
 - `POST /api/v1/tasks/{task_id}/completion`
 - `GET /api/v1/tasks/{task_id}/completion`
 
-These endpoints use explicit Pydantic request models, URL/body identity checks, repository-backed persistence, and 404/409/503 responses where appropriate.
+这些接口使用明确的 Pydantic 请求模型，并校验 URL 与 body 中的身份字段。找不到持久化对象时返回 `404`，版本冲突或身份不一致返回 `409`，依赖服务未配置返回 `503`。
 
-## Error handling
+## 错误码
 
-- `404`: missing persisted entity.
-- `409`: body/URL identity mismatch or version conflict.
-- `503`: required service or repository not configured.
-- `400`: malformed request input.
+- `400`：请求格式或字段不合法。
+- `404`：持久化对象不存在。
+- `409`：URL/body 身份不一致，或版本冲突。
+- `503`：必要服务或 repository 未配置。
 
-## Verification
+## 验证来源
 
-Behavior is covered by the Phase 6 acceptance script and the Phase 6 E2E tests.
+Phase 6 验收脚本和 Phase 6 E2E 测试覆盖这些接口的关键行为。后续新增 dashboard API 时，应单独说明只读能力、写操作 allowlist 和硬件写入禁令。

@@ -1,13 +1,16 @@
-# Operator Confirmation
+# 操作员确认
 
-Phase 10.2A replaces permanent operator strings with one-time
-`OperatorConfirmation` records.
+Phase 10.2A 不再使用长期有效的操作员字符串，改为一次性的 `OperatorConfirmation` 记录。
 
-An operator confirmation is bound to robot identity hash, real robot config
-hash, requested acceptance level, requested action, short validity window, and
-verified local origin.
+一次操作员确认绑定以下信息：
 
-The raw token is never written to artifacts. Artifacts store only the token hash
-and confirmation metadata. A consumed token cannot be reused. Level 0 read-only
-checks may use a site session record; Level 2 and higher require a fresh
-confirmation for each independent motion action.
+- 机器人身份哈希。
+- 真实机械臂配置哈希。
+- 请求的验收级别。
+- 请求的动作。
+- 短时有效窗口。
+- 已验证的本地来源。
+
+原始 token 不写入 artifact。artifact 只保存 token 哈希和确认元数据。已经消费过的 token 不能复用。
+
+Level 0 只读检查可以使用现场会话记录；Level 2 及以上每个独立运动动作都需要新的确认。

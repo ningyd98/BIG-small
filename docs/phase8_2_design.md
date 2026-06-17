@@ -1,34 +1,34 @@
-# Phase 8.2 Design
+# Phase 8.2 设计
 
-Phase 8.2 keeps the system in the mock/virtual experiment scope. It does not add ROS 2, MoveIt 2, or real robot integration.
+Phase 8.2 继续限定在 mock/virtual 实验范围内，不加入 ROS 2、MoveIt 2 或真实机械臂集成。
 
-## Periodic PCSC Closure
+## 周期 PCSC 闭环
 
-PCSC supervision is scheduled on `VirtualClock` using `supervision_period_ms`. The first tick is scheduled after the first period and then reschedules itself while PCSC is active. Because mock robot actions advance the same virtual clock, scheduled ticks interleave with `TaskExecutor` step execution instead of running once before submission.
+PCSC supervision 通过 `VirtualClock` 按 `supervision_period_ms` 调度。第一个 tick 在首个周期后触发，随后只要 PCSC 仍处于活动状态就继续调度。mock robot action 会推进同一个虚拟时钟，因此 tick 会与 `TaskExecutor` 的步骤执行交错，而不是在提交任务前一次性跑完。
 
-Each tick reads the current harness state through `RuntimeExperimentHarness._edge_snapshot()`: current step, completed step ids, scene version, target/obstacle state, robot state, and checkpoint-derived completion state. ETEAC never starts this tick loop. AUTO prepares transitions first; PCSC ticks start only for committed PCSC execution and stop when leaving PCSC.
+每个 tick 通过 `RuntimeExperimentHarness._edge_snapshot()` 读取当前 harness 状态：当前步骤、已完成 step id、scene version、target/obstacle 状态、robot 状态，以及 checkpoint 推导的完成状态。ETEAC 不启动这个 tick loop。AUTO 会先 prepare transition；PCSC tick 只在提交为 PCSC 执行后启动，并在离开 PCSC 时停止。
 
-## Fault Detection
+## 故障检测
 
-Fault injection now records only `fault_injected`. `fault_detected` is emitted by a runtime source:
+故障注入现在只记录 `fault_injected`。`fault_detected` 必须由 runtime 来源发出：
 
-- `PeriodicSupervisorService` ticks for scene, target, obstacle, network, cloud, and emergency-stop observations.
-- `TaskExecutor` result events for failed or paused atomic execution.
-- Network monitor callbacks for reconnect and heartbeat delivery.
-- Cloud timeout callbacks scheduled on the virtual clock.
+- `PeriodicSupervisorService` tick 检测 scene、target、obstacle、network、cloud 和 emergency-stop 观测。
+- `TaskExecutor` 结果事件检测失败或暂停的原子执行。
+- network monitor callback 检测 reconnect 和 heartbeat delivery。
+- cloud timeout callback 由虚拟时钟调度触发。
 
-Detection latency is computed from `fault_injected_at` to the first later `fault_detected` event for the same fault type.
+检测延迟从 `fault_injected_at` 到同一 fault type 的第一个后续 `fault_detected` 事件计算。
 
-## Safe-Boundary Mode Switching
+## 安全边界模式切换
 
-AUTO mode no longer commits immediately after prepare. A transition is recorded as prepared and deferred while execution remains in the old mode. After `TaskExecutor` emits a terminal safe boundary (`step_completed`), the pending transition commits. If no safe boundary is reached, the transition aborts and the current mode remains unchanged.
+AUTO mode 不再在 prepare 后立即 commit。transition 会先记录为 prepared/deferred，执行仍留在旧模式。只有当 `TaskExecutor` 发出终端安全边界事件，也就是 `step_completed` 后，pending transition 才能 commit。如果没有到达安全边界，transition abort，当前模式保持不变。
 
-Counters track deferred, aborted, dwell-block, cooldown-block, and switch-limit-block decisions.
+计数器覆盖 deferred、aborted、dwell-block、cooldown-block 和 switch-limit-block decision。
 
-## Recovery
+## 恢复
 
-S15 covers nine restart points. Each point closes and rebuilds runtime repositories, records recovery, and resumes toward a legal terminal state without repeating completed steps. Recovery payloads include `command_seq`, `plan_version`, and checkpoint progress to guard against rollback.
+S15 覆盖 9 个 restart point。每个点都会关闭并重建 runtime repository，记录 recovery，并在不重复已完成步骤的情况下恢复到合法终态。recovery payload 包含 `command_seq`、`plan_version` 和 checkpoint progress，用于防止回滚。
 
-## Experiment Sensitivity
+## 实验敏感性
 
-Network messages are sent through `NetworkSimulator`, so latency, jitter, loss, and reordering affect PCSC command arrival, recovery heartbeat delivery, ETEAC cloud uploads, and replan application timing. Batch summaries include mode x scenario, network x scenario, mode x network, and seed variability views.
+网络消息全部通过 `NetworkSimulator` 发送，因此 latency、jitter、loss 和 reordering 会影响 PCSC command arrival、recovery heartbeat delivery、ETEAC cloud upload 和 replan application timing。batch summary 包含 mode x scenario、network x scenario、mode x network 和 seed variability 视图。

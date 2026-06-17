@@ -1,30 +1,20 @@
-# Real Robot Safety
+# 真实机械臂安全边界
 
-No Phase 10.2A-R documentation or repository governance command may connect to a
-controller or execute real hardware motion.
+Phase 10.2A-R 的文档和仓库治理命令不得连接控制器，也不得执行真实硬件运动。
 
-Physical robot motion is fail-closed.
+物理机械臂运动默认关闭：
 
-- `enable_real_robot=false` rejects every motion command.
-- `RUNTIME_PROFILE=simulation` cannot instantiate a real robot runtime.
-- Missing or placeholder device configuration rejects hardware modes.
-- Active emergency stop, stale telemetry, missing controller, unhealthy
-  SafetyShield, missing operator token, or insufficient acceptance level rejects
-  motion.
-- Operator confirmation is short-lived, action-bound, and one-time use. The raw
-  token is never written to artifacts.
-- Mock, FakeSystem, MuJoCo, Isaac, and dry-run evidence cannot be labeled as
-  `HARDWARE_EXECUTED`.
+- `enable_real_robot=false` 时拒绝所有运动命令。
+- `RUNTIME_PROFILE=simulation` 不能实例化真实机械臂运行时。
+- 设备配置缺失或仍是占位值时，拒绝硬件模式。
+- 急停激活、遥测过期、控制器缺失、SafetyShield 不健康、操作员 token 缺失或验收级别不足时，拒绝运动。
+- 操作员确认短时有效、绑定具体动作、只能使用一次。原始 token 不写入 artifact。
+- Mock、FakeSystem、MuJoCo、Isaac 和 dry-run 证据都不能标记为 `HARDWARE_EXECUTED`。
 
-## Site Requirements
+## 现场要求
 
-The first physical motion must not be performed by one person alone. A local
-operator must verify physical emergency stop access, workspace isolation,
-payload limits, clear table/obstacle layout, and that no person is inside the
-workspace.
+首次物理运动不能由单人完成。现场操作员必须确认急停可达、工作空间隔离、负载限制、桌面和障碍物布局清楚，并确认没有人员进入机械臂工作空间。
 
-## Stop Behavior
+## 停止行为
 
-The edge runtime must prefer controlled stop, then emergency stop if controlled
-stop does not verify halt. Controller exit, communication loss, stale telemetry,
-and watchdog expiration are treated as stop conditions for hardware acceptance.
+边缘运行时优先执行受控停止；如果受控停止无法确认停稳，再进入急停。控制器退出、通信中断、遥测过期和 watchdog 超时，都按硬件验收中的停止条件处理。

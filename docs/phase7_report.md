@@ -1,18 +1,18 @@
-# Phase 7 Report
+# Phase 7 报告
 
-Phase 7 implemented Skill Cache, deterministic risk evaluation, AUTO mode selection, mode transition records, persistence, API endpoints, production configuration gates, tests, and acceptance verification.
+Phase 7 实现了 Skill Cache、确定性风险评估、AUTO 模式选择、模式切换记录、持久化、API 入口、生产配置门禁、测试和验收验证。
 
-AUTO remains a selector over the two existing engines. It does not execute skills, does not replay cached low-level control, and does not bypass safety or completion evidence.
+AUTO 仍然只是对两套既有引擎做选择。它不执行技能，不回放低层控制，不绕过安全或完成证据。
 
-## Implemented
+## 已实现
 
-- `skill_cache`: data models, InMemory repository, SQLite repository, promotion/quarantine/invalidation/expiry, CAS, idempotency, statistics.
-- `risk`: versioned `RiskPolicy`, deterministic `RiskEvaluator`, fail-closed missing input handling, safety hard overrides.
-- `auto_mode`: selector policy, persisted state/decisions/transitions, InMemory/SQLite repository, transition service.
-- API endpoints for capabilities, risk evaluation/latest, auto decide/status, mode transitions, skill-cache templates/statistics.
-- Production config rejects AUTO unless durable repositories and risk policy are explicit.
-- `scripts/verify_phase7.py` and Phase 7 unit tests.
+- `skill_cache`：数据模型、InMemory repository、SQLite repository、晋升/隔离/作废/过期、CAS、幂等、统计。
+- `risk`：带版本的 `RiskPolicy`、确定性 `RiskEvaluator`、关键输入缺失 fail-closed、安全硬覆盖。
+- `auto_mode`：选择策略、持久化状态/决策/切换、InMemory/SQLite repository、切换服务。
+- 能力查询、风险评估/最新结果、auto 决策/状态、模式切换、Skill Cache 模板/统计等 API。
+- 生产配置要求显式提供 durable repositories 和 risk policy，否则 AUTO 不可用。
+- `scripts/verify_phase7.py` 和 Phase 7 单元测试。
 
-## Current Limits
+## 当前限制
 
-There is still no real robot SDK, ROS 2/MoveIt 2 integration, real camera model, production LLM CI, or real hardware experiment. Phase 8 batch comparison experiments have not started.
+仍然没有真实机器人 SDK、ROS 2/MoveIt 2 集成、真实相机模型、生产 LLM CI 或真实硬件实验。Phase 8 批量对比实验尚未开始。

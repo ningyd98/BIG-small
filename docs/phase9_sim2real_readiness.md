@@ -1,19 +1,19 @@
-# Phase 9 Sim2Real Readiness
+# Phase 9 Sim2Real 准备度
 
-Phase 9 validates migration readiness, not real-world transfer completion.
+Phase 9 验证的是迁移准备度，不是已经完成真实场景迁移。
 
-Supported by data:
+已有数据支持：
 
-- The upper cloud-edge runtime can be exercised with a physics backend.
-- 13 high-level skills have a physical adapter path.
-- MuJoCo state, contacts, sensors, and simulation time feed metrics.
-- Seeded randomization is reproducible and sensitive.
-- Phase 8.2 PCSC/ETEAC/AUTO invariants remain intact.
+- 上层云边运行时可以在物理后端上跑起来。
+- 13 个高层技能有物理 adapter 路径。
+- MuJoCo 状态、接触、传感器和仿真时间可以进入指标。
+- 带 seed 的随机化是可复现且有敏感性的。
+- Phase 8.2 的 PCSC/ETEAC/AUTO 不变量仍然成立。
 
-Not supported yet:
+尚不支持：
 
-- Real robot safety.
-- Real camera calibration.
-- Real emergency stop response.
-- Isaac/ROS/MoveIt execution on this host.
-- Physical performance on hardware.
+- 真实机械臂安全。
+- 真实相机标定。
+- 真实急停响应。
+- 当前主机上的 Isaac/ROS/MoveIt 执行。
+- 硬件上的物理性能。

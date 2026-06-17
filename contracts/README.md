@@ -1,4 +1,5 @@
-# Contracts Workspace
+# Contracts 工作区
 
-This top-level directory stores Phase 0 contract examples and schema-facing assets.
-Runtime Pydantic models live in `src/cloud_edge_robot_arm/contracts`.
+这个顶层目录保存 Phase 0 contract 示例和面向 schema 的资产。
+
+运行时 Pydantic model 位于 `src/cloud_edge_robot_arm/contracts`。

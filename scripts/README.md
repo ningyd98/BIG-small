@@ -1,71 +1,71 @@
-# Scripts Index
+# 脚本索引
 
-Scripts are grouped by purpose and hardware risk. Existing verifier paths remain stable.
+脚本按用途和硬件风险分组。已有 verifier 路径保持稳定。
 
-## Core checks
+## 核心检查
 
-| Script | Purpose | CI-safe | Artifact | Hardware |
+| 脚本 | 用途 | CI 安全 | Artifact | 硬件 |
 | --- | --- | --- | --- | --- |
-| `run_checks.sh` | Full local software check wrapper | Yes | Some verifiers write artifacts | No |
-| `check_docs.py` | Documentation consistency checks | Yes | No | No |
-| `verify_project.py` | Profile-based verifier orchestration | Depends on profile | Summary JSON | No hardware profiles by default |
-| `validate_contract_examples.py` | Validate contract examples | Yes | No | No |
+| `run_checks.sh` | 本地软件检查总入口 | 是 | 部分 verifier 会写 artifact | 否 |
+| `check_docs.py` | 文档一致性检查 | 是 | 否 | 否 |
+| `verify_project.py` | 按 profile 编排 verifier | 取决于 profile | Summary JSON | 默认不含硬件 profile |
+| `validate_contract_examples.py` | 校验 contract 示例 | 是 | 否 | 否 |
 
-## Edge runtime demos
+## 边缘运行时示例
 
-| Script | Purpose | CI-safe | Artifact | Hardware |
+| 脚本 | 用途 | CI 安全 | Artifact | 硬件 |
 | --- | --- | --- | --- | --- |
-| `run_fixed_pick_place.py` | Mock fixed pick-and-place flow | Yes | Optional logs | No |
-| `run_fault_injection_suite.py` | Mock fault injection scenarios | Yes | No | No |
-| `run_phase2_task.py` | Phase 2 task runtime example | Yes | Local DB optional | No |
+| `run_fixed_pick_place.py` | Mock 固定抓取放置流程 | 是 | 可选日志 | 否 |
+| `run_fault_injection_suite.py` | Mock 故障注入场景 | 是 | 否 | 否 |
+| `run_phase2_task.py` | Phase 2 任务运行时示例 | 是 | 可选本地数据库 | 否 |
 
-## Safety verification
+## 安全验证
 
-Phase 3 scripts exercise SafetyShield and integrated edge safety paths with Mock/FakeSystem only. They are CI-safe and do not contact hardware.
+Phase 3 脚本使用 Mock/FakeSystem 跑 `SafetyShield` 和集成边缘安全路径。它们可以在 CI 中运行，不会联系硬件。
 
-## Cloud planning
+## 云端规划
 
-Phase 4 scripts exercise planning adapters, malformed output repair, idempotency, and edge dispatch through software-only paths.
+Phase 4 脚本通过纯软件路径验证规划 adapter、异常输出修复、幂等和 edge dispatch。
 
 ## PCSC / ETEAC / AUTO
 
-Phase 5-8 verifier scripts validate supervision, event-triggered autonomy, Skill Cache, RiskEvaluator, AUTO, and experiment evidence. These are software-only.
+Phase 5-8 verifier 脚本验证 supervision、事件触发自治、Skill Cache、`RiskEvaluator`、AUTO 和实验事件证据。这些都是软件侧检查。
 
-## Experiment runners
+## 实验运行器
 
-`run_phase8_experiments.py` and Phase 9 benchmark scripts may generate artifacts. They remain non-hardware unless a documented runtime profile explicitly requires Isaac or ROS 2 / MoveIt.
+`run_phase8_experiments.py` 和 Phase 9 benchmark 脚本可能生成 artifact。除非文档化的 runtime profile 明确要求 Isaac 或 ROS 2 / MoveIt，否则它们不接触硬件。
 
 ## MuJoCo
 
-Phase 9 MuJoCo scripts run local simulation and do not connect to real hardware.
+Phase 9 MuJoCo 脚本运行本地仿真，不连接真实硬件。
 
 ## ROS 2 / MoveIt
 
-| Script | Purpose | CI-safe | Hardware |
+| 脚本 | 用途 | CI 安全 | 硬件 |
 | --- | --- | --- | --- |
-| `phase9/activate_ros2_moveit_env.sh` | Activate ROS 2 / MoveIt environment | No | No |
-| `verify_phase9_1.py` | ROS 2 / MoveIt acceptance aggregate | Environment-specific | No |
-| `verify_phase10_moveit_dry_run.py` | MoveIt Runtime Dry-Run planning-only evidence | Environment-specific | No |
+| `phase9/activate_ros2_moveit_env.sh` | 激活 ROS 2 / MoveIt 环境 | 否 | 否 |
+| `verify_phase9_1.py` | ROS 2 / MoveIt 验收汇总 | 环境相关 | 否 |
+| `verify_phase10_moveit_dry_run.py` | MoveIt Runtime Dry-Run 规划证据 | 环境相关 | 否 |
 
-MoveIt dry-run must not call execute or connect to a real controller.
+MoveIt dry-run 不能调用 execute，也不能连接真实 controller。
 
 ## Isaac
 
-Phase 9.2 Isaac scripts require an Isaac Sim 6.0 compatible host. They produce runtime artifacts but no real hardware evidence.
+Phase 9.2 Isaac 脚本需要兼容 Isaac Sim 6.0 的主机。它们生成 runtime artifact，但不生成真实硬件证据。
 
-## Cross-backend
+## 跨后端
 
-`run_phase9_2_cross_backend.py` compares MuJoCo and Isaac artifacts by scenario/seed. It rejects Isaac fallback and static metrics.
+`run_phase9_2_cross_backend.py` 按 scenario/seed 对比 MuJoCo 和 Isaac artifact。它会拒绝 Isaac fallback 和静态指标。
 
-## Phase 10 dry-run
+## Phase 10 Dry-Run
 
-| Script | Purpose | CI-safe | Hardware |
+| 脚本 | 用途 | CI 安全 | 硬件 |
 | --- | --- | --- | --- |
-| `verify_phase10_0.py` | Config/gate/fault executable checks | Yes | No |
-| `verify_phase10_1.py` | Synthetic framework dry-run | Yes | No |
-| `verify_phase10_2a.py --skip-runtime` | CI-safe Phase 10.2A aggregate | Yes | No |
-| `verify_phase10_2a.py` | Formal aggregate using MoveIt dry-run evidence when present | Environment-specific | No |
+| `verify_phase10_0.py` | 配置、门禁和故障路径可执行检查 | 是 | 否 |
+| `verify_phase10_1.py` | Synthetic framework dry-run | 是 | 否 |
+| `verify_phase10_2a.py --skip-runtime` | CI-safe Phase 10.2A 汇总 | 是 | 否 |
+| `verify_phase10_2a.py` | 在存在 MoveIt dry-run 证据时做正式汇总 | 环境相关 | 否 |
 
-## Real hardware acceptance
+## 真实硬件验收
 
-`run_phase10_acceptance_level.py` is real-hardware-only when a site config and operator workflow exist. It must not be run automatically by CI or `all-available` profiles. It provides single-level acceptance only and does not run Level 1-6 in a batch.
+`run_phase10_acceptance_level.py` 只有在具备现场配置和操作员流程时才属于真实硬件脚本。CI 或 `all-available` profile 不能自动运行它。它只提供单级验收，不会批量运行 Level 1-6。

@@ -1,24 +1,24 @@
-# Phase 7 Acceptance
+# Phase 7 验收
 
-Run:
+运行：
 
 ```bash
 python -m pytest tests/test_phase7_*.py -q
 python scripts/verify_phase7.py
 ```
 
-`scripts/verify_phase7.py` checks:
+`scripts/verify_phase7.py` 检查：
 
-- Skill Cache SQLite restart, promotion, invalidation.
-- Cache hits cannot bypass SafetyShield.
-- Risk snapshot determinism and missing-input fail-closed behavior.
-- AUTO decision matrix.
-- Dwell time, cooldown, and switch limit anti-flapping.
-- Mode transition prepare/commit/abort, CAS, and idempotency.
-- SQLite restart recovery of prepared transitions.
-- Phase 5 and Phase 6 dual-mode regression.
-- Production profile blocks InMemory, mock, and unconfigured AUTO paths.
-- AUTO capability is not advertised before configuration.
-- Production source scan for placeholder and bypass paths.
+- Skill Cache SQLite 重启、晋升、作废。
+- 缓存命中不能绕过 SafetyShield。
+- 风险快照确定性，以及缺失输入 fail-closed。
+- AUTO 决策矩阵。
+- 驻留时间、冷却和切换次数限制的防抖。
+- 模式切换 prepare/commit/abort、CAS 和幂等。
+- SQLite 对 prepared transition 的重启恢复。
+- Phase 5 和 Phase 6 双模式回归。
+- 生产 profile 阻止 InMemory、mock 和未配置 AUTO 路径。
+- 配置前不对外声明 AUTO 能力。
+- 生产源码扫描占位符和绕过路径。
 
-The verifier returns non-zero on any failed check and does not mask sub-process failures.
+任一检查失败时，验证器返回非零，不吞掉子进程失败。

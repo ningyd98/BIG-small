@@ -1,44 +1,32 @@
-# Phase 8.1 Design
+# Phase 8.1 设计
 
-Phase 8.1 closes the experimental-validity gap left by Phase 8. The goal is not
-new robot behavior. The goal is to make the experiment layer drive the existing
-Phase 3-7 runtime chain and record evidence from real repositories, ACKs,
-safety decisions, execution records, and mode-transition records.
+Phase 8.1 用来补上 Phase 8 留下的实验有效性缺口。它不引入新的机械臂行为；目标是让实验层驱动既有 Phase 3-7 runtime chain，并从真实 repository、ACK、安全决策、执行记录和模式切换记录中采集证据。
 
-## Scope
+## 范围
 
-- Keep the Phase 8 models, CLI, batch runner, artifacts, and reproducibility
-  surface.
-- Replace synthetic runner-side outcomes with a `RuntimeExperimentHarness`.
-- Preserve production semantics for `TaskExecutor`, `SafetyShield`,
-  `PeriodicSupervisorService`, `EventTriggeredModeController`,
-  `LocalReplanningService`, `ReplanApplyService`, and `ModeTransitionService`.
-- Record metrics only from formal events and repositories.
+- 保留 Phase 8 的模型、CLI、batch runner、artifact 和可复现实验入口。
+- 用 `RuntimeExperimentHarness` 替换 runner 侧的合成结果。
+- 保持 `TaskExecutor`、`SafetyShield`、`PeriodicSupervisorService`、`EventTriggeredModeController`、`LocalReplanningService`、`ReplanApplyService` 和 `ModeTransitionService` 的生产语义。
+- 指标只从正式事件和 repository 中记录。
 
-## Architecture
+## 架构
 
-- `RuntimeExperimentHarness` assembles the real runtime graph with injected
-  `VirtualClock`, `MockRobotAdapter`, SQLite/in-memory repositories, safety
-  providers, risk evaluation, AUTO selection, and transition services.
-- `ExperimentRunner` only schedules faults, advances virtual time, delivers
-  commands, and collects results.
-- `ExperimentMetricsCollector` rebuilds metrics from audit events, execution
-  records, ACK records, supervisor decisions, replanning records, mode
-  transitions, safety evaluations, network events, and cache records.
+- `RuntimeExperimentHarness` 用注入的 `VirtualClock`、`MockRobotAdapter`、SQLite/in-memory repository、安全 provider、risk evaluation、AUTO selection 和 transition service 组装真实 runtime graph。
+- `ExperimentRunner` 只负责调度故障、推进虚拟时间、投递命令和收集结果。
+- `ExperimentMetricsCollector` 从 audit event、execution record、ACK record、supervisor decision、replanning record、mode transition、safety evaluation、network event 和 cache record 重建指标。
 
-## Evidence Sources
+## 证据来源
 
-- Contract validation: validator calls and accepted command records.
-- Execution: `TaskExecutor` step records, checkpoint state, completion evidence.
-- Safety: safety decisions, rejects, emergency-stop records.
-- PCSC: supervisor decisions and cloud invocation events.
-- ETEAC: retry-budget consumption, failure summaries, replans, CAS apply.
-- AUTO: persisted decision, prepared transition, commit, abort, dwell, cooldown,
-  and switch-limit records.
-- Crash recovery: repository reopen and restart verification.
+- Contract validation：validator 调用和 accepted command record。
+- Execution：`TaskExecutor` step record、checkpoint state 和 completion evidence。
+- Safety：safety decision、reject 和 emergency-stop record。
+- PCSC：supervisor decision 和 cloud invocation event。
+- ETEAC：retry-budget consumption、failure summary、replan 和 CAS apply。
+- AUTO：持久化 decision、prepared transition、commit、abort、dwell、cooldown 和 switch-limit record。
+- Crash recovery：repository reopen 和 restart verification。
 
-## Compatibility
+## 兼容性
 
-- No Phase 3-7 data model changes are required for consumers.
-- Optional observer and clock injections default to existing behavior.
-- AUTO remains a selector between the two existing execution modes.
+- 不要求消费者修改 Phase 3-7 数据模型。
+- observer 和 clock 注入是可选项，默认保持原行为。
+- AUTO 仍只是两个既有执行模式之间的选择器。

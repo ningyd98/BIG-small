@@ -1,26 +1,25 @@
-# Phase 8.1 Acceptance
+# Phase 8.1 验收
 
-Phase 8.1 is accepted only when the experiment harness drives the production
-control chain and the evidence closes the loop through formal runtime records.
+只有当实验 harness 真正驱动生产控制链，并且证据能通过正式 runtime record 闭环时，Phase 8.1 才算通过。
 
-## Required Checks
+## 必需检查
 
-- Runtime harness integration
-- Fault interleaving
-- Real `TaskExecutor` path
-- Real `SafetyShield` path
-- PCSC supervision
-- ETEAC event/replan path
-- S10 command ingress rejection
-- AUTO transition lifecycle
-- SQLite crash recovery
-- Event-sourced metric recomputation
-- Reproducibility
-- Phase 8 smoke suite
-- Phase 3-8 regression
-- Phase 8.1 pytest suite
+- runtime harness 集成。
+- 故障与执行步骤交错。
+- 真实 `TaskExecutor` 路径。
+- 真实 `SafetyShield` 路径。
+- PCSC supervision。
+- ETEAC event/replan 路径。
+- S10 command ingress rejection。
+- AUTO transition lifecycle。
+- SQLite crash recovery。
+- 基于事件源的指标重算。
+- 可复现性。
+- Phase 8 smoke suite。
+- Phase 3-8 regression。
+- Phase 8.1 pytest suite。
 
-## Commands Run
+## 已运行命令
 
 ```bash
 python scripts/run_phase8_experiments.py --suite smoke --seeds 0 --networks NORMAL --output experiments/results/phase8_1_smoke
@@ -35,15 +34,14 @@ mypy .
 pip check
 ```
 
-## Observed Results
+## 观测结果
 
-- Smoke: 45 runs, 33 successes
-- Validation: 675 runs, 495 successes
-- Full benchmark: 2250 runs, 1650 successes
+- Smoke：45 次运行，33 次成功。
+- Validation：675 次运行，495 次成功。
+- Full benchmark：2250 次运行，1650 次成功。
 
-## Evidence Boundary
+## 证据边界
 
-- Raw `events.jsonl` and `raw_runs.jsonl` are generated but not committed.
-- `experiments/baselines/phase8_1/` keeps only small reproducibility artifacts.
-- Phase 8.1 still uses mock/simulated components. It does not prove real robot
-  safety or real physical performance.
+- 原始 `events.jsonl` 和 `raw_runs.jsonl` 会生成，但不提交到仓库。
+- `experiments/baselines/phase8_1/` 只保留小体积的可复现 artifact。
+- Phase 8.1 仍使用 mock/simulated 组件，不证明真实机械臂安全，也不证明真实物理性能。

@@ -1,8 +1,8 @@
 # JSON Schema
 
-Phase 0 JSON Schema is exported directly from the Pydantic models using `model_json_schema()`.
+Phase 0 JSON Schema 直接由 Pydantic model 的 `model_json_schema()` 导出。
 
-Primary schema entry points:
+主要 schema 入口：
 
 - `TaskContract.model_json_schema()`
 - `Telemetry.model_json_schema()`
@@ -14,4 +14,4 @@ Primary schema entry points:
 - `ActionResult.model_json_schema()`
 - `Pose.model_json_schema()`
 
-The automated tests assert these schema exports and the example validator checks JSON payloads against the runtime models.
+自动化测试会断言这些 schema 导出；示例 validator 会用 runtime model 校验 JSON payload。

@@ -1,10 +1,10 @@
-# Phase 0/1 Acceptance Report
+# Phase 0/1 验收报告
 
-## 1. Repository Audit Conclusion
+## 1. 仓库审计结论
 
-The repository has been reviewed by reading code, scripts, configuration, tests, and documentation. File names alone were not used as completion evidence.
+已通过阅读代码、脚本、配置、测试和文档完成仓库审计。文件名本身没有被当作完成证据。
 
-## 2. Directory Structure
+## 2. 目录结构
 
 ```text
 .
@@ -25,39 +25,39 @@ The repository has been reviewed by reading code, scripts, configuration, tests,
 └── tests/
 ```
 
-## 3. Status Matrix
+## 3. 状态矩阵
 
-| Requirement | Status | Evidence |
+| 要求 | 状态 | 证据 |
 | --- | --- | --- |
-| Phase 0 route freeze | COMPLETE | `docs/architecture.md`, `src/cloud_edge_robot_arm/shared/phase_scope.py` |
-| Python async-compatible runtime route | COMPLETE | `ASYNC_RUNTIME = "asyncio"` |
-| MockRobotAdapter deterministic tests | COMPLETE | `tests/test_phase1_acceptance.py` |
-| MuJoCo simulation route | PARTIAL | Adapter and install guidance exist; real physics scenarios are deferred |
-| No cloud model or real robot integration | COMPLETE | No cloud planner, MQTT, model prompt, or real robot SDK added |
-| Required Pydantic models | COMPLETE | `src/cloud_edge_robot_arm/contracts/models.py` |
-| JSON Schema exports | COMPLETE | `model_json_schema()` acceptance test |
-| 5 valid contract examples | COMPLETE | `contracts/examples/valid` |
-| 5 invalid contract examples | COMPLETE | `contracts/examples/invalid` |
-| Automated contract validator | COMPLETE | `scripts/validate_contract_examples.py` |
-| Ruff/MyPy/Pytest config | COMPLETE | `pyproject.toml` |
+| Phase 0 路线冻结 | COMPLETE | `docs/architecture.md`, `src/cloud_edge_robot_arm/shared/phase_scope.py` |
+| Python asyncio 运行路线 | COMPLETE | `ASYNC_RUNTIME = "asyncio"` |
+| MockRobotAdapter 确定性测试 | COMPLETE | `tests/test_phase1_acceptance.py` |
+| MuJoCo 仿真路线 | PARTIAL | adapter 和安装指引已存在；真实物理场景后续阶段再做 |
+| 不接入云模型或真实机械臂 | COMPLETE | 没有新增云端 planner、MQTT、model prompt 或真实机械臂 SDK |
+| 必需 Pydantic 模型 | COMPLETE | `src/cloud_edge_robot_arm/contracts/models.py` |
+| JSON Schema 导出 | COMPLETE | `model_json_schema()` 验收测试 |
+| 5 个有效 contract 示例 | COMPLETE | `contracts/examples/valid` |
+| 5 个无效 contract 示例 | COMPLETE | `contracts/examples/invalid` |
+| 自动 contract validator | COMPLETE | `scripts/validate_contract_examples.py` |
+| Ruff/MyPy/Pytest 配置 | COMPLETE | `pyproject.toml` |
 | `.env.example` | COMPLETE | `.env.example` |
-| Structured JSON logging | COMPLETE | `src/cloud_edge_robot_arm/logging_utils.py` |
-| RobotAdapter abstraction | COMPLETE | `src/cloud_edge_robot_arm/edge/robot_adapter.py` |
-| MockRobotAdapter state and timing | COMPLETE | `src/cloud_edge_robot_arm/simulation/mock_robot.py` |
-| Action timeout support | COMPLETE | `ACTION_TIMEOUT` acceptance test |
-| Fault injection support | COMPLETE | `scripts/run_fault_injection_suite.py` |
-| Fixed pick-place flow | COMPLETE | `src/cloud_edge_robot_arm/edge/fixed_pick_place.py` |
-| Structured ActionResult | COMPLETE | `tests/test_phase1_acceptance.py` |
-| SAFE_STOP | COMPLETE | `safe_stop()` acceptance test |
-| 20 consecutive fixed tasks | COMPLETE | `run_fixed_pick_place.py --repeat 20` |
-| Cloud planning | BLOCKED | Explicitly out of Phase 0/1 |
-| MQTT | BLOCKED | Explicitly out of Phase 0/1 |
-| LLM/VLM calls | BLOCKED | Explicitly out of Phase 0/1 |
-| Real robot connection | BLOCKED | Explicitly out of Phase 0/1 |
+| 结构化 JSON logging | COMPLETE | `src/cloud_edge_robot_arm/logging_utils.py` |
+| RobotAdapter 抽象 | COMPLETE | `src/cloud_edge_robot_arm/edge/robot_adapter.py` |
+| MockRobotAdapter 状态和时序 | COMPLETE | `src/cloud_edge_robot_arm/simulation/mock_robot.py` |
+| action timeout 支持 | COMPLETE | `ACTION_TIMEOUT` 验收测试 |
+| fault injection 支持 | COMPLETE | `scripts/run_fault_injection_suite.py` |
+| 固定 pick-place 流程 | COMPLETE | `src/cloud_edge_robot_arm/edge/fixed_pick_place.py` |
+| 结构化 ActionResult | COMPLETE | `tests/test_phase1_acceptance.py` |
+| SAFE_STOP | COMPLETE | `safe_stop()` 验收测试 |
+| 连续 20 次固定任务 | COMPLETE | `run_fixed_pick_place.py --repeat 20` |
+| 云端规划 | BLOCKED | 明确不属于 Phase 0/1 |
+| MQTT | BLOCKED | 明确不属于 Phase 0/1 |
+| LLM/VLM 调用 | BLOCKED | 明确不属于 Phase 0/1 |
+| 真实机械臂连接 | BLOCKED | 明确不属于 Phase 0/1 |
 
-## 4. Core Interfaces
+## 4. 核心接口
 
-`RobotAdapter` defines:
+`RobotAdapter` 定义：
 
 - `connect`
 - `disconnect`
@@ -69,7 +69,7 @@ The repository has been reviewed by reading code, scripts, configuration, tests,
 - `stop`
 - `emergency_stop`
 
-`ActionResult` defines:
+`ActionResult` 定义：
 
 - `success`
 - `action_id`
@@ -82,9 +82,9 @@ The repository has been reviewed by reading code, scripts, configuration, tests,
 - `state_before`
 - `state_after`
 
-## 5. Real Test Results
+## 5. 真实测试结果
 
-Executed acceptance command sequence:
+已执行验收命令序列：
 
 ```bash
 ruff check .
@@ -96,29 +96,29 @@ python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
 python scripts/run_fault_injection_suite.py
 ```
 
-Results:
+结果：
 
-- `ruff check .`: `All checks passed!`
-- `mypy .`: `Success: no issues found in 27 source files`
-- `pytest -q`: `30 passed`
-- Contract examples: `valid_total=5`, `invalid_total=5`, no failures
-- Fixed pick-place once: `successes=1`, `success_rate=1.0`
-- Fixed pick-place 20 times: `successes=20`, `success_rate=1.0`
-- Fault injection suite: `success=true`, all 8 required faults rejected with matching error codes
+- `ruff check .`：`All checks passed!`
+- `mypy .`：`Success: no issues found in 27 source files`
+- `pytest -q`：`30 passed`
+- contract 示例：`valid_total=5`、`invalid_total=5`，无失败。
+- 固定 pick-place 单次运行：`successes=1`、`success_rate=1.0`。
+- 固定 pick-place 连续 20 次：`successes=20`、`success_rate=1.0`。
+- 故障注入套件：`success=true`，8 个必需故障全部按预期 error code 拒绝。
 
-## 6. Fixed Pick-Place Result
+## 6. 固定 Pick-Place 结果
 
-Sequence:
+流程：
 
 ```text
 HOME -> MOVE_ABOVE -> APPROACH -> GRASP -> LIFT -> MOVE_TO_REGION -> PLACE -> RELEASE -> RETREAT -> HOME
 ```
 
-Final object region: `bin_a`.
+最终物体区域：`bin_a`。
 
-## 7. Fault Injection Result
+## 7. 故障注入结果
 
-Covered faults:
+覆盖故障：
 
 - `ACTION_TIMEOUT`
 - `TARGET_UNREACHABLE`
@@ -129,13 +129,13 @@ Covered faults:
 - `COLLISION_DETECTED`
 - `INVALID_TARGET_POSE`
 
-Each fault returned a structured `ActionResult` with `success=false`, matching `error_code`, timestamps, duration, and before/after state snapshots.
+每个故障都返回结构化 `ActionResult`，其中 `success=false`，`error_code` 匹配预期，并包含 timestamp、duration 和执行前后状态快照。
 
-## 8. Open Issues
+## 8. 遗留问题
 
-- MuJoCo adapter currently provides interface compatibility and installation guidance. Full MuJoCo physics scene execution is intentionally deferred beyond Phase 1.
-- Safety shield, state machine, cloud planning, MQTT, periodic supervision, event-triggered re-planning, model calls, and real robot SDKs remain out of scope until Phase 2+.
+- MuJoCo adapter 目前提供接口兼容和安装指引。完整 MuJoCo 物理场景执行明确推迟到 Phase 1 之后。
+- safety shield、state machine、cloud planning、MQTT、periodic supervision、event-triggered re-planning、model call 和真实机械臂 SDK 都不属于 Phase 2 之前范围。
 
-## 9. Phase 2 Readiness
+## 9. Phase 2 准备情况
 
-Phase 0 and Phase 1 acceptance conditions are satisfied. The project can enter Phase 2 after approval.
+Phase 0 和 Phase 1 的验收条件已满足。获得批准后，项目可以进入 Phase 2。

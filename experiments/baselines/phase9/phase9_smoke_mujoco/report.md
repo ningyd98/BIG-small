@@ -1,9 +1,9 @@
-# Phase 9 Benchmark Report
+# Phase 9 Benchmark 报告
 
-Suite: `smoke`
+套件：`smoke`
 
-Backend: `mujoco`
+后端：`mujoco`
 
-Runs: `18`
+运行次数：`18`
 
-Acceptance status: `PHASE9_CORE_ACCEPTED_ISAAC_VALIDATION_BLOCKED_BY_ENV`
+验收状态：`PHASE9_CORE_ACCEPTED_ISAAC_VALIDATION_BLOCKED_BY_ENV`

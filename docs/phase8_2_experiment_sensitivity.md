@@ -1,24 +1,24 @@
-# Phase 8.2 Experiment Sensitivity
+# Phase 8.2 实验敏感性
 
-Phase 8.2 removes the previous flat benchmark behavior by connecting metrics to runtime mechanisms.
+Phase 8.2 把指标接回运行时机制，去掉之前过于平坦的 benchmark 行为。
 
-## Network Mechanisms
+## 网络机制
 
-- PCSC tick decisions are sent as cloud-to-edge network messages.
-- Network outage recovery uses reconnect and heartbeat-delivery callbacks.
-- Cloud unavailable scenarios schedule an actual timeout event.
-- Packet loss can drop supervision decisions or recovery heartbeat messages, causing retry events.
-- Jitter and reordering are sampled by `NetworkSimulator` with the configured seed.
+- PCSC tick 决策作为云到边消息发送。
+- 网络中断恢复使用 reconnect 和 heartbeat delivery 回调。
+- 云不可用场景会安排真实 timeout 事件。
+- 丢包可以丢弃监督决策或恢复心跳消息，从而触发重试事件。
+- jitter 和乱序由 `NetworkSimulator` 按配置 seed 采样。
 
-## Mode Mechanisms
+## 模式机制
 
-- PCSC invokes cloud supervision periodically.
-- ETEAC avoids periodic ticks and only uploads failure/replan summaries when local execution needs cloud help.
-- AUTO records risk and cache signals, prepares a transition, and commits only at a safe boundary.
+- PCSC 周期性调用云端监督。
+- ETEAC 不产生周期 tick，只在本地执行需要云端帮助时上传失败/重规划摘要。
+- AUTO 记录风险和缓存信号，准备切换，并且只在安全边界提交。
 
-## Validity Views
+## 有效性视图
 
-Batch output includes:
+批量输出包含：
 
 - `mode_by_scenario`
 - `network_by_scenario`
@@ -26,4 +26,4 @@ Batch output includes:
 - `seed_variability`
 - `validity_guard`
 
-The guard checks that modes, networks, and seeds are not all identical and that fault detection latency is not always zero.
+守卫会检查 mode、network 和 seed 不全都相同，并确认故障检测延迟不是始终为 0。

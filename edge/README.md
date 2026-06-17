@@ -1,11 +1,11 @@
-# Edge Workspace
+# Edge 工作区
 
-Edge runtime code lives in `src/cloud_edge_robot_arm/edge`.
+边缘运行时代码位于 `src/cloud_edge_robot_arm/edge`。
 
-Phase 1 includes:
+Phase 1 包含：
 
-- `RobotAdapter` unified interface
-- fixed pick-and-place runner
-- skill registry and executor
+- `RobotAdapter` 统一接口。
+- 固定 pick-and-place runner。
+- skill registry 和 executor。
 
-Phase 2+ edge autonomy, state machine, command subscriber, telemetry publisher, and safety shield are intentionally out of scope here.
+Phase 2+ 的边缘自治、状态机、命令订阅、telemetry 发布和安全盾都不放在这个顶层说明目录内。

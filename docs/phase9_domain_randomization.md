@@ -1,5 +1,5 @@
-# Phase 9 Domain Randomization
+# Phase 9 域随机化
 
-`DomainRandomizationPolicy` supports `NONE`, `MILD`, `MODERATE`, and `SEVERE`. Sampling is seed-driven and persists actual sampled values with units and source file.
+`DomainRandomizationPolicy` 支持 `NONE`、`MILD`、`MODERATE` 和 `SEVERE`。采样由 seed 驱动，并持久化实际采样值、单位和来源文件。
 
-Covered parameters include object mass, friction coefficient, actuator delay, and camera depth noise. The policy does not randomize SafetyShield hard limits.
+覆盖参数包括 object mass、friction coefficient、actuator delay 和 camera depth noise。该策略不会随机化 `SafetyShield` 的硬性限制。

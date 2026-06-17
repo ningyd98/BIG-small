@@ -1,50 +1,50 @@
-# Changelog
+# 变更记录
 
-This project uses milestone-oriented changelog entries. No version number is claimed here.
+本项目按里程碑记录变更，不在这里声明版本号。
 
-## Unreleased
+## 未发布
 
-- Consolidate repository documentation architecture.
-- Add documentation consistency checks and unified verification profiles.
+- 整理仓库文档架构。
+- 增加文档一致性检查和统一验证 profile。
 
 ## Phase 10.2A
 
-- Split Synthetic Dry-Run from MoveIt Runtime Dry-Run.
-- Added source tree provenance for Phase 10 evidence.
-- Hardened real robot acceptance sequencing and operator confirmation.
-- Final status: `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`.
+- 区分 Synthetic Dry-Run 和 MoveIt Runtime Dry-Run。
+- 为 Phase 10 evidence 增加 source tree provenance。
+- 加固真实机械臂验收顺序和 operator confirmation。
+- 最终状态：`PHASE10_MOVEIT_DRY_RUN_ACCEPTED`。
 
 ## Phase 10
 
-- Added real robot configuration model, execution modes, hardware gate, read-only adapter boundary, dry-run evidence, acceptance levels, and safety docs.
-- Real robot validation remains `NOT_STARTED`.
+- 增加真实机械臂配置模型、执行模式、硬件门、只读 adapter 边界、dry-run evidence、验收级别和安全文档。
+- 真实机械臂验证仍为 `NOT_STARTED`。
 
 ## Phase 9.2
 
-- Completed Isaac Sim 6.0 smoke validation, Isaac benchmark, and MuJoCo-Isaac paired comparison.
-- Final status: `PHASE9_2_ACCEPTED`.
+- 完成 Isaac Sim 6.0 smoke validation、Isaac benchmark 和 MuJoCo-Isaac 成对对比。
+- 最终状态：`PHASE9_2_ACCEPTED`。
 
 ## Phase 9.1
 
-- Validated ROS 2 runtime and MoveIt 2 safety evidence.
-- Hardened aggregation and log-integrity checks.
+- 验证 ROS 2 runtime 和 MoveIt 2 safety evidence。
+- 加固汇总逻辑和 log-integrity 检查。
 
 ## Phase 9
 
-- Added MuJoCo physical simulation core readiness, domain randomization, metrics provenance, and guarded ROS/Isaac integration.
+- 增加 MuJoCo 物理仿真核心准备度、域随机化、指标溯源和受保护的 ROS/Isaac 集成。
 
 ## Phase 8
 
-- Added reproducible experiment platform, PCSC/ETEAC/AUTO comparisons, crash recovery, and sensitivity guards.
+- 增加可复现实验平台、PCSC/ETEAC/AUTO 对比、崩溃恢复和敏感性守卫。
 
 ## Phase 7
 
-- Added Skill Cache, deterministic RiskEvaluator, AUTO selector, and mode transition persistence.
+- 增加 Skill Cache、确定性 `RiskEvaluator`、AUTO selector 和模式切换持久化。
 
 ## Phase 6
 
-- Added event-triggered autonomy, local recovery, local replanning, CAS guarded plan updates, and durable event repositories.
+- 增加事件触发自治、本地恢复、本地重规划、CAS guarded plan update 和持久化 event repository。
 
 ## Phase 0-5
 
-- Built core contracts, MockRobotAdapter, edge runtime, SafetyShield, cloud planning, and supervision foundations.
+- 建立核心 contract、`MockRobotAdapter`、边缘 runtime、`SafetyShield`、云端规划和 supervision 基础。

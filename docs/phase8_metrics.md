@@ -1,38 +1,26 @@
-# Phase 8 Metrics
+# Phase 8 指标
 
-All durations use milliseconds. Metrics are grouped as observed values, derived
-values, summary statistics, and counterfactual values.
+所有时长单位都用毫秒。指标分为观测值、派生值、统计量和反事实值。
 
-## Observed
+## 观测值
 
-- `task_success`, `task_completion_time_ms`, completed/failed step counts,
-  retry count, first-attempt success.
-- `cloud_invocation_count`, supervisory decisions, replans, commands,
-  telemetry count, uploaded/downloaded bytes.
-- fault detection, cloud response, and recovery latency.
-- safety allow, allow-with-limits, pause, reject, emergency-stop, stale,
-  duplicate, reordered, collision, and counterfactual counts.
-- initial/final mode, switch counts, dwell/cooldown/switch-limit blocks, and
-  time in PCSC/ETEAC.
-- cache hit, miss, promotion, quarantine, invalidation, trusted-template
-  execution.
+- `task_success`、`task_completion_time_ms`、已完成/失败步骤计数、重试次数、首次尝试成功。
+- `cloud_invocation_count`、监督决策、重规划、命令、遥测计数、上传/下载字节数。
+- 故障检测、云端响应和恢复延迟。
+- 安全允许、允许但有限制、暂停、拒绝、急停、过期、重复、乱序、碰撞和反事实计数。
+- 初始/最终模式、切换次数、驻留/冷却/切换次数限制阻塞，以及在 PCSC/ETEAC 中停留的时间。
+- 缓存命中、未命中、晋升、隔离、作废、可信模板执行。
 
-## Derived
+## 派生值
 
-- Success rate is successes divided by total runs. Failed runs remain in the
-  denominator.
-- Repeated completed step count is total completed-step records minus unique
-  completed-step ids.
-- Result hash is computed from normalized result content with wall-clock and
-  self-hash fields removed.
+- 成功率 = 成功次数 / 总运行次数。失败运行仍计入分母。
+- 重复完成步骤数 = 完成步骤记录总数 - 唯一步骤 id 数量。
+- 结果哈希 = 从归一化结果内容计算而来，去掉 wall-clock 和自哈希字段。
 
-## Statistics
+## 统计量
 
-`MetricSummary` provides count, mean, standard deviation, median, p95, min, max,
-success rate, and confidence interval. Success-rate intervals use Wilson 95%.
-Continuous bootstrap intervals use a deterministic seed.
+`MetricSummary` 提供计数、均值、标准差、中位数、p95、最小值、最大值、成功率和置信区间。成功率区间使用 Wilson 95%。连续型 bootstrap 区间使用确定性种子。
 
-## Missing Values
+## 缺失值
 
-Missing latency values are serialized as null and are not silently treated as
-zero. Zero-sample groups produce `sample_count=0`.
+缺失的延迟值序列化为 null，不会被偷偷当成 0。没有样本的分组返回 `sample_count=0`。
