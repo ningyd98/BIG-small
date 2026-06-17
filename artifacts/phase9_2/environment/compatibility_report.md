@@ -4,8 +4,7 @@ Status: `BLOCKED_BY_ENV`
 
 ## Blockers
 
-- Vulkan runtime is not usable
-- ISAAC_SIM_ROOT is not set
+- Isaac Sim compatibility checker failed
 
 ## Details
 
@@ -17,12 +16,12 @@ Status: `BLOCKED_BY_ENV`
 - `gpu`: NVIDIA GeForce RTX 4070 Ti SUPER, 595.71.05, 16376 MiB
 - `isaac_container_digest`: ""
 - `isaac_container_image`: ""
-- `isaac_python_path`: ""
+- `isaac_python_path`: $HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python
 - `isaac_runtime_mode`: ""
-- `isaac_sim_root`: ""
+- `isaac_sim_root`: $HOME/.venvs/bigsmall-isaacsim-6.0.0.1
 - `memory`: 60Gi
 - `os`: Linux-7.0.0-22-generic-x86_64-with-glibc2.43
 - `rmw_implementation`: ""
 - `ros_distro`: ""
 - `ros_domain_id`: ""
-- `vulkan_available`: False
+- `vulkan_available`: True

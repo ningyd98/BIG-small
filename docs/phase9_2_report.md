@@ -4,11 +4,12 @@
 
 The repository now contains Phase 9.2 verification code and artifact contracts for Isaac Sim 6.0 smoke validation and MuJoCo-Isaac paired comparison.
 
-Current host result is not `PHASE9_2_ACCEPTED` because Isaac Sim 6.0 is not configured on this machine:
+Current host result is not `PHASE9_2_ACCEPTED` because Isaac Sim startup still requires interactive NVIDIA Omniverse/Isaac EULA acceptance:
 
-- `ISAAC_SIM_ROOT` is not set.
-- `ISAAC_RUNTIME_MODE=container` is not configured.
-- Vulkan tooling may be unavailable.
+- Vulkan tooling is now available through the user conda environment.
+- A local Isaac venv exists at `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1`.
+- The Phase 9.2 checker can invoke `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python`.
+- Isaac exits before `SimulationApp` startup because the EULA prompt requires a Yes/No response.
 - No real Isaac smoke artifact exists yet.
 - No real Isaac paired-run artifact exists yet.
 

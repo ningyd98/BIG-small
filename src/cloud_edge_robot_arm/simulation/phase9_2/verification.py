@@ -61,7 +61,7 @@ class CommandResult:
 
     def to_jsonable(self) -> dict[str, object]:
         return {
-            "argv": self.argv,
+            "argv": _sanitize_argv(self.argv),
             "exit_code": self.exit_code,
             "stdout": _sanitize_text(self.stdout[-4000:]),
             "stderr": _sanitize_text(self.stderr[-4000:]),
@@ -98,7 +98,7 @@ def build_isaac_runtime_command(
     if config.mode == "standalone":
         if config.isaac_sim_root is None:
             raise ValueError("isaac_sim_root is required for standalone Isaac runtime")
-        executable = config.isaac_sim_root / "python.sh"
+        executable = _standalone_python_executable(config.isaac_sim_root)
         env = {
             "ISAAC_SIM_ROOT": str(config.isaac_sim_root),
             "ISAAC_RUNTIME_MODE": "standalone",
@@ -184,8 +184,8 @@ def collect_environment_compatibility(
         "vulkan_available": commands["vulkan"].exit_code == 0,
         "display": os.environ.get("DISPLAY", ""),
         "egl": os.environ.get("EGL_PLATFORM", ""),
-        "isaac_sim_root": os.environ.get("ISAAC_SIM_ROOT", ""),
-        "isaac_python_path": _isaac_python_path(runtime_config),
+        "isaac_sim_root": _sanitize_text(os.environ.get("ISAAC_SIM_ROOT", "")),
+        "isaac_python_path": _sanitize_text(_isaac_python_path(runtime_config)),
         "isaac_container_image": runtime_config.container_image
         if runtime_config is not None and runtime_config.mode == "container"
         else "",
@@ -248,7 +248,7 @@ def _isaac_checker_command(config: Phase92RuntimeConfig | None) -> list[str]:
         if config.isaac_sim_root is None:
             return ["python", "scripts/phase9/isaac_standalone_app.py", "--check-imports"]
         return [
-            str(config.isaac_sim_root / "python.sh"),
+            str(_standalone_python_executable(config.isaac_sim_root)),
             "scripts/phase9/isaac_standalone_app.py",
             "--check-imports",
         ]
@@ -259,10 +259,20 @@ def _isaac_python_path(config: Phase92RuntimeConfig | None) -> str:
     if config is None:
         return ""
     if config.mode == "standalone" and config.isaac_sim_root is not None:
-        return str(config.isaac_sim_root / "python.sh")
+        return str(_standalone_python_executable(config.isaac_sim_root))
     if config.mode == "container":
         return "/isaac-sim/python.sh"
     return ""
+
+
+def _standalone_python_executable(root: Path) -> Path:
+    python_sh = root / "python.sh"
+    if python_sh.exists():
+        return python_sh
+    venv_python = root / "bin" / "python"
+    if root.exists() and venv_python.exists():
+        return venv_python
+    return python_sh
 
 
 def run_isaac_smoke_runtime(
