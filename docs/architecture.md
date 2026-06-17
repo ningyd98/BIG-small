@@ -19,6 +19,7 @@ BIG-small uses a cloud-edge architecture with deterministic edge execution and c
 - `auto_mode`: Phase 7 AUTO selector, persisted decisions/status/transitions, and mode transition lifecycle.
 - `experiments`: Phase 8 and Phase 8.1 experiment models, deterministic runner, runtime harness, batch suite, metrics, statistics, artifacts, and reproducibility hashing.
 - `repositories`: runtime repositories and event-autonomy repositories with in-memory and SQLite implementations.
+- `real_robot`: Phase 10 real robot configuration, execution mode, hardware execution gate, read-only adapter contracts, dry-run validation, acceptance levels, and sim-to-real schemas.
 - `simulation`: deterministic mock robot adapter, virtual clock, network simulator, world state, MuJoCo physics backend, physics robot adapter, domain randomization, ROS 2 conversion/QoS guards, Isaac independent-process client guards, and fault injection for CI and local tests.
 
 ## Phase 6.1 event autonomy layer
@@ -156,6 +157,31 @@ hash, process/environment provenance, required metric completeness, and metric
 deltas. Isaac failures are rejected; MuJoCo fallback is never accepted as Isaac
 evidence.
 
+## Phase 10 real robot safety gate
+
+Phase 10 prepares physical robot access without running hardware by default:
+
+```text
+TaskContract
+  -> EdgeContractValidator
+  -> SafetyShield
+  -> planner / trajectory summary
+  -> HardwareExecutionGate
+  -> RealRobotAdapter
+```
+
+`ExecutionMode` is explicit: `SIMULATION`, `DRY_RUN`, `HARDWARE_READ_ONLY`,
+`HARDWARE_LOW_SPEED`, or `HARDWARE_OPERATIONAL`. Hardware motion requires
+production profile, `enable_real_robot=true`, non-placeholder site
+configuration, healthy controller, inactive emergency stop, healthy
+SafetyShield, fresh telemetry, local operator confirmation, low-speed limits,
+and sufficient acceptance level.
+
+The ordinary host path validates dry-run evidence only. Dry-run produces
+`PLANNED_ONLY` / `DRY_RUN_VALIDATED` evidence and must never be labeled as
+`HARDWARE_EXECUTED`. Physical acceptance levels are single-step and persistent;
+the repository currently has no real hardware acceptance level.
+
 ## Production boundary
 
 Production mode must explicitly configure durable and real integrations. Test defaults may use mock adapters, fake clocks, and in-memory repositories, but production constructors reject missing durable dependencies where production mode is enforced.
@@ -176,3 +202,4 @@ When `AUTO_MODE_ENABLED=true` in production, `SKILL_CACHE_BACKEND`, `SKILL_CACHE
 - Phase 9 MuJoCo readiness and guarded Isaac/ROS checks: `scripts/verify_phase9.py`.
 - Phase 9.1 ROS 2 / MoveIt runtime acceptance: `scripts/verify_phase9_1.py`.
 - Phase 9.2 Isaac and MuJoCo-Isaac acceptance: `scripts/verify_phase9_2_environment.py`, `scripts/verify_phase9_2_isaac_smoke.py`, `scripts/run_phase9_2_cross_backend.py`, and `scripts/verify_phase9_2.py`.
+- Phase 10 real robot safety readiness and dry-run acceptance: `scripts/verify_phase10_0.py` and `scripts/verify_phase10_1.py`.

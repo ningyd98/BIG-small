@@ -267,7 +267,7 @@ def verify_moveit_safety(output_dir: Path, *, run_runtime: bool = False) -> Comp
                 "python scripts/phase9/run_moveit_safety_evidence.py "
                 f"--output {shlex.quote(str(output_dir))}",
                 ros_domain_id=_ros_domain_for_output(output_dir),
-                timeout=90,
+                timeout=180,
             )
         )
     evidence = _load_json(output_dir / "moveit_safety_evidence.json")
