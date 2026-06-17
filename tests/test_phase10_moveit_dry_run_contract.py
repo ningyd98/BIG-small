@@ -15,6 +15,14 @@ def test_phase10_moveit_dry_run_runtime_is_planning_only() -> None:
     assert "hardware_motion_observed" in source
 
 
+def test_phase10_moveit_dry_run_wrapper_reexecs_core_python_from_ros_shell() -> None:
+    source = Path("scripts/verify_phase10_moveit_dry_run.py").read_text(encoding="utf-8")
+
+    assert "PHASE10_MOVEIT_DRY_RUN_CORE_REEXEC" in source
+    assert "_maybe_reexec_core_python()" in source
+    assert "os.execve" in source
+
+
 def test_phase10_2a_aggregate_accepts_moveit_runtime_dry_run(tmp_path: Path) -> None:
     from cloud_edge_robot_arm.real_robot.provenance import current_source_provenance
     from cloud_edge_robot_arm.real_robot.verification import verify_phase10_2a

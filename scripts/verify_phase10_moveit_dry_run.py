@@ -10,6 +10,36 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+
+def _maybe_reexec_core_python() -> None:
+    if os.environ.get("PHASE10_MOVEIT_DRY_RUN_CORE_REEXEC") == "1":
+        return
+    try:
+        import pydantic  # noqa: F401
+
+        return
+    except ModuleNotFoundError:
+        core_python = _core_python_executable()
+        if core_python == Path(sys.executable):
+            return
+        env = os.environ.copy()
+        env["PHASE10_MOVEIT_DRY_RUN_CORE_REEXEC"] = "1"
+        os.execve(str(core_python), [str(core_python), *sys.argv], env)
+
+
+def _core_python_executable() -> Path:
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        prefix = Path(conda_prefix)
+        if prefix.parent.name == "envs":
+            candidate = prefix.parent.parent / "bin" / "python"
+            if candidate.exists():
+                return candidate
+    return Path(sys.executable)
+
+
+_maybe_reexec_core_python()
+
 from cloud_edge_robot_arm.real_robot.provenance import current_source_provenance  # noqa: E402
 
 
