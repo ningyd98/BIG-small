@@ -11,7 +11,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from cloud_edge_robot_arm.simulation.phase9_2.verification import (  # noqa: E402
+    run_isaac_smoke_runtime,
     runtime_config_from_env,
+    verify_isaac_smoke_evidence,
 )
 
 
@@ -35,6 +37,32 @@ def main() -> int:
             "benchmark_status": "BLOCKED_BY_ENV",
             "validation_claimed": False,
             "blockers": ["Isaac runtime is not configured"],
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+        _write(args.output, payload)
+        print(json.dumps(payload, sort_keys=True, indent=2))
+        return 1
+
+    smoke_output = Path("artifacts/phase9_2/isaac")
+    smoke_payload = verify_isaac_smoke_evidence(smoke_output)
+    if smoke_payload.get("status") != "ISAAC_SMOKE_VALIDATED":
+        smoke_payload = run_isaac_smoke_runtime(smoke_output, config=config)
+    if smoke_payload.get("status") != "ISAAC_SMOKE_VALIDATED":
+        raw_blockers = smoke_payload.get("blockers", [])
+        smoke_blockers = (
+            [str(blocker) for blocker in raw_blockers if isinstance(blocker, str)]
+            if isinstance(raw_blockers, list)
+            else []
+        )
+        payload = {
+            "status": "BLOCKED_BY_ENV",
+            "benchmark_status": "BLOCKED_BY_ENV",
+            "validation_claimed": False,
+            "blockers": [
+                "Isaac smoke runtime is not validated; benchmark was not run",
+                *smoke_blockers,
+            ],
+            "smoke_status": str(smoke_payload.get("status", "")),
             "generated_at": datetime.now(UTC).isoformat(),
         }
         _write(args.output, payload)

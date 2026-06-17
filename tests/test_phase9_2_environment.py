@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+import pytest
+
 from cloud_edge_robot_arm.simulation.phase9_2.verification import (
     CommandResult,
     Phase92RuntimeConfig,
@@ -81,6 +83,38 @@ def test_environment_compatibility_records_blocked_commands(tmp_path: Path) -> N
     assert (tmp_path / "vulkan_summary.txt").read_text(encoding="utf-8")
     assert (tmp_path / "isaac_compatibility_checker.log").read_text(encoding="utf-8")
     assert any("nvidia-smi" in " ".join(call) for call in calls)
+
+
+def test_environment_auto_discovers_local_isaac_venv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    venv = home / ".venvs" / "bigsmall-isaacsim-6.0.0.1"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").write_text("#!/usr/bin/env python\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("ISAAC_SIM_ROOT", raising=False)
+    monkeypatch.delenv("ISAAC_RUNTIME_MODE", raising=False)
+    calls: list[list[str]] = []
+
+    def fake_runner(argv: list[str], timeout: float = 20.0) -> CommandResult:
+        calls.append(argv)
+        joined = " ".join(argv)
+        if "nvidia-smi" in joined:
+            return CommandResult(argv, 0, "NVIDIA GPU, 595.71.05, 16376 MiB", "")
+        if "vulkaninfo" in joined:
+            return CommandResult(argv, 0, "VULKANINFO", "")
+        return CommandResult(argv, 1, "Do you accept the EULA? (Yes/No):", "EOF")
+
+    report = collect_environment_compatibility(tmp_path / "artifacts", runner=fake_runner)
+
+    blockers = cast(list[str], report["blockers"])
+    assert "ISAAC_SIM_ROOT is not set" not in blockers
+    assert "Isaac Sim compatibility checker failed" in blockers
+    assert calls[2][0] == str(venv / "bin" / "python")
+    details = cast(dict[str, object], report["details"])
+    assert details["isaac_runtime_mode"] == "standalone"
+    assert details["isaac_runtime_source"] == "auto_detected"
 
 
 def test_isaac_smoke_runtime_uses_configured_standalone_command(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -60,6 +61,30 @@ def test_phase9_2_cross_backend_entrypoint_rejects_missing_runs(tmp_path: Path) 
     assert result.returncode == 1
     payload = json.loads(result.stdout)
     assert payload["status"] == "REJECTED"
+    assert payload["validation_claimed"] is False
+
+
+def test_phase9_2_isaac_benchmark_entrypoint_requires_smoke_validation(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env.pop("ISAAC_SIM_ROOT", None)
+    env.pop("ISAAC_RUNTIME_MODE", None)
+    env["HOME"] = str(tmp_path / "home")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_phase9_2_isaac_benchmark.py",
+            "--output",
+            str(tmp_path / "isaac_benchmark"),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["benchmark_status"] != "PASSED"
     assert payload["validation_claimed"] is False
 
 

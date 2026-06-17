@@ -17,7 +17,8 @@ Status: `BLOCKED_BY_ENV`
 - `isaac_container_digest`: ""
 - `isaac_container_image`: ""
 - `isaac_python_path`: $HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python
-- `isaac_runtime_mode`: ""
+- `isaac_runtime_mode`: standalone
+- `isaac_runtime_source`: auto_detected
 - `isaac_sim_root`: $HOME/.venvs/bigsmall-isaacsim-6.0.0.1
 - `memory`: 60Gi
 - `os`: Linux-7.0.0-22-generic-x86_64-with-glibc2.43

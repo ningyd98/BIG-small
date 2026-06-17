@@ -78,6 +78,7 @@ class Phase92RuntimeConfig:
     container_digest: str = ""
     accept_eula: bool = True
     privacy_consent: bool = False
+    source: Literal["env", "auto_detected"] = "env"
 
 
 @dataclass(frozen=True)
@@ -171,7 +172,7 @@ def collect_environment_compatibility(
         blockers.append("Vulkan runtime is not usable")
     if commands["isaac_checker"].exit_code != 0:
         blockers.append("Isaac Sim compatibility checker failed")
-    if not os.environ.get("ISAAC_SIM_ROOT") and os.environ.get("ISAAC_RUNTIME_MODE") != "container":
+    if runtime_config is None and os.environ.get("ISAAC_RUNTIME_MODE") != "container":
         blockers.append("ISAAC_SIM_ROOT is not set")
 
     details = {
@@ -184,7 +185,13 @@ def collect_environment_compatibility(
         "vulkan_available": commands["vulkan"].exit_code == 0,
         "display": os.environ.get("DISPLAY", ""),
         "egl": os.environ.get("EGL_PLATFORM", ""),
-        "isaac_sim_root": _sanitize_text(os.environ.get("ISAAC_SIM_ROOT", "")),
+        "isaac_sim_root": _sanitize_text(
+            str(runtime_config.isaac_sim_root)
+            if runtime_config is not None
+            and runtime_config.mode == "standalone"
+            and runtime_config.isaac_sim_root is not None
+            else os.environ.get("ISAAC_SIM_ROOT", "")
+        ),
         "isaac_python_path": _sanitize_text(_isaac_python_path(runtime_config)),
         "isaac_container_image": runtime_config.container_image
         if runtime_config is not None and runtime_config.mode == "container"
@@ -192,7 +199,8 @@ def collect_environment_compatibility(
         "isaac_container_digest": runtime_config.container_digest
         if runtime_config is not None and runtime_config.mode == "container"
         else "",
-        "isaac_runtime_mode": os.environ.get("ISAAC_RUNTIME_MODE", ""),
+        "isaac_runtime_mode": runtime_config.mode if runtime_config is not None else "",
+        "isaac_runtime_source": runtime_config.source if runtime_config is not None else "",
         "ros_distro": os.environ.get("ROS_DISTRO", ""),
         "rmw_implementation": os.environ.get("RMW_IMPLEMENTATION", ""),
         "ros_domain_id": os.environ.get("ROS_DOMAIN_ID", ""),
@@ -229,15 +237,22 @@ def runtime_config_from_env(
             ),
             container_digest=os.environ.get("ISAAC_CONTAINER_DIGEST", ""),
             privacy_consent=os.environ.get("ISAAC_PRIVACY_CONSENT") == "Y",
+            source="env",
         )
     root = os.environ.get("ISAAC_SIM_ROOT", "")
+    source: Literal["env", "auto_detected"] = "env"
     if not root:
-        return None
+        detected = _discover_local_isaac_runtime()
+        if detected is None:
+            return None
+        root = str(detected)
+        source = "auto_detected"
     return Phase92RuntimeConfig(
         mode="standalone",
         repo_root=repo_root,
         output_dir=output_dir,
         isaac_sim_root=Path(root),
+        source=source,
     )
 
 
@@ -273,6 +288,26 @@ def _standalone_python_executable(root: Path) -> Path:
     if root.exists() and venv_python.exists():
         return venv_python
     return python_sh
+
+
+def _discover_local_isaac_runtime() -> Path | None:
+    home = Path.home()
+    candidates: list[Path] = []
+    venv_root = home / ".venvs"
+    if venv_root.exists():
+        candidates.extend(sorted(venv_root.glob("bigsmall-isaacsim-*"), reverse=True))
+        candidates.extend(sorted(venv_root.glob("isaacsim-*"), reverse=True))
+    candidates.extend(
+        [
+            home / "isaac-sim",
+            home / "isaacsim",
+            home / "NVIDIA" / "isaac-sim",
+        ]
+    )
+    for candidate in candidates:
+        if (candidate / "python.sh").exists() or (candidate / "bin" / "python").exists():
+            return candidate
+    return None
 
 
 def run_isaac_smoke_runtime(
