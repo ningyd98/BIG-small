@@ -2,6 +2,10 @@
 
 Phase 10.2A strengthens the pre-hardware evidence chain.
 
+Phase 10.2A-R strengthens repository architecture and documentation around that
+evidence. Its repository governance status is
+`PHASE10_2A_REPOSITORY_DOCUMENTATION_ACCEPTED`.
+
 Current expected result on this host is `PHASE10_MOVEIT_DRY_RUN_ACCEPTED` when
 the ROS 2 / MoveIt environment is available.
 

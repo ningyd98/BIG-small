@@ -1,5 +1,9 @@
 # Phase 10 Acceptance
 
+Repository governance status `PHASE10_2A_REPOSITORY_DOCUMENTATION_ACCEPTED`
+means documentation, verification entrypoints, CI checks, and repository
+structure are consistent. It does not change runtime acceptance status.
+
 Allowed final statuses:
 
 - `PHASE10_IMPLEMENTATION_READY_ENV_BLOCKED`
@@ -25,7 +29,7 @@ python scripts/verify_phase9_1.py --skip-history
 python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
 python scripts/verify_phase10_0.py
 python scripts/verify_phase10_1.py
-python scripts/verify_phase10_2a.py
+python scripts/verify_phase10_2a.py --skip-runtime
 python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/moveit_dry_run
 ```
 

@@ -1,5 +1,8 @@
 # Dry-Run Validation
 
+Phase 10.2A-R does not add a new dry-run class. It documents and checks the
+existing separation between Synthetic Dry-Run and MoveIt Runtime Dry-Run.
+
 Dry-run validation exercises the software safety chain without sending hardware
 commands:
 

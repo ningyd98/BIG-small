@@ -1,5 +1,9 @@
 # Phase 10 Report
 
+Phase 10.2A-R adds repository and documentation governance around the accepted
+Phase 10.2A dry-run state. The runtime boundary remains
+`PHASE10_MOVEIT_DRY_RUN_ACCEPTED`.
+
 ## Current Result
 
 Current expected software-only result on a host with ROS 2 / MoveIt available is

@@ -1,5 +1,9 @@
 # Phase 10 Design
 
+Phase 10.2A-R is a repository and documentation governance stage. It does not
+change SafetyShield, HardwareExecutionGate, PCSC, ETEAC, AUTO, real robot
+adapter behavior, or accepted runtime evidence.
+
 Phase 10 adds the safety boundary required before connecting a physical robot.
 It does not execute a real robot task by default and does not claim real robot
 validation.

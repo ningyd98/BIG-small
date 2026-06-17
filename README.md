@@ -1,182 +1,130 @@
 # BIG-small
 
-BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用”云端智能规划、边缘安全执行”架构。当前版本完成 Phase 0–9 core：仓库初始化、配置、数据契约、结构化错误/日志、MockRobotAdapter、技能注册表、边缘执行运行时、可追溯状态机、边缘安全盾、云端规划/监督/重规划、PCSC、ETEAC、Skill Cache、RiskEvaluator、AUTO 双模式选择、ModeTransition 持久化、Phase 8.2 周期闭环和真实检测延迟修复，以及 Phase 9 MuJoCo 物理仿真、物理指标、Domain Randomization 和 Sim2Real readiness 验证；Phase 9.1 已完成 ROS 2 runtime validation 和 MoveIt 2 safety validation。Phase 9.2 已完成 Isaac Sim 6.0 standalone smoke validation、Isaac benchmark、MuJoCo-Isaac paired comparison 和最终 aggregate verifier，本机 Phase 9.2 final 状态为 `PHASE9_2_ACCEPTED`。Phase 10 已建立真实机械臂安全接入前的配置门禁、dry-run 验证和分级验收框架；Phase 10.2A 将 synthetic dry-run 与 MoveIt runtime dry-run 分离，当前具备 MoveIt 环境时目标状态为 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`。
+BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制系统，采用云端智能规划、边缘安全执行架构。
 
-Phase 9.1 当前状态是 `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`：ROS 2 runtime 为 `ROS2_INTEGRATION_VALIDATED`，MoveIt 2 safety 为 `MOVEIT_SAFETY_VALIDATED`，Isaac Sim 为 `BLOCKED_BY_ENV`，cross-backend comparison 为 `BLOCKED_BY_ENV`。本仓库没有连接真实机械臂，real robot validation not started，不声明真实硬件验证完成。真实机械臂 SDK、实体急停、真实相机标定和真实物理性能验证属于 Phase 10。
+## 1. 项目概述
 
-Phase 9.2 当前主机状态是 `PHASE9_2_ACCEPTED`：Vulkan tooling 可用，本机 auto-detected standalone runtime `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1` 已完成 Isaac Sim 6.0 `SimulationApp` 启动、MJCF Panda/Franka stage 加载、physics step、robot state、RGB/depth/contact sensor 采样、reset、emergency stop、graceful shutdown、6 场景 Isaac benchmark 和 30 个 MuJoCo-Isaac paired runs。该状态仍不是真实机械臂验证。
+本项目研究云端大模型/规划服务与边缘机器人运行时的协同控制。云端负责高层任务规划、周期监督、局部重规划和风险决策；边缘端负责契约校验、状态机执行、安全盾检查、恢复策略和最终执行拒绝权。
 
-Phase 10 当前普通环境状态拆分为 synthetic framework dry-run 和 MoveIt dry-run：synthetic evidence 只能产生 `PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED`；真实 ROS 2 / MoveIt 规划服务生成 dry-run 轨迹且未执行时才能产生 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`。没有连接真实机械臂，没有读取真实控制器状态，没有执行真实机械臂运动，当前最高实机验收级别为 `NONE`。
+系统实现两类云边协同模式：`PCSC` 周期云端监督和 `ETEAC` 事件触发边缘自治。`AUTO` 双模式选择器只在两者之间做受限切换，不是第三种执行引擎。
 
-## 仓库现状
+当前验证边界包括 Mock、MuJoCo、Isaac Sim、ROS 2 / MoveIt safety、Synthetic Dry-Run 和 MoveIt Runtime Dry-Run。真实机械臂 read-only 和 motion 验证尚未开始。
 
-初始化审查时仓库仅包含：
+## 2. 当前状态
 
-- `docs/plan.md`：系统总体规划。
-- `docs/面向边缘智能场景的小型机械臂云边协同控制系统的设计.docx`：设计文档。
+| 能力层 | 当前状态 | 是否涉及真实硬件 |
+| --- | --- | --- |
+| Core runtime | Accepted | No |
+| PCSC / ETEAC / AUTO | Accepted | No |
+| Phase 8 experiment platform | Accepted | No |
+| MuJoCo | Accepted | No |
+| ROS 2 / MoveIt safety | Accepted | No |
+| Isaac Sim | Accepted | No |
+| Cross-backend | Accepted | No |
+| Synthetic Dry-Run | Accepted | No |
+| MoveIt Runtime Dry-Run | Accepted | No |
+| Real Robot Read-Only | Not started | Yes |
+| Real Robot Motion | Not started | Yes |
 
-当前新增了可运行 Python 包、测试、配置、脚本和阶段报告，并已同步到 GitHub 仓库 `ningyd98/BIG-small.git`。
+当前权威项目状态包含 `PHASE9_2_ACCEPTED` 和 `PHASE10_MOVEIT_DRY_RUN_ACCEPTED`。这不等于真实机械臂验证完成：`real_robot_validation=NOT_STARTED`，当前最高真实硬件验收级别为 `NONE`，没有连接真实控制器，也没有执行物理运动。
 
-## 当前能力
+## 3. 核心能力
 
-- 统一消息追踪字段：`task_id`、`plan_version`、`command_seq`、`timestamp`。
-- Pydantic 数据模型：`TaskContract`、`Telemetry`、`CloudCommand`、`CommandAck`、`EdgeEvent`、`FailureSummary`、`SkillTemplate`。
-- JSON Schema 由 Pydantic `model_json_schema()` 导出，并通过契约示例测试验证。
-- 边缘契约校验器：支持 schema 校验、过期检查、计划版本检查、命令序号去重和未知技能拒绝。
-- Phase 1 Mock 机械臂：支持统一 `RobotAdapter` 接口、动作耗时模拟、超时、故障注入和状态查询。
-- 固定技能注册表：13 个原子技能均通过 `SkillName` 枚举注册，不通过字符串动态执行任意函数。
-- Phase 1.1 固定流程安全收口：首个失败后短路、记录 `failed_step_id` 和 `skipped_steps`，并触发停机动作。
-- Phase 2 边缘运行时：`TaskContract -> EdgeContractValidator -> TaskStateMachine -> TaskRuntimeContext -> SkillRegistry -> SkillExecutor -> RobotAdapter -> Repository -> AuditLog`。
-- Repository：提供 `InMemoryRepository` 和 `SQLiteRepository`，持久化任务、状态转换、步骤执行、动作执行、已接受命令和审计事件。
-- 防重放：持久化 `plan_version`、`command_seq` 和 payload hash；支持重启后 replay 拒绝和相同序号不同负载冲突检测。
-- 崩溃恢复：进程重启后处于 `EXECUTING` 的任务会被标记为 `PAUSED`，并写入 `RUNTIME_RECOVERY_REQUIRED`。
-- Phase 5 周期监督 API：支持 supervision capabilities、机器人状态上报、手动监督 tick、决策查询、start/stop/status。
-- Phase 5 监督持久化：提供 `InMemorySupervisionRepository` 和 `SQLiteSupervisionRepository`，持久化状态快照、监督决策、任务运行状态和监督审计事件，并提供版本 CAS 防并发重复升级。
-- Production 配置：`RUNTIME_PROFILE=production` 时必须显式配置数据库、MQTT、Planner、RobotAdapter、TelemetryProvider、SceneStateProvider、监督仓库和监督调度器，不会静默回落到 Mock/Fake/InMemory 默认值。
-- Phase 6.2 事件触发边缘自治封板：`EventAutonomyRepository` 提供 InMemory/SQLite 实现，持久化事件、恢复预算、状态机、FailureSummary、CompletionSummary、LocalReplanningRequest/Result、Outbox、审计和计划版本；TaskExecutor 的 `RETRY_STEP` 真实重试同一步骤；SQLite 重启后可恢复 active contract、checkpoint、已完成步骤和当前步骤；`LocalReplanningService` 从仓储读取上下文；`ReplanMergeValidator` 保护已完成步骤；`ReplanApplyService` 通过 CAS 更新 active contract；CompletionEvaluator 阻止仅凭步骤耗尽或调用方声明成功；API 连接真实仓储和服务。
-- Phase 7 Skill Cache：持久化高层技能模板、参数模板和执行统计，支持 InMemory/SQLite、晋升、隔离、失效、TTL、CAS、幂等和重启恢复；缓存不保存底层控制量，命中后仍必须经过 TaskContract、ContractValidator 和 SafetyShield。
-- Phase 7 Risk-Aware Scheduler：`RiskEvaluator` 基于版本化 `RiskPolicy` 计算 task、scene dynamics、perception、network、execution、safety 六类风险分量；缺失输入 fail-closed，SafetyShield emergency stop 硬覆盖为 CRITICAL。
-- Phase 7 AUTO Mode Selector：AUTO 不是第三种执行模式，只在 `PERIODIC_CLOUD_SUPERVISION` 与 `EVENT_TRIGGERED_EDGE_AUTONOMY` 间做确定性选择，或保持当前模式、请求观察、暂停、安全停止；切换受 dwell time、cooldown、switch limit 和安全边界约束。
-- Phase 8 可复现实验：新增强类型实验模型、离散事件虚拟时钟、seed 驱动网络仿真、15 个故障场景、PCSC/ETEAC/AUTO 统一运行接口、Skill Cache 与 AUTO 信号消融、安全 shadow counterfactual、统计汇总、artifact 导出、Markdown 报告和 `scripts/verify_phase8.py`。
-- Phase 8.1 实验真实性修复：`RuntimeExperimentHarness` 将 Phase 8 实验接入真实 `TaskExecutor`、`SafetyShield`、`PeriodicSupervisorService`、`EventTriggeredModeController`、`LocalReplanningService`、`ReplanApplyService` 和 `ModeTransitionService`；故障交错、命令一致性、崩溃恢复和事件溯源指标都来自正式运行证据。
-- Phase 8.2 周期闭环和实验敏感性：PCSC tick 使用虚拟时钟周期调度并与步骤交错；fault detected 不再由 fault injected 直接产生；AUTO 在安全边界提交；S15 覆盖 9 个 crash point；实验 guard 检查 mode/network/seed 敏感性。
-- Phase 9 MuJoCo 物理仿真：新增 `SimulatorBackend`、`MuJoCoPhysicsBackend`、`PhysicsRobotAdapter`、物理 sensor/contact/metric provenance、Domain Randomization、Phase 9 benchmark runner 和环境探测。Isaac Sim、ROS 2、MoveIt 2 路径为 guarded integration，缺环境时输出 `BLOCKED_BY_ENV`。
-- Phase 9.1 ROS 2 / MoveIt runtime acceptance：ROS 2 已通过真实 rclpy runtime evidence，覆盖 QoS、namespace、timestamp、action success/timeout/cancel、stale feedback、node crash 和 reconnect；MoveIt 2 已通过真实 safety evidence，覆盖 reachability、unreachable target、joint limit rejection、PlanningScene collision object insertion、collision-path rejection/replanning、planning timeout、execution cancellation、emergency-stop boundary 和 BIG-small execution boundary。Isaac Sim 与 cross-backend comparison 仍仅因宿主环境缺失保持 `BLOCKED_BY_ENV`，不计为 pass。
-- Phase 9.2 Isaac / cross-backend acceptance：`scripts/verify_phase9_2_environment.py`、`scripts/verify_phase9_2_isaac_smoke.py`、`scripts/run_phase9_2_isaac_benchmark.py`、`scripts/run_phase9_2_cross_backend.py` 和 `scripts/verify_phase9_2.py` 已在兼容 Isaac standalone 主机上生成真实 smoke、benchmark 和 paired-run artifacts，并得到 `PHASE9_2_ACCEPTED`。普通 CI 仍只验证 source/protocol/artifact contract，不声称 Isaac runtime validated。
-- Phase 10 真实机械臂安全接入准备：新增 `cloud_edge_robot_arm.real_robot`，覆盖真实设备配置哈希/source、execution mode、hardware execution gate、read-only adapter、dry-run validation、Level 0–6 验收框架、审计 evidence 和 Sim-to-Real schema。默认不执行真机动作；dry-run 不得标记为 hardware executed。
-- 结构化 JSON 日志工具和 `.env.example`。
+- **Contracts and traceability**: `TaskContract`、`Telemetry`、`CloudCommand`、`FailureSummary` 等 Pydantic 模型提供任务版本、命令序号、时间戳和 schema 追踪。
+- **Edge runtime**: `TaskExecutor`、`TaskStateMachine`、Repository、AuditLog 和 restart recovery 组成边缘执行闭环。
+- **SafetyShield**: 在技能执行前后检查速度、工作空间、碰撞、急停、过期数据和故障状态，边缘端拥有最终拒绝权。
+- **Cloud planning and supervision**: 云端规划、周期监督、失败摘要和局部重规划只生成高层契约或监督决策。
+- **Event-triggered autonomy**: `ETEAC` 通过事件检测、本地恢复预算、局部重规划和 outbox 完成边缘自治流程。
+- **Skill Cache and risk scheduling**: Skill Cache 缓存高层技能模板；RiskEvaluator 和 AUTO 选择器在安全边界内选择协同模式。
+- **Experiment platform**: Phase 8+ 提供虚拟时钟、网络故障、重启恢复、消融实验、统计汇总和 artifact provenance。
+- **Simulation backends**: MuJoCo 和 Isaac Sim 用于物理仿真与跨后端对比，不是硬件验证。
+- **ROS 2 / MoveIt integration**: ROS 2 runtime 和 MoveIt safety 已验证；MoveIt Runtime Dry-Run 只规划，不调用 execute。
+- **Real robot safety readiness**: Phase 10 提供配置门禁、HardwareExecutionGate、OperatorConfirmation 和 sequential acceptance levels。
 
-## 目录结构
+## 4. 系统架构
 
-```text
-.
-├── configs/                  # 可复现实验和本地运行配置
-├── contracts/                # 契约 JSON 示例与 schema 说明
-├── data/                     # SQLite 等本地运行数据目录
-├── docs/                     # 设计文档、阶段报告和差距分析
-├── edge/                     # 边缘模块顶层说明
-├── scripts/                  # 一键检查和 Phase 1 demo 脚本
-├── shared/                   # Phase 0/1 冻结路线说明
-├── simulation/               # 仿真模块顶层说明
-├── src/cloud_edge_robot_arm/
-│   ├── cloud/                # 云端规划、监督、重规划模块目录
-│   ├── contracts/            # 任务契约和消息模型
-│   ├── edge/                 # 边缘校验、技能注册表、技能执行器
-│   ├── risk/                 # Phase 7 确定性风险评估
-│   ├── skill_cache/          # Phase 7 高层技能缓存
-│   ├── auto_mode/            # Phase 7 AUTO 选择和模式切换
-│   ├── experiments/          # Phase 8 实验模型、runner、统计和 artifact
-│   ├── real_robot/           # Phase 10 真机配置门禁、dry-run、验收级别和 evidence schema
-│   └── simulation/           # Mock、MuJoCo backend、PhysicsRobotAdapter、ROS/Isaac guards
-└── tests/                    # Phase 0/1 单元测试
+```mermaid
+flowchart LR
+  User[User / Task] --> Cloud[Cloud Planning and Supervision]
+  Cloud --> Contract[TaskContract]
+  Contract --> Validator[Edge Contract Validator]
+  Validator --> Shield[SafetyShield]
+  Shield --> Executor[TaskExecutor]
+  Executor --> Adapter[RobotAdapter Boundary]
+  Adapter --> Mock[Mock]
+  Adapter --> MuJoCo[MuJoCo]
+  Adapter --> Isaac[Isaac Sim]
+  Adapter --> MoveIt[MoveIt Runtime Dry-Run]
+  Adapter --> Real[Real Robot Adapter]
+  Shield --> Stop[StopController]
+  Executor --> Evidence[Evidence / Artifact / Provenance]
+  Evidence --> Reports[Reports and Verifiers]
+  Cloud --> PCSC[PCSC]
+  Cloud --> ETEAC[ETEAC]
+  PCSC --> AUTO[AUTO 双模式选择器]
+  ETEAC --> AUTO
+  AUTO --> Contract
+  Real --> Gate[HardwareExecutionGate]
+  Gate --> Operator[OperatorConfirmation]
 ```
 
-## 本地运行
+完整架构、时序图和边界说明见 [docs/architecture.md](docs/architecture.md)。
 
-推荐使用一键脚本：
-
-```bash
-./scripts/start_phase1_demo.sh
-```
-
-该脚本会创建 `.venv`、安装开发依赖、运行测试，并执行一次 Mock pick-and-place 技能序列。
-
-单独运行检查：
-
-```bash
-./scripts/run_checks.sh
-```
-
-手动命令：
+## 5. 快速开始
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
-python -m compileall src scripts tests
-python -m ruff format --check .
-python -m ruff check .
-python -m mypy .
 python -m pytest -q
-python scripts/verify_phase6.py
-python scripts/verify_phase6_2.py
-python scripts/verify_phase7.py
-python scripts/verify_phase8.py
-python scripts/verify_phase8_1.py
-python scripts/verify_phase8_2.py
-python scripts/verify_phase9.py
-source scripts/phase9/activate_ros2_moveit_env.sh
-python scripts/verify_phase9_1_ros2_integration.py --output artifacts/phase9_1/ros2
-python scripts/verify_phase9_1_moveit_safety.py --output artifacts/phase9_1/moveit
-python scripts/verify_phase9_1.py --output artifacts/phase9_1
-python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/environment
-python scripts/verify_phase9_2_isaac_smoke.py --output artifacts/phase9_2/isaac
-python scripts/run_phase9_2_isaac_benchmark.py --output artifacts/phase9_2/isaac_benchmark
-python scripts/run_phase9_2_cross_backend.py --output artifacts/phase9_2/cross_backend
-python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
-python scripts/verify_phase10_0.py
-python scripts/verify_phase10_1.py
-python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/moveit_dry_run
-python scripts/verify_phase10_2a.py
-python -m pip check
+python scripts/verify_project.py --profile ci
 ```
 
-阶段验收命令：
+常用入口：
 
 ```bash
-ruff check .
-mypy .
-pytest -q
-python scripts/validate_contract_examples.py
 python scripts/run_fixed_pick_place.py --adapter mock
-python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
-python scripts/run_fault_injection_suite.py
-python scripts/run_phase2_task.py --repository sqlite
-python scripts/run_phase2_failure_case.py --fault GRASP_FAILED
-python scripts/run_phase2_replay_test.py
-python scripts/run_phase2_restart_recovery_test.py
-python scripts/verify_phase2.py
-python scripts/verify_phase3.py
-python scripts/verify_phase3_1.py
-python scripts/verify_phase3_2.py
-python scripts/verify_phase4.py
-python scripts/verify_phase5.py
-python scripts/verify_phase6.py
-python scripts/verify_phase6_2.py
-python scripts/verify_phase7.py
-python scripts/verify_phase8.py
-python scripts/verify_phase8_1.py
-python scripts/verify_phase8_2.py
 python scripts/verify_phase9.py
-source scripts/phase9/activate_ros2_moveit_env.sh
-python scripts/verify_phase9_1_ros2_integration.py --output artifacts/phase9_1/ros2
-python scripts/verify_phase9_1_moveit_safety.py --output artifacts/phase9_1/moveit
-python scripts/verify_phase9_1.py --output artifacts/phase9_1
-python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/environment
-python scripts/verify_phase9_2_isaac_smoke.py --output artifacts/phase9_2/isaac
-python scripts/run_phase9_2_isaac_benchmark.py --output artifacts/phase9_2/isaac_benchmark
-python scripts/run_phase9_2_cross_backend.py --output artifacts/phase9_2/cross_backend
-python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
-python -m pip check
+python scripts/verify_phase10_0.py
+python scripts/verify_phase10_1.py
+python scripts/verify_phase10_2a.py --skip-runtime
 ```
 
-## 阶段状态
+MoveIt Runtime Dry-Run 需要 ROS 2 / MoveIt 环境：
 
-- Phase 0：已完成，见 `docs/phase0_acceptance.md`。
-- Phase 1：已完成，见 `docs/phase1_acceptance.md`。
-- Phase 1.1：已完成，见 `docs/phase1_1_report.md`。
-- Phase 2：已完成，见 `docs/phase2_design.md`、`docs/phase2_acceptance.md` 和 `docs/phase2_report.md`。
-- Phase 3：已完成，见 `docs/phase3_design.md`、`docs/phase3_acceptance.md` 和 `docs/phase3_report.md`。
-- Phase 3.1：已完成，见 `docs/phase3_1_design.md`、`docs/phase3_1_acceptance.md` 和 `docs/phase3_1_report.md`。
-- Phase 3.2：已完成，见 `docs/phase3_2_design.md`、`docs/phase3_2_acceptance.md` 和 `docs/phase3_2_report.md`。
-- Phase 4：已完成，见 `docs/phase4_design.md`、`docs/phase4_acceptance.md` 和 `docs/phase4_report.md`。
-- Phase 5：已完成并已回顾性加固，见 `docs/phase5_report.md` 和 `docs/reviews/phase5_retrospective_review.md`。
-- Phase 6.1：已完成事件触发边缘自治闭环真实性修复与生产持久化收口，见 `docs/event_triggered_autonomy.md`、`docs/local_recovery.md`、`docs/local_replanning.md`、`docs/network_degradation.md` 和 `docs/phase6_1_closure_report.md`。
-- Phase 6.2：已完成最终验收与封板，明确 checkpoint 权威来源、重规划合并规则、CAS/幂等语义、SQLite 崩溃恢复流程、完成证据模型和 InMemory/SQLite 使用边界，见 `docs/phase6_2_design.md`、`docs/phase6_2_acceptance.md` 和 `docs/phase6_2_report.md`。
-- Phase 7：已完成 Skill Cache、风险感知调度、AUTO 双模式选择、ModeTransition 持久化和生产配置门禁，见 `docs/skill_cache.md`、`docs/risk_policy.md`、`docs/auto_mode_selection.md`、`docs/mode_transition.md`、`docs/phase7_acceptance.md` 和 `docs/phase7_report.md`。
-- Phase 8：已完成可复现仿真实验框架、双模式/AUTO 对比、故障注入、消融、统计和 artifact 导出；当前仍没有真实硬件、真实相机模型、生产 LLM CI 或真实物理 benchmark。
-- Phase 8.1：已完成实验真实性和生产执行链路接入修复，Phase 8 实验现在通过真实 runtime chain 产出 evidence；当前仍是 mock/sim 证据，不是硬件验证。
-- Phase 8.2：已完成周期闭环、真实故障检测延迟、安全边界切换、多 crash point 恢复和实验敏感性 guard，见 `docs/phase8_2_design.md`、`docs/phase8_2_acceptance.md` 和 `docs/phase8_2_report.md`。
-- Phase 9：已完成 MuJoCo core readiness，见 `docs/phase9_design.md`、`docs/phase9_mujoco_backend.md`、`docs/phase9_experiment_design.md`、`docs/phase9_report.md` 和 `docs/phase9_sim2real_readiness.md`。
-- Phase 9.1：已完成 ROS 2 runtime validation 和 MoveIt 2 safety validation；当前主机因 Isaac Sim 与 cross-backend comparison 环境缺失保持 `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`，见 `docs/phase9_1_acceptance.md` 和 `docs/phase9_1_report.md`。
-- Phase 9.2：已完成 Isaac Sim 6.0 runtime/cross-backend 验证并封板，当前主机得到 `PHASE9_2_ACCEPTED`，见 `docs/phase9_2_design.md`、`docs/phase9_2_environment.md`、`docs/phase9_2_isaac_backend.md`、`docs/phase9_2_cross_backend.md`、`docs/phase9_2_acceptance.md` 和 `docs/phase9_2_report.md`。
+```bash
+source scripts/phase9/activate_ros2_moveit_env.sh
+python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/moveit_dry_run
+```
+
+更多命令见 [docs/verification.md](docs/verification.md) 和 [scripts/README.md](scripts/README.md)。
+
+## 6. 验证配置
+
+- **CI-safe**: compile、ruff、mypy、pytest、文档检查、Mock/MuJoCo/Phase 10 软件门禁，不需要 Isaac、MoveIt 或真实硬件。
+- **Environment-specific**: ROS 2 / MoveIt、Isaac Sim 和 cross-backend verifier 需要对应主机环境和 artifacts。
+- **Real-hardware-only**: Level 0+ 真实机械臂验收必须由现场操作员执行，默认不会由 CI 或统一入口自动运行。
+
+## 7. 文档导航
+
+- [docs/README.md](docs/README.md): 完整文档门户。
+- [docs/architecture.md](docs/architecture.md): 当前权威系统架构。
+- [docs/project_status.md](docs/project_status.md): 能力域状态、verifier 和 evidence。
+- [docs/repository_structure.md](docs/repository_structure.md): 仓库目录职责。
+- [docs/verification.md](docs/verification.md): 验证 profile 和命令说明。
+- [docs/real_robot_safety.md](docs/real_robot_safety.md): 真实机械臂安全边界。
+- [docs/roadmap.md](docs/roadmap.md): 后续路线图。
+- [CONTRIBUTING.md](CONTRIBUTING.md): 贡献和提交规范。
+- [CHANGELOG.md](CHANGELOG.md): 阶段变更记录。
+
+## 8. 安全声明
+
+浏览器、云端模型和用户自然语言任务不能直接驱动关节。所有动作必须经过 `TaskContract`、`EdgeContractValidator`、`SafetyShield`、`TaskExecutor` 和对应 adapter 边界。
+
+Synthetic Dry-Run 和 MoveIt Runtime Dry-Run 都不是硬件执行。`hardware_motion_observed=false` 表示没有观察到真实机械臂运动，也不构成 read-only 或 motion 验收。
+
+在完成 Level 0 read-only 验收前，不得开展任何运动测试。首次真实运动测试必须现场隔离、急停可达、双人监督，且人员不得进入工作空间。
+
+## 9. 项目用途
+
+本仓库用于云边协同机械臂控制系统的研究、仿真验证、运行证据管理和真实硬件接入前安全门禁建设。仓库当前没有新增许可证声明；使用边界以本 README、文档和配置中的安全说明为准。

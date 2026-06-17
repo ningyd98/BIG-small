@@ -1,5 +1,8 @@
 # Real Robot Safety
 
+No Phase 10.2A-R documentation or repository governance command may connect to a
+controller or execute real hardware motion.
+
 Physical robot motion is fail-closed.
 
 - `enable_real_robot=false` rejects every motion command.

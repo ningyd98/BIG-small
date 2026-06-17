@@ -1,5 +1,8 @@
 # Real Robot Acceptance Levels
 
+Current highest real hardware acceptance level is `NONE`. Documentation
+governance does not promote acceptance levels.
+
 Phase 10 defines physical hardware acceptance as a single-level-at-a-time
 process. The CLI never runs all levels automatically.
 
