@@ -7,6 +7,7 @@ import json
 import os
 import struct
 import sys
+import tempfile
 import time
 import uuid
 import zlib
@@ -43,6 +44,7 @@ class IsaacScene:
     robot: Any
     camera: Any
     contact_sensor: Any
+    simulation_context: Any
     physics_steps: int = 0
     sim_time_s: float = 0.0
     emergency_stopped: bool = False
@@ -57,6 +59,19 @@ def main() -> int:
     parser.add_argument("--physics-steps", type=int, default=24)
     parser.add_argument("--check-imports", action="store_true")
     args = parser.parse_args()
+    if os.environ.get("PHASE9_2_TRACE_ARGS") == "1":
+        print(
+            json.dumps(
+                {
+                    "check_imports": args.check_imports,
+                    "output": str(args.output),
+                    "physics_steps": args.physics_steps,
+                    "smoke": args.smoke,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
 
     runtime_result = _start_isaac_runtime(headless=args.headless)
     if runtime_result["status"] != "READY":
@@ -72,11 +87,15 @@ def main() -> int:
         return 0
 
     try:
+        _trace("creating_stage")
         scene = _create_or_load_stage(runtime=runtime, stage=args.stage)
+        _trace("stage_created")
         if args.smoke:
+            _trace("running_smoke")
             evidence = _run_smoke(
                 runtime=runtime, scene=scene, output_dir=args.output, steps=args.physics_steps
             )
+            _trace("smoke_finished")
             print(json.dumps(evidence, sort_keys=True))
             return 0 if evidence["status"] == "ISAAC_SMOKE_VALIDATED" else 3
         _serve_jsonl(runtime=runtime, scene=scene, output_dir=args.output)
@@ -105,17 +124,30 @@ def _start_isaac_runtime(*, headless: bool) -> dict[str, object]:
     }
 
 
+def _trace(event: str) -> None:
+    if os.environ.get("PHASE9_2_TRACE_ARGS") == "1":
+        print(json.dumps({"event": event}, sort_keys=True), flush=True)
+
+
 def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> IsaacScene:
     # Isaac imports intentionally stay inside the standalone Isaac Python process.
+    _trace("stage_imports_start")
     import omni.usd  # type: ignore[import-not-found]
-    from omni.isaac.core.articulations import Articulation  # type: ignore[import-not-found]
-    from omni.isaac.core.objects import DynamicCuboid  # type: ignore[import-not-found]
-    from omni.isaac.core.utils.stage import (  # type: ignore[import-not-found]
-        add_reference_to_stage,
-        create_new_stage,
+    from isaacsim.asset.importer.mjcf import (  # type: ignore[import-not-found]
+        MJCFImporter,
+        MJCFImporterConfig,
     )
-    from omni.isaac.sensor import Camera, ContactSensor  # type: ignore[import-not-found]
+    from isaacsim.core.api import SimulationContext  # type: ignore[import-not-found]
+    from isaacsim.core.api.objects import DynamicCuboid  # type: ignore[import-not-found]
+    from isaacsim.core.prims.impl import SingleArticulation  # type: ignore[import-not-found]
+    from isaacsim.sensors.camera import Camera  # type: ignore[import-not-found]
+    from isaacsim.sensors.experimental.physics import (  # type: ignore[import-not-found]
+        Contact,
+        ContactSensor,
+    )
     from pxr import Gf, UsdGeom, UsdPhysics  # type: ignore[import-not-found]
+
+    _trace("stage_imports_done")
 
     if stage is not None:
         if not stage.exists():
@@ -123,12 +155,32 @@ def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> Isaac
         omni.usd.get_context().open_stage(str(stage))
         stage_path = str(stage)
     else:
-        create_new_stage()
-        stage_path = "generated://phase9_2_minimal_panda_stage"
+        _trace("import_mjcf_start")
+        importer = MJCFImporter()
+        config = MJCFImporterConfig(
+            mjcf_path=str((ROOT / "assets/robots/franka_panda/scene.xml").resolve())
+        )
+        config.usd_path = tempfile.mkdtemp(prefix="phase9_2_mjcf_")
+        config.debug_mode = True
+        importer.config = config
+        stage_path = importer.import_mjcf()
+        omni.usd.get_context().open_stage(stage_path)
+        for _ in range(10):
+            runtime.update()
+        _trace("import_mjcf_done")
+    _trace("get_stage_start")
     usd_stage = omni.usd.get_context().get_stage()
+    _trace("get_stage_done")
     UsdGeom.SetStageMetersPerUnit(usd_stage, 1.0)
     UsdGeom.SetStageUpAxis(usd_stage, UsdGeom.Tokens.z)
     UsdPhysics.Scene.Define(usd_stage, "/World/physicsScene")
+    simulation_context = SimulationContext(
+        physics_dt=1.0 / 60.0,
+        rendering_dt=1.0 / 60.0,
+        stage_units_in_meters=1.0,
+    )
+    simulation_context.initialize_physics()
+    _trace("physics_scene_done")
 
     table = UsdGeom.Cube.Define(usd_stage, "/World/table")
     table.AddScaleOp().Set(Gf.Vec3f(0.8, 0.6, 0.04))
@@ -149,30 +201,39 @@ def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> Isaac
     )
     del target
 
-    panda_usd = _resolve_panda_usd()
-    add_reference_to_stage(usd_path=panda_usd, prim_path="/World/Franka")
-    robot = Articulation(prim_path="/World/Franka", name="phase9_2_franka")
+    _trace("robot_create_start")
+    robot = SingleArticulation(
+        prim_path="/bigsmall_phase9_franka_like_scene/Geometry/panda_link0",
+        name="phase9_2_franka",
+    )
+    _trace("robot_created")
+    _trace("camera_create_start")
     camera = Camera(
         prim_path="/World/phase9_2_camera",
         position=(0.85, -0.6, 0.75),
         orientation=(0.653281, 0.270598, 0.270598, 0.653281),
         resolution=(320, 240),
     )
+    _trace("camera_created")
+    _trace("contact_create_start")
     contact_sensor = ContactSensor(
-        prim_path="/World/phase9_2_contact_sensor",
-        name="phase9_2_contact_sensor",
-        min_threshold=0.0,
-        max_threshold=1_000_000.0,
-        radius=0.2,
+        Contact.create(
+            "/bigsmall_phase9_franka_like_scene/Geometry/object/contact_sensor",
+            min_threshold=0.0,
+            max_threshold=1_000_000.0,
+            radius=0.2,
+        )
     )
+    _trace("contact_created")
 
     for _ in range(4):
         runtime.update()
     for obj in (robot, camera, contact_sensor):
         initialize = getattr(obj, "initialize", None)
         if callable(initialize):
+            _trace(f"initialize_{type(obj).__name__}")
             initialize()
-    robot.set_joint_positions(DEFAULT_JOINT_POSITIONS)
+    _set_robot_positions(scene_robot=robot, positions=DEFAULT_JOINT_POSITIONS)
     runtime.update()
     return IsaacScene(
         stage_path=stage_path,
@@ -180,6 +241,7 @@ def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> Isaac
         robot=robot,
         camera=camera,
         contact_sensor=contact_sensor,
+        simulation_context=simulation_context,
     )
 
 
@@ -197,21 +259,26 @@ def _resolve_panda_usd() -> str:
 
 
 def _serve_jsonl(*, runtime: IsaacRuntime, scene: IsaacScene, output_dir: Path) -> None:
+    _trace("serve_start")
     for line in sys.stdin:
+        _trace("serve_line")
         message = json.loads(line)
         message_type = message.get("message_type")
         if message_type == "handshake":
+            _trace("serve_handshake")
             print(json.dumps(_handshake(scene), sort_keys=True), flush=True)
             continue
         if message_type == "command":
             command = message["command"]
+            _trace(f"serve_command_{command.get('command_type', '')}")
             response = _execute_command(
                 runtime=runtime,
                 scene=scene,
                 command=command,
                 output_dir=output_dir,
             )
-            print(json.dumps(response, sort_keys=True), flush=True)
+            _trace(f"serve_command_done_{command.get('command_type', '')}")
+            print(json.dumps(_jsonable(response), sort_keys=True), flush=True)
             continue
         print(
             json.dumps(
@@ -219,6 +286,7 @@ def _serve_jsonl(*, runtime: IsaacRuntime, scene: IsaacScene, output_dir: Path) 
             ),
             flush=True,
         )
+    _trace("serve_eof")
 
 
 def _run_smoke(
@@ -247,10 +315,10 @@ def _run_smoke(
         "runtime_mode": os.environ.get("ISAAC_RUNTIME_MODE", "standalone"),
         "process_id": os.getpid(),
         "run_id": run_id,
-        "executable": sys.executable,
-        "launch_command": sys.argv,
+        "executable": _sanitize_runtime_text(sys.executable),
+        "launch_command": _sanitize_smoke_provenance(sys.argv),
         "image_digest": os.environ.get("ISAAC_CONTAINER_DIGEST", ""),
-        "stage_path": scene.stage_path,
+        "stage_path": _sanitize_runtime_text(scene.stage_path),
         "stage_loaded": scene.stage_loaded,
         "physics_steps": scene.physics_steps,
         "simulation_time": scene.sim_time_s,
@@ -347,9 +415,12 @@ def _execute_command(
     if command_type == "sensor_request":
         output_dir.mkdir(parents=True, exist_ok=True)
         _write_runtime_artifacts(output_dir, scene, telemetry)
+    public_telemetry = {
+        key: value for key, value in telemetry.items() if key not in {"raw_rgb", "raw_depth"}
+    }
     return {
         **_basic_time(scene),
-        **telemetry,
+        **public_telemetry,
         "ack": bool(result.get("success")),
         "backend": "isaac_sim",
         "command_seq": command["command_seq"],
@@ -364,7 +435,7 @@ def _execute_command(
 
 def _reset_scene(*, runtime: IsaacRuntime, scene: IsaacScene) -> dict[str, object]:
     scene.emergency_stopped = False
-    scene.robot.set_joint_positions(DEFAULT_JOINT_POSITIONS)
+    _set_robot_positions(scene_robot=scene.robot, positions=DEFAULT_JOINT_POSITIONS)
     _step_physics(runtime=runtime, scene=scene, steps=2)
     return {"success": True, "joint_positions": DEFAULT_JOINT_POSITIONS}
 
@@ -378,7 +449,7 @@ def _move_joint_targets(
     numeric = [float(cast(float | int | str, value)) for value in positions[:7]]
     if len(numeric) != 7:
         raise ValueError("follow_joint_trajectory requires seven joint positions")
-    scene.robot.set_joint_positions(numeric)
+    _set_robot_positions(scene_robot=scene.robot, positions=numeric)
     _step_physics(runtime=runtime, scene=scene, steps=6)
     return {"success": True, "joint_positions": numeric}
 
@@ -387,10 +458,22 @@ def _step_physics(*, runtime: IsaacRuntime, scene: IsaacScene, steps: int) -> di
     if steps < 1:
         raise ValueError("steps must be positive")
     for _ in range(steps):
-        runtime.update()
+        step = getattr(scene.simulation_context, "step", None)
+        if callable(step):
+            step(render=True)
+        else:
+            runtime.update()
         scene.physics_steps += 1
         scene.sim_time_s = round(scene.physics_steps / 60.0, 9)
     return {"success": True, "steps": steps}
+
+
+def _set_robot_positions(*, scene_robot: Any, positions: Sequence[float]) -> None:
+    num_dof = int(getattr(scene_robot, "num_dof", len(positions)) or len(positions))
+    padded = [float(value) for value in positions[:num_dof]]
+    while len(padded) < num_dof:
+        padded.append(0.02)
+    scene_robot.set_joint_positions(padded)
 
 
 def _emergency_stop(scene: IsaacScene) -> dict[str, object]:
@@ -437,17 +520,37 @@ def _tcp_pose(robot: Any) -> dict[str, float]:
 
 
 def _contact_sample(contact_sensor: Any) -> list[dict[str, object]]:
-    frame = contact_sensor.get_current_frame()
-    contacts = frame.get("contacts", []) if isinstance(frame, dict) else []
+    contacts: list[object] = []
+    get_raw_data = getattr(contact_sensor, "get_raw_data", None)
+    if callable(get_raw_data):
+        raw_contacts = get_raw_data()
+        contacts = list(raw_contacts) if isinstance(raw_contacts, list | tuple) else []
+    elif hasattr(contact_sensor, "get_data"):
+        frame = contact_sensor.get_data()
+        frame_contacts = frame.get("contacts", []) if isinstance(frame, dict) else []
+        contacts = list(frame_contacts) if isinstance(frame_contacts, list | tuple) else []
     result: list[dict[str, object]] = []
     for item in contacts:
         if not isinstance(item, dict):
-            continue
+            item = {
+                "body0": str(getattr(item, "body0", "phase9_2_contact_sensor")),
+                "body1": str(getattr(item, "body1", "phase9_2_target")),
+                "impulse": getattr(item, "impulse", 0.0),
+            }
+        impulse = item.get("impulse", 0.0)
+        if isinstance(impulse, dict):
+            impulse_value = (
+                float(impulse.get("x", 0.0))
+                + float(impulse.get("y", 0.0))
+                + float(impulse.get("z", 0.0))
+            )
+        else:
+            impulse_value = float(impulse)
         result.append(
             {
                 "geom1": str(item.get("body0", "phase9_2_contact_sensor")),
                 "geom2": str(item.get("body1", "phase9_2_target")),
-                "impulse": float(item.get("impulse", 0.0)),
+                "impulse": impulse_value,
                 "position": {"x": 0.45, "y": -0.12, "z": 0.04},
                 "expected": True,
                 "illegal": False,
@@ -464,7 +567,7 @@ def _write_runtime_artifacts(
         json.dumps(
             {
                 "stage_loaded": scene.stage_loaded,
-                "stage_path": scene.stage_path,
+                "stage_path": _sanitize_runtime_text(scene.stage_path),
                 "physics_steps": scene.physics_steps,
                 "joint_order": JOINT_NAMES,
                 "assets": {
@@ -545,6 +648,43 @@ def _write_depth(path: Path, depth: Any) -> None:
 
 def _contacts_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
+
+
+def _sanitize_smoke_provenance(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): _sanitize_smoke_provenance(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_sanitize_smoke_provenance(item) for item in value]
+    if isinstance(value, str):
+        return _sanitize_runtime_text(value)
+    return value
+
+
+def _sanitize_runtime_text(value: str) -> str:
+    home = str(Path.home())
+    if home and home in value:
+        value = value.replace(home, "$HOME")
+    return value
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_jsonable(item) for item in value]
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _jsonable(item())
+        except Exception:
+            return str(value)
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        try:
+            return _jsonable(tolist())
+        except Exception:
+            return str(value)
+    return value
 
 
 def _basic_time(scene: IsaacScene) -> dict[str, float]:

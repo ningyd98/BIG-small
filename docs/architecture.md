@@ -140,7 +140,7 @@ Phase 9.2 keeps the same boundary but adds a real Isaac runtime acceptance path:
 Core Python
   -> IsaacSimBackend / IsaacSimProcessClient
   -> JSONL protocol
-  -> ISAAC_SIM_ROOT/python.sh or Isaac Sim 6.0 container
+  -> ISAAC_SIM_ROOT/python.sh, ISAAC_SIM_ROOT/bin/python, or Isaac Sim 6.0 container
   -> SimulationApp / USD stage / Franka articulation / RGB-D / contacts
 ```
 

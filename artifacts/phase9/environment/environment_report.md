@@ -9,18 +9,18 @@ Level: `CORE_READY`
 ## Details
 
 - `ament_index_importable`: False
-- `camera_rendering_conditions`: False
+- `camera_rendering_conditions`: True
 - `colcon`: <unset>
 - `core_ready`: True
 - `cpu`: AMD Ryzen 7 5800X 8-Core Processor
 - `cpu_count`: 16
 - `cuda_visible`: True
-- `disk_available`: 193G
+- `disk_available`: 192G
 - `display`: <unset>
 - `docker`: <unset>
 - `egl_available`: False
 - `headless_egl_supported`: True
-- `isaac_blockers`: ['ISAAC_SIM_ROOT is not set', 'vulkaninfo is not available']
+- `isaac_blockers`: ['ISAAC_SIM_ROOT is not set']
 - `isaac_sim_root`: <unset>
 - `isaac_sim_version`: <unset>
 - `kernel`: 7.0.0-22-generic
@@ -48,4 +48,4 @@ Level: `CORE_READY`
 - `ros_package_prefixes`: {'rclpy': ''}
 - `rosdep`: <unset>
 - `vcstool`: <unset>
-- `vulkan_available`: False
+- `vulkan_available`: True

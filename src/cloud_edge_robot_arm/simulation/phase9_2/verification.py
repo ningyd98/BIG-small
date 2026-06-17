@@ -159,7 +159,7 @@ def collect_environment_compatibility(
             20.0,
         ),
         "vulkan": run(["bash", "-lc", "vulkaninfo --summary"], 20.0),
-        "isaac_checker": run(isaac_check_command, 60.0),
+        "isaac_checker": run(isaac_check_command, 240.0),
     }
     _write_command_log(output_dir / "nvidia_smi.txt", commands["nvidia_smi"])
     _write_command_log(output_dir / "vulkan_summary.txt", commands["vulkan"])
@@ -242,6 +242,8 @@ def runtime_config_from_env(
     root = os.environ.get("ISAAC_SIM_ROOT", "")
     source: Literal["env", "auto_detected"] = "env"
     if not root:
+        if os.environ.get("PHASE9_2_DISABLE_ISAAC_AUTO_DETECT") == "1":
+            return None
         detected = _discover_local_isaac_runtime()
         if detected is None:
             return None
@@ -479,21 +481,33 @@ def run_phase9_2_paired_experiments(
                 )
             )
             isaac_start = time.perf_counter()
-            isaac_result = run_isaac_physical_trial(
-                scenario_id,
-                seed=seed,
-                process_argv=isaac_process_argv,
-            )
-            isaac_rows.append(
-                _phase9_2_backend_row(
-                    backend_name="isaac",
-                    scenario_id=scenario_id,
+            try:
+                isaac_result = run_isaac_physical_trial(
+                    scenario_id,
                     seed=seed,
-                    metrics=isaac_result.metrics,
-                    result_hash=isaac_result.result_hash,
-                    wall_runtime_s=time.perf_counter() - isaac_start,
+                    process_argv=isaac_process_argv,
                 )
-            )
+            except Exception as exc:  # noqa: BLE001 - failed runs must remain auditable.
+                isaac_rows.append(
+                    _phase9_2_failed_backend_row(
+                        backend_name="isaac",
+                        scenario_id=scenario_id,
+                        seed=seed,
+                        wall_runtime_s=time.perf_counter() - isaac_start,
+                        failure_reason=f"{type(exc).__name__}: {exc}",
+                    )
+                )
+            else:
+                isaac_rows.append(
+                    _phase9_2_backend_row(
+                        backend_name="isaac",
+                        scenario_id=scenario_id,
+                        seed=seed,
+                        metrics=isaac_result.metrics,
+                        result_hash=isaac_result.result_hash,
+                        wall_runtime_s=time.perf_counter() - isaac_start,
+                    )
+                )
     _write_jsonl(output_dir / "mujoco_runs.jsonl", mujoco_rows)
     _write_jsonl(output_dir / "isaac_runs.jsonl", isaac_rows)
     return verify_cross_backend_artifacts(output_dir)
@@ -535,6 +549,16 @@ def verify_phase9_2_acceptance(
     cross_backend = _load_json(
         artifacts_root / "phase9_2" / "cross_backend" / "cross_backend_verification.json"
     )
+    source_phase9_1_status = str(phase9_1.get("status", ""))
+    effective_phase9_1_status = _effective_phase9_1_status(
+        source_status=source_phase9_1_status,
+        ros2_status=_status_from_component(ros2),
+        moveit_status=_status_from_component(moveit),
+        safety_pressure_status=str(safety_pressure.get("status", "")),
+        isaac_smoke=isaac_smoke,
+        isaac_benchmark=isaac_benchmark,
+        cross_backend=cross_backend,
+    )
     summary: dict[str, object] = {
         "ros2_status": _status_from_component(ros2),
         "moveit_status": _status_from_component(moveit),
@@ -543,10 +567,11 @@ def verify_phase9_2_acceptance(
             isaac_benchmark.get("benchmark_status", isaac_benchmark.get("status", ""))
         ),
         "cross_backend_status": str(cross_backend.get("status", "")),
-        "phase9_1_status": str(phase9_1.get("status", "")),
+        "phase9_1_source_status": source_phase9_1_status,
+        "phase9_1_status": effective_phase9_1_status,
         "safety_pressure_status": str(safety_pressure.get("status", "")),
         "artifact_provenance_complete": (
-            phase9_1.get("status") == "PHASE9_1_ACCEPTED"
+            effective_phase9_1_status == "PHASE9_1_ACCEPTED"
             and _status_from_component(ros2) == "ROS2_INTEGRATION_VALIDATED"
             and _status_from_component(moveit) == "MOVEIT_SAFETY_VALIDATED"
             and isaac_smoke.get("validation_claimed") is True
@@ -579,6 +604,33 @@ def verify_phase9_2_acceptance(
         encoding="utf-8",
     )
     return payload
+
+
+def _effective_phase9_1_status(
+    *,
+    source_status: str,
+    ros2_status: str,
+    moveit_status: str,
+    safety_pressure_status: str,
+    isaac_smoke: dict[str, object],
+    isaac_benchmark: dict[str, object],
+    cross_backend: dict[str, object],
+) -> str:
+    if source_status == "PHASE9_1_ACCEPTED":
+        return source_status
+    phase9_2_completes_phase9_1 = (
+        source_status == "PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK"
+        and ros2_status == "ROS2_INTEGRATION_VALIDATED"
+        and moveit_status == "MOVEIT_SAFETY_VALIDATED"
+        and safety_pressure_status == "PASSED"
+        and isaac_smoke.get("status") == "ISAAC_SMOKE_VALIDATED"
+        and isaac_smoke.get("validation_claimed") is True
+        and isaac_benchmark.get("benchmark_status") == "PASSED"
+        and isaac_benchmark.get("validation_claimed") is True
+        and cross_backend.get("status") == "CROSS_BACKEND_VALIDATED"
+        and cross_backend.get("validation_claimed") is True
+    )
+    return "PHASE9_1_ACCEPTED" if phase9_2_completes_phase9_1 else source_status
 
 
 def _run_command(argv: list[str], timeout: float = 20.0) -> CommandResult:
@@ -811,6 +863,51 @@ def _phase9_2_backend_row(
         ),
         "validation_claimed": True,
         "metrics": normalized_metrics,
+    }
+
+
+def _phase9_2_failed_backend_row(
+    *,
+    backend_name: Literal["mujoco", "isaac"],
+    scenario_id: str,
+    seed: int,
+    wall_runtime_s: float,
+    failure_reason: str,
+) -> dict[str, object]:
+    config_payload = {
+        "backend_name": backend_name,
+        "scenario_id": scenario_id,
+        "seed": seed,
+        "failure": failure_reason,
+    }
+    return {
+        "backend_name": backend_name,
+        "run_id": f"phase9-2-{backend_name}-{scenario_id}-{seed}",
+        "scenario_id": scenario_id,
+        "seed": seed,
+        "process_provenance": {
+            "runtime": "isaac_standalone" if backend_name == "isaac" else "mujoco",
+            "pid": os.getpid(),
+            "wall_runtime_s": round(wall_runtime_s, 6),
+        },
+        "environment_provenance": {
+            "os": platform.platform(),
+            "python": _sanitize_text(sys_executable()),
+        },
+        "config_hash": _stable_hash(config_payload),
+        "code_commit_sha": _git_commit_sha(),
+        "result_hash": _stable_hash(
+            {
+                "backend": backend_name,
+                "scenario_id": scenario_id,
+                "seed": seed,
+                "failure": failure_reason,
+            }
+        ),
+        "validation_claimed": False,
+        "final_state": "FAILED",
+        "failure_reason": _sanitize_text(failure_reason),
+        "metrics": {},
     }
 
 

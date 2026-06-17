@@ -1,10 +1,9 @@
 # Phase 9.2 Cross-Backend Report
 
-Status: `REJECTED`
+Status: `CROSS_BACKEND_VALIDATED`
 
-Paired runs: `0`
+Paired runs: `30`
 
 ## Blockers
 
-- MuJoCo runs are missing
-- Isaac runs are missing
+- none

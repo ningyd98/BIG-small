@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from scripts import verify_phase9
+
 from cloud_edge_robot_arm.simulation.evaluation.collector import Phase9ArtifactCollector
 
 
@@ -34,3 +36,17 @@ def test_phase9_artifact_collector_writes_required_files(tmp_path: Path) -> None
         "fault_timeline.jsonl",
     }
     assert expected.issubset({path.name for path in tmp_path.iterdir()})
+
+
+def test_verify_phase9_summary_sanitizes_home_paths() -> None:
+    home = str(Path.home())
+    payload = {
+        "command": f"{home}/anaconda3/bin/python scripts/verify_phase9.py",
+        "stdout_tail": f"wrote {home}/repo/artifacts",
+    }
+
+    sanitized = verify_phase9._sanitize_summary_value(payload)
+
+    rendered = str(sanitized)
+    assert home not in rendered
+    assert "$HOME/anaconda3/bin/python" in rendered

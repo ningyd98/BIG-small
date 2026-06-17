@@ -1,16 +1,16 @@
 # Phase 9.2 Compatibility Report
 
-Status: `BLOCKED_BY_ENV`
+Status: `ISAAC_ENV_READY`
 
 ## Blockers
 
-- Isaac Sim compatibility checker failed
+- none
 
 ## Details
 
 - `cpu`: AMD Ryzen 7 5800X 8-Core Processor
 - `cuda_visible`: True
-- `disk_available`: 193G
+- `disk_available`: 192G
 - `display`: ""
 - `egl`: ""
 - `gpu`: NVIDIA GeForce RTX 4070 Ti SUPER, 595.71.05, 16376 MiB

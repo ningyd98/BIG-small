@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import cast
+from types import SimpleNamespace
+from typing import Any, cast
 
 from cloud_edge_robot_arm.simulation.phase9_2.verification import (
     PHASE9_2_REQUIRED_METRICS,
+    Phase92RuntimeConfig,
     phase9_2_status,
+    run_phase9_2_paired_experiments,
     verify_cross_backend_artifacts,
     verify_phase9_2_acceptance,
 )
@@ -65,6 +68,44 @@ def test_cross_backend_validates_metric_complete_paired_runs(tmp_path: Path) -> 
     assert (tmp_path / "statistical_summary.json").exists()
     assert (tmp_path / "cross_backend_report.md").exists()
     assert (tmp_path / "reproducibility_manifest.json").exists()
+
+
+def test_paired_experiment_preserves_isaac_failure_artifact(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from cloud_edge_robot_arm.simulation.evaluation import metrics
+
+    monkeypatch.setattr(
+        metrics,
+        "run_mujoco_physical_trial",
+        lambda scenario_id, *, seed: SimpleNamespace(
+            metrics=_metrics(seed), result_hash=f"mujoco-{scenario_id}-{seed}"
+        ),
+    )
+
+    def fail_isaac(_scenario_id: str, *, seed: int, process_argv: list[str]) -> object:
+        raise RuntimeError(f"isaac failed seed={seed}; argv={process_argv[0]}")
+
+    monkeypatch.setattr(metrics, "run_isaac_physical_trial", fail_isaac)
+    config = Phase92RuntimeConfig(
+        mode="standalone",
+        repo_root=Path("."),
+        output_dir=tmp_path,
+        isaac_sim_root=tmp_path / "isaac",
+    )
+
+    result = run_phase9_2_paired_experiments(
+        tmp_path, config=config, scenarios=("S01_NORMAL_STATIC",), seeds=(0,)
+    )
+
+    assert result["status"] == "REJECTED"
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "isaac_runs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows[0]["validation_claimed"] is False
+    assert rows[0]["final_state"] == "FAILED"
+    assert "isaac failed seed=0" in rows[0]["failure_reason"]
 
 
 def test_phase9_2_status_requires_full_runtime_acceptance() -> None:
@@ -180,3 +221,12 @@ def _run(
         "validation_claimed": True,
         "metrics": metrics,
     }
+
+
+def _metrics(seed: int) -> dict[str, object]:
+    metrics: dict[str, object] = {name: float(seed + 1) for name in PHASE9_2_REQUIRED_METRICS}
+    metrics["illegal_collision_count"] = 0
+    metrics["emergency_stop_post_command_count"] = 0
+    metrics["final_state"] = "SUCCESS"
+    metrics["auto_mode_selection"] = "AUTO"
+    return metrics

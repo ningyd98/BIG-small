@@ -2,35 +2,34 @@
 
 ## Current Host Result
 
-The repository now contains Phase 9.2 verification code and artifact contracts for Isaac Sim 6.0 smoke validation and MuJoCo-Isaac paired comparison.
+The current host result is `PHASE9_2_ACCEPTED`.
 
-Current host result is not `PHASE9_2_ACCEPTED` because Isaac Sim startup still requires interactive NVIDIA Omniverse/Isaac EULA acceptance:
-
-- Vulkan tooling is now available through the user conda environment.
-- A local Isaac venv exists at `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1`.
-- The Phase 9.2 checker can invoke `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python`.
-- Isaac exits before `SimulationApp` startup because the EULA prompt requires a Yes/No response.
-- No real Isaac smoke artifact exists yet.
-- No real Isaac paired-run artifact exists yet.
+- Vulkan tooling is available through the user conda environment.
+- A local Isaac venv is auto-detected at `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1`.
+- The Phase 9.2 checker invokes `$HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python`.
+- Isaac Sim 6.0 `SimulationApp` starts headless and loads a local MJCF Panda/Franka stage.
+- The smoke run advances physics, samples robot state, RGB, depth, and contact sensor data, executes reset and emergency stop, and shuts down cleanly.
+- The Isaac benchmark runs 6 representative Phase 9.2 scenarios.
+- The paired MuJoCo-Isaac comparison runs 6 scenarios across 5 seeds each, for 30 paired runs.
 
 The existing authoritative completed state remains:
 
 - ROS 2: `ROS2_INTEGRATION_VALIDATED`
 - MoveIt 2: `MOVEIT_SAFETY_VALIDATED`
 - Phase 9 MuJoCo core: passed
-- Phase 9.1: `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`
+- Phase 9.1 source aggregate: `PHASE9_1_CORE_ACCEPTED_WITH_ENV_BLOCK`
+- Phase 9.2 final aggregate: `PHASE9_2_ACCEPTED`
 
-## Implemented Phase 9.2 Evidence Contracts
+## Phase 9.2 Evidence
 
 - Compatibility report under `artifacts/phase9_2/environment`.
-- Isaac smoke verifier under `artifacts/phase9_2/isaac`.
-- Cross-backend verifier under `artifacts/phase9_2/cross_backend`.
+- Isaac smoke evidence under `artifacts/phase9_2/isaac`.
+- Isaac benchmark summary and runs under `artifacts/phase9_2/isaac_benchmark`.
+- Cross-backend paired artifacts under `artifacts/phase9_2/cross_backend`.
 - Final aggregate summary under `artifacts/phase9_2/final`.
 - `isaac_runtime` pytest marker for real Isaac-only tests.
 
-## Remaining Work On Compatible Host
-
-On a host with Isaac Sim 6.0, run the environment checker, real smoke, paired experiments, and final aggregate. Only that host can produce:
+## Accepted Runtime States
 
 - `ISAAC_SMOKE_VALIDATED`
 - `CROSS_BACKEND_VALIDATED`

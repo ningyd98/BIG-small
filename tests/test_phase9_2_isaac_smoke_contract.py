@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from scripts.phase9 import isaac_standalone_app
+
 from cloud_edge_robot_arm.simulation.phase9_2.verification import verify_isaac_smoke_evidence
 
 
@@ -41,6 +43,26 @@ def test_isaac_smoke_validates_complete_runtime_artifact(tmp_path: Path) -> None
     assert result["status"] == "ISAAC_SMOKE_VALIDATED"
     assert result["validation_claimed"] is True
     assert result["real_isaac_run_count"] == 1
+
+
+def test_isaac_smoke_provenance_sanitizes_home_paths() -> None:
+    home = str(Path.home())
+    executable = f"{home}/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python"
+    argv = [
+        executable,
+        f"{home}/project/scripts/phase9/isaac_standalone_app.py",
+        "--output",
+        f"{home}/project/artifacts/phase9_2/isaac",
+    ]
+
+    evidence = isaac_standalone_app._sanitize_smoke_provenance(
+        {"executable": executable, "launch_command": argv, "stage_path": f"{home}/tmp/stage.usda"}
+    )
+
+    serialized = json.dumps(evidence, sort_keys=True)
+    assert home not in serialized
+    assert "$HOME/.venvs/bigsmall-isaacsim-6.0.0.1/bin/python" in serialized
+    assert "$HOME/project/artifacts/phase9_2/isaac" in serialized
 
 
 def _write_smoke(output_dir: Path, evidence: dict[str, object]) -> None:

@@ -27,6 +27,10 @@ def test_phase9_2_environment_entrypoint_writes_report(tmp_path: Path) -> None:
 
 
 def test_phase9_2_isaac_smoke_entrypoint_rejects_missing_evidence(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env.pop("ISAAC_SIM_ROOT", None)
+    env.pop("ISAAC_RUNTIME_MODE", None)
+    env["PHASE9_2_DISABLE_ISAAC_AUTO_DETECT"] = "1"
     result = subprocess.run(
         [
             sys.executable,
@@ -37,6 +41,7 @@ def test_phase9_2_isaac_smoke_entrypoint_rejects_missing_evidence(tmp_path: Path
         check=False,
         text=True,
         capture_output=True,
+        env=env,
     )
 
     assert result.returncode == 1
@@ -89,12 +94,15 @@ def test_phase9_2_isaac_benchmark_entrypoint_requires_smoke_validation(tmp_path:
 
 
 def test_phase9_2_aggregate_entrypoint_rejects_without_runtime_artifacts(tmp_path: Path) -> None:
+    artifacts_root = tmp_path / "artifacts"
     result = subprocess.run(
         [
             sys.executable,
             "scripts/verify_phase9_2.py",
             "--output",
             str(tmp_path / "final"),
+            "--artifacts-root",
+            str(artifacts_root),
         ],
         check=False,
         text=True,

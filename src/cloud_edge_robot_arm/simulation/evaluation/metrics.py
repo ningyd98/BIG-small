@@ -97,7 +97,15 @@ def run_mujoco_physical_trial(
         "simulated": True,
     }
     backend.shutdown()
-    result_hash = _stable_hash({"metrics": metrics, "randomization": sample.to_jsonable()})
+    result_hash = _stable_hash(
+        {
+            "backend": "mujoco",
+            "metrics": metrics,
+            "randomization": sample.to_jsonable(),
+            "scenario_id": scenario_id,
+            "seed": seed,
+        }
+    )
     return PhysicalTrialResult(
         scenario_id=scenario_id,
         seed=seed,
@@ -187,7 +195,15 @@ def run_isaac_physical_trial(
         "wall_runtime_s": 0.0,
         "simulated": True,
     }
-    result_hash = _stable_hash({"metrics": metrics, "randomization": sample.to_jsonable()})
+    result_hash = _stable_hash(
+        {
+            "backend": "isaac",
+            "metrics": metrics,
+            "randomization": sample.to_jsonable(),
+            "scenario_id": scenario_id,
+            "seed": seed,
+        }
+    )
     return PhysicalTrialResult(
         scenario_id=scenario_id,
         seed=seed,

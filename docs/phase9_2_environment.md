@@ -35,7 +35,8 @@ export ISAAC_SIM_ROOT=/path/to/isaac-sim-6.0
 python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/environment
 ```
 
-The checker uses `${ISAAC_SIM_ROOT}/python.sh scripts/phase9/isaac_standalone_app.py --check-imports`.
+The checker prefers `${ISAAC_SIM_ROOT}/python.sh scripts/phase9/isaac_standalone_app.py --check-imports`.
+For the local Isaac pip/venv runtime it falls back to `${ISAAC_SIM_ROOT}/bin/python`.
 
 ## Container
 

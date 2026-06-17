@@ -65,9 +65,25 @@ def main() -> int:
     )
     output = Path("artifacts/phase9/verify_phase9_summary.json")
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(summary, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(summary, sort_keys=True, indent=2))
+    sanitized_summary = _sanitize_summary_value(summary)
+    output.write_text(
+        json.dumps(sanitized_summary, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(sanitized_summary, sort_keys=True, indent=2))
     return 1 if failed else 0
+
+
+def _sanitize_summary_value(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): _sanitize_summary_value(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_sanitize_summary_value(item) for item in value]
+    if isinstance(value, str):
+        home = str(Path.home())
+        if home:
+            value = value.replace(home, "$HOME")
+        return value
+    return value
 
 
 if __name__ == "__main__":
