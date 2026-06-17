@@ -13,10 +13,12 @@ fi
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
+python -m compileall src scripts tests
 python -m ruff format --check .
 python -m ruff check .
 python -m mypy .
 python -m pytest -q
+python scripts/check_docs.py
 python scripts/validate_contract_examples.py
 python scripts/run_fixed_pick_place.py --adapter mock
 python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
@@ -60,4 +62,7 @@ python scripts/verify_phase8_1.py
 python scripts/verify_phase8_2.py
 python scripts/verify_phase9.py
 python scripts/verify_phase9_1.py --skip-history
+python scripts/verify_phase10_0.py
+python scripts/verify_phase10_1.py
+python scripts/verify_phase10_2a.py --skip-runtime
 python -m pip check

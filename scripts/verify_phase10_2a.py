@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -19,13 +20,44 @@ def main() -> int:
     parser.add_argument(
         "--moveit-dry-run-dir", type=Path, default=Path("artifacts/phase10/moveit_dry_run")
     )
-    args = parser.parse_args()
-    payload = verify_phase10_2a(
-        args.output,
-        phase10_0_dir=args.phase10_0_dir,
-        phase10_1_dir=args.phase10_1_dir,
-        moveit_dry_run_dir=args.moveit_dry_run_dir,
+    parser.add_argument(
+        "--skip-runtime",
+        action="store_true",
+        help="Treat MoveIt runtime dry-run as environment-blocked for CI-safe checks.",
     )
+    args = parser.parse_args()
+    if args.skip_runtime:
+        with TemporaryDirectory(prefix="phase10_2a_moveit_block_") as temp_dir:
+            moveit_dir = Path(temp_dir)
+            (moveit_dir / "moveit_dry_run_verification.json").write_text(
+                json.dumps(
+                    {
+                        "status": "MOVEIT_DRY_RUN_BLOCKED_BY_ENV",
+                        "validation_claimed": False,
+                        "moveit_runtime_used": False,
+                        "sent_to_hardware": False,
+                        "hardware_motion_observed": False,
+                        "blockers": ["MoveIt runtime dry-run skipped by CI-safe profile"],
+                    },
+                    sort_keys=True,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            payload = verify_phase10_2a(
+                args.output,
+                phase10_0_dir=args.phase10_0_dir,
+                phase10_1_dir=args.phase10_1_dir,
+                moveit_dry_run_dir=moveit_dir,
+            )
+    else:
+        payload = verify_phase10_2a(
+            args.output,
+            phase10_0_dir=args.phase10_0_dir,
+            phase10_1_dir=args.phase10_1_dir,
+            moveit_dry_run_dir=args.moveit_dry_run_dir,
+        )
     print(json.dumps(payload, sort_keys=True, indent=2))
     return 0 if payload["validation_claimed"] else 1
 
