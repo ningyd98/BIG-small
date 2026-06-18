@@ -1,3 +1,4 @@
+// Preset 仓库：仅保存非敏感实验草案，不持久化 token、IP 或控制器配置。
 import type { ExperimentDraft } from "../domain/ExperimentDraft";
 
 // PresetRepository 只保存仿真实验草稿；sanitizePreset 会去掉 token/IP/credential 等敏感字段。

@@ -129,7 +129,7 @@ def _extract_explanation_text(path: Path, text: str) -> str:
     if path.suffix == ".py" or _has_python_shebang(path):
         return _extract_python_explanation_text(text)
     if path.suffix in SLASH_COMMENT_SUFFIXES:
-        return _extract_slash_comment_text(text)
+        return _extract_leading_slash_comment_text(text)
     if path.suffix in HASH_COMMENT_SUFFIXES or path.name in HASH_COMMENT_FILENAMES:
         return _extract_hash_comment_text(text)
     if path.suffix in XML_COMMENT_SUFFIXES:
@@ -162,6 +162,34 @@ def _extract_python_explanation_text(text: str) -> str:
         pass
 
     return "\n".join(fragments)
+
+
+def _extract_leading_slash_comment_text(text: str) -> str:
+    # 前端文件必须在文件入口说明职责，避免只靠组件内部中文文案通过审计。
+    comments: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        while index < length and text[index] in {" ", "\t", "\r", "\n"}:
+            index += 1
+        if text.startswith("//", index):
+            end = text.find("\n", index + 2)
+            if end == -1:
+                comments.append(text[index:])
+                break
+            comments.append(text[index:end])
+            index = end + 1
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            if end == -1:
+                comments.append(text[index:])
+                break
+            comments.append(text[index : end + 2])
+            index = end + 2
+            continue
+        break
+    return "\n".join(comments)
 
 
 def _extract_slash_comment_text(text: str) -> str:

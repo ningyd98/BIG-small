@@ -1,3 +1,4 @@
+// 场景目录服务：从后端 scenario registry 数据构建筛选结果，避免 React 页面硬编码场景。
 import type {
   ScenarioDefinition,
   ScenarioFilter,

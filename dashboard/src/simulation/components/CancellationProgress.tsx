@@ -1,3 +1,4 @@
+// 取消进度组件：展示后端 cooperative cancellation 状态，不直接终止本地进程。
 import { Alert } from "antd";
 
 import type { components } from "../../api/generated/schema";

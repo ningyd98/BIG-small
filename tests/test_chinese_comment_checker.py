@@ -180,3 +180,20 @@ def test_placeholder_chinese_comment_is_not_accepted_as_suitable_explanation(
     result = _audit_file(path)
 
     assert not result.has_chinese
+
+
+def test_typescript_needs_file_level_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "Widget.tsx"
+    path.write_text(
+        "import { Button } from 'antd';\n"
+        "\n"
+        "export function Widget() {\n"
+        "  // 组件内部说明：这里只解释局部按钮，不说明文件职责。\n"
+        "  return <Button>Run</Button>;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert not result.has_chinese

@@ -1,3 +1,4 @@
+// 任务执行页面：展示任务运行状态和只读 evidence，不向浏览器暴露机器人执行入口。
 import { Card, Descriptions, Empty, Space, Spin, Table, Tag } from "antd";
 
 import { useDashboardRuntime, useDashboardSummary } from "../api/queries";

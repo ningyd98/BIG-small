@@ -1,3 +1,4 @@
+// 实验提交服务：封装 run/batch 提交与取消接口，不接受任意 runner 或脚本路径。
 import type { components } from "../../api/generated/schema";
 import type { ExperimentDraft } from "../domain/ExperimentDraft";
 import { simulationApi } from "../api/simulationApi";

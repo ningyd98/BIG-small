@@ -1,3 +1,4 @@
+// Worker 状态面板：展示后台执行器并发和租约状态，帮助定位异步运行问题。
 import { Card, Table, Tag } from "antd";
 
 import type { components } from "../../api/generated/schema";

@@ -1,3 +1,4 @@
+// 尝试历史组件：展示持久化 attempt 记录，区分最终结果和历史执行尝试。
 import { Card, Empty, Table } from "antd";
 
 import type { components } from "../../api/generated/schema";

@@ -1,3 +1,4 @@
+// 控制台应用外壳：集中装配导航、路由和只读运行状态，不直接触发机器人或仿真动作。
 import {
   DashboardOutlined,
   ExperimentOutlined,

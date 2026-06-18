@@ -1,3 +1,4 @@
+// 仿真能力服务：按后端 readiness 判定可用性，不能只因枚举存在就认为 backend 可运行。
 import type { components } from "../../api/generated/schema";
 import { simulationApi } from "../api/simulationApi";
 

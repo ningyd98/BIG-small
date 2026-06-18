@@ -1,3 +1,4 @@
+// 审计事件页面：按后端事件流展示安全和验收记录，不在浏览器侧生成审计事实。
 import { Card, Empty, Table } from "antd";
 
 import { useDashboardAuditEvents } from "../api/queries";

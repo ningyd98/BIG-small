@@ -1,3 +1,4 @@
+// 对比服务：把后端 comparison 数据转成表格/图表结构，保留 source 和 sample_count。
 import type {
   ComparisonStats,
   PairedBackendRun,

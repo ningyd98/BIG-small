@@ -1,3 +1,4 @@
+// 资源用量面板：展示运行时资源限制和当前占用，辅助判断排队或拒绝原因。
 import { Card, Descriptions } from "antd";
 
 import type { components } from "../../api/generated/schema";

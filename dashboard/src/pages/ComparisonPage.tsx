@@ -1,3 +1,4 @@
+// 指标对比页面：展示后端汇总的仿真实验指标，避免用硬编码数据替代 evidence。
 import { Card, Empty, Space, Table, Typography } from "antd";
 import { useMemo } from "react";
 

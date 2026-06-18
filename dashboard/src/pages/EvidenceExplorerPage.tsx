@@ -1,3 +1,4 @@
+// 证据浏览页面：通过后端 evidence API 查询相对路径证据，避免泄露本机路径。
 import {
   Button,
   Card,

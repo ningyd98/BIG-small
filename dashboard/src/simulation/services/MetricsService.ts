@@ -1,3 +1,4 @@
+// 指标服务：规范化运行指标的单位、来源和聚合方式，避免图表层直接猜测语义。
 import type { MetricSummary, SimulationMetric } from "../domain/RunMetric";
 
 // MetricsService 汇总指标单位和 sample count，避免页面各自硬编码指标语义。

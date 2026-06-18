@@ -1,3 +1,4 @@
+// 运行时健康卡片：展示调度器、仓库和 worker 健康状态，不替代后端 readiness 判断。
 import { Card, Descriptions } from "antd";
 
 import { StatusBadge } from "../../components/StatusBadge";

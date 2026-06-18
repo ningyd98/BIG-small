@@ -1,3 +1,4 @@
+// 租约状态组件：呈现 worker lease 与心跳信息，帮助识别中断和恢复场景。
 import { Descriptions } from "antd";
 
 import type { components } from "../../api/generated/schema";

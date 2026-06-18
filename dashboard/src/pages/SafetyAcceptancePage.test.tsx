@@ -1,3 +1,4 @@
+// 安全验收页测试：确保 Level 0 只读状态和硬件锁定提示按后端快照渲染。
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";

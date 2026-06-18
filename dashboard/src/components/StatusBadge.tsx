@@ -1,3 +1,4 @@
+// 状态徽标组件：把状态字符串映射为视觉标签，但不改写原始业务状态。
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,

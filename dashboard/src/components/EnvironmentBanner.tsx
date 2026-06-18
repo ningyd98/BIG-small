@@ -1,3 +1,4 @@
+// 环境横幅组件：展示后端声明的硬件边界和运行模式，不生成任何执行权限。
 import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { Alert, Space, Tag, Tooltip, Typography } from "antd";
 

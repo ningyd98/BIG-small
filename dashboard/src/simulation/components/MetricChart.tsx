@@ -1,3 +1,4 @@
+// 指标图表组件：按后端 metric 数据绘制趋势，不在前端伪造实验结果。
 import { useEffect, useRef } from "react";
 
 // MetricChart 动态加载 ECharts，避免首屏把图表库打进主 bundle。

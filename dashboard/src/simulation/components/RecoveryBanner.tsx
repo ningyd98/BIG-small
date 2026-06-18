@@ -1,3 +1,4 @@
+// 恢复提示组件：展示重启恢复或中断状态，提醒用户查看持久化 evidence。
 import { Alert } from "antd";
 
 import type { components } from "../../api/generated/schema";

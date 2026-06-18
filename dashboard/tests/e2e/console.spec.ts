@@ -1,8 +1,7 @@
+// 控制台 E2E 使用真实 FastAPI 与 fake 运行时服务，验证页面和 API 都不暴露硬件动作。
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-
-// 控制台 E2E 使用真实 FastAPI 与 fake 运行时服务，验证页面和 API 都不暴露硬件动作。
 const artifactRoot = path.resolve(process.cwd(), "../artifacts/dashboard_e2e");
 const operatorHeaders = { "x-dashboard-role": "EXPERIMENT_OPERATOR" };
 

@@ -1,3 +1,4 @@
+// 404 页面：只处理控制台路由缺失场景，不兜底吞掉 API 或 WebSocket 路径。
 import { Result } from "antd";
 
 // 404 页面只引导回控制台导航，不暴露内部路由或 API 结构。

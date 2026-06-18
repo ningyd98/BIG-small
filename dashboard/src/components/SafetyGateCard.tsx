@@ -1,3 +1,4 @@
+// 安全门卡片：只呈现后端 SafetyGate 结论，避免前端自行授权硬件运动。
 import { LockOutlined } from "@ant-design/icons";
 import { Card, Empty, Space, Typography } from "antd";
 

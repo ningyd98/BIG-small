@@ -1,3 +1,4 @@
+// 队列状态面板：展示持久化运行时队列统计，提交后不假设任务已完成。
 import { Card, Descriptions, Progress } from "antd";
 
 import type { components } from "../../api/generated/schema";

@@ -1,3 +1,4 @@
+// 环境横幅测试：验证硬件边界和 dry-run 状态通过文本明确展示。
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 

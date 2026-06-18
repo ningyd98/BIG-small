@@ -1,3 +1,4 @@
+// 概览页面：集中展示项目权威状态、硬件声明和最新 evidence，不在前端推导结论。
 import { Card, Col, Empty, Row, Space, Spin, Typography } from "antd";
 
 import { useDashboardSummary } from "../api/queries";

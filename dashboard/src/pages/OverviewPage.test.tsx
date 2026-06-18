@@ -1,3 +1,4 @@
+// 概览页测试：验证权威状态、硬件边界和 evidence 字段按后端数据展示。
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
