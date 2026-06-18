@@ -449,6 +449,79 @@ def test_phase11_2_command_artifacts_redact_local_python_path() -> None:
     assert result["argv"][0] == "python"
 
 
+def test_phase11_2_ollama_verifier_requires_explicit_model(tmp_path: Path) -> None:
+    # --ollama 是真实本地模型验收路径；缺少精确模型名时必须阻塞，
+    # 不能因为 CI 分段全部 SKIPPED 就错误声明模型控制中心验收成功。
+    import subprocess
+
+    output = tmp_path / "phase11_2"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/verify_phase11_2_model_control.py",
+            "--ollama",
+            "--output",
+            str(output),
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+
+    summary = (output / "phase11_2_summary.json").read_text(encoding="utf-8")
+
+    assert result.returncode == 1
+    assert "OLLAMA_RUNTIME_BLOCKED_BY_ENV" in result.stdout
+    assert "PHASE11_2_SIMULATION_AI_CONSOLE_ACCEPTED" not in result.stdout
+    assert "OLLAMA_RUNTIME_BLOCKED_BY_ENV" in summary
+
+
+def test_phase11_2_ollama_verifier_accepts_installed_model_with_dry_run() -> None:
+    # 真实 Ollama 成功路径必须证明模型已安装、可 chat、可激活为 active planner，
+    # 且 dry-run 明确 dispatch=false/hardware_execution=false。
+    from scripts.verify_phase11_2_model_control import (
+        PHASE11_2_LOCAL_MODEL_ACCEPTED,
+        verify_real_ollama,
+    )
+
+    class FakeInstalledOllamaTransport:
+        def get_version(self) -> dict[str, str]:
+            return {"version": "0.9.0"}
+
+        def list_models(self) -> list[dict[str, Any]]:
+            return [{"name": "llama3.2:3b", "size": 123}]
+
+        def show_model(self, model_name: str) -> dict[str, Any]:
+            return {"model": model_name}
+
+        def pull_model(self, model_name: str) -> list[dict[str, Any]]:
+            raise AssertionError("installed model should not be pulled")
+
+        def delete_model(self, model_name: str) -> dict[str, str]:
+            return {"status": "deleted"}
+
+        def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+            assert model_name == "llama3.2:3b"
+            assert messages
+            return {"choices": [{"message": {"content": '{"steps": []}'}}]}
+
+    result = verify_real_ollama(
+        ollama_model="llama3.2:3b",
+        allow_download=False,
+        transport=FakeInstalledOllamaTransport(),
+    )
+
+    assert result["status"] == PHASE11_2_LOCAL_MODEL_ACCEPTED
+    assert result["accepted"] is True
+    assert result["planner_dry_run"]["dispatch"] is False
+    assert result["planner_dry_run"]["hardware_execution"] is False
+    assert result["real_controller_contacted"] is False
+    assert result["hardware_motion_observed"] is False
+    assert result["hardware_write_operations"] == []
+
+
 def test_model_control_secret_scanner_ignores_python_bytecode_cache(tmp_path: Path) -> None:
     # compileall 会在源码目录产生 __pycache__；scanner 应扫描源码/产物文本，
     # 不应把二进制 pyc 中的随机字节当成 secret 泄露。

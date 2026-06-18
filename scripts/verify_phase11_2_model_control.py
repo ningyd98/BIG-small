@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,9 +18,17 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from fastapi.testclient import TestClient
 
 from cloud_edge_robot_arm.cloud.api.console_app import create_console_app
+from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
+from cloud_edge_robot_arm.model_control.providers.ollama import OllamaHttpClient, OllamaTransport
+from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
+from cloud_edge_robot_arm.model_control.service import ModelControlService
+from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
 
 PHASE11_2_ACCEPTED = "PHASE11_2_MODEL_CONTROL_CENTER_ACCEPTED"
 PHASE11_2_CONSOLE_ACCEPTED = "PHASE11_2_SIMULATION_AI_CONSOLE_ACCEPTED"
+PHASE11_2_LOCAL_MODEL_ACCEPTED = "PHASE11_2_LOCAL_MODEL_RUNTIME_ACCEPTED"
+OLLAMA_ENV_BLOCKED = "OLLAMA_RUNTIME_BLOCKED_BY_ENV"
+OLLAMA_MODEL_BLOCKED = "BLOCKED_BY_MODEL_NOT_INSTALLED"
 PHASE11_2_REJECTED = "PHASE11_2_MODEL_CONTROL_CENTER_REJECTED"
 
 
@@ -29,6 +38,10 @@ def main() -> int:
     mode.add_argument("--ci", action="store_true")
     mode.add_argument("--ollama", action="store_true")
     mode.add_argument("--full", action="store_true")
+    parser.add_argument("--ollama-model", default="", help="真实 Ollama 验收使用的精确模型名。")
+    parser.add_argument(
+        "--allow-download", action="store_true", help="允许通过 Ollama HTTP API 拉取缺失模型。"
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -38,6 +51,7 @@ def main() -> int:
     output = args.output
     output.mkdir(parents=True, exist_ok=True)
     run_ci = args.ci or args.full or not args.ollama
+    run_ollama = args.ollama or args.full
 
     runtime = verify_runtime(output) if run_ci else skipped("runtime", "not requested")
     model_backend = verify_model_backend() if run_ci else skipped("model_backend", "not requested")
@@ -45,7 +59,14 @@ def main() -> int:
     frontend = verify_frontend() if run_ci else skipped("frontend", "not requested")
     e2e = verify_e2e() if run_ci else skipped("e2e", "not requested")
     startup = verify_startup_smoke() if run_ci else skipped("startup", "not requested")
-    ollama = skipped("ollama", "real Ollama not requested")
+    ollama = (
+        verify_real_ollama(
+            ollama_model=args.ollama_model,
+            allow_download=bool(args.allow_download),
+        )
+        if run_ollama
+        else skipped("ollama", "real Ollama not requested")
+    )
     summary = build_summary(
         runtime=runtime,
         model_backend=model_backend,
@@ -54,6 +75,9 @@ def main() -> int:
         e2e=e2e,
         startup=startup,
         ollama=ollama,
+        ci_requested=run_ci,
+        ollama_requested=run_ollama,
+        full_requested=bool(args.full),
     )
     write_artifacts(
         output,
@@ -187,15 +211,148 @@ def verify_startup_smoke() -> dict[str, Any]:
     }
 
 
-def build_summary(**sections: dict[str, Any]) -> dict[str, Any]:
-    ci_ok = all(
+def verify_real_ollama(
+    *,
+    ollama_model: str,
+    allow_download: bool,
+    transport: OllamaTransport | None = None,
+) -> dict[str, Any]:
+    """真实 Ollama 验收路径；不指定模型时只返回阻塞，不自动下载。"""
+
+    if not ollama_model:
+        return {
+            "status": OLLAMA_ENV_BLOCKED,
+            "accepted": False,
+            "error_code": "ollama_model_required",
+            "sanitized_message": "--ollama requires --ollama-model <exact-model-name>",
+            "allow_download": allow_download,
+            "real_controller_contacted": False,
+            "hardware_motion_observed": False,
+            "hardware_write_operations": [],
+        }
+    client = transport or OllamaHttpClient(timeout_s=30.0)
+    try:
+        version = client.get_version()
+        models = client.list_models()
+    except Exception as exc:
+        return {
+            "status": OLLAMA_ENV_BLOCKED,
+            "accepted": False,
+            "error_code": type(exc).__name__,
+            "sanitized_message": "local Ollama daemon is not reachable",
+            "model_name": ollama_model,
+            "real_controller_contacted": False,
+            "hardware_motion_observed": False,
+            "hardware_write_operations": [],
+        }
+
+    installed = {str(item.get("name", "")) for item in models}
+    download: dict[str, Any] | None = None
+    if ollama_model not in installed:
+        if not allow_download:
+            return {
+                "status": OLLAMA_MODEL_BLOCKED,
+                "accepted": False,
+                "ollama_version": str(version.get("version", "")),
+                "installed_model_count": len(installed),
+                "model_name": ollama_model,
+                "allow_download": False,
+                "real_controller_contacted": False,
+                "hardware_motion_observed": False,
+                "hardware_write_operations": [],
+            }
+        with tempfile.TemporaryDirectory(prefix="phase11_2_ollama_") as tmpdir:
+            service = ModelControlService(
+                repository=SQLiteModelProfileRepository(Path(tmpdir) / "model_control.db"),
+                secret_store=InMemorySecretStore(),
+            )
+            job = service.start_ollama_download(model_name=ollama_model, transport=client)
+            download = job.model_dump(mode="json")
+        models = client.list_models()
+        installed = {str(item.get("name", "")) for item in models}
+        if ollama_model not in installed:
+            return {
+                "status": OLLAMA_MODEL_BLOCKED,
+                "accepted": False,
+                "ollama_version": str(version.get("version", "")),
+                "installed_model_count": len(installed),
+                "model_name": ollama_model,
+                "allow_download": True,
+                "download": download,
+                "real_controller_contacted": False,
+                "hardware_motion_observed": False,
+                "hardware_write_operations": [],
+            }
+
+    with tempfile.TemporaryDirectory(prefix="phase11_2_ollama_") as tmpdir:
+        service = ModelControlService(
+            repository=SQLiteModelProfileRepository(Path(tmpdir) / "model_control.db"),
+            secret_store=InMemorySecretStore(),
+        )
+        runtime = service.activate_ollama_model(model_name=ollama_model, transport=client)
+        dry_run = service.planner_dry_run(
+            user_instruction="return a safe dry-run plan",
+            sample_scene="S01_NORMAL_STATIC",
+            control_mode="PCSC",
+            transport=client,
+        )
+    accepted = (
+        runtime.active_provider == PlannerProviderKind.OLLAMA
+        and runtime.active_model == ollama_model
+        and dry_run.get("dispatch") is False
+        and dry_run.get("hardware_execution") is False
+    )
+    return {
+        "status": PHASE11_2_LOCAL_MODEL_ACCEPTED if accepted else PHASE11_2_REJECTED,
+        "accepted": accepted,
+        "ollama_version": str(version.get("version", "")),
+        "installed_model_count": len(installed),
+        "model_name": ollama_model,
+        "allow_download": allow_download,
+        "download": download,
+        "planner_dry_run": {
+            "dispatch": dry_run.get("dispatch"),
+            "hardware_execution": dry_run.get("hardware_execution"),
+            "provider_kind": dry_run.get("provider_kind"),
+            "model_name": dry_run.get("model_name"),
+        },
+        "real_controller_contacted": False,
+        "hardware_motion_observed": False,
+        "hardware_write_operations": [],
+    }
+
+
+def build_summary(**sections: Any) -> dict[str, Any]:
+    ci_requested = bool(sections.get("ci_requested"))
+    ollama_requested = bool(sections.get("ollama_requested"))
+    full_requested = bool(sections.get("full_requested"))
+    ci_ok = ci_requested and all(
         sections[name].get("status") in {"PASSED", "SKIPPED"}
         for name in ["runtime", "model_backend", "secret", "frontend", "e2e", "startup"]
     )
-    status = PHASE11_2_CONSOLE_ACCEPTED if ci_ok else PHASE11_2_REJECTED
+    ollama_ok = sections["ollama"].get("status") == PHASE11_2_LOCAL_MODEL_ACCEPTED
+    if full_requested:
+        validation_claimed = ci_ok and ollama_ok
+        status = (
+            PHASE11_2_CONSOLE_ACCEPTED
+            if validation_claimed
+            else sections["ollama"].get(
+                "status",
+                PHASE11_2_REJECTED,
+            )
+        )
+    elif ci_requested:
+        validation_claimed = ci_ok
+        status = PHASE11_2_CONSOLE_ACCEPTED if ci_ok else PHASE11_2_REJECTED
+    elif ollama_requested:
+        validation_claimed = ollama_ok
+        status = sections["ollama"].get("status", PHASE11_2_REJECTED)
+    else:
+        validation_claimed = False
+        status = PHASE11_2_REJECTED
     return {
         "status": status,
-        "validation_claimed": ci_ok,
+        "validation_claimed": validation_claimed,
         "runtime_terminal_evidence_consistent": bool(
             sections["runtime"].get("runtime_terminal_evidence_consistent")
         ),
@@ -231,6 +388,9 @@ def build_summary(**sections: dict[str, Any]) -> dict[str, Any]:
         "frontend_directly_runnable": bool(sections["frontend"].get("frontend_directly_runnable")),
         "openapi_path_count": int(sections["frontend"].get("openapi_path_count", 0)),
         "playwright_test_count": int(sections["e2e"].get("playwright_test_count", 0)),
+        "ollama_runtime_status": sections["ollama"].get("status"),
+        "local_model_runtime_accepted": bool(ollama_ok),
+        "installed_model_count": int(sections["ollama"].get("installed_model_count", 0)),
         "real_controller_contacted": False,
         "hardware_motion_observed": False,
         "hardware_write_operations": [],
