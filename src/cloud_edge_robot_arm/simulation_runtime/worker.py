@@ -7,7 +7,9 @@ Mock 或 MuJoCo。这里刻意不暴露 shell、脚本路径或真实机械臂�
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -121,16 +123,9 @@ class SimulationWorker:
                 RuntimeJobStatus.FINALIZING,
                 lease_id,
             )
-            artifacts = self._write_artifacts(job, events=events, metrics=metrics, result=result)
+            artifacts = self._artifact_paths(job)
             self.repository.save_metrics(
                 job_id, [metric.model_dump(mode="json") for metric in metrics]
-            )
-            self.repository.save_artifacts(job_id, artifacts)
-            self.repository.append_event(
-                job_id,
-                event_type="artifact_created",
-                source="simulation_runtime",
-                payload=dict(artifacts),
             )
             self.repository.finish_attempt(
                 job_id,
@@ -145,6 +140,21 @@ class SimulationWorker:
                 RuntimeJobStatus.SUCCEEDED,
                 lease_id,
             )
+            self.repository.append_event(
+                job_id,
+                event_type="artifact_created",
+                source="simulation_runtime",
+                payload=dict(artifacts),
+            )
+            self.repository.release_lease(lease_id)
+            artifacts = self._write_artifacts(
+                self.repository.get_job(job_id),
+                events=events,
+                metrics=metrics,
+                result=result,
+                expected_terminal_status=RuntimeJobStatus.SUCCEEDED,
+            )
+            self.repository.save_artifacts(job_id, artifacts)
         except CancelledByOperator as exc:
             error = str(exc)
             current = self.repository.get_job(job_id)
@@ -318,6 +328,7 @@ class SimulationWorker:
         events: list[TimelineEvent],
         metrics: list[SimulationMetric],
         result: dict[str, Any] | ExperimentResult,
+        expected_terminal_status: RuntimeJobStatus | None = None,
     ) -> dict[str, str]:
         run_dir = self.artifact_root / job.artifact_root
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -339,48 +350,34 @@ class SimulationWorker:
             "resource_usage": run_dir / "resource_usage.json",
             "cancellation": run_dir / "cancellation.json",
             "recovery": run_dir / "recovery.json",
+            "evidence_consistency": run_dir / "evidence_consistency.json",
         }
-        paths["run_manifest"].write_text(
-            json.dumps(redact(job.manifest), sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _atomic_write_json(paths["run_manifest"], redact(job.manifest))
         job_events = self.repository.list_events(job.run_id)
-        with paths["events"].open("w", encoding="utf-8") as handle:
-            for event in job_events:
-                handle.write(
-                    json.dumps(
-                        {
-                            "sequence": event.sequence,
-                            "event_type": event.event_type,
-                            "source": event.source,
-                            "severity": "info",
-                            "virtual_time_ms": 0,
-                            "wall_time": event.timestamp.isoformat(),
-                            "payload": redact(event.payload),
-                        },
-                        sort_keys=True,
-                    )
-                    + "\n"
-                )
-        paths["metrics"].write_text(
-            json.dumps(
-                [metric.model_dump(mode="json") for metric in metrics],
-                sort_keys=True,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        _atomic_write_jsonl(
+            paths["events"],
+            [
+                {
+                    "sequence": event.sequence,
+                    "event_type": event.event_type,
+                    "source": event.source,
+                    "severity": "info",
+                    "virtual_time_ms": 0,
+                    "wall_time": event.timestamp.isoformat(),
+                    "payload": redact(event.payload),
+                }
+                for event in job_events
+            ],
         )
-        paths["logs"].write_text(
-            json.dumps({"messages": [], "redacted": True}, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _atomic_write_json(paths["metrics"], [metric.model_dump(mode="json") for metric in metrics])
+        _atomic_write_json(paths["logs"], {"messages": [], "redacted": True})
         if isinstance(result, ExperimentResult):
             result_payload: dict[str, Any] = result.model_dump(mode="json")
         else:
             result_payload = dict(result)
         result_payload.update(
             {
+                "status": job.status.value,
                 "backend": job.backend,
                 "runner": "MUJOCO_SCENARIO" if job.backend == "MUJOCO" else "MOCK_SCENARIO",
                 "runtime_executed": True,
@@ -390,116 +387,130 @@ class SimulationWorker:
                 "hardware_write_operations": [],
             }
         )
-        paths["result"].write_text(
-            json.dumps(redact(result_payload), sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        paths["provenance"].write_text(
-            json.dumps(redact(job.provenance), sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        paths["runtime_job"].write_text(
-            json.dumps(redact(_job_artifact(job)), sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        paths["job"].write_text(paths["runtime_job"].read_text(encoding="utf-8"))
-        with paths["state_transitions"].open("w", encoding="utf-8") as handle:
-            for event in job_events:
-                if event.previous_status or event.next_status:
-                    handle.write(
-                        json.dumps(
-                            {
-                                "event_id": event.event_id,
-                                "sequence": event.sequence,
-                                "previous_status": event.previous_status,
-                                "next_status": event.next_status,
-                                "reason_code": event.reason_code,
-                                "timestamp": event.timestamp.isoformat(),
-                                "worker_id": event.payload.get("worker_id", ""),
-                                "lease_id": event.payload.get("lease_id", ""),
-                                "attempt": job.attempt,
-                                "source": event.source,
-                            },
-                            sort_keys=True,
-                        )
-                        + "\n"
-                    )
+        _atomic_write_json(paths["result"], redact(result_payload))
+        _atomic_write_json(paths["provenance"], redact(job.provenance))
+        runtime_job_payload = redact(_job_artifact(job))
+        _atomic_write_json(paths["runtime_job"], runtime_job_payload)
+        _atomic_write_json(paths["job"], runtime_job_payload)
+        transitions = [
+            {
+                "event_id": event.event_id,
+                "sequence": event.sequence,
+                "previous_status": event.previous_status,
+                "next_status": event.next_status,
+                "reason_code": event.reason_code,
+                "timestamp": event.timestamp.isoformat(),
+                "worker_id": event.payload.get("worker_id", ""),
+                "lease_id": event.payload.get("lease_id", ""),
+                "attempt": job.attempt,
+                "source": event.source,
+            }
+            for event in job_events
+            if event.previous_status or event.next_status
+        ]
+        _atomic_write_jsonl(paths["state_transitions"], transitions)
         attempts = self.repository.list_attempts(job.run_id)
-        with paths["attempts"].open("w", encoding="utf-8") as handle:
-            for attempt in attempts:
-                handle.write(
-                    json.dumps(
-                        {
-                            "attempt": attempt.attempt,
-                            "worker_id": attempt.worker_id,
-                            "started_at": attempt.started_at.isoformat(),
-                            "ended_at": attempt.ended_at.isoformat() if attempt.ended_at else "",
-                            "result": attempt.result,
-                            "error": attempt.error,
-                        },
-                        sort_keys=True,
-                    )
-                    + "\n"
-                )
-        lease_payload = {
-            "job_id": job.job_id,
-            "lease_id": job.lease_id,
-            "worker_id": job.worker_id,
-            "lease_expires_at": job.lease_expires_at.isoformat() if job.lease_expires_at else "",
-        }
-        paths["leases"].write_text(
-            json.dumps(lease_payload, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        paths["lease_history"].write_text(paths["leases"].read_text(encoding="utf-8"))
-        paths["resource_usage"].write_text(
-            json.dumps(
+        _atomic_write_jsonl(
+            paths["attempts"],
+            [
                 {
-                    "cpu_quota": "not_enforced",
-                    "memory_soft_limit": "not_enforced",
-                    "max_log_bytes": 0,
-                    "max_event_count": len(job_events),
-                    "max_runtime_seconds": job.timeout_seconds,
-                    "redacted": True,
-                },
-                sort_keys=True,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+                    "attempt": attempt.attempt,
+                    "worker_id": attempt.worker_id,
+                    "started_at": attempt.started_at.isoformat(),
+                    "ended_at": attempt.ended_at.isoformat() if attempt.ended_at else "",
+                    "result": attempt.result,
+                    "error": attempt.error,
+                }
+                for attempt in attempts
+            ],
         )
-        paths["cancellation"].write_text(
-            json.dumps(
-                {
-                    "requested_at": job.updated_at.isoformat() if job.cancel_requested else "",
-                    "acknowledged_at": job.updated_at.isoformat() if job.cancel_requested else "",
-                    "terminated_at": job.completed_at.isoformat()
-                    if job.completed_at and job.cancel_requested
-                    else "",
-                    "force_killed": False,
-                },
-                sort_keys=True,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        leases = self.repository.list_leases(job.run_id)
+        lease_rows = [
+            {
+                "job_id": lease.job_id,
+                "lease_id": lease.lease_id,
+                "worker_id": lease.worker_id,
+                "acquired_at": lease.acquired_at.isoformat(),
+                "expires_at": lease.expires_at.isoformat(),
+                "heartbeat_at": lease.heartbeat_at.isoformat(),
+                "released_at": lease.released_at.isoformat() if lease.released_at else "",
+            }
+            for lease in leases
+        ]
+        _atomic_write_jsonl(paths["leases"], lease_rows)
+        _atomic_write_jsonl(paths["lease_history"], lease_rows)
+        _atomic_write_json(
+            paths["resource_usage"],
+            {
+                "cpu_quota": "not_enforced",
+                "memory_soft_limit": "not_enforced",
+                "max_log_bytes": 0,
+                "max_event_count": len(job_events),
+                "max_runtime_seconds": job.timeout_seconds,
+                "redacted": True,
+            },
         )
-        paths["recovery"].write_text(
-            json.dumps(
-                {
-                    "recovered": False,
-                    "recovery_required": False,
-                    "duplicate_execution_prevented": True,
-                },
-                sort_keys=True,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        _atomic_write_json(
+            paths["cancellation"],
+            {
+                "requested_at": job.updated_at.isoformat() if job.cancel_requested else "",
+                "acknowledged_at": job.updated_at.isoformat() if job.cancel_requested else "",
+                "terminated_at": job.completed_at.isoformat()
+                if job.completed_at and job.cancel_requested
+                else "",
+                "force_killed": False,
+            },
+        )
+        _atomic_write_json(
+            paths["recovery"],
+            {
+                "recovered": False,
+                "recovery_required": False,
+                "duplicate_execution_prevented": True,
+            },
+        )
+        _atomic_write_json(
+            paths["evidence_consistency"],
+            _evidence_consistency(
+                run_id=job.run_id,
+                expected_terminal_status=expected_terminal_status,
+                job=job,
+                attempts=attempts,
+                leases=leases,
+                transitions=transitions,
+                events=job_events,
+                result_payload=result_payload,
+                paths=paths,
+            ),
         )
         _remove_internal_sqlite_sidecars(run_dir)
         return {
             name: path.relative_to(self.artifact_root).as_posix() for name, path in paths.items()
+        }
+
+    def _artifact_paths(self, job: SimulationJobRecord) -> dict[str, str]:
+        run_dir = self.artifact_root / job.artifact_root
+        names = {
+            "run_manifest": "run_manifest.json",
+            "events": "events.jsonl",
+            "metrics": "metrics.json",
+            "logs": "logs.json",
+            "result": "result.json",
+            "provenance": "provenance.json",
+            "job": "job.json",
+            "state_transitions": "state_transitions.jsonl",
+            "runtime_job": "runtime_job.json",
+            "attempts": "attempts.jsonl",
+            "leases": "leases.jsonl",
+            "lease_history": "lease_history.jsonl",
+            "resource_usage": "resource_usage.json",
+            "cancellation": "cancellation.json",
+            "recovery": "recovery.json",
+            "evidence_consistency": "evidence_consistency.json",
+        }
+        return {
+            key: (run_dir / name).relative_to(self.artifact_root).as_posix()
+            for key, name in names.items()
         }
 
     def _write_terminal_artifacts(
@@ -511,15 +522,25 @@ class SimulationWorker:
         error: str,
     ) -> dict[str, str]:
         job = self.repository.get_job(job_id)
+        artifacts = self._artifact_paths(job)
+        self.repository.save_metrics(job_id, [])
         self.repository.finish_attempt(
             job_id,
             attempt=attempt,
             result=status.value,
             error=error,
-            artifact_paths={},
+            artifact_paths=artifacts,
         )
+        self.repository.append_event(
+            job_id,
+            event_type="artifact_created",
+            source="simulation_runtime",
+            payload=dict(artifacts),
+        )
+        if job.lease_id:
+            self.repository.release_lease(job.lease_id)
         artifacts = self._write_artifacts(
-            job,
+            self.repository.get_job(job_id),
             events=[],
             metrics=[],
             result={
@@ -528,22 +549,9 @@ class SimulationWorker:
                 "runtime_executed": True,
                 "mock_fallback_used": False if job.backend == "MUJOCO" else None,
             },
+            expected_terminal_status=status,
         )
-        self.repository.save_metrics(job_id, [])
         self.repository.save_artifacts(job_id, artifacts)
-        self.repository.append_event(
-            job_id,
-            event_type="artifact_created",
-            source="simulation_runtime",
-            payload=dict(artifacts),
-        )
-        self.repository.finish_attempt(
-            job_id,
-            attempt=attempt,
-            result=status.value,
-            error=error,
-            artifact_paths=artifacts,
-        )
         return artifacts
 
     def _transition(
@@ -566,6 +574,12 @@ class SimulationWorker:
         )
         if updated is None:
             current = self.repository.get_job(job_id)
+            if current.status in {
+                RuntimeJobStatus.CANCEL_REQUESTED,
+                RuntimeJobStatus.CANCELLING,
+                RuntimeJobStatus.CANCELLED,
+            }:
+                raise CancelledByOperator("cancelled by operator")
             if current.status != next_status:
                 raise RuntimeError(f"state transition lost: {expected.value}->{next_status.value}")
 
@@ -804,3 +818,86 @@ def _job_artifact(job: SimulationJobRecord) -> dict[str, Any]:
         "hardware_motion_observed": False,
         "hardware_write_operations": [],
     }
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    _atomic_write_text(path, json.dumps(redact(payload), sort_keys=True, indent=2) + "\n")
+
+
+def _atomic_write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    text = "".join(json.dumps(redact(row), sort_keys=True) + "\n" for row in rows)
+    _atomic_write_text(path, text)
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.tmp")
+    with temp.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temp, path)
+
+
+def _evidence_consistency(
+    *,
+    run_id: str,
+    expected_terminal_status: RuntimeJobStatus | None,
+    job: SimulationJobRecord,
+    attempts: list[Any],
+    leases: list[Any],
+    transitions: list[dict[str, Any]],
+    events: list[Any],
+    result_payload: dict[str, Any],
+    paths: dict[str, Path],
+) -> dict[str, Any]:
+    expected = expected_terminal_status.value if expected_terminal_status else job.status.value
+    final_attempt_status = attempts[-1].result if attempts else ""
+    final_transition_status = transitions[-1]["next_status"] if transitions else ""
+    event_types = {event.event_type for event in events}
+    terminal_event = {
+        RuntimeJobStatus.SUCCEEDED.value: "job_completed",
+        RuntimeJobStatus.CANCELLED.value: "job_cancelled",
+        RuntimeJobStatus.TIMED_OUT.value: "job_timed_out",
+        RuntimeJobStatus.FAILED.value: "job_failed",
+    }.get(expected, "")
+    result_status = str(result_payload.get("status", ""))
+    artifact_created_present = "artifact_created" in event_types
+    terminal_event_present = terminal_event in event_types if terminal_event else True
+    lease_released = not leases or all(lease.released_at is not None for lease in leases)
+    consistent = all(
+        [
+            job.status.value == expected,
+            final_attempt_status == expected,
+            final_transition_status == expected,
+            result_status == expected,
+            artifact_created_present,
+            terminal_event_present,
+            lease_released,
+        ]
+    )
+    return {
+        "run_id": run_id,
+        "expected_terminal_status": expected,
+        "api_status": job.status.value,
+        "job_status": job.status.value,
+        "runtime_job_status": job.status.value,
+        "final_attempt_status": final_attempt_status,
+        "final_transition_status": final_transition_status,
+        "result_status": result_status,
+        "lease_released": lease_released,
+        "artifact_created_present": artifact_created_present,
+        "terminal_event_present": terminal_event_present,
+        "consistent": consistent,
+        "checked_at": job.updated_at.isoformat(),
+        "file_hashes": _file_hashes(paths),
+    }
+
+
+def _file_hashes(paths: dict[str, Path]) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for key, path in sorted(paths.items()):
+        if key == "evidence_consistency" or not path.exists():
+            continue
+        hashes[key] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashes

@@ -73,6 +73,32 @@ def _wait_for_status(client: TestClient, run_id: str, statuses: set[str]) -> dic
     raise AssertionError(f"run did not reach {statuses}: {last}")
 
 
+def _wait_for_artifact_paths(client: TestClient, run_id: str) -> dict[str, str]:
+    deadline = time.monotonic() + 10.0
+    last: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/v1/simulation/runs/{run_id}")
+        assert response.status_code == 200
+        last = response.json()
+        artifact_paths = last.get("artifact_paths", {})
+        if artifact_paths.get("evidence_consistency"):
+            return artifact_paths
+        time.sleep(0.05)
+    raise AssertionError(f"run did not expose final artifact paths: {last}")
+
+
+def _artifact_json(tmp_path: Path, artifact_paths: dict[str, str], key: str) -> Any:
+    path = tmp_path / "artifacts" / artifact_paths[key]
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _artifact_jsonl(
+    tmp_path: Path, artifact_paths: dict[str, str], key: str
+) -> list[dict[str, Any]]:
+    path = tmp_path / "artifacts" / artifact_paths[key]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
 def test_runtime_state_machine_rejects_illegal_transition() -> None:
     # 状态机必须拒绝跳过队列/运行阶段的非法终态，防止 API 或 worker 覆盖真实状态。
     from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
@@ -180,10 +206,11 @@ def test_post_run_returns_queued_immediately_then_worker_succeeds(
         {"VALIDATING", "LEASED", "STARTING", "RUNNING", "SUCCEEDED"},
     )
     assert running["status"] in {"VALIDATING", "LEASED", "STARTING", "RUNNING", "SUCCEEDED"}
-    terminal = _wait_for_status(client, run["run_id"], {"SUCCEEDED"})
-    assert terminal["artifact_paths"]["runtime_job"].endswith("runtime_job.json")
-    assert terminal["artifact_paths"]["attempts"].endswith("attempts.jsonl")
-    assert terminal["artifact_paths"]["lease_history"].endswith("lease_history.jsonl")
+    _wait_for_status(client, run["run_id"], {"SUCCEEDED"})
+    artifact_paths = _wait_for_artifact_paths(client, run["run_id"])
+    assert artifact_paths["runtime_job"].endswith("runtime_job.json")
+    assert artifact_paths["attempts"].endswith("attempts.jsonl")
+    assert artifact_paths["lease_history"].endswith("lease_history.jsonl")
 
     events = client.get(f"/api/v1/simulation/runs/{run['run_id']}/events").json()["events"]
     assert [event["sequence"] for event in events] == sorted(event["sequence"] for event in events)
@@ -193,6 +220,94 @@ def test_post_run_returns_queued_immediately_then_worker_succeeds(
 
     metrics = client.get(f"/api/v1/simulation/runs/{run['run_id']}/metrics").json()["metrics"]
     assert any(metric["name"] == "task_success" for metric in metrics)
+
+
+def test_success_terminal_evidence_is_consistent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 终态 evidence 必须从 repository 终态重读生成，不能出现 result 成功但 job/attempt
+    # 仍停留在 LEASED/RUNNING 的自相矛盾快照。
+    client = _client(monkeypatch, tmp_path)
+
+    created = client.post(
+        "/api/v1/simulation/runs",
+        headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
+        json=_draft(),
+    ).json()
+    terminal = _wait_for_status(client, created["run_id"], {"SUCCEEDED"})
+    artifact_paths = _wait_for_artifact_paths(client, created["run_id"])
+
+    job = _artifact_json(tmp_path, artifact_paths, "job")
+    runtime_job = _artifact_json(tmp_path, artifact_paths, "runtime_job")
+    result = _artifact_json(tmp_path, artifact_paths, "result")
+    consistency = _artifact_json(tmp_path, artifact_paths, "evidence_consistency")
+    attempts = _artifact_jsonl(tmp_path, artifact_paths, "attempts")
+    leases = _artifact_jsonl(tmp_path, artifact_paths, "leases")
+    transitions = _artifact_jsonl(tmp_path, artifact_paths, "state_transitions")
+    events = _artifact_jsonl(tmp_path, artifact_paths, "events")
+
+    assert terminal["status"] == "SUCCEEDED"
+    assert consistency["consistent"] is True
+    assert job["status"] == "SUCCEEDED"
+    assert runtime_job["status"] == "SUCCEEDED"
+    assert result["status"] == "SUCCEEDED"
+    assert attempts[-1]["result"] == "SUCCEEDED"
+    assert attempts[-1]["ended_at"]
+    assert leases[-1]["released_at"]
+    assert transitions[-1]["next_status"] == "SUCCEEDED"
+    assert "artifact_created" in {event["event_type"] for event in events}
+    assert "job_completed" in {event["event_type"] for event in events}
+
+
+def test_cancelled_and_timed_out_terminal_evidence_are_consistent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    client = _client(monkeypatch, tmp_path)
+
+    cancellable = client.post(
+        "/api/v1/simulation/runs",
+        headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
+        json=_draft(parameter_overrides={"runtime_delay_ms": 2500}),
+    ).json()
+    _wait_for_status(
+        client,
+        cancellable["run_id"],
+        {"LEASED", "STARTING", "RUNNING", "CANCELLED", "SUCCEEDED"},
+    )
+    client.post(
+        f"/api/v1/simulation/runs/{cancellable['run_id']}/cancel",
+        headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
+    )
+    cancelled = _wait_for_status(client, cancellable["run_id"], {"CANCELLED"})
+    cancelled_paths = _wait_for_artifact_paths(client, cancellable["run_id"])
+
+    timed = client.post(
+        "/api/v1/simulation/runs",
+        headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
+        json=_draft(parameter_overrides={"runtime_delay_ms": 1500, "timeout_seconds": 1}),
+    ).json()
+    timed_out = _wait_for_status(client, timed["run_id"], {"TIMED_OUT"})
+    timed_out_paths = _wait_for_artifact_paths(client, timed["run_id"])
+
+    for terminal, artifact_paths, expected in [
+        (cancelled, cancelled_paths, "CANCELLED"),
+        (timed_out, timed_out_paths, "TIMED_OUT"),
+    ]:
+        consistency = _artifact_json(tmp_path, artifact_paths, "evidence_consistency")
+        job = _artifact_json(tmp_path, artifact_paths, "job")
+        result = _artifact_json(tmp_path, artifact_paths, "result")
+        attempts = _artifact_jsonl(tmp_path, artifact_paths, "attempts")
+        transitions = _artifact_jsonl(tmp_path, artifact_paths, "state_transitions")
+        events = _artifact_jsonl(tmp_path, artifact_paths, "events")
+        assert terminal["status"] == expected
+        assert consistency["consistent"] is True
+        assert job["status"] == expected
+        assert result["status"] == expected
+        assert attempts[-1]["result"] == expected
+        assert attempts[-1]["ended_at"]
+        assert transitions[-1]["next_status"] == expected
+        assert consistency["terminal_event_present"] is True
+        assert "artifact_created" in {event["event_type"] for event in events}
 
 
 def test_runtime_cancel_timeout_retry_and_recovery_api(

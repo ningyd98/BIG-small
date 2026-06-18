@@ -366,6 +366,20 @@ class SQLiteSimulationJobRepository:
                 (_dt(now), lease_id),
             )
 
+    def list_leases(self, run_id: str) -> list[SimulationJobLease]:
+        self._initialize()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT leases.* FROM simulation_job_leases AS leases
+                JOIN simulation_jobs AS jobs ON jobs.job_id = leases.job_id
+                WHERE jobs.run_id = ?
+                ORDER BY leases.acquired_at ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        return [_lease_from_row(row) for row in rows]
+
     def expire_leases(self) -> list[str]:
         self._initialize()
         now = _dt(_now())
@@ -978,6 +992,18 @@ def _attempt_from_row(row: sqlite3.Row) -> SimulationJobAttempt:
         result=str(row["result"]),
         error=str(row["error"]),
         artifact_paths=dict(_loads(str(row["artifact_paths_json"]))),
+    )
+
+
+def _lease_from_row(row: sqlite3.Row) -> SimulationJobLease:
+    return SimulationJobLease(
+        lease_id=str(row["lease_id"]),
+        job_id=str(row["job_id"]),
+        worker_id=str(row["worker_id"]),
+        acquired_at=_parse_dt(row["acquired_at"]),
+        expires_at=_parse_dt(row["expires_at"]),
+        heartbeat_at=_parse_dt(row["heartbeat_at"]),
+        released_at=_parse_optional_dt(row["released_at"]),
     )
 
 
