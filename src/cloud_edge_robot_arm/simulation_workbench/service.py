@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -31,6 +32,7 @@ from cloud_edge_robot_arm.real_robot.provenance import current_source_tree_hash
 from cloud_edge_robot_arm.simulation.environment import detect_environment
 from cloud_edge_robot_arm.simulation.evaluation.cross_backend import compare_backend_results
 from cloud_edge_robot_arm.simulation.evaluation.metrics import run_mujoco_physical_trial
+from cloud_edge_robot_arm.simulation_runtime.service import SimulationRuntimeService
 from cloud_edge_robot_arm.simulation_workbench.models import (
     BackendCapability,
     BackendReadiness,
@@ -97,6 +99,19 @@ class SimulationWorkbenchService:
         self._results: dict[str, ExperimentResult | dict[str, Any]] = {}
         self._batches: dict[str, BatchRecord] = {}
         self._comparisons: dict[str, ComparisonResponse] = {}
+        runtime_db = os.environ.get("SIMULATION_RUNTIME_DB")
+        if runtime_db:
+            database_path = Path(runtime_db)
+        elif artifact_root == Path("artifacts"):
+            database_path = Path("data/simulation_runtime.db")
+        else:
+            database_path = artifact_root / "simulation_runtime.db"
+        self.runtime = SimulationRuntimeService(
+            artifact_root=artifact_root,
+            database_path=database_path,
+            event_stream=self.events,
+            runtime_root=artifact_root / "phase11_1/runtime",
+        )
 
     def capabilities(self) -> SimulationCapabilitiesResponse:
         env = detect_environment()
@@ -236,145 +251,70 @@ class SimulationWorkbenchService:
         )
 
     def list_runs(self) -> SimulationRunListResponse:
-        return SimulationRunListResponse(runs=list(self._runs.values()))
+        return self.runtime.list_runs()
 
     def get_run(self, run_id: str) -> SimulationRunRecord:
-        return self._runs[run_id]
+        return self.runtime.get_run(run_id)
 
     def create_run(self, draft: ExperimentDraft) -> SimulationRunRecord:
         validation = self.validate(draft)
-        scenario_id = draft.scenarios[0]
-        control_mode = draft.control_modes[0]
-        seed = draft.seeds[0]
-        run_id = (
-            "sim-"
-            + stable_hash(
-                {
-                    "manifest": validation.manifest.reproducibility_hash,
-                    "scenario_id": scenario_id,
-                    "control_mode": control_mode,
-                    "seed": seed,
-                    "created_at": datetime.now(UTC).isoformat(),
-                }
-            )[:12]
-        )
-        record = SimulationRunRecord(
-            run_id=run_id,
-            backend=draft.backend,
-            run_type=draft.run_type,
-            status=SimulationRunStatus.QUEUED,
-            scenario_id=scenario_id,
-            control_mode=control_mode,
-            seed=seed,
+        return self.runtime.create_run(
+            draft,
             manifest=validation.manifest,
             blockers=validation.blockers,
-            hardware_claim="PLANNING_ONLY"
-            if draft.backend == SimulationBackend.MOVEIT_DRY_RUN
-            else "SIMULATION_ONLY",
-            provenance=_provenance(validation.manifest),
         )
-        self._runs[run_id] = record
-        self._drafts[run_id] = draft
-        self._events[run_id] = []
-        self._metrics[run_id] = []
-        self._publish("run_state", run_id, {"status": record.status.value})
-        self._execute_run(run_id)
-        return self._runs[run_id]
 
     def cancel_run(self, run_id: str) -> SimulationRunRecord:
-        record = self._runs[run_id]
-        if record.status not in _terminal_statuses():
-            record = self._update_run(
-                run_id,
-                status=SimulationRunStatus.CANCELLED,
-                blockers=[*record.blockers, "cancelled by operator"],
-                completed_at=datetime.now(UTC),
-            )
-            self._append_event(run_id, "run_cancelled", {"reason": "operator"})
-        return record
+        return self.runtime.cancel_run(run_id)
+
+    def retry_run(self, run_id: str) -> SimulationRunRecord:
+        return self.runtime.retry_run(run_id)
 
     def clone_run(self, run_id: str) -> ReproductionResponse:
-        draft = self._drafts[run_id]
-        return ReproductionResponse(
-            draft=draft,
-            environment_match=True,
-            warnings=[],
-            reproducibility_hash=self._runs[run_id].manifest.reproducibility_hash,
-        )
+        return self.runtime.clone_run(run_id)
 
     def reproduce_run(self, run_id: str) -> ReproductionResponse:
-        record = self._runs[run_id]
-        environment_match = record.manifest.source_tree_hash == _source_tree_hash()
-        warnings = [] if environment_match else ["source tree hash differs from current checkout"]
-        return ReproductionResponse(
-            draft=self._drafts[run_id],
-            environment_match=environment_match,
-            warnings=warnings,
-            reproducibility_hash=record.manifest.reproducibility_hash,
-        )
+        return self.runtime.reproduce_run(run_id)
 
     def events_for(self, run_id: str) -> SimulationEventsResponse:
-        return SimulationEventsResponse(events=self._events[run_id])
+        return self.runtime.events_for(run_id)
 
     def metrics_for(self, run_id: str) -> SimulationMetricsResponse:
-        return SimulationMetricsResponse(metrics=self._metrics[run_id])
+        return self.runtime.metrics_for(run_id)
 
     def artifacts_for(self, run_id: str) -> SimulationArtifactsResponse:
-        return SimulationArtifactsResponse(artifacts=self._runs[run_id].artifact_paths)
+        return self.runtime.artifacts_for(run_id)
 
     def create_batch(self, draft: ExperimentDraft) -> BatchRecord:
         validation = self.validate(draft)
-        batch_id = "batch-" + validation.manifest.reproducibility_hash[:12]
-        run_ids: list[str] = []
-        for scenario_id in draft.scenarios:
-            for control_mode in draft.control_modes:
-                for seed in draft.seeds:
-                    for _ in range(draft.repetitions):
-                        run_draft = draft.model_copy(
-                            update={
-                                "run_type": SimulationRunType.SINGLE,
-                                "scenarios": [scenario_id],
-                                "control_modes": [control_mode],
-                                "seeds": [seed],
-                                "repetitions": 1,
-                            },
-                            deep=True,
-                        )
-                        run_ids.append(self.create_run(run_draft).run_id)
-        progress = _batch_progress([self._runs[run_id] for run_id in run_ids])
-        record = BatchRecord(
-            batch_id=batch_id,
+        return self.runtime.create_batch(
+            draft,
             manifest=validation.manifest,
-            progress=progress,
-            run_ids=run_ids,
-            status=_batch_status(progress),
-            artifact_paths=self._write_batch_artifacts(batch_id, validation.manifest, run_ids),
+            blockers=validation.blockers,
         )
-        self._batches[batch_id] = record
-        self._publish("batch_progress", batch_id, record.progress.model_dump(mode="json"))
-        return record
 
     def get_batch(self, batch_id: str) -> BatchRecord:
-        record = self._batches[batch_id]
-        progress = _batch_progress([self._runs[run_id] for run_id in record.run_ids])
-        updated = record.model_copy(
-            update={
-                "progress": progress,
-                "status": _batch_status(progress),
-                "updated_at": datetime.now(UTC),
-            }
-        )
-        self._batches[batch_id] = updated
-        return updated
+        return self.runtime.get_batch(batch_id)
 
     def batch_runs(self, batch_id: str) -> SimulationRunListResponse:
-        return SimulationRunListResponse(
-            runs=[self._runs[run_id] for run_id in self._batches[batch_id].run_ids]
-        )
+        return self.runtime.batch_runs(batch_id)
+
+    def cancel_batch(self, batch_id: str) -> BatchRecord:
+        return self.runtime.cancel_batch(batch_id)
+
+    def retry_failed_batch(self, batch_id: str) -> BatchRecord:
+        return self.runtime.retry_failed_batch(batch_id)
 
     def compare(self, request: ComparisonRequest) -> ComparisonResponse:
-        runs = [self._runs[run_id] for run_id in request.run_ids if run_id in self._runs]
-        metrics = [metric for run in runs for metric in self._metrics.get(run.run_id, [])]
+        runs: list[SimulationRunRecord] = []
+        metrics: list[SimulationMetric] = []
+        for run_id in request.run_ids:
+            try:
+                run = self.runtime.get_run(run_id)
+            except KeyError:
+                continue
+            runs.append(run)
+            metrics.extend(self.runtime.metrics_for(run_id).metrics)
         completion = [float(metric.value) for metric in metrics if metric.name == "completion_time"]
         success = [float(bool(metric.value)) for metric in metrics if metric.name == "task_success"]
         comparison_id = "cmp-" + stable_hash(request.model_dump(mode="json"))[:12]
@@ -412,7 +352,9 @@ class SimulationWorkbenchService:
             path = self.artifact_root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             rows = [
-                metric for run_id in request.run_ids for metric in self._metrics.get(run_id, [])
+                metric
+                for run_id in request.run_ids
+                for metric in self.runtime.metrics_for(run_id).metrics
             ]
             with path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(

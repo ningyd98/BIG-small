@@ -74,6 +74,10 @@ export const simulationApi = {
     readJson<components["schemas"]["SimulationArtifactsResponse"]>(
       `/runs/${runId}/artifacts`,
     ),
+  runAttempts: (runId: string) =>
+    readJson<components["schemas"]["AttemptListResponse"]>(
+      `/runs/${runId}/attempts`,
+    ),
   startRun: (body: ExperimentDraft) =>
     writeJson<components["schemas"]["SimulationRunRecord"]>("/runs", body, {
       role: "EXPERIMENT_OPERATOR",
@@ -81,6 +85,12 @@ export const simulationApi = {
   cancelRun: (runId: string) =>
     writeJson<components["schemas"]["SimulationRunRecord"]>(
       `/runs/${runId}/cancel`,
+      {},
+      { role: "EXPERIMENT_OPERATOR" },
+    ),
+  retryRun: (runId: string) =>
+    writeJson<components["schemas"]["SimulationRunRecord"]>(
+      `/runs/${runId}/retry`,
       {},
       { role: "EXPERIMENT_OPERATOR" },
     ),
@@ -103,6 +113,30 @@ export const simulationApi = {
   batchRuns: (batchId: string) =>
     readJson<components["schemas"]["SimulationRunListResponse"]>(
       `/batches/${batchId}/runs`,
+    ),
+  cancelBatch: (batchId: string) =>
+    writeJson<components["schemas"]["BatchRecord"]>(
+      `/batches/${batchId}/cancel`,
+      {},
+      { role: "EXPERIMENT_OPERATOR" },
+    ),
+  retryFailedBatch: (batchId: string) =>
+    writeJson<components["schemas"]["BatchRecord"]>(
+      `/batches/${batchId}/retry-failed`,
+      {},
+      { role: "EXPERIMENT_OPERATOR" },
+    ),
+  runtimeHealth: () =>
+    readJson<components["schemas"]["RuntimeHealthResponse"]>("/runtime/health"),
+  runtimeWorkers: () =>
+    readJson<components["schemas"]["WorkerListResponse"]>("/runtime/workers"),
+  runtimeQueue: () =>
+    readJson<components["schemas"]["QueueStatusResponse"]>("/runtime/queue"),
+  recoverRuntime: () =>
+    writeJson<components["schemas"]["RecoveryResponse"]>(
+      "/runtime/recover",
+      {},
+      { role: "SAFETY_REVIEWER" },
     ),
   compare: (body: components["schemas"]["ComparisonRequest"]) =>
     writeJson<

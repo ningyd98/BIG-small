@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_mujoco_runtime:
+        description: "Run optional Phase 11.1 MuJoCo runtime acceptance on a prepared runner"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   python:
@@ -173,6 +180,12 @@ jobs:
           DASHBOARD_EXPERIMENT_WRITES_ENABLED: "true"
         run: npm run e2e
 
+      - name: Phase 11.1 simulation runtime CI verification
+        env:
+          DASHBOARD_AUTH_MODE: LOCAL_ONLY
+          DASHBOARD_EXPERIMENT_WRITES_ENABLED: "true"
+        run: python scripts/verify_phase11_1_simulation_runtime.py --ci
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -181,4 +194,40 @@ jobs:
           path: |
             dashboard/playwright-report
             dashboard/test-results
+          if-no-files-found: ignore
+
+      - name: Upload Phase 11.1 CI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase11-1-runtime-ci-artifacts
+          path: artifacts/phase11_1
+          if-no-files-found: ignore
+
+  simulation-mujoco-runtime:
+    runs-on: self-hosted
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mujoco_runtime }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,sim-mujoco]"
+
+      - name: Phase 11.1 MuJoCo runtime acceptance
+        run: python scripts/verify_phase11_1_simulation_runtime.py --mujoco
+
+      - name: Upload MuJoCo runtime artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase11-1-mujoco-runtime-artifacts
+          path: artifacts/phase11_1
           if-no-files-found: ignore

@@ -3,9 +3,20 @@ import { useState } from "react";
 
 import { BatchPlanBuilder } from "../builders/BatchPlanBuilder";
 import { SweepPlanBuilder } from "../builders/SweepPlanBuilder";
+import {
+  useCancelSimulationBatch,
+  useRetryFailedSimulationBatch,
+  useSimulationRuntimeQueue,
+} from "../api/simulationQueries";
+import { QueueStatusPanel } from "../components/QueueStatusPanel";
+import { ResourceUsagePanel } from "../components/ResourceUsagePanel";
 
 export function BatchExperimentPage() {
   const [seedCount, setSeedCount] = useState(3);
+  const [batchId, setBatchId] = useState("");
+  const queue = useSimulationRuntimeQueue();
+  const cancelBatch = useCancelSimulationBatch();
+  const retryFailed = useRetryFailedSimulationBatch();
   const sweep = SweepPlanBuilder.create({ maxRuns: 120 })
     .scenarios(["S01_NORMAL_STATIC", "S07_NETWORK_DEGRADED"])
     .modes(["PCSC", "ETEAC", "AUTO"])
@@ -43,7 +54,30 @@ export function BatchExperimentPage() {
         <Typography.Text>
           Mode manifest: {modeManifest.control_modes.join(", ")}
         </Typography.Text>
-        <Button type="primary">Queue batch manifest</Button>
+        <InputNumber
+          placeholder="Batch suffix"
+          value={batchId ? Number(batchId.replace(/\D/g, "")) : null}
+          onChange={(value) =>
+            setBatchId(value === null ? "" : `batch-${value}`)
+          }
+        />
+        <Space>
+          <Button type="primary">Queue batch manifest</Button>
+          <Button
+            disabled={!batchId}
+            onClick={() => cancelBatch.mutate(batchId)}
+          >
+            Cancel batch
+          </Button>
+          <Button
+            disabled={!batchId}
+            onClick={() => retryFailed.mutate(batchId)}
+          >
+            Retry failed
+          </Button>
+        </Space>
+        <QueueStatusPanel queue={queue.data} />
+        <ResourceUsagePanel queue={queue.data} />
       </Space>
     </Card>
   );

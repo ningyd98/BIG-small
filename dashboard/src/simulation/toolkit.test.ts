@@ -10,6 +10,10 @@ import { ComparisonService } from "./services/ComparisonService";
 import { ReproductionService } from "./services/ReproductionService";
 import { ExportService } from "./services/ExportService";
 import { EventTimelineAssembler } from "./services/EventTimelineAssembler";
+import { AttemptHistoryService } from "./services/AttemptHistoryService";
+import { QueueMonitorService } from "./services/QueueMonitorService";
+import { RecoveryStatusService } from "./services/RecoveryStatusService";
+import { WorkerHealthService } from "./services/WorkerHealthService";
 import type { ScenarioDefinition } from "./domain/ScenarioDefinition";
 import type { SimulationMetric } from "./domain/RunMetric";
 
@@ -285,5 +289,56 @@ describe("Phase 11 simulation toolkit", () => {
     expect(init.method).toBe("POST");
     expect(headers.get("x-dashboard-role")).toBe("EXPERIMENT_OPERATOR");
     expect(JSON.parse(String(init.body))).not.toHaveProperty("runner_name");
+  });
+
+  it("summarizes runtime queue workers attempts and recovery", () => {
+    const queue = new QueueMonitorService({
+      queued: 2,
+      running: 1,
+      blocked: 1,
+      max_queued_jobs: 500,
+      max_batch_runs: 120,
+    });
+    const workers = new WorkerHealthService([
+      {
+        worker_id: "mock-worker-1",
+        backend: "MOCK",
+        status: "BUSY",
+        active_job_id: "job-1",
+        lease_id: "lease-1",
+      },
+      {
+        worker_id: "mujoco-worker-1",
+        backend: "MUJOCO",
+        status: "IDLE",
+        active_job_id: "",
+        lease_id: "",
+      },
+    ]);
+    const attempts = new AttemptHistoryService([
+      {
+        attempt: 1,
+        worker_id: "mock-worker-1",
+        started_at: "2026-06-18T00:00:00Z",
+        ended_at: null,
+        result: "RUNNING",
+        error: "",
+        artifact_paths: {},
+      },
+    ]);
+    const recovery = new RecoveryStatusService({
+      recovered_jobs: ["job-2"],
+      interrupted_jobs: ["job-3"],
+      incomplete_artifacts: [],
+      rerun_started: false,
+    });
+
+    expect(queue.isNearCapacity()).toBe(false);
+    expect(queue.summary()).toContain("2 queued");
+    expect(workers.busyCount()).toBe(1);
+    expect(workers.backends()).toEqual(["MOCK", "MUJOCO"]);
+    expect(attempts.latest()?.result).toBe("RUNNING");
+    expect(recovery.hasBlockers()).toBe(false);
+    expect(recovery.summary()).toContain("1 recovered");
   });
 });

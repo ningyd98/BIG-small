@@ -19,10 +19,14 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { ExperimentConfigBuilder } from "../builders/ExperimentConfigBuilder";
 import {
   useSimulationCapabilities,
+  useSimulationRuntimeHealth,
+  useSimulationRuntimeQueue,
   useSimulationRuns,
   useSimulationScenarios,
   useSubmitSimulationRun,
 } from "../api/simulationQueries";
+import { QueueStatusPanel } from "../components/QueueStatusPanel";
+import { RuntimeHealthCard } from "../components/RuntimeHealthCard";
 import type { ExperimentDraft } from "../domain/ExperimentDraft";
 
 type FormValues = {
@@ -43,6 +47,8 @@ export function SimulationWorkbenchPage() {
   const capabilities = useSimulationCapabilities();
   const scenarios = useSimulationScenarios();
   const runs = useSimulationRuns();
+  const runtimeHealth = useSimulationRuntimeHealth();
+  const runtimeQueue = useSimulationRuntimeQueue();
   const submit = useSubmitSimulationRun();
   const scenarioItems = useMemo(
     () => scenarios.data?.scenarios ?? [],
@@ -196,7 +202,9 @@ export function SimulationWorkbenchPage() {
                   status={backendReadiness?.readiness ?? "UNKNOWN"}
                 />
               </Descriptions.Item>
-              <Descriptions.Item label="Run count">1</Descriptions.Item>
+              <Descriptions.Item label="Queued">
+                {runtimeQueue.data?.queued ?? 0}
+              </Descriptions.Item>
               <Descriptions.Item label="Hardware writes">
                 none
               </Descriptions.Item>
@@ -221,6 +229,11 @@ export function SimulationWorkbenchPage() {
         </Card>
       </div>
 
+      <div className="simulation-workbench-grid">
+        <RuntimeHealthCard health={runtimeHealth.data} />
+        <QueueStatusPanel queue={runtimeQueue.data} />
+      </div>
+
       <Card title="Active and recent runs">
         <Table
           rowKey="run_id"
@@ -232,6 +245,8 @@ export function SimulationWorkbenchPage() {
             { title: "Scenario", dataIndex: "scenario_id" },
             { title: "Mode", dataIndex: "control_mode" },
             { title: "Seed", dataIndex: "seed" },
+            { title: "Worker", dataIndex: "worker_id" },
+            { title: "Attempt", dataIndex: "attempt" },
             {
               title: "Status",
               dataIndex: "status",

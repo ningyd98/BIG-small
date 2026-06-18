@@ -28,9 +28,21 @@ export class ExperimentSubmissionService {
   }
 
   async retry(
-    draft: ExperimentDraft,
+    runId: string,
   ): Promise<components["schemas"]["SimulationRunRecord"]> {
-    return this.submit(draft);
+    return simulationApi.retryRun(runId);
+  }
+
+  async batchCancel(
+    batchId: string,
+  ): Promise<components["schemas"]["BatchRecord"]> {
+    return simulationApi.cancelBatch(batchId);
+  }
+
+  async retryFailedBatch(
+    batchId: string,
+  ): Promise<components["schemas"]["BatchRecord"]> {
+    return simulationApi.retryFailedBatch(batchId);
   }
 
   async clone(

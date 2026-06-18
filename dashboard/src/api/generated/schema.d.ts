@@ -651,6 +651,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/simulation/batches/{batch_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Batch */
+    post: operations["cancel_batch_api_v1_simulation_batches__batch_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/batches/{batch_id}/retry-failed": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Failed Batch */
+    post: operations["retry_failed_batch_api_v1_simulation_batches__batch_id__retry_failed_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/simulation/batches/{batch_id}/runs": {
     parameters: {
       query?: never;
@@ -788,6 +822,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/simulation/runs/{run_id}/attempts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Run Attempts */
+    get: operations["run_attempts_api_v1_simulation_runs__run_id__attempts_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/simulation/runs/{run_id}/cancel": {
     parameters: {
       query?: never;
@@ -867,6 +918,91 @@ export interface paths {
     put?: never;
     /** Reproduce Run */
     post: operations["reproduce_run_api_v1_simulation_runs__run_id__reproduce_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}/retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Run */
+    post: operations["retry_run_api_v1_simulation_runs__run_id__retry_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runtime/health": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Runtime Health */
+    get: operations["runtime_health_api_v1_simulation_runtime_health_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runtime/queue": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Runtime Queue */
+    get: operations["runtime_queue_api_v1_simulation_runtime_queue_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runtime/recover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Runtime Recover */
+    post: operations["runtime_recover_api_v1_simulation_runtime_recover_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runtime/workers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Runtime Workers */
+    get: operations["runtime_workers_api_v1_simulation_runtime_workers_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1284,6 +1420,36 @@ export interface components {
        */
       validation_claimed: boolean;
     };
+    /** AttemptListResponse */
+    AttemptListResponse: {
+      /** Attempts */
+      attempts: components["schemas"]["AttemptView"][];
+    };
+    /** AttemptView */
+    AttemptView: {
+      /** Artifact Paths */
+      artifact_paths?: {
+        [key: string]: string;
+      };
+      /** Attempt */
+      attempt: number;
+      /** Ended At */
+      ended_at?: string | null;
+      /**
+       * Error
+       * @default
+       */
+      error: string;
+      /** Result */
+      result: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /** Worker Id */
+      worker_id: string;
+    };
     /** AuditEventResponse */
     AuditEventResponse: {
       /** Events */
@@ -1448,6 +1614,11 @@ export interface components {
       cancelled: number;
       /** Failed */
       failed: number;
+      /**
+       * Interrupted
+       * @default 0
+       */
+      interrupted: number;
       /** Progress Ratio */
       progress_ratio: number;
       /** Queued */
@@ -1456,6 +1627,11 @@ export interface components {
       running: number;
       /** Succeeded */
       succeeded: number;
+      /**
+       * Timed Out
+       * @default 0
+       */
+      timed_out: number;
       /** Total */
       total: number;
     };
@@ -2597,6 +2773,33 @@ export interface components {
       /** Z */
       z: number;
     };
+    /** QueueStatusResponse */
+    QueueStatusResponse: {
+      /** Blocked */
+      blocked: number;
+      /** Max Batch Runs */
+      max_batch_runs: number;
+      /** Max Queued Jobs */
+      max_queued_jobs: number;
+      /** Queued */
+      queued: number;
+      /** Running */
+      running: number;
+    };
+    /** RecoveryResponse */
+    RecoveryResponse: {
+      /** Incomplete Artifacts */
+      incomplete_artifacts?: string[];
+      /** Interrupted Jobs */
+      interrupted_jobs?: string[];
+      /** Recovered Jobs */
+      recovered_jobs?: string[];
+      /**
+       * Rerun Started
+       * @default false
+       */
+      rerun_started: boolean;
+    };
     /** ReplanRequest */
     ReplanRequest: {
       /** Completed Step Ids */
@@ -2877,6 +3080,37 @@ export interface components {
       scene_version: number;
       /** Task Id */
       task_id: string;
+    };
+    /** RuntimeHealthResponse */
+    RuntimeHealthResponse: {
+      /**
+       * Database
+       * @default sqlite
+       */
+      database: string;
+      /**
+       * Hardware Motion Observed
+       * @default false
+       */
+      hardware_motion_observed: boolean;
+      /** Hardware Write Operations */
+      hardware_write_operations?: string[];
+      /** Queued */
+      queued: number;
+      /**
+       * Real Controller Contacted
+       * @default false
+       */
+      real_controller_contacted: boolean;
+      /** Running */
+      running: number;
+      /**
+       * Status
+       * @default READY
+       */
+      status: string;
+      /** Workers */
+      workers: number;
     };
     /** RuntimeSnapshot */
     RuntimeSnapshot: {
@@ -3235,13 +3469,25 @@ export interface components {
     };
     /** SimulationRunRecord */
     SimulationRunRecord: {
+      /** Accepted At */
+      accepted_at?: string | null;
       /** Artifact Paths */
       artifact_paths?: {
         [key: string]: string;
       };
+      /**
+       * Attempt
+       * @default 0
+       */
+      attempt: number;
       backend: components["schemas"]["SimulationBackend"];
       /** Blockers */
       blockers?: string[];
+      /**
+       * Cancel Requested
+       * @default false
+       */
+      cancel_requested: boolean;
       /** Completed At */
       completed_at?: string | null;
       /** Control Mode */
@@ -3263,11 +3509,31 @@ export interface components {
       hardware_motion_observed: boolean;
       /** Hardware Write Operations */
       hardware_write_operations?: string[];
+      /**
+       * Job Id
+       * @default
+       */
+      job_id: string;
+      /**
+       * Lease Id
+       * @default
+       */
+      lease_id: string;
       manifest: components["schemas"]["ExperimentManifest"];
+      /**
+       * Max Attempts
+       * @default 1
+       */
+      max_attempts: number;
       /** Provenance */
       provenance?: {
         [key: string]: unknown;
       };
+      /**
+       * Queue Position
+       * @default 0
+       */
+      queue_position: number;
       /**
        * Real Controller Contacted
        * @default false
@@ -3276,6 +3542,11 @@ export interface components {
       /** Run Id */
       run_id: string;
       run_type: components["schemas"]["SimulationRunType"];
+      /**
+       * Runtime Reason
+       * @default
+       */
+      runtime_reason: string;
       /** Scenario Id */
       scenario_id: string;
       /** Seed */
@@ -3284,25 +3555,42 @@ export interface components {
       started_at?: string | null;
       status: components["schemas"]["SimulationRunStatus"];
       /**
+       * Timeout Seconds
+       * @default 300
+       */
+      timeout_seconds: number;
+      /**
        * Updated At
        * Format: date-time
        */
       updated_at?: string;
+      /**
+       * Worker Id
+       * @default
+       */
+      worker_id: string;
     };
     /**
      * SimulationRunStatus
      * @enum {string}
      */
     SimulationRunStatus:
+      | "CREATED"
       | "QUEUED"
       | "VALIDATING"
+      | "LEASED"
       | "STARTING"
       | "RUNNING"
+      | "CANCEL_REQUESTED"
+      | "CANCELLING"
       | "FINALIZING"
       | "SUCCEEDED"
       | "FAILED"
       | "CANCELLED"
-      | "BLOCKED_BY_ENV";
+      | "TIMED_OUT"
+      | "BLOCKED_BY_ENV"
+      | "INTERRUPTED"
+      | "RECOVERY_PENDING";
     /**
      * SimulationRunType
      * @enum {string}
@@ -3885,6 +4173,32 @@ export interface components {
       valid: boolean;
       /** Warnings */
       warnings?: string[];
+    };
+    /** WorkerListResponse */
+    WorkerListResponse: {
+      /** Workers */
+      workers: components["schemas"]["WorkerStatusView"][];
+    };
+    /** WorkerStatusView */
+    WorkerStatusView: {
+      /**
+       * Active Job Id
+       * @default
+       */
+      active_job_id: string;
+      /** Backend */
+      backend: string;
+      /** Heartbeat At */
+      heartbeat_at?: string | null;
+      /**
+       * Lease Id
+       * @default
+       */
+      lease_id: string;
+      /** Status */
+      status: string;
+      /** Worker Id */
+      worker_id: string;
     };
     /** CapabilitiesResponse */
     cloud_edge_robot_arm__cloud__api__schemas__CapabilitiesResponse: {
@@ -5064,6 +5378,68 @@ export interface operations {
       };
     };
   };
+  cancel_batch_api_v1_simulation_batches__batch_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        batch_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BatchRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  retry_failed_batch_api_v1_simulation_batches__batch_id__retry_failed_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        batch_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BatchRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   batch_runs_api_v1_simulation_batches__batch_id__runs_get: {
     parameters: {
       query?: never;
@@ -5316,6 +5692,37 @@ export interface operations {
       };
     };
   };
+  run_attempts_api_v1_simulation_runs__run_id__attempts_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AttemptListResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   cancel_run_api_v1_simulation_runs__run_id__cancel_post: {
     parameters: {
       query?: never;
@@ -5467,6 +5874,117 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  retry_run_api_v1_simulation_runs__run_id__retry_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationRunRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  runtime_health_api_v1_simulation_runtime_health_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RuntimeHealthResponse"];
+        };
+      };
+    };
+  };
+  runtime_queue_api_v1_simulation_runtime_queue_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["QueueStatusResponse"];
+        };
+      };
+    };
+  };
+  runtime_recover_api_v1_simulation_runtime_recover_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecoveryResponse"];
+        };
+      };
+    };
+  };
+  runtime_workers_api_v1_simulation_runtime_workers_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkerListResponse"];
         };
       };
     };

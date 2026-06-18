@@ -13,6 +13,13 @@ from cloud_edge_robot_arm.dashboard.security import (
     enforce_dashboard_role,
     enforce_dashboard_websocket_access,
 )
+from cloud_edge_robot_arm.simulation_runtime.models import (
+    AttemptListResponse,
+    QueueStatusResponse,
+    RecoveryResponse,
+    RuntimeHealthResponse,
+    WorkerListResponse,
+)
 from cloud_edge_robot_arm.simulation_workbench.models import (
     BatchRecord,
     ComparisonRequest,
@@ -155,6 +162,26 @@ async def cancel_run(request: Request, run_id: str) -> SimulationRunRecord:
         raise HTTPException(status_code=404, detail="run_not_found") from exc
 
 
+@router.get("/runs/{run_id}/attempts", response_model=AttemptListResponse)
+async def run_attempts(request: Request, run_id: str) -> AttemptListResponse:
+    enforce_dashboard_access(request)
+    try:
+        return _service(request).runtime.attempts_for(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="run_not_found") from exc
+
+
+@router.post("/runs/{run_id}/retry", status_code=202, response_model=SimulationRunRecord)
+async def retry_run(request: Request, run_id: str) -> SimulationRunRecord:
+    enforce_dashboard_role(request, {UserRole.EXPERIMENT_OPERATOR})
+    try:
+        return _service(request).retry_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="run_not_found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/runs/{run_id}/clone", response_model=ReproductionResponse)
 async def clone_run(request: Request, run_id: str) -> ReproductionResponse:
     enforce_dashboard_access(request)
@@ -200,6 +227,24 @@ async def batch_runs(request: Request, batch_id: str) -> SimulationRunListRespon
         raise HTTPException(status_code=404, detail="batch_not_found") from exc
 
 
+@router.post("/batches/{batch_id}/cancel", response_model=BatchRecord)
+async def cancel_batch(request: Request, batch_id: str) -> BatchRecord:
+    enforce_dashboard_role(request, {UserRole.EXPERIMENT_OPERATOR})
+    try:
+        return _service(request).cancel_batch(batch_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="batch_not_found") from exc
+
+
+@router.post("/batches/{batch_id}/retry-failed", response_model=BatchRecord)
+async def retry_failed_batch(request: Request, batch_id: str) -> BatchRecord:
+    enforce_dashboard_role(request, {UserRole.EXPERIMENT_OPERATOR})
+    try:
+        return _service(request).retry_failed_batch(batch_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="batch_not_found") from exc
+
+
 @router.post("/comparisons", response_model=ComparisonResponse)
 async def comparisons(request: Request, body: ComparisonRequest) -> ComparisonResponse:
     enforce_dashboard_access(request)
@@ -212,6 +257,30 @@ async def exports(request: Request, body: ExportRequest) -> ExportResponse:
     return _service(request).export(body)
 
 
+@router.get("/runtime/health", response_model=RuntimeHealthResponse)
+async def runtime_health(request: Request) -> RuntimeHealthResponse:
+    enforce_dashboard_access(request)
+    return _service(request).runtime.health()
+
+
+@router.get("/runtime/workers", response_model=WorkerListResponse)
+async def runtime_workers(request: Request) -> WorkerListResponse:
+    enforce_dashboard_access(request)
+    return _service(request).runtime.workers()
+
+
+@router.get("/runtime/queue", response_model=QueueStatusResponse)
+async def runtime_queue(request: Request) -> QueueStatusResponse:
+    enforce_dashboard_access(request)
+    return _service(request).runtime.queue()
+
+
+@router.post("/runtime/recover", response_model=RecoveryResponse)
+async def runtime_recover(request: Request) -> RecoveryResponse:
+    enforce_dashboard_role(request, {UserRole.SAFETY_REVIEWER})
+    return _service(request).runtime.recover()
+
+
 @router.websocket("/stream")
 async def stream(websocket: WebSocket) -> None:
     enforce_dashboard_websocket_access(websocket)
@@ -219,7 +288,10 @@ async def stream(websocket: WebSocket) -> None:
     service = _ws_service(websocket)
     last_sequence = int(websocket.query_params.get("last_sequence", "0") or 0)
     try:
-        for event in service.events.replay_after(last_sequence):
+        replayed = service.runtime.replay_stream_after(last_sequence)
+        if not replayed:
+            replayed = service.events.replay_after(last_sequence)
+        for event in replayed:
             await websocket.send_json(event.model_dump(mode="json"))
         await websocket.send_json(service.events.heartbeat().model_dump(mode="json"))
         while True:
@@ -232,7 +304,10 @@ async def stream(websocket: WebSocket) -> None:
                     replay_after = int(str(message["last_sequence"]))
                 except (TypeError, ValueError):
                     replay_after = last_sequence
-                for event in service.events.replay_after(replay_after):
+                replayed = service.runtime.replay_stream_after(replay_after)
+                if not replayed:
+                    replayed = service.events.replay_after(replay_after)
+                for event in replayed:
                     await websocket.send_json(event.model_dump(mode="json"))
                 last_sequence = max(last_sequence, replay_after)
                 continue

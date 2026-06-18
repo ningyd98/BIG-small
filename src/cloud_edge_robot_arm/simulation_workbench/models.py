@@ -23,15 +23,22 @@ class SimulationRunType(StrEnum):
 
 
 class SimulationRunStatus(StrEnum):
+    CREATED = "CREATED"
     QUEUED = "QUEUED"
     VALIDATING = "VALIDATING"
+    LEASED = "LEASED"
     STARTING = "STARTING"
     RUNNING = "RUNNING"
+    CANCEL_REQUESTED = "CANCEL_REQUESTED"
+    CANCELLING = "CANCELLING"
     FINALIZING = "FINALIZING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+    TIMED_OUT = "TIMED_OUT"
     BLOCKED_BY_ENV = "BLOCKED_BY_ENV"
+    INTERRUPTED = "INTERRUPTED"
+    RECOVERY_PENDING = "RECOVERY_PENDING"
 
 
 class SimulationRunnerKind(StrEnum):
@@ -148,6 +155,8 @@ class BatchProgress(BaseModel):
     failed: int = Field(ge=0)
     blocked: int = Field(ge=0)
     cancelled: int = Field(ge=0)
+    timed_out: int = Field(default=0, ge=0)
+    interrupted: int = Field(default=0, ge=0)
     progress_ratio: float = Field(ge=0.0, le=1.0)
 
 
@@ -235,6 +244,8 @@ class ValidationResponse(BaseModel):
 
 class SimulationRunRecord(BaseModel):
     run_id: str
+    job_id: str = ""
+    queue_position: int = 0
     backend: SimulationBackend
     run_type: SimulationRunType
     status: SimulationRunStatus
@@ -243,9 +254,17 @@ class SimulationRunRecord(BaseModel):
     seed: int
     manifest: ExperimentManifest
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    accepted_at: datetime | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    attempt: int = 0
+    max_attempts: int = 1
+    timeout_seconds: int = 300
+    cancel_requested: bool = False
+    worker_id: str = ""
+    lease_id: str = ""
+    runtime_reason: str = ""
     blockers: list[str] = Field(default_factory=list)
     artifact_paths: dict[str, str] = Field(default_factory=dict)
     hardware_claim: str = "SIMULATION_ONLY"

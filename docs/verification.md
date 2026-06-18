@@ -13,6 +13,7 @@ python -m pytest -q
 python scripts/check_docs.py
 python scripts/verify_project.py --profile ci
 python scripts/verify_phase11_simulation_workbench.py --skip-e2e
+python scripts/verify_phase11_1_simulation_runtime.py --ci
 ```
 
 这些命令不得连接 Isaac runtime、ROS 2 / MoveIt runtime 或真实机器人控制器。Phase 11 的 `--skip-e2e` 模式是 CI 轻量检查，只输出 partial verification，不声明完整验收。
@@ -43,6 +44,18 @@ python scripts/verify_phase11_simulation_workbench.py
 ```
 
 完整 Phase 11 verifier 会运行后端测试、前端检查、Playwright E2E，并写入 `artifacts/phase11/verification/`。它使用真实 FastAPI Dashboard API，但不接触真实机械臂。
+
+## Phase 11.1 Simulation Runtime
+
+```bash
+python scripts/verify_phase11_1_simulation_runtime.py --ci
+python scripts/verify_phase11_1_simulation_runtime.py --mujoco
+python scripts/verify_phase11_1_simulation_runtime.py --full
+```
+
+`--ci` 验证 SQLite repository、状态机、队列、worker、restart recovery、cancel、timeout、retry、持久 WebSocket replay、前端和 Playwright。普通 CI 不运行真实 MuJoCo runtime acceptance。
+
+`--mujoco` 实际运行 M11-01 至 M11-10，必须证明 `actual_backend=MUJOCO` 且 `mock_fallback_used=false`。如果 MuJoCo 不可用，只能记录环境阻塞，不能声明完整 Phase 11.1 accepted。
 
 ## ROS 2 / MoveIt
 

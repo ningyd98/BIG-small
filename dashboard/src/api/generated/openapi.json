@@ -111,6 +111,68 @@
         "title": "AcceptanceLevelSnapshot",
         "type": "object"
       },
+      "AttemptListResponse": {
+        "properties": {
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AttemptView"
+            },
+            "title": "Attempts",
+            "type": "array"
+          }
+        },
+        "required": ["attempts"],
+        "title": "AttemptListResponse",
+        "type": "object"
+      },
+      "AttemptView": {
+        "properties": {
+          "artifact_paths": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Artifact Paths",
+            "type": "object"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": ["attempt", "worker_id", "started_at", "result"],
+        "title": "AttemptView",
+        "type": "object"
+      },
       "AuditEventResponse": {
         "properties": {
           "events": {
@@ -455,6 +517,12 @@
             "title": "Failed",
             "type": "integer"
           },
+          "interrupted": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Interrupted",
+            "type": "integer"
+          },
           "progress_ratio": {
             "maximum": 1.0,
             "minimum": 0.0,
@@ -474,6 +542,12 @@
           "succeeded": {
             "minimum": 0.0,
             "title": "Succeeded",
+            "type": "integer"
+          },
+          "timed_out": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Timed Out",
             "type": "integer"
           },
           "total": {
@@ -2594,6 +2668,76 @@
         "title": "Pose",
         "type": "object"
       },
+      "QueueStatusResponse": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "max_batch_runs": {
+            "minimum": 0.0,
+            "title": "Max Batch Runs",
+            "type": "integer"
+          },
+          "max_queued_jobs": {
+            "minimum": 0.0,
+            "title": "Max Queued Jobs",
+            "type": "integer"
+          },
+          "queued": {
+            "minimum": 0.0,
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "minimum": 0.0,
+            "title": "Running",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued",
+          "running",
+          "blocked",
+          "max_queued_jobs",
+          "max_batch_runs"
+        ],
+        "title": "QueueStatusResponse",
+        "type": "object"
+      },
+      "RecoveryResponse": {
+        "properties": {
+          "incomplete_artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Incomplete Artifacts",
+            "type": "array"
+          },
+          "interrupted_jobs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Interrupted Jobs",
+            "type": "array"
+          },
+          "recovered_jobs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recovered Jobs",
+            "type": "array"
+          },
+          "rerun_started": {
+            "default": false,
+            "title": "Rerun Started",
+            "type": "boolean"
+          }
+        },
+        "title": "RecoveryResponse",
+        "type": "object"
+      },
       "ReplanRequest": {
         "properties": {
           "completed_step_ids": {
@@ -3337,6 +3481,55 @@
         "title": "RobotStatusIngestResponse",
         "type": "object"
       },
+      "RuntimeHealthResponse": {
+        "properties": {
+          "database": {
+            "default": "sqlite",
+            "title": "Database",
+            "type": "string"
+          },
+          "hardware_motion_observed": {
+            "default": false,
+            "title": "Hardware Motion Observed",
+            "type": "boolean"
+          },
+          "hardware_write_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hardware Write Operations",
+            "type": "array"
+          },
+          "queued": {
+            "minimum": 0.0,
+            "title": "Queued",
+            "type": "integer"
+          },
+          "real_controller_contacted": {
+            "default": false,
+            "title": "Real Controller Contacted",
+            "type": "boolean"
+          },
+          "running": {
+            "minimum": 0.0,
+            "title": "Running",
+            "type": "integer"
+          },
+          "status": {
+            "default": "READY",
+            "title": "Status",
+            "type": "string"
+          },
+          "workers": {
+            "minimum": 0.0,
+            "title": "Workers",
+            "type": "integer"
+          }
+        },
+        "required": ["queued", "running", "workers"],
+        "title": "RuntimeHealthResponse",
+        "type": "object"
+      },
       "RuntimeSnapshot": {
         "properties": {
           "backend_readiness": {
@@ -4048,12 +4241,29 @@
       },
       "SimulationRunRecord": {
         "properties": {
+          "accepted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          },
           "artifact_paths": {
             "additionalProperties": {
               "type": "string"
             },
             "title": "Artifact Paths",
             "type": "object"
+          },
+          "attempt": {
+            "default": 0,
+            "title": "Attempt",
+            "type": "integer"
           },
           "backend": {
             "$ref": "#/components/schemas/SimulationBackend"
@@ -4064,6 +4274,11 @@
             },
             "title": "Blockers",
             "type": "array"
+          },
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
+            "type": "boolean"
           },
           "completed_at": {
             "anyOf": [
@@ -4103,13 +4318,33 @@
             "title": "Hardware Write Operations",
             "type": "array"
           },
+          "job_id": {
+            "default": "",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "lease_id": {
+            "default": "",
+            "title": "Lease Id",
+            "type": "string"
+          },
           "manifest": {
             "$ref": "#/components/schemas/ExperimentManifest"
+          },
+          "max_attempts": {
+            "default": 1,
+            "title": "Max Attempts",
+            "type": "integer"
           },
           "provenance": {
             "additionalProperties": true,
             "title": "Provenance",
             "type": "object"
+          },
+          "queue_position": {
+            "default": 0,
+            "title": "Queue Position",
+            "type": "integer"
           },
           "real_controller_contacted": {
             "default": false,
@@ -4122,6 +4357,11 @@
           },
           "run_type": {
             "$ref": "#/components/schemas/SimulationRunType"
+          },
+          "runtime_reason": {
+            "default": "",
+            "title": "Runtime Reason",
+            "type": "string"
           },
           "scenario_id": {
             "title": "Scenario Id",
@@ -4146,9 +4386,19 @@
           "status": {
             "$ref": "#/components/schemas/SimulationRunStatus"
           },
+          "timeout_seconds": {
+            "default": 300,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
+            "type": "string"
+          },
+          "worker_id": {
+            "default": "",
+            "title": "Worker Id",
             "type": "string"
           }
         },
@@ -4167,15 +4417,22 @@
       },
       "SimulationRunStatus": {
         "enum": [
+          "CREATED",
           "QUEUED",
           "VALIDATING",
+          "LEASED",
           "STARTING",
           "RUNNING",
+          "CANCEL_REQUESTED",
+          "CANCELLING",
           "FINALIZING",
           "SUCCEEDED",
           "FAILED",
           "CANCELLED",
-          "BLOCKED_BY_ENV"
+          "TIMED_OUT",
+          "BLOCKED_BY_ENV",
+          "INTERRUPTED",
+          "RECOVERY_PENDING"
         ],
         "title": "SimulationRunStatus",
         "type": "string"
@@ -5250,6 +5507,61 @@
         },
         "required": ["valid", "manifest", "run_count"],
         "title": "ValidationResponse",
+        "type": "object"
+      },
+      "WorkerListResponse": {
+        "properties": {
+          "workers": {
+            "items": {
+              "$ref": "#/components/schemas/WorkerStatusView"
+            },
+            "title": "Workers",
+            "type": "array"
+          }
+        },
+        "required": ["workers"],
+        "title": "WorkerListResponse",
+        "type": "object"
+      },
+      "WorkerStatusView": {
+        "properties": {
+          "active_job_id": {
+            "default": "",
+            "title": "Active Job Id",
+            "type": "string"
+          },
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "lease_id": {
+            "default": "",
+            "title": "Lease Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": ["worker_id", "backend", "status"],
+        "title": "WorkerStatusView",
         "type": "object"
       },
       "cloud_edge_robot_arm__cloud__api__schemas__CapabilitiesResponse": {
@@ -6880,6 +7192,86 @@
         "tags": ["simulation-workbench"]
       }
     },
+    "/api/v1/simulation/batches/{batch_id}/cancel": {
+      "post": {
+        "operationId": "cancel_batch_api_v1_simulation_batches__batch_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Batch",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/batches/{batch_id}/retry-failed": {
+      "post": {
+        "operationId": "retry_failed_batch_api_v1_simulation_batches__batch_id__retry_failed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Failed Batch",
+        "tags": ["simulation-workbench"]
+      }
+    },
     "/api/v1/simulation/batches/{batch_id}/runs": {
       "get": {
         "operationId": "batch_runs_api_v1_simulation_batches__batch_id__runs_get",
@@ -7172,6 +7564,46 @@
         "tags": ["simulation-workbench"]
       }
     },
+    "/api/v1/simulation/runs/{run_id}/attempts": {
+      "get": {
+        "operationId": "run_attempts_api_v1_simulation_runs__run_id__attempts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttemptListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Attempts",
+        "tags": ["simulation-workbench"]
+      }
+    },
     "/api/v1/simulation/runs/{run_id}/cancel": {
       "post": {
         "operationId": "cancel_run_api_v1_simulation_runs__run_id__cancel_post",
@@ -7369,6 +7801,122 @@
           }
         },
         "summary": "Reproduce Run",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}/retry": {
+      "post": {
+        "operationId": "retry_run_api_v1_simulation_runs__run_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationRunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Run",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runtime/health": {
+      "get": {
+        "operationId": "runtime_health_api_v1_simulation_runtime_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Health",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runtime/queue": {
+      "get": {
+        "operationId": "runtime_queue_api_v1_simulation_runtime_queue_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Queue",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runtime/recover": {
+      "post": {
+        "operationId": "runtime_recover_api_v1_simulation_runtime_recover_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Recover",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runtime/workers": {
+      "get": {
+        "operationId": "runtime_workers_api_v1_simulation_runtime_workers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkerListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Workers",
         "tags": ["simulation-workbench"]
       }
     },

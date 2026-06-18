@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- 增加 Phase 11.1 Simulation Runtime：SQLite 持久 job repository、状态机、dispatcher、worker lease、cancel、timeout、retry、recovery、持久 WebSocket replay 和 MuJoCo runtime verifier。
+- 新增 `scripts/verify_phase11_1_simulation_runtime.py`、runtime DB 工具、Phase 11.1 Playwright 运行时用例和 `artifacts/phase11_1/verification` 输出。
 - 增加 Phase 11 Simulation Workbench 后端 API、前端工具集、Batch/Sweep、LiveRun、metrics、comparison、export 和 reproduction。
 - 新增 `scripts/verify_phase11_simulation_workbench.py` 以及 Phase 11 backend、frontend 和 Playwright 验收覆盖。
 - 明确 Phase 11 期间真实机械臂开发冻结；保持 `real_controller_contacted=false`、`hardware_motion_observed=false` 和 `hardware_write_operations=[]`。

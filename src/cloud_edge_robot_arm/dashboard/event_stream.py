@@ -35,6 +35,11 @@ class DashboardEventStream:
         self._events.append(event)
         return event
 
+    def append(self, event: DashboardEvent) -> DashboardEvent:
+        self._sequence = max(self._sequence, event.sequence)
+        self._events.append(event)
+        return event
+
     def heartbeat(self) -> DashboardEvent:
         return self.publish("heartbeat", "dashboard", {})
 
