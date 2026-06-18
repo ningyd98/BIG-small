@@ -128,6 +128,27 @@ class AcceptanceLevelItem(BaseModel):
     blockers: list[str] = Field(default_factory=list)
 
 
+class Level0ReadOnlySnapshot(BaseModel):
+    mode_label: str = "REAL HARDWARE - READ ONLY"
+    controller_state: str = "UNAVAILABLE"
+    emergency_stop_state: str = "UNKNOWN"
+    fault_state: str = "UNKNOWN"
+    operation_mode: str = "UNKNOWN"
+    joint_state_freshness: str = "UNAVAILABLE"
+    tcp_pose_freshness: str = "UNAVAILABLE"
+    robot_identity_hash: str = ""
+    config_hash: str = ""
+    site_session_id: str = ""
+    checks: dict[str, bool] = Field(default_factory=dict)
+    evidence_complete: bool = False
+    controller_contacted: bool = False
+    hardware_state_sampled: bool = False
+    write_operation_count: int = 0
+    hardware_motion_observed: bool = False
+    blocker: str = ""
+    blockers: list[str] = Field(default_factory=list)
+
+
 class AcceptanceLevelSnapshot(BaseModel):
     current_level: str = "NONE"
     next_level: str = "LEVEL_0"
@@ -139,6 +160,7 @@ class AcceptanceLevelSnapshot(BaseModel):
     blocked_reasons: list[str] = Field(default_factory=list)
     hardware_motion_allowed: bool = False
     validation_claimed: bool = False
+    level0_read_only: Level0ReadOnlySnapshot = Field(default_factory=Level0ReadOnlySnapshot)
     levels: list[AcceptanceLevelItem] = Field(default_factory=list)
 
 

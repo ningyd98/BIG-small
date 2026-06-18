@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Collapse,
+  Descriptions,
   Form,
   Input,
   Space,
@@ -46,6 +47,7 @@ export function SafetyAcceptancePage() {
 
   const snapshot = acceptance.data;
   const levels = snapshot.levels ?? [];
+  const level0 = snapshot.level0_read_only;
   return (
     <Space orientation="vertical" size="large" style={{ width: "100%" }}>
       <Card title="安全验收">
@@ -69,6 +71,92 @@ export function SafetyAcceptancePage() {
           </ul>
         )}
       </Card>
+      {level0 && (
+        <Card title={level0.mode_label}>
+          <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+            <Descriptions
+              size="small"
+              column={{ xs: 1, sm: 2, lg: 3 }}
+              items={[
+                {
+                  key: "controller",
+                  label: "控制器",
+                  children: level0.controller_state,
+                },
+                {
+                  key: "estop",
+                  label: "E-Stop",
+                  children: level0.emergency_stop_state,
+                },
+                {
+                  key: "fault",
+                  label: "故障",
+                  children: level0.fault_state,
+                },
+                {
+                  key: "mode",
+                  label: "模式",
+                  children: level0.operation_mode,
+                },
+                {
+                  key: "joint",
+                  label: "关节 freshness",
+                  children: level0.joint_state_freshness,
+                },
+                {
+                  key: "tcp",
+                  label: "TCP freshness",
+                  children: level0.tcp_pose_freshness,
+                },
+                {
+                  key: "robot",
+                  label: "机器人 identity hash",
+                  children: level0.robot_identity_hash || "UNAVAILABLE",
+                },
+                {
+                  key: "config",
+                  label: "配置 hash",
+                  children: level0.config_hash || "UNAVAILABLE",
+                },
+                {
+                  key: "session",
+                  label: "现场 session",
+                  children: level0.site_session_id || "UNAVAILABLE",
+                },
+                {
+                  key: "evidence",
+                  label: "证据完整性",
+                  children: String(level0.evidence_complete),
+                },
+                {
+                  key: "writes",
+                  label: "写操作计数",
+                  children: String(level0.write_operation_count ?? 0),
+                },
+                {
+                  key: "motion",
+                  label: "机械臂位移",
+                  children: String(level0.hardware_motion_observed ?? false),
+                },
+              ]}
+            />
+            <Space wrap>
+              {Object.entries(level0.checks ?? {}).map(([key, passed]) => (
+                <Tag key={key} color={passed ? "green" : "gold"}>
+                  {key}:{String(passed)}
+                </Tag>
+              ))}
+            </Space>
+            {(level0.blockers ?? []).length > 0 && (
+              <ul className="plain-list compact-list">
+                {(level0.blockers ?? []).map((blocker) => (
+                  <li key={blocker}>{blocker}</li>
+                ))}
+              </ul>
+            )}
+          </Space>
+        </Card>
+      )}
       <Collapse
         items={levels.map((level) => ({
           key: level.level,

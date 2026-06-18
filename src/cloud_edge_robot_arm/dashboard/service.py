@@ -25,6 +25,7 @@ from cloud_edge_robot_arm.dashboard.models import (
     ExperimentKind,
     FreshnessStatus,
     HardwareClaim,
+    Level0ReadOnlySnapshot,
     RuntimeSnapshot,
     SafetyGateSnapshot,
     SafetyReviewNoteRequest,
@@ -34,6 +35,7 @@ from cloud_edge_robot_arm.dashboard.models import (
     UserRole,
 )
 from cloud_edge_robot_arm.dashboard.redaction import redact
+from cloud_edge_robot_arm.real_robot.acceptance import RealRobotAcceptanceStore
 from cloud_edge_robot_arm.real_robot.config import ExecutionMode, RealRobotRuntimeSettings
 from cloud_edge_robot_arm.real_robot.gate import HardwareExecutionGate, HardwareGateInput
 
@@ -161,18 +163,35 @@ class DashboardService:
         )
 
     def acceptance(self) -> AcceptanceLevelSnapshot:
+        level0 = _level0_read_only_snapshot(self.artifact_root)
+        current_level = (
+            RealRobotAcceptanceStore(self.artifact_root / "phase10" / "acceptance_state.json")
+            .current_level()
+            .value
+        )
+        blocked_reasons = level0.blockers or [
+            "no controller connection, no site evidence, no operator session"
+        ]
         levels = [
             AcceptanceLevelItem(
                 level=f"LEVEL_{idx}",
                 definition=_level_definition(idx),
-                blockers=["real hardware acceptance has not started"],
+                prerequisite_complete=(idx == 0 and current_level == "LEVEL_0"),
+                evidence_complete=(idx == 0 and level0.evidence_complete),
+                blockers=[] if idx == 0 and current_level == "LEVEL_0" else blocked_reasons,
             )
             for idx in range(7)
         ]
         return AcceptanceLevelSnapshot(
-            current_level="NONE",
-            next_level="LEVEL_0",
-            blocked_reasons=["no controller connection, no site evidence, no operator session"],
+            current_level=current_level,
+            next_level="LEVEL_1" if current_level == "LEVEL_0" else "LEVEL_0",
+            prerequisite_complete=current_level == "LEVEL_0",
+            evidence_complete=current_level == "LEVEL_0",
+            robot_identity_hash=level0.robot_identity_hash,
+            config_hash=level0.config_hash,
+            blocked_reasons=blocked_reasons,
+            validation_claimed=current_level == "LEVEL_0",
+            level0_read_only=level0,
             levels=levels,
         )
 
@@ -338,6 +357,79 @@ def _comparison_metrics(artifact_root: Path) -> list[dict[str, Any]]:
                 row[key] = value
         metrics.append(row)
     return metrics
+
+
+def _level0_read_only_snapshot(artifact_root: Path) -> Level0ReadOnlySnapshot:
+    level0_root = artifact_root / "phase10" / "level0"
+    summary = _load_json(level0_root / "level0_summary.json")
+    controller = _load_first_jsonl(level0_root / "controller_readback.jsonl")
+    joint = _load_first_jsonl(level0_root / "joint_state_samples.jsonl")
+    tcp = _load_first_jsonl(level0_root / "tcp_pose_samples.jsonl")
+    estop = _load_first_jsonl(level0_root / "estop_samples.jsonl")
+    fault = _load_first_jsonl(level0_root / "fault_samples.jsonl")
+    session = _load_json(level0_root / "site_session.json")
+
+    required = {
+        "environment.json",
+        "site_session.json",
+        "controller_readback.jsonl",
+        "joint_state_samples.jsonl",
+        "tcp_pose_samples.jsonl",
+        "estop_samples.jsonl",
+        "fault_samples.jsonl",
+        "read_only_api_audit.jsonl",
+        "no_write_operation_evidence.json",
+        "level0_summary.json",
+    }
+    evidence_complete = bool(summary) and all((level0_root / name).exists() for name in required)
+    blockers = [str(item) for item in summary.get("blockers", []) if isinstance(item, str)]
+    if not summary:
+        blockers.append("level0 read-only evidence unavailable")
+    blocker = blockers[0] if blockers else ""
+
+    return Level0ReadOnlySnapshot(
+        controller_state=str(controller.get("controller_state", "UNAVAILABLE")),
+        emergency_stop_state=str(estop.get("state", "UNKNOWN")),
+        fault_state=str(fault.get("state", "UNKNOWN")),
+        operation_mode=str(summary.get("operation_mode") or "UNKNOWN")
+        if not isinstance(summary.get("operation_mode"), dict)
+        else "UNKNOWN",
+        joint_state_freshness=str(joint.get("freshness", "UNAVAILABLE")),
+        tcp_pose_freshness=str(tcp.get("freshness", "UNAVAILABLE")),
+        robot_identity_hash=str(summary.get("robot_identity_hash", "")),
+        config_hash=str(summary.get("config_hash", "")),
+        site_session_id=str(session.get("session_id", "")),
+        checks={
+            str(key): bool(value)
+            for key, value in summary.get("checks", {}).items()
+            if isinstance(key, str)
+        }
+        if isinstance(summary.get("checks"), dict)
+        else {},
+        evidence_complete=evidence_complete,
+        controller_contacted=bool(summary.get("controller_contacted", False)),
+        hardware_state_sampled=bool(summary.get("hardware_state_sampled", False)),
+        write_operation_count=int(summary.get("write_operation_count", 0) or 0),
+        hardware_motion_observed=bool(summary.get("hardware_motion_observed", False)),
+        blocker=blocker,
+        blockers=blockers,
+    )
+
+
+def _load_first_jsonl(path: Path) -> dict[str, Any]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+    return {}
 
 
 def _load_json(path: Path) -> dict[str, Any]:

@@ -43,6 +43,9 @@ def test_verify_project_ci_profile_is_ci_safe() -> None:
     assert "scripts/verify_phase10_1.py" in joined
     assert "scripts/verify_phase10_2a.py" in joined
     assert "--skip-runtime" in joined
+    assert "artifacts/project_verification/phase10/phase10_0" in joined
+    assert "artifacts/project_verification/phase10/phase10_1" in joined
+    assert "artifacts/project_verification/phase10/phase10_2a" in joined
     assert "verify_phase10_moveit_dry_run.py" not in joined
     assert "run_phase10_acceptance_level.py" not in joined
     assert "run_phase9_2_cross_backend.py" not in joined

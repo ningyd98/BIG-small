@@ -9,10 +9,29 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 SUMMARY_DIR = Path("artifacts/project_verification")
+PHASE10_PROJECT_DIR = Path("artifacts/project_verification/phase10")
 PHASE10_2A_FRAMEWORK_ARGV = [
     "python",
     "scripts/verify_phase10_2a.py",
     "--skip-runtime",
+    "--output",
+    str(PHASE10_PROJECT_DIR / "phase10_2a"),
+    "--phase10-0-dir",
+    str(PHASE10_PROJECT_DIR / "phase10_0"),
+    "--phase10-1-dir",
+    str(PHASE10_PROJECT_DIR / "phase10_1"),
+]
+PHASE10_0_PROJECT_ARGV = [
+    "python",
+    "scripts/verify_phase10_0.py",
+    "--output",
+    str(PHASE10_PROJECT_DIR / "phase10_0"),
+]
+PHASE10_1_PROJECT_ARGV = [
+    "python",
+    "scripts/verify_phase10_1.py",
+    "--output",
+    str(PHASE10_PROJECT_DIR / "phase10_1"),
 ]
 
 
@@ -33,8 +52,8 @@ def profile_commands(profile: str) -> list[ProjectCommand]:
             _cmd("mypy", ["python", "-m", "mypy", "."]),
             _cmd("pytest", ["python", "-m", "pytest", "-q"]),
             _cmd("docs", ["python", "scripts/check_docs.py"]),
-            _cmd("phase10-0", ["python", "scripts/verify_phase10_0.py"]),
-            _cmd("phase10-1", ["python", "scripts/verify_phase10_1.py"]),
+            _cmd("phase10-0", PHASE10_0_PROJECT_ARGV),
+            _cmd("phase10-1", PHASE10_1_PROJECT_ARGV),
             _cmd("phase10-2a-framework", PHASE10_2A_FRAMEWORK_ARGV),
         ],
         "simulation": [
@@ -89,8 +108,8 @@ def profile_commands(profile: str) -> list[ProjectCommand]:
             ),
         ],
         "phase10-dry-run": [
-            _cmd("phase10-0", ["python", "scripts/verify_phase10_0.py"]),
-            _cmd("phase10-1", ["python", "scripts/verify_phase10_1.py"]),
+            _cmd("phase10-0", PHASE10_0_PROJECT_ARGV),
+            _cmd("phase10-1", PHASE10_1_PROJECT_ARGV),
             _cmd("phase10-2a-framework", PHASE10_2A_FRAMEWORK_ARGV),
         ],
     }

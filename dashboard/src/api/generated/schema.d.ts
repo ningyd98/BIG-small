@@ -948,6 +948,7 @@ export interface components {
        * @default false
        */
       hardware_motion_allowed: boolean;
+      level0_read_only?: components["schemas"]["Level0ReadOnlySnapshot"];
       /**
        * Level Definition
        * @default Level 0 read-only status and e-stop observation.
@@ -1847,6 +1848,95 @@ export interface components {
       timestamp: string;
       /** Version */
       version: string;
+    };
+    /** Level0ReadOnlySnapshot */
+    Level0ReadOnlySnapshot: {
+      /**
+       * Blocker
+       * @default
+       */
+      blocker: string;
+      /** Blockers */
+      blockers?: string[];
+      /** Checks */
+      checks?: {
+        [key: string]: boolean;
+      };
+      /**
+       * Config Hash
+       * @default
+       */
+      config_hash: string;
+      /**
+       * Controller Contacted
+       * @default false
+       */
+      controller_contacted: boolean;
+      /**
+       * Controller State
+       * @default UNAVAILABLE
+       */
+      controller_state: string;
+      /**
+       * Emergency Stop State
+       * @default UNKNOWN
+       */
+      emergency_stop_state: string;
+      /**
+       * Evidence Complete
+       * @default false
+       */
+      evidence_complete: boolean;
+      /**
+       * Fault State
+       * @default UNKNOWN
+       */
+      fault_state: string;
+      /**
+       * Hardware Motion Observed
+       * @default false
+       */
+      hardware_motion_observed: boolean;
+      /**
+       * Hardware State Sampled
+       * @default false
+       */
+      hardware_state_sampled: boolean;
+      /**
+       * Joint State Freshness
+       * @default UNAVAILABLE
+       */
+      joint_state_freshness: string;
+      /**
+       * Mode Label
+       * @default REAL HARDWARE - READ ONLY
+       */
+      mode_label: string;
+      /**
+       * Operation Mode
+       * @default UNKNOWN
+       */
+      operation_mode: string;
+      /**
+       * Robot Identity Hash
+       * @default
+       */
+      robot_identity_hash: string;
+      /**
+       * Site Session Id
+       * @default
+       */
+      site_session_id: string;
+      /**
+       * Tcp Pose Freshness
+       * @default UNAVAILABLE
+       */
+      tcp_pose_freshness: string;
+      /**
+       * Write Operation Count
+       * @default 0
+       */
+      write_operation_count: number;
     };
     /** ModeTransitionCreateRequest */
     ModeTransitionCreateRequest: {
