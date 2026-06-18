@@ -413,3 +413,5 @@ def test_default_paths_collect_dashboard_root_configs() -> None:
     assert "dashboard/eslint.config.js" in collected
     assert "dashboard/index.html" in collected
     assert "ros2_ws/src/bigsmall_interfaces/CMakeLists.txt" in collected
+    assert "configs/models/small_model_catalog.yaml" in collected
+    assert "configs/phase1_mock.json" in collected

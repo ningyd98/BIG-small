@@ -94,6 +94,7 @@ DEFAULT_AUDIT_PATHS = [
     ".env.phase9.example",
     ".github/workflows",
     ".gitignore",
+    "configs",
     "pyproject.toml",
     "scripts",
     "tests",
