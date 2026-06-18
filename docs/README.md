@@ -6,7 +6,7 @@
 
 - [项目入口](../README.md): 当前能力、快速开始和安全声明。
 - [项目状态](project_status.md): 各能力域状态、验证入口、证据和硬件声明边界。
-- [路线图](roadmap.md): Phase 10.2A-R 之后的计划。
+- [路线图](roadmap.md): Phase 11 仿真工作台之后的计划。
 - [术语表](glossary.md): PCSC、ETEAC、AUTO、证据、溯源等术语。
 
 ## 系统架构
@@ -44,11 +44,18 @@
 - [Skill Cache](skill_cache.md): 高层技能模板缓存。
 - [风险策略](risk_policy.md): 风险分量和策略版本。
 
-## 实验平台
+## 仿真实验与工作台
 
 - [Phase 8 指标](phase8_metrics.md): 实验指标。
 - [Phase 8 可复现性](phase8_reproducibility.md): 可复现性。
 - [Phase 8.2 恢复](phase8_2_recovery.md): 周期闭环和恢复。
+- [Simulation Workbench](simulation_workbench.md): Phase 11 工作台入口。
+- [前端工具集](simulation_frontend_tools.md): Phase 11 前端 domain、service、builder 和 worker。
+- [参数 Schema](simulation_parameter_schema.md): simulation parameter schema 和禁止字段。
+- [Batch 与 Sweep](simulation_batch_and_sweep.md): 批量实验和参数扫描。
+- [Live Monitoring](simulation_live_monitoring.md): WebSocket、polling fallback 和事件时间线。
+- [Metrics 与 Charts](simulation_metrics_and_charts.md): 指标模型和 ECharts 图表。
+- [Reproducibility](simulation_reproducibility.md): 复现实验、provenance 和导出脱敏。
 
 ## MuJoCo / Isaac / ROS 2 / MoveIt
 
@@ -68,9 +75,15 @@
 - [证据溯源](evidence_provenance.md): source tree hash 与 artifact 溯源。
 - [Sim-to-real 评估](sim_to_real_evaluation.md): 后续 sim-to-real 指标。
 
+Phase 11 期间真机相关开发冻结，只保留回归测试和安全边界文档。
+
 ## 阶段报告
 
 阶段报告保留在 `docs/phase*_report.md` 和 `docs/phase*_acceptance.md`。平时建议先看 [项目状态](project_status.md)，再按需要打开具体 Phase 文档。
+
+- [Phase 11 设计](phase11_design.md)
+- [Phase 11 验收](phase11_acceptance.md)
+- [Phase 11 报告](phase11_report.md)
 
 ## 验证与部署
 

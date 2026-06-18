@@ -617,6 +617,313 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/simulation/batches": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Batch */
+    post: operations["create_batch_api_v1_simulation_batches_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/batches/{batch_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Batch */
+    get: operations["get_batch_api_v1_simulation_batches__batch_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/batches/{batch_id}/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Batch Runs */
+    get: operations["batch_runs_api_v1_simulation_batches__batch_id__runs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Capabilities */
+    get: operations["capabilities_api_v1_simulation_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/comparisons": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Comparisons */
+    post: operations["comparisons_api_v1_simulation_comparisons_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/exports": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Exports */
+    post: operations["exports_api_v1_simulation_exports_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/parameter-schema": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Parameter Schema */
+    get: operations["parameter_schema_api_v1_simulation_parameter_schema_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Runs */
+    get: operations["list_runs_api_v1_simulation_runs_get"];
+    put?: never;
+    /** Create Run */
+    post: operations["create_run_api_v1_simulation_runs_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Run */
+    get: operations["get_run_api_v1_simulation_runs__run_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}/artifacts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Run Artifacts */
+    get: operations["run_artifacts_api_v1_simulation_runs__run_id__artifacts_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Run */
+    post: operations["cancel_run_api_v1_simulation_runs__run_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}/clone": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Clone Run */
+    post: operations["clone_run_api_v1_simulation_runs__run_id__clone_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}/events": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Run Events */
+    get: operations["run_events_api_v1_simulation_runs__run_id__events_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}/metrics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Run Metrics */
+    get: operations["run_metrics_api_v1_simulation_runs__run_id__metrics_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/runs/{run_id}/reproduce": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reproduce Run */
+    post: operations["reproduce_run_api_v1_simulation_runs__run_id__reproduce_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/scenarios": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Scenarios */
+    get: operations["scenarios_api_v1_simulation_scenarios_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/scenarios/{scenario_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Scenario */
+    get: operations["scenario_api_v1_simulation_scenarios__scenario_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/simulation/validate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Validate */
+    post: operations["validate_api_v1_simulation_validate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/skill-cache/templates": {
     parameters: {
       query?: never;
@@ -1103,6 +1410,81 @@ export interface components {
       | "COMMITTED"
       | "ABORTED"
       | "ROLLED_BACK";
+    /** BackendCapability */
+    BackendCapability: {
+      backend: components["schemas"]["SimulationBackend"];
+      /** Batch Limits */
+      batch_limits: {
+        [key: string]: number;
+      };
+      /** Blockers */
+      blockers?: string[];
+      /** Export Formats */
+      export_formats: string[];
+      readiness: components["schemas"]["BackendReadiness"];
+      /** Runner Allowlist */
+      runner_allowlist: components["schemas"]["SimulationRunnerKind"][];
+      /** Supported Experiment Types */
+      supported_experiment_types: string[];
+      /** Supported Modes */
+      supported_modes: string[];
+      /** Supported Run Types */
+      supported_run_types: components["schemas"]["SimulationRunType"][];
+    };
+    /**
+     * BackendReadiness
+     * @enum {string}
+     */
+    BackendReadiness:
+      | "READY"
+      | "DEGRADED"
+      | "BLOCKED_BY_ENV"
+      | "NOT_CONFIGURED";
+    /** BatchProgress */
+    BatchProgress: {
+      /** Blocked */
+      blocked: number;
+      /** Cancelled */
+      cancelled: number;
+      /** Failed */
+      failed: number;
+      /** Progress Ratio */
+      progress_ratio: number;
+      /** Queued */
+      queued: number;
+      /** Running */
+      running: number;
+      /** Succeeded */
+      succeeded: number;
+      /** Total */
+      total: number;
+    };
+    /** BatchRecord */
+    BatchRecord: {
+      /** Artifact Paths */
+      artifact_paths?: {
+        [key: string]: string;
+      };
+      /** Batch Id */
+      batch_id: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Hardware Write Operations */
+      hardware_write_operations?: string[];
+      manifest: components["schemas"]["ExperimentManifest"];
+      progress: components["schemas"]["BatchProgress"];
+      /** Run Ids */
+      run_ids: string[];
+      status: components["schemas"]["SimulationRunStatus"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at?: string;
+    };
     /**
      * CommandAckStatus
      * @enum {string}
@@ -1120,14 +1502,16 @@ export interface components {
       | "REJECTED_SCHEMA_INVALID"
       | "REJECTED_SEMANTIC_INVALID"
       | "REJECTED_SAFETY_CONFLICT";
-    /** ComparisonResponse */
-    ComparisonResponse: {
-      /** Metrics */
-      metrics: {
-        [key: string]: unknown;
-      }[];
-      /** @default unavailable */
-      source: components["schemas"]["DataSourceKind"];
+    /** ComparisonRequest */
+    ComparisonRequest: {
+      /** Comparison Type */
+      comparison_type: string;
+      /** Paired Key */
+      paired_key?: {
+        [key: string]: number | string | boolean;
+      };
+      /** Run Ids */
+      run_ids: string[];
     };
     /** CompletionEvidenceRequest */
     CompletionEvidenceRequest: {
@@ -1336,6 +1720,19 @@ export interface components {
       request_id: string;
       /** Task Id */
       task_id: string;
+    };
+    /** DomainRandomizationDraft */
+    DomainRandomizationDraft: {
+      /**
+       * Enabled
+       * @default false
+       */
+      enabled: boolean;
+      /**
+       * Level
+       * @default NONE
+       */
+      level: string;
     };
     /** EdgeEventListResponse */
     EdgeEventListResponse: {
@@ -1639,6 +2036,39 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** ExperimentDraft */
+    ExperimentDraft: {
+      backend: components["schemas"]["SimulationBackend"];
+      /** Control Modes */
+      control_modes: string[];
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      domain_randomization?: components["schemas"]["DomainRandomizationDraft"];
+      /** Fault Profiles */
+      fault_profiles?: components["schemas"]["FaultProfileDraft"][];
+      /** Network Profiles */
+      network_profiles?: components["schemas"]["NetworkDraft"][];
+      /** Parameter Overrides */
+      parameter_overrides?: {
+        [key: string]: number | string | boolean;
+      };
+      /**
+       * Repetitions
+       * @default 1
+       */
+      repetitions: number;
+      /** @default SINGLE */
+      run_type: components["schemas"]["SimulationRunType"];
+      /** Scenarios */
+      scenarios: string[];
+      /** Seeds */
+      seeds: number[];
+      /** Tags */
+      tags?: string[];
+    };
     /** ExperimentJobRecord */
     ExperimentJobRecord: {
       /** Blockers */
@@ -1716,6 +2146,63 @@ export interface components {
     ExperimentListResponse: {
       /** Jobs */
       jobs: components["schemas"]["ExperimentJobRecord"][];
+    };
+    /** ExperimentManifest */
+    ExperimentManifest: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Manifest Id */
+      manifest_id: string;
+      /** Normalized Config */
+      normalized_config: {
+        [key: string]: unknown;
+      };
+      /** Reproducibility Hash */
+      reproducibility_hash: string;
+      /** Run Count */
+      run_count: number;
+      /**
+       * Schema Version
+       * @default phase11.simulation.v1
+       */
+      schema_version: string;
+      /** Source Commit */
+      source_commit: string;
+      /** Source Tree Hash */
+      source_tree_hash: string;
+    };
+    /** ExportRequest */
+    ExportRequest: {
+      /**
+       * Batch Id
+       * @default
+       */
+      batch_id: string;
+      /**
+       * Comparison Id
+       * @default
+       */
+      comparison_id: string;
+      /** Export Type */
+      export_type: string;
+      /** Run Ids */
+      run_ids?: string[];
+    };
+    /** ExportResponse */
+    ExportResponse: {
+      /** Content Preview */
+      content_preview: string;
+      /** Export Id */
+      export_id: string;
+      /** Format */
+      format: string;
+      /** Redacted */
+      redacted: boolean;
+      /** Relative Path */
+      relative_path: string;
     };
     /** FailureSummaryRequest */
     FailureSummaryRequest: {
@@ -1816,6 +2303,18 @@ export interface components {
       summary_id: string;
       /** Task Id */
       task_id: string;
+    };
+    /** FaultProfileDraft */
+    FaultProfileDraft: {
+      /**
+       * Name
+       * @default none
+       */
+      name: string;
+      /** Parameters */
+      parameters?: {
+        [key: string]: number | string | boolean;
+      };
     };
     /**
      * FreshnessStatus
@@ -1996,6 +2495,56 @@ export interface components {
       /** Transition Id */
       transition_id: string;
     };
+    /** NetworkDraft */
+    NetworkDraft: {
+      /**
+       * Bandwidth Kbps
+       * @default 10000
+       */
+      bandwidth_kbps: number;
+      /**
+       * Base Latency Ms
+       * @default 40
+       */
+      base_latency_ms: number;
+      /**
+       * Jitter Ms
+       * @default 5
+       */
+      jitter_ms: number;
+      /**
+       * Name
+       * @default NORMAL
+       */
+      name: string;
+      /**
+       * Packet Loss
+       * @default 0
+       */
+      packet_loss: number;
+    };
+    /** ParameterSchemaResponse */
+    ParameterSchemaResponse: {
+      /** Authoritative Models */
+      authoritative_models: string[];
+      /** Enums */
+      enums: {
+        [key: string]: string[];
+      };
+      /** Forbidden Fields */
+      forbidden_fields: string[];
+      /** Numeric Limits */
+      numeric_limits: {
+        [key: string]: {
+          [key: string]: number;
+        };
+      };
+      /**
+       * Schema Version
+       * @default phase11.simulation.v1
+       */
+      schema_version: string;
+    };
     /** PlanningRequest */
     PlanningRequest: {
       capabilities?: components["schemas"]["RobotCapabilities"];
@@ -2137,6 +2686,16 @@ export interface components {
       reason: string;
       /** Request Id */
       request_id: string;
+    };
+    /** ReproductionResponse */
+    ReproductionResponse: {
+      draft: components["schemas"]["ExperimentDraft"];
+      /** Environment Match */
+      environment_match: boolean;
+      /** Reproducibility Hash */
+      reproducibility_hash: string;
+      /** Warnings */
+      warnings?: string[];
     };
     /** RiskComponentScores */
     RiskComponentScores: {
@@ -2462,6 +3021,56 @@ export interface components {
       role: components["schemas"]["UserRole"];
     };
     /**
+     * ScenarioCategory
+     * @enum {string}
+     */
+    ScenarioCategory:
+      | "NORMAL"
+      | "SCENE_CHANGE"
+      | "PERCEPTION"
+      | "NETWORK"
+      | "CLOUD"
+      | "COMMAND"
+      | "CACHE"
+      | "MODE"
+      | "SAFETY"
+      | "RECOVERY";
+    /** ScenarioDefinitionView */
+    ScenarioDefinitionView: {
+      /** Allowed Result Statuses */
+      allowed_result_statuses: string[];
+      /** Backend Support */
+      backend_support: {
+        [key: string]: components["schemas"]["BackendReadiness"];
+      };
+      category: components["schemas"]["ScenarioCategory"];
+      /** Description */
+      description: string;
+      /** Expected Invariants */
+      expected_invariants: string[];
+      /** Fault Types */
+      fault_types: string[];
+      /** Forbidden Result Statuses */
+      forbidden_result_statuses: string[];
+      /** Initial World State */
+      initial_world_state: {
+        [key: string]: unknown;
+      };
+      /** Maximum Virtual Duration Ms */
+      maximum_virtual_duration_ms: number;
+      /** Scenario Id */
+      scenario_id: string;
+      /** Scheduled Faults */
+      scheduled_faults: {
+        [key: string]: unknown;
+      }[];
+    };
+    /** ScenarioListResponse */
+    ScenarioListResponse: {
+      /** Scenarios */
+      scenarios: components["schemas"]["ScenarioDefinitionView"][];
+    };
+    /**
      * SceneObjectSummary
      * @description A light-weight scene object visible to the cloud planner.
      */
@@ -2534,6 +3143,188 @@ export interface components {
       | "NOT_CONFIGURED"
       | "FAILED"
       | "UNKNOWN";
+    /** SimulationArtifactsResponse */
+    SimulationArtifactsResponse: {
+      /** Artifacts */
+      artifacts: {
+        [key: string]: string;
+      };
+    };
+    /**
+     * SimulationBackend
+     * @enum {string}
+     */
+    SimulationBackend: "MOCK" | "MUJOCO" | "ISAAC_SIM" | "MOVEIT_DRY_RUN";
+    /** SimulationCapabilitiesResponse */
+    SimulationCapabilitiesResponse: {
+      /** Backends */
+      backends: components["schemas"]["BackendCapability"][];
+      /** Export Formats */
+      export_formats: string[];
+      /**
+       * Hardware Motion Observed
+       * @default false
+       */
+      hardware_motion_observed: boolean;
+      /** Hardware Write Operations */
+      hardware_write_operations?: string[];
+      /** Max Batch Runs */
+      max_batch_runs: number;
+      /**
+       * Real Controller Contacted
+       * @default false
+       */
+      real_controller_contacted: boolean;
+      /** Runner Allowlist */
+      runner_allowlist: components["schemas"]["SimulationRunnerKind"][];
+      /**
+       * Schema Version
+       * @default phase11.simulation.v1
+       */
+      schema_version: string;
+      /** Supported Modes */
+      supported_modes: string[];
+      /** Supported Run Types */
+      supported_run_types: components["schemas"]["SimulationRunType"][];
+    };
+    /** SimulationEventsResponse */
+    SimulationEventsResponse: {
+      /** Events */
+      events: components["schemas"]["TimelineEvent"][];
+    };
+    /** SimulationMetric */
+    SimulationMetric: {
+      /**
+       * Aggregation
+       * @default single
+       */
+      aggregation: string;
+      backend: components["schemas"]["SimulationBackend"];
+      /** Control Mode */
+      control_mode: string;
+      /** Name */
+      name: string;
+      /**
+       * Sample Count
+       * @default 1
+       */
+      sample_count: number;
+      /** Scenario */
+      scenario: string;
+      /** Seed */
+      seed: number;
+      /** Source */
+      source: string;
+      /**
+       * Unit
+       * @default
+       */
+      unit: string;
+      /** Value */
+      value: number | string | boolean;
+    };
+    /** SimulationMetricsResponse */
+    SimulationMetricsResponse: {
+      /** Metrics */
+      metrics: components["schemas"]["SimulationMetric"][];
+    };
+    /** SimulationRunListResponse */
+    SimulationRunListResponse: {
+      /** Runs */
+      runs: components["schemas"]["SimulationRunRecord"][];
+    };
+    /** SimulationRunRecord */
+    SimulationRunRecord: {
+      /** Artifact Paths */
+      artifact_paths?: {
+        [key: string]: string;
+      };
+      backend: components["schemas"]["SimulationBackend"];
+      /** Blockers */
+      blockers?: string[];
+      /** Completed At */
+      completed_at?: string | null;
+      /** Control Mode */
+      control_mode: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Hardware Claim
+       * @default SIMULATION_ONLY
+       */
+      hardware_claim: string;
+      /**
+       * Hardware Motion Observed
+       * @default false
+       */
+      hardware_motion_observed: boolean;
+      /** Hardware Write Operations */
+      hardware_write_operations?: string[];
+      manifest: components["schemas"]["ExperimentManifest"];
+      /** Provenance */
+      provenance?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Real Controller Contacted
+       * @default false
+       */
+      real_controller_contacted: boolean;
+      /** Run Id */
+      run_id: string;
+      run_type: components["schemas"]["SimulationRunType"];
+      /** Scenario Id */
+      scenario_id: string;
+      /** Seed */
+      seed: number;
+      /** Started At */
+      started_at?: string | null;
+      status: components["schemas"]["SimulationRunStatus"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at?: string;
+    };
+    /**
+     * SimulationRunStatus
+     * @enum {string}
+     */
+    SimulationRunStatus:
+      | "QUEUED"
+      | "VALIDATING"
+      | "STARTING"
+      | "RUNNING"
+      | "FINALIZING"
+      | "SUCCEEDED"
+      | "FAILED"
+      | "CANCELLED"
+      | "BLOCKED_BY_ENV";
+    /**
+     * SimulationRunType
+     * @enum {string}
+     */
+    SimulationRunType:
+      | "SINGLE"
+      | "BATCH"
+      | "SWEEP"
+      | "PAIRED_BACKEND"
+      | "MODE_COMPARISON";
+    /**
+     * SimulationRunnerKind
+     * @enum {string}
+     */
+    SimulationRunnerKind:
+      | "MOCK_SCENARIO"
+      | "MUJOCO_SCENARIO"
+      | "PHASE8_BATCH"
+      | "PHASE8_SWEEP"
+      | "PHASE9_MUJOCO_BENCHMARK"
+      | "ISAAC_BENCHMARK"
+      | "CROSS_BACKEND_PAIRED";
     /** SkillCacheKey */
     SkillCacheKey: {
       /** Calibration Version */
@@ -3037,6 +3828,34 @@ export interface components {
       /** Timeout Ms */
       timeout_ms: number;
     };
+    /** TimelineEvent */
+    TimelineEvent: {
+      /** Event Type */
+      event_type: string;
+      /** Payload */
+      payload?: {
+        [key: string]: unknown;
+      };
+      /** Sequence */
+      sequence: number;
+      /**
+       * Severity
+       * @default info
+       */
+      severity: string;
+      /** Source */
+      source: string;
+      /**
+       * Virtual Time Ms
+       * @default 0
+       */
+      virtual_time_ms: number;
+      /**
+       * Wall Time
+       * Format: date-time
+       */
+      wall_time?: string;
+    };
     /**
      * UserRole
      * @enum {string}
@@ -3054,6 +3873,18 @@ export interface components {
       msg: string;
       /** Error Type */
       type: string;
+    };
+    /** ValidationResponse */
+    ValidationResponse: {
+      /** Blockers */
+      blockers?: string[];
+      manifest: components["schemas"]["ExperimentManifest"];
+      /** Run Count */
+      run_count: number;
+      /** Valid */
+      valid: boolean;
+      /** Warnings */
+      warnings?: string[];
     };
     /** CapabilitiesResponse */
     cloud_edge_robot_arm__cloud__api__schemas__CapabilitiesResponse: {
@@ -3085,6 +3916,30 @@ export interface components {
       pages: string[];
       /** Websocket */
       websocket: boolean;
+    };
+    /** ComparisonResponse */
+    cloud_edge_robot_arm__dashboard__models__ComparisonResponse: {
+      /** Metrics */
+      metrics: {
+        [key: string]: unknown;
+      }[];
+      /** @default unavailable */
+      source: components["schemas"]["DataSourceKind"];
+    };
+    /** ComparisonResponse */
+    cloud_edge_robot_arm__simulation_workbench__models__ComparisonResponse: {
+      /** Comparison Id */
+      comparison_id: string;
+      /** Comparison Type */
+      comparison_type: string;
+      /** Metrics */
+      metrics: components["schemas"]["SimulationMetric"][];
+      /** Statistics */
+      statistics: {
+        [key: string]: unknown;
+      };
+      /** Warnings */
+      warnings?: string[];
     };
   };
   responses: never;
@@ -3190,7 +4045,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ComparisonResponse"];
+          "application/json": components["schemas"]["cloud_edge_robot_arm__dashboard__models__ComparisonResponse"];
         };
       };
     };
@@ -4132,6 +4987,561 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RobotStatusIngestResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  create_batch_api_v1_simulation_batches_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExperimentDraft"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BatchRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_batch_api_v1_simulation_batches__batch_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        batch_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BatchRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  batch_runs_api_v1_simulation_batches__batch_id__runs_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        batch_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationRunListResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  capabilities_api_v1_simulation_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationCapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  comparisons_api_v1_simulation_comparisons_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ComparisonRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["cloud_edge_robot_arm__simulation_workbench__models__ComparisonResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  exports_api_v1_simulation_exports_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExportRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExportResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  parameter_schema_api_v1_simulation_parameter_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ParameterSchemaResponse"];
+        };
+      };
+    };
+  };
+  list_runs_api_v1_simulation_runs_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationRunListResponse"];
+        };
+      };
+    };
+  };
+  create_run_api_v1_simulation_runs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExperimentDraft"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationRunRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_run_api_v1_simulation_runs__run_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationRunRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  run_artifacts_api_v1_simulation_runs__run_id__artifacts_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationArtifactsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  cancel_run_api_v1_simulation_runs__run_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationRunRecord"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  clone_run_api_v1_simulation_runs__run_id__clone_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReproductionResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  run_events_api_v1_simulation_runs__run_id__events_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationEventsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  run_metrics_api_v1_simulation_runs__run_id__metrics_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SimulationMetricsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  reproduce_run_api_v1_simulation_runs__run_id__reproduce_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReproductionResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  scenarios_api_v1_simulation_scenarios_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScenarioListResponse"];
+        };
+      };
+    };
+  };
+  scenario_api_v1_simulation_scenarios__scenario_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scenario_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScenarioDefinitionView"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  validate_api_v1_simulation_validate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ExperimentDraft"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ValidationResponse"];
         };
       };
       /** @description Validation Error */

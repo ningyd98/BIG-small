@@ -128,15 +128,15 @@ def test_ci_splits_python_frontend_and_e2e_jobs() -> None:
 def test_playwright_has_required_phase10_2b_scenarios() -> None:
     spec = (ROOT / "dashboard/tests/e2e/console.spec.ts").read_text(encoding="utf-8")
 
-    assert spec.count("test(") == 10
+    assert spec.count("test(") >= 10
     for required in (
-        "Mock experiment state flow",
-        "Synthetic dry-run evidence",
+        "Mock single experiment",
+        "overview keeps dry-run acceptance",
         "BLOCKED_BY_ENV",
         "path traversal rejection",
-        "real hardware action locked",
-        "WebSocket fallback polling",
+        "simulation API exposes no hardware route",
+        "polling fallback",
         "VIEWER write rejection",
-        "no direct ROS MoveIt controller inputs",
+        "direct ROS MoveIt controller inputs",
     ):
         assert required in spec

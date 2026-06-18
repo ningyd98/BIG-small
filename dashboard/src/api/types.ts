@@ -17,7 +17,8 @@ export type DashboardExperimentList =
   components["schemas"]["ExperimentListResponse"];
 export type DashboardAcceptanceSnapshot =
   components["schemas"]["AcceptanceLevelSnapshot"];
-export type DashboardComparison = components["schemas"]["ComparisonResponse"];
+export type DashboardComparison =
+  components["schemas"]["cloud_edge_robot_arm__dashboard__models__ComparisonResponse"];
 export type DashboardAuditEvents = components["schemas"]["AuditEventResponse"];
 export type DashboardRuntime = components["schemas"]["RuntimeSnapshot"];
 export type DashboardSafety = components["schemas"]["SafetyGateSnapshot"];

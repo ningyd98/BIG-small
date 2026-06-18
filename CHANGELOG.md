@@ -4,8 +4,18 @@
 
 ## 未发布
 
-- 整理仓库文档架构。
-- 增加文档一致性检查和统一验证 profile。
+- 增加 Phase 11 Simulation Workbench 后端 API、前端工具集、Batch/Sweep、LiveRun、metrics、comparison、export 和 reproduction。
+- 新增 `scripts/verify_phase11_simulation_workbench.py` 以及 Phase 11 backend、frontend 和 Playwright 验收覆盖。
+- 明确 Phase 11 期间真实机械臂开发冻结；保持 `real_controller_contacted=false`、`hardware_motion_observed=false` 和 `hardware_write_operations=[]`。
+
+## Phase 11
+
+- 新增 `/api/v1/simulation` FastAPI router。
+- 新增 `cloud_edge_robot_arm.simulation_workbench` domain models 和 service。
+- 新增 `dashboard/src/simulation/` 前端工具目录。
+- 将 `SimulationLabPage` 迁移为 Simulation Workbench 兼容入口。
+- 将 comparison 页面迁移到新的 comparison service 和 ECharts 图表。
+- 新增 `artifacts/phase11/verification` 验证产物输出。
 
 ## Phase 10.2A
 

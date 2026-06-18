@@ -21,7 +21,23 @@ const navItems = [
   {
     key: "/simulation",
     icon: <ExperimentOutlined />,
-    label: <Link to="/simulation">仿真实验</Link>,
+    label: <Link to="/simulation">仿真工作台</Link>,
+  },
+  {
+    key: "/simulation/scenarios",
+    label: <Link to="/simulation/scenarios">场景库</Link>,
+  },
+  {
+    key: "/simulation/batch",
+    label: <Link to="/simulation/batch">Batch/Sweep</Link>,
+  },
+  {
+    key: "/simulation/live",
+    label: <Link to="/simulation/live">Live Run</Link>,
+  },
+  {
+    key: "/simulation/analysis",
+    label: <Link to="/simulation/analysis">结果分析</Link>,
   },
   {
     key: "/task-execution",

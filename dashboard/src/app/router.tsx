@@ -29,6 +29,36 @@ const SimulationLabPage = lazy(() =>
     default: module.SimulationLabPage,
   })),
 );
+const ScenarioLibraryPage = lazy(() =>
+  import("../simulation/pages/ScenarioLibraryPage").then((module) => ({
+    default: module.ScenarioLibraryPage,
+  })),
+);
+const BatchExperimentPage = lazy(() =>
+  import("../simulation/pages/BatchExperimentPage").then((module) => ({
+    default: module.BatchExperimentPage,
+  })),
+);
+const LiveRunPage = lazy(() =>
+  import("../simulation/pages/LiveRunPage").then((module) => ({
+    default: module.LiveRunPage,
+  })),
+);
+const ResultAnalysisPage = lazy(() =>
+  import("../simulation/pages/ResultAnalysisPage").then((module) => ({
+    default: module.ResultAnalysisPage,
+  })),
+);
+const ModeComparisonPage = lazy(() =>
+  import("../simulation/pages/ModeComparisonPage").then((module) => ({
+    default: module.ModeComparisonPage,
+  })),
+);
+const CrossBackendComparisonPage = lazy(() =>
+  import("../simulation/pages/CrossBackendComparisonPage").then((module) => ({
+    default: module.CrossBackendComparisonPage,
+  })),
+);
 const TaskExecutionPage = lazy(() =>
   import("../pages/TaskExecutionPage").then((module) => ({
     default: module.TaskExecutionPage,
@@ -41,6 +71,15 @@ export function DashboardRoutes() {
       <Routes>
         <Route path="/" element={<OverviewPage />} />
         <Route path="/simulation" element={<SimulationLabPage />} />
+        <Route path="/simulation/scenarios" element={<ScenarioLibraryPage />} />
+        <Route path="/simulation/batch" element={<BatchExperimentPage />} />
+        <Route path="/simulation/live" element={<LiveRunPage />} />
+        <Route path="/simulation/analysis" element={<ResultAnalysisPage />} />
+        <Route path="/simulation/modes" element={<ModeComparisonPage />} />
+        <Route
+          path="/simulation/backends"
+          element={<CrossBackendComparisonPage />}
+        />
         <Route path="/task-execution" element={<TaskExecutionPage />} />
         <Route path="/safety-acceptance" element={<SafetyAcceptancePage />} />
         <Route path="/evidence" element={<EvidenceExplorerPage />} />

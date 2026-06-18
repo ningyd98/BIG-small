@@ -1,49 +1,65 @@
 import { Card, Empty, Space, Table, Typography } from "antd";
+import { useMemo } from "react";
 
 import { useDashboardComparison } from "../api/queries";
+import { useSimulationRuns } from "../simulation/api/simulationQueries";
+import { MetricChart } from "../simulation/components/MetricChart";
 
-type MetricRow = {
-  name?: unknown;
-  unit?: unknown;
-  pcsc?: unknown;
-  eteac?: unknown;
-  auto?: unknown;
+type ComparisonRow = {
+  run_id: string;
+  backend: string;
+  scenario: string;
+  status: string;
+  sample_count: number;
+  source: string;
 };
 
-function valueText(value: unknown): string {
-  if (typeof value === "number") {
-    return Number.isInteger(value) ? String(value) : value.toFixed(4);
-  }
-  if (value == null) {
-    return "-";
-  }
-  return String(value);
-}
-
 export function ComparisonPage() {
-  const comparison = useDashboardComparison();
-  const rows = (comparison.data?.metrics ?? []) as MetricRow[];
+  const dashboardComparison = useDashboardComparison();
+  const runs = useSimulationRuns();
+  const rows: ComparisonRow[] = useMemo(
+    () =>
+      (runs.data?.runs ?? []).map((run) => ({
+        run_id: run.run_id,
+        backend: run.backend,
+        scenario: run.scenario_id,
+        status: run.status,
+        sample_count: 1,
+        source: "simulation_workbench",
+      })),
+    [runs.data?.runs],
+  );
+  const artifactSource = dashboardComparison.data?.source ?? "unavailable";
 
   return (
-    <Card title="指标对比">
-      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+    <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+      <Card title="指标对比">
         <Typography.Text>
-          指标来源：{comparison.data?.source ?? "unavailable"}
+          Source: {rows.length ? "simulation_workbench" : artifactSource}
         </Typography.Text>
-        <Table<MetricRow>
-          rowKey={(record) => String(record.name)}
-          loading={comparison.isLoading}
+        {rows.length ? (
+          <MetricChart
+            title="Run success status"
+            labels={rows.map((row) => row.run_id)}
+            values={rows.map((row) => (row.status === "SUCCEEDED" ? 1 : 0))}
+          />
+        ) : (
+          <Empty description="暂无 Phase 11 run metrics" />
+        )}
+        <Table<ComparisonRow>
+          rowKey="run_id"
+          loading={runs.isLoading}
           dataSource={rows}
-          locale={{ emptyText: <Empty description="暂无 artifact 指标" /> }}
           columns={[
-            { title: "指标", dataIndex: "name", render: valueText },
-            { title: "单位", dataIndex: "unit", render: valueText },
-            { title: "PCSC", dataIndex: "pcsc", render: valueText },
-            { title: "ETEAC", dataIndex: "eteac", render: valueText },
-            { title: "AUTO", dataIndex: "auto", render: valueText },
+            { title: "Run", dataIndex: "run_id" },
+            { title: "Backend", dataIndex: "backend" },
+            { title: "Scenario", dataIndex: "scenario" },
+            { title: "Status", dataIndex: "status" },
+            { title: "Source", dataIndex: "source" },
+            { title: "Sample count", dataIndex: "sample_count" },
           ]}
         />
-      </Space>
-    </Card>
+      </Card>
+    </Space>
   );
 }

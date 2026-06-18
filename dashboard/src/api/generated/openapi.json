@@ -362,6 +362,190 @@
         "title": "AutoModeTransitionStatus",
         "type": "string"
       },
+      "BackendCapability": {
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/SimulationBackend"
+          },
+          "batch_limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Batch Limits",
+            "type": "object"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "export_formats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Export Formats",
+            "type": "array"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/BackendReadiness"
+          },
+          "runner_allowlist": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationRunnerKind"
+            },
+            "title": "Runner Allowlist",
+            "type": "array"
+          },
+          "supported_experiment_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Experiment Types",
+            "type": "array"
+          },
+          "supported_modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Modes",
+            "type": "array"
+          },
+          "supported_run_types": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationRunType"
+            },
+            "title": "Supported Run Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "backend",
+          "readiness",
+          "supported_modes",
+          "supported_run_types",
+          "supported_experiment_types",
+          "runner_allowlist",
+          "export_formats",
+          "batch_limits"
+        ],
+        "title": "BackendCapability",
+        "type": "object"
+      },
+      "BackendReadiness": {
+        "enum": ["READY", "DEGRADED", "BLOCKED_BY_ENV", "NOT_CONFIGURED"],
+        "title": "BackendReadiness",
+        "type": "string"
+      },
+      "BatchProgress": {
+        "properties": {
+          "blocked": {
+            "minimum": 0.0,
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "cancelled": {
+            "minimum": 0.0,
+            "title": "Cancelled",
+            "type": "integer"
+          },
+          "failed": {
+            "minimum": 0.0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "progress_ratio": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Progress Ratio",
+            "type": "number"
+          },
+          "queued": {
+            "minimum": 0.0,
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "minimum": 0.0,
+            "title": "Running",
+            "type": "integer"
+          },
+          "succeeded": {
+            "minimum": 0.0,
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "blocked",
+          "cancelled",
+          "progress_ratio"
+        ],
+        "title": "BatchProgress",
+        "type": "object"
+      },
+      "BatchRecord": {
+        "properties": {
+          "artifact_paths": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Artifact Paths",
+            "type": "object"
+          },
+          "batch_id": {
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "hardware_write_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hardware Write Operations",
+            "type": "array"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ExperimentManifest"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/BatchProgress"
+          },
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Run Ids",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SimulationRunStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": ["batch_id", "manifest", "progress", "run_ids", "status"],
+        "title": "BatchRecord",
+        "type": "object"
+      },
       "CommandAckStatus": {
         "enum": [
           "ACCEPTED",
@@ -380,23 +564,45 @@
         "title": "CommandAckStatus",
         "type": "string"
       },
-      "ComparisonResponse": {
+      "ComparisonRequest": {
+        "additionalProperties": false,
         "properties": {
-          "metrics": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Metrics",
-            "type": "array"
+          "comparison_type": {
+            "title": "Comparison Type",
+            "type": "string"
           },
-          "source": {
-            "$ref": "#/components/schemas/DataSourceKind",
-            "default": "unavailable"
+          "paired_key": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "title": "Paired Key",
+            "type": "object"
+          },
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Run Ids",
+            "type": "array"
           }
         },
-        "required": ["metrics"],
-        "title": "ComparisonResponse",
+        "required": ["comparison_type", "run_ids"],
+        "title": "ComparisonRequest",
         "type": "object"
       },
       "CompletionEvidenceRequest": {
@@ -759,6 +965,23 @@
         },
         "required": ["request_id", "task_id", "dispatched"],
         "title": "DispatchResponse",
+        "type": "object"
+      },
+      "DomainRandomizationDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "level": {
+            "default": "NONE",
+            "title": "Level",
+            "type": "string"
+          }
+        },
+        "title": "DomainRandomizationDraft",
         "type": "object"
       },
       "EdgeEventListResponse": {
@@ -1299,6 +1522,106 @@
         "title": "ExperimentCreateRequest",
         "type": "object"
       },
+      "ExperimentDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/SimulationBackend"
+          },
+          "control_modes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Control Modes",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Description",
+            "type": "string"
+          },
+          "domain_randomization": {
+            "$ref": "#/components/schemas/DomainRandomizationDraft"
+          },
+          "fault_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/FaultProfileDraft"
+            },
+            "title": "Fault Profiles",
+            "type": "array"
+          },
+          "network_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkDraft"
+            },
+            "title": "Network Profiles",
+            "type": "array"
+          },
+          "parameter_overrides": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "title": "Parameter Overrides",
+            "type": "object"
+          },
+          "repetitions": {
+            "default": 1,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Repetitions",
+            "type": "integer"
+          },
+          "run_type": {
+            "$ref": "#/components/schemas/SimulationRunType",
+            "default": "SINGLE"
+          },
+          "scenarios": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 15,
+            "minItems": 1,
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "seeds": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Seeds",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": ["backend", "scenarios", "control_modes", "seeds"],
+        "title": "ExperimentDraft",
+        "type": "object"
+      },
       "ExperimentJobRecord": {
         "properties": {
           "blockers": {
@@ -1448,6 +1771,119 @@
         },
         "required": ["jobs"],
         "title": "ExperimentListResponse",
+        "type": "object"
+      },
+      "ExperimentManifest": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "manifest_id": {
+            "title": "Manifest Id",
+            "type": "string"
+          },
+          "normalized_config": {
+            "additionalProperties": true,
+            "title": "Normalized Config",
+            "type": "object"
+          },
+          "reproducibility_hash": {
+            "title": "Reproducibility Hash",
+            "type": "string"
+          },
+          "run_count": {
+            "minimum": 0.0,
+            "title": "Run Count",
+            "type": "integer"
+          },
+          "schema_version": {
+            "default": "phase11.simulation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source_commit": {
+            "title": "Source Commit",
+            "type": "string"
+          },
+          "source_tree_hash": {
+            "title": "Source Tree Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest_id",
+          "normalized_config",
+          "source_commit",
+          "source_tree_hash",
+          "run_count",
+          "reproducibility_hash"
+        ],
+        "title": "ExperimentManifest",
+        "type": "object"
+      },
+      "ExportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_id": {
+            "default": "",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "comparison_id": {
+            "default": "",
+            "title": "Comparison Id",
+            "type": "string"
+          },
+          "export_type": {
+            "title": "Export Type",
+            "type": "string"
+          },
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Run Ids",
+            "type": "array"
+          }
+        },
+        "required": ["export_type"],
+        "title": "ExportRequest",
+        "type": "object"
+      },
+      "ExportResponse": {
+        "properties": {
+          "content_preview": {
+            "title": "Content Preview",
+            "type": "string"
+          },
+          "export_id": {
+            "title": "Export Id",
+            "type": "string"
+          },
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "redacted": {
+            "title": "Redacted",
+            "type": "boolean"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "export_id",
+          "format",
+          "relative_path",
+          "redacted",
+          "content_preview"
+        ],
+        "title": "ExportResponse",
         "type": "object"
       },
       "FailureSummaryRequest": {
@@ -1615,6 +2051,40 @@
           "failed_step_id"
         ],
         "title": "FailureSummaryResponse",
+        "type": "object"
+      },
+      "FaultProfileDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "default": "none",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "title": "Parameters",
+            "type": "object"
+          }
+        },
+        "title": "FaultProfileDraft",
         "type": "object"
       },
       "FreshnessStatus": {
@@ -1906,6 +2376,103 @@
         "title": "ModeTransitionResponse",
         "type": "object"
       },
+      "NetworkDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "bandwidth_kbps": {
+            "default": 10000,
+            "exclusiveMinimum": 0.0,
+            "title": "Bandwidth Kbps",
+            "type": "integer"
+          },
+          "base_latency_ms": {
+            "default": 40,
+            "maximum": 60000.0,
+            "minimum": 0.0,
+            "title": "Base Latency Ms",
+            "type": "integer"
+          },
+          "jitter_ms": {
+            "default": 5,
+            "maximum": 60000.0,
+            "minimum": 0.0,
+            "title": "Jitter Ms",
+            "type": "integer"
+          },
+          "name": {
+            "default": "NORMAL",
+            "title": "Name",
+            "type": "string"
+          },
+          "packet_loss": {
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Packet Loss",
+            "type": "number"
+          }
+        },
+        "title": "NetworkDraft",
+        "type": "object"
+      },
+      "ParameterSchemaResponse": {
+        "properties": {
+          "authoritative_models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authoritative Models",
+            "type": "array"
+          },
+          "enums": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Enums",
+            "type": "object"
+          },
+          "forbidden_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forbidden Fields",
+            "type": "array"
+          },
+          "numeric_limits": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            "title": "Numeric Limits",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": "phase11.simulation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authoritative_models",
+          "enums",
+          "numeric_limits",
+          "forbidden_fields"
+        ],
+        "title": "ParameterSchemaResponse",
+        "type": "object"
+      },
       "PlanningRequest": {
         "properties": {
           "capabilities": {
@@ -2173,6 +2740,31 @@
         },
         "required": ["request_id", "outcome"],
         "title": "ReplanResponse",
+        "type": "object"
+      },
+      "ReproductionResponse": {
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/ExperimentDraft"
+          },
+          "environment_match": {
+            "title": "Environment Match",
+            "type": "boolean"
+          },
+          "reproducibility_hash": {
+            "title": "Reproducibility Hash",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": ["draft", "environment_match", "reproducibility_hash"],
+        "title": "ReproductionResponse",
         "type": "object"
       },
       "RiskComponentScores": {
@@ -3001,6 +3593,118 @@
         "title": "SafetyReviewNoteResponse",
         "type": "object"
       },
+      "ScenarioCategory": {
+        "enum": [
+          "NORMAL",
+          "SCENE_CHANGE",
+          "PERCEPTION",
+          "NETWORK",
+          "CLOUD",
+          "COMMAND",
+          "CACHE",
+          "MODE",
+          "SAFETY",
+          "RECOVERY"
+        ],
+        "title": "ScenarioCategory",
+        "type": "string"
+      },
+      "ScenarioDefinitionView": {
+        "properties": {
+          "allowed_result_statuses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Result Statuses",
+            "type": "array"
+          },
+          "backend_support": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BackendReadiness"
+            },
+            "title": "Backend Support",
+            "type": "object"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ScenarioCategory"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expected_invariants": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Expected Invariants",
+            "type": "array"
+          },
+          "fault_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fault Types",
+            "type": "array"
+          },
+          "forbidden_result_statuses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forbidden Result Statuses",
+            "type": "array"
+          },
+          "initial_world_state": {
+            "additionalProperties": true,
+            "title": "Initial World State",
+            "type": "object"
+          },
+          "maximum_virtual_duration_ms": {
+            "title": "Maximum Virtual Duration Ms",
+            "type": "integer"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "scheduled_faults": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Scheduled Faults",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "description",
+          "category",
+          "fault_types",
+          "initial_world_state",
+          "scheduled_faults",
+          "expected_invariants",
+          "allowed_result_statuses",
+          "forbidden_result_statuses",
+          "maximum_virtual_duration_ms",
+          "backend_support"
+        ],
+        "title": "ScenarioDefinitionView",
+        "type": "object"
+      },
+      "ScenarioListResponse": {
+        "properties": {
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioDefinitionView"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          }
+        },
+        "required": ["scenarios"],
+        "title": "ScenarioListResponse",
+        "type": "object"
+      },
       "SceneObjectSummary": {
         "description": "A light-weight scene object visible to the cloud planner.",
         "properties": {
@@ -3133,6 +3837,371 @@
           "UNKNOWN"
         ],
         "title": "ServiceStatus",
+        "type": "string"
+      },
+      "SimulationArtifactsResponse": {
+        "properties": {
+          "artifacts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Artifacts",
+            "type": "object"
+          }
+        },
+        "required": ["artifacts"],
+        "title": "SimulationArtifactsResponse",
+        "type": "object"
+      },
+      "SimulationBackend": {
+        "enum": ["MOCK", "MUJOCO", "ISAAC_SIM", "MOVEIT_DRY_RUN"],
+        "title": "SimulationBackend",
+        "type": "string"
+      },
+      "SimulationCapabilitiesResponse": {
+        "properties": {
+          "backends": {
+            "items": {
+              "$ref": "#/components/schemas/BackendCapability"
+            },
+            "title": "Backends",
+            "type": "array"
+          },
+          "export_formats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Export Formats",
+            "type": "array"
+          },
+          "hardware_motion_observed": {
+            "default": false,
+            "title": "Hardware Motion Observed",
+            "type": "boolean"
+          },
+          "hardware_write_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hardware Write Operations",
+            "type": "array"
+          },
+          "max_batch_runs": {
+            "title": "Max Batch Runs",
+            "type": "integer"
+          },
+          "real_controller_contacted": {
+            "default": false,
+            "title": "Real Controller Contacted",
+            "type": "boolean"
+          },
+          "runner_allowlist": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationRunnerKind"
+            },
+            "title": "Runner Allowlist",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": "phase11.simulation.v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "supported_modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Modes",
+            "type": "array"
+          },
+          "supported_run_types": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationRunType"
+            },
+            "title": "Supported Run Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "backends",
+          "supported_modes",
+          "supported_run_types",
+          "runner_allowlist",
+          "export_formats",
+          "max_batch_runs"
+        ],
+        "title": "SimulationCapabilitiesResponse",
+        "type": "object"
+      },
+      "SimulationEventsResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": ["events"],
+        "title": "SimulationEventsResponse",
+        "type": "object"
+      },
+      "SimulationMetric": {
+        "properties": {
+          "aggregation": {
+            "default": "single",
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/SimulationBackend"
+          },
+          "control_mode": {
+            "title": "Control Mode",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sample_count": {
+            "default": 1,
+            "minimum": 0.0,
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "scenario": {
+            "title": "Scenario",
+            "type": "string"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "unit": {
+            "default": "",
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "source",
+          "backend",
+          "scenario",
+          "seed",
+          "control_mode"
+        ],
+        "title": "SimulationMetric",
+        "type": "object"
+      },
+      "SimulationMetricsResponse": {
+        "properties": {
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          }
+        },
+        "required": ["metrics"],
+        "title": "SimulationMetricsResponse",
+        "type": "object"
+      },
+      "SimulationRunListResponse": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationRunRecord"
+            },
+            "title": "Runs",
+            "type": "array"
+          }
+        },
+        "required": ["runs"],
+        "title": "SimulationRunListResponse",
+        "type": "object"
+      },
+      "SimulationRunRecord": {
+        "properties": {
+          "artifact_paths": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Artifact Paths",
+            "type": "object"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/SimulationBackend"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "control_mode": {
+            "title": "Control Mode",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "hardware_claim": {
+            "default": "SIMULATION_ONLY",
+            "title": "Hardware Claim",
+            "type": "string"
+          },
+          "hardware_motion_observed": {
+            "default": false,
+            "title": "Hardware Motion Observed",
+            "type": "boolean"
+          },
+          "hardware_write_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hardware Write Operations",
+            "type": "array"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ExperimentManifest"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "title": "Provenance",
+            "type": "object"
+          },
+          "real_controller_contacted": {
+            "default": false,
+            "title": "Real Controller Contacted",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_type": {
+            "$ref": "#/components/schemas/SimulationRunType"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SimulationRunStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "backend",
+          "run_type",
+          "status",
+          "scenario_id",
+          "control_mode",
+          "seed",
+          "manifest"
+        ],
+        "title": "SimulationRunRecord",
+        "type": "object"
+      },
+      "SimulationRunStatus": {
+        "enum": [
+          "QUEUED",
+          "VALIDATING",
+          "STARTING",
+          "RUNNING",
+          "FINALIZING",
+          "SUCCEEDED",
+          "FAILED",
+          "CANCELLED",
+          "BLOCKED_BY_ENV"
+        ],
+        "title": "SimulationRunStatus",
+        "type": "string"
+      },
+      "SimulationRunType": {
+        "enum": [
+          "SINGLE",
+          "BATCH",
+          "SWEEP",
+          "PAIRED_BACKEND",
+          "MODE_COMPARISON"
+        ],
+        "title": "SimulationRunType",
+        "type": "string"
+      },
+      "SimulationRunnerKind": {
+        "enum": [
+          "MOCK_SCENARIO",
+          "MUJOCO_SCENARIO",
+          "PHASE8_BATCH",
+          "PHASE8_SWEEP",
+          "PHASE9_MUJOCO_BENCHMARK",
+          "ISAAC_BENCHMARK",
+          "CROSS_BACKEND_PAIRED"
+        ],
+        "title": "SimulationRunnerKind",
         "type": "string"
       },
       "SkillCacheKey": {
@@ -4071,6 +5140,45 @@
         "title": "TaskStep",
         "type": "object"
       },
+      "TimelineEvent": {
+        "properties": {
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "severity": {
+            "default": "info",
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "virtual_time_ms": {
+            "default": 0,
+            "title": "Virtual Time Ms",
+            "type": "integer"
+          },
+          "wall_time": {
+            "format": "date-time",
+            "title": "Wall Time",
+            "type": "string"
+          }
+        },
+        "required": ["sequence", "event_type", "source"],
+        "title": "TimelineEvent",
+        "type": "object"
+      },
       "UserRole": {
         "enum": ["VIEWER", "EXPERIMENT_OPERATOR", "SAFETY_REVIEWER"],
         "title": "UserRole",
@@ -4110,6 +5218,38 @@
         },
         "required": ["loc", "msg", "type"],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationResponse": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ExperimentManifest"
+          },
+          "run_count": {
+            "title": "Run Count",
+            "type": "integer"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": ["valid", "manifest", "run_count"],
+        "title": "ValidationResponse",
         "type": "object"
       },
       "cloud_edge_robot_arm__cloud__api__schemas__CapabilitiesResponse": {
@@ -4203,6 +5343,64 @@
         ],
         "title": "CapabilitiesResponse",
         "type": "object"
+      },
+      "cloud_edge_robot_arm__dashboard__models__ComparisonResponse": {
+        "properties": {
+          "metrics": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/DataSourceKind",
+            "default": "unavailable"
+          }
+        },
+        "required": ["metrics"],
+        "title": "ComparisonResponse",
+        "type": "object"
+      },
+      "cloud_edge_robot_arm__simulation_workbench__models__ComparisonResponse": {
+        "properties": {
+          "comparison_id": {
+            "title": "Comparison Id",
+            "type": "string"
+          },
+          "comparison_type": {
+            "title": "Comparison Type",
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/SimulationMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "statistics": {
+            "additionalProperties": true,
+            "title": "Statistics",
+            "type": "object"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "comparison_id",
+          "comparison_type",
+          "statistics",
+          "metrics"
+        ],
+        "title": "ComparisonResponse",
+        "type": "object"
       }
     }
   },
@@ -4295,7 +5493,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ComparisonResponse"
+                  "$ref": "#/components/schemas/cloud_edge_robot_arm__dashboard__models__ComparisonResponse"
                 }
               }
             },
@@ -5601,6 +6799,675 @@
           }
         },
         "summary": "Ingest Robot Status"
+      }
+    },
+    "/api/v1/simulation/batches": {
+      "post": {
+        "operationId": "create_batch_api_v1_simulation_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Batch",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/batches/{batch_id}": {
+      "get": {
+        "operationId": "get_batch_api_v1_simulation_batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/batches/{batch_id}/runs": {
+      "get": {
+        "operationId": "batch_runs_api_v1_simulation_batches__batch_id__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationRunListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Runs",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/capabilities": {
+      "get": {
+        "operationId": "capabilities_api_v1_simulation_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationCapabilitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capabilities",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/comparisons": {
+      "post": {
+        "operationId": "comparisons_api_v1_simulation_comparisons_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComparisonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/cloud_edge_robot_arm__simulation_workbench__models__ComparisonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Comparisons",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/exports": {
+      "post": {
+        "operationId": "exports_api_v1_simulation_exports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exports",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/parameter-schema": {
+      "get": {
+        "operationId": "parameter_schema_api_v1_simulation_parameter_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParameterSchemaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Parameter Schema",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_simulation_runs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationRunListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Runs",
+        "tags": ["simulation-workbench"]
+      },
+      "post": {
+        "operationId": "create_run_api_v1_simulation_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationRunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Run",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_simulation_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationRunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}/artifacts": {
+      "get": {
+        "operationId": "run_artifacts_api_v1_simulation_runs__run_id__artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationArtifactsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Artifacts",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_v1_simulation_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationRunRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Run",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}/clone": {
+      "post": {
+        "operationId": "clone_run_api_v1_simulation_runs__run_id__clone_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReproductionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clone Run",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}/events": {
+      "get": {
+        "operationId": "run_events_api_v1_simulation_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationEventsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Events",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}/metrics": {
+      "get": {
+        "operationId": "run_metrics_api_v1_simulation_runs__run_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationMetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Metrics",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/runs/{run_id}/reproduce": {
+      "post": {
+        "operationId": "reproduce_run_api_v1_simulation_runs__run_id__reproduce_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReproductionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reproduce Run",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/scenarios": {
+      "get": {
+        "operationId": "scenarios_api_v1_simulation_scenarios_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Scenarios",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/scenarios/{scenario_id}": {
+      "get": {
+        "operationId": "scenario_api_v1_simulation_scenarios__scenario_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioDefinitionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scenario",
+        "tags": ["simulation-workbench"]
+      }
+    },
+    "/api/v1/simulation/validate": {
+      "post": {
+        "operationId": "validate_api_v1_simulation_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExperimentDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate",
+        "tags": ["simulation-workbench"]
       }
     },
     "/api/v1/skill-cache/templates": {

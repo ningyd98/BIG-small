@@ -1,0 +1,15 @@
+import type { TimelineEvent, TimelineItem } from "../domain/TimelineEvent";
+
+export class EventTimelineAssembler {
+  static assemble(events: TimelineEvent[]): TimelineItem[] {
+    return [...events]
+      .sort((left, right) => left.sequence - right.sequence)
+      .map((event) => ({
+        key: String(event.sequence),
+        label: event.event_type,
+        detail: `${event.source} @ ${event.virtual_time_ms ?? 0}ms`,
+        virtual_time_ms: event.virtual_time_ms ?? 0,
+        severity: event.severity ?? "info",
+      }));
+  }
+}

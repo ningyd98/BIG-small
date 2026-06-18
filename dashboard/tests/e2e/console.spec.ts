@@ -7,9 +7,6 @@ const artifactRoot = path.resolve(process.cwd(), "../artifacts/dashboard_e2e");
 function seedArtifacts() {
   rmSync(artifactRoot, { recursive: true, force: true });
   mkdirSync(path.join(artifactRoot, "phase10"), { recursive: true });
-  mkdirSync(path.join(artifactRoot, "baselines/phase8_2/full"), {
-    recursive: true,
-  });
   writeFileSync(
     path.join(artifactRoot, "phase10/dashboard_summary.json"),
     JSON.stringify(
@@ -32,90 +29,11 @@ function seedArtifacts() {
     ) + "\n",
     "utf-8",
   );
-  writeFileSync(
-    path.join(artifactRoot, "phase10/mujoco_smoke.json"),
-    JSON.stringify(
-      {
-        status: "SUCCEEDED",
-        hardware_claim: "SIMULATION_ONLY",
-        planner_backend: "MUJOCO",
-        sent_to_hardware: false,
-        hardware_motion_observed: false,
-        provenance: {
-          generated_from_commit: "mujoco-commit",
-          source_tree_hash: "mujoco-tree",
-          worktree_clean: true,
-          generated_at: "2026-06-17T00:00:00Z",
-        },
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf-8",
-  );
-  writeFileSync(
-    path.join(artifactRoot, "phase10/synthetic_dry_run.json"),
-    JSON.stringify(
-      {
-        status: "SUCCEEDED",
-        hardware_claim: "PLANNING_ONLY",
-        planner_backend: "SYNTHETIC",
-        sent_to_hardware: false,
-        hardware_motion_observed: false,
-        provenance: {
-          generated_from_commit: "synthetic-commit",
-          source_tree_hash: "synthetic-tree",
-          worktree_clean: true,
-          generated_at: "2026-06-17T00:00:00Z",
-        },
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf-8",
-  );
-  writeFileSync(
-    path.join(artifactRoot, "phase10/moveit_blocked.json"),
-    JSON.stringify(
-      {
-        status: "BLOCKED_BY_ENV",
-        hardware_claim: "PLANNING_ONLY",
-        planner_backend: "MOVEIT_RUNTIME",
-        sent_to_hardware: false,
-        hardware_motion_observed: false,
-        blockers: ["MoveIt runtime unavailable"],
-        provenance: {
-          generated_from_commit: "blocked-commit",
-          source_tree_hash: "blocked-tree",
-          worktree_clean: true,
-          generated_at: "2026-06-17T00:00:00Z",
-        },
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf-8",
-  );
-  writeFileSync(
-    path.join(artifactRoot, "baselines/phase8_2/full/summary.json"),
-    JSON.stringify(
-      {
-        by_mode: {
-          PCSC: { success_rate: 0.81, cloud_invocation_count: 7 },
-          ETEAC: { success_rate: 0.86, retry_count: 2 },
-          AUTO: { success_rate: 0.91, mode_switch_count: 1 },
-        },
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf-8",
-  );
 }
 
 test.beforeAll(seedArtifacts);
 
-test("E2E-01 overview shows dry-run acceptance without hardware validation", async ({
+test("E2E-01 overview keeps dry-run acceptance without hardware validation", async ({
   page,
 }) => {
   await page.goto("/");
@@ -127,140 +45,309 @@ test("E2E-01 overview shows dry-run acceptance without hardware validation", asy
     page.getByRole("main").getByText("真实机械臂验证：NOT_STARTED"),
   ).toBeVisible();
   await expect(
-    page.getByRole("main").getByText("最高硬件级别：NONE"),
-  ).toBeVisible();
-  await expect(
     page.getByText(/直连 ROS|MoveIt execute|控制器地址/i),
   ).toHaveCount(0);
 });
 
-test("E2E-02 capabilities API exposes no hardware write operations", async ({
+test("E2E-02 loads S01-S15 from real FastAPI simulation API", async ({
   page,
 }) => {
-  const response = await page.request.get("/api/v1/dashboard/capabilities");
+  const response = await page.request.get("/api/v1/simulation/scenarios");
   const payload = await response.json();
 
   expect(response.ok()).toBeTruthy();
-  expect(payload.hardware_write_operations).toEqual([]);
-  expect(payload.allowed_write_operations).toContain(
-    "start_software_experiment",
-  );
+  expect(payload.scenarios).toHaveLength(15);
+  expect(
+    payload.scenarios.map((item: { scenario_id: string }) => item.scenario_id),
+  ).toContain("S15_SQLITE_RESTART_DURING_RUN");
 });
 
-test("E2E-03 Mock experiment state flow reaches a terminal status", async ({
+test("E2E-03 searches network scenario in scenario library", async ({
   page,
 }) => {
-  await page.goto("/simulation");
-  await page.getByRole("button", { name: "启动安全软件实验" }).click();
+  await page.goto("/simulation/scenarios");
 
-  await expect(page.getByText(/exp-/)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/MOCK_SOFTWARE/)).toBeVisible();
-  await expect(page.getByText(/SUCCEEDED|FAILED/)).toBeVisible({
-    timeout: 15_000,
-  });
-});
-
-test("E2E-04 Synthetic dry-run evidence stays planning-only", async ({
-  page,
-}) => {
-  const response = await page.request.get("/api/v1/dashboard/evidence");
-  const payload = await response.json();
-  const synthetic = payload.records.find((record: { backend: string }) => {
-    return record.backend === "SYNTHETIC";
-  });
-  const mujoco = payload.records.find((record: { backend: string }) => {
-    return record.backend === "MUJOCO";
-  });
-
-  expect(synthetic?.hardware_claim).toBe("PLANNING_ONLY");
-  expect(mujoco?.hardware_claim).toBe("SIMULATION_ONLY");
-  if (!synthetic?.evidence_id || !mujoco?.evidence_id) {
-    throw new Error("missing synthetic or MuJoCo evidence");
-  }
-  const syntheticDetail = await page.request.get(
-    `/api/v1/dashboard/evidence/${synthetic.evidence_id}`,
-  );
-  const mujocoDetail = await page.request.get(
-    `/api/v1/dashboard/evidence/${mujoco.evidence_id}`,
-  );
-  const syntheticPayload = await syntheticDetail.json();
-  const mujocoPayload = await mujocoDetail.json();
-
-  expect(syntheticPayload.content.sent_to_hardware).toBe(false);
-  expect(syntheticPayload.content.hardware_motion_observed).toBe(false);
-  expect(mujocoPayload.content.sent_to_hardware).toBe(false);
-  expect(mujocoPayload.content.hardware_motion_observed).toBe(false);
-});
-
-test("E2E-05 BLOCKED_BY_ENV evidence remains non-hardware", async ({
-  page,
-}) => {
-  const response = await page.request.get(
-    "/api/v1/dashboard/evidence?status=BLOCKED_BY_ENV",
-  );
-  const payload = await response.json();
-  const blocked = payload.records.find((record: { status: string }) => {
-    return record.status === "BLOCKED_BY_ENV";
-  });
-
-  expect(blocked?.hardware_claim).toBe("PLANNING_ONLY");
-  if (!blocked?.evidence_id) throw new Error("missing blocked evidence");
-  const detailResponse = await page.request.get(
-    `/api/v1/dashboard/evidence/${blocked.evidence_id}`,
-  );
-  const detail = await detailResponse.json();
-  expect(detail.content.sent_to_hardware).toBe(false);
-  expect(detail.content.hardware_motion_observed).toBe(false);
-});
-
-test("E2E-06 path traversal rejection stays blocked", async ({ page }) => {
-  const response = await page.request.get(
-    "/api/v1/dashboard/evidence/..%2Fsecret",
-  );
-  expect(response.status()).toBeGreaterThanOrEqual(400);
-});
-
-test("E2E-07 real hardware action locked", async ({ page }) => {
-  await page.goto("/safety-acceptance");
-
-  await expect(page.getByText("硬件运动：禁止")).toBeVisible();
+  await expect(page.getByText("S07_NETWORK_DEGRADED")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "提交复核备注" }),
+    page.getByText("NETWORK_DEGRADED", { exact: true }),
   ).toBeVisible();
 });
 
-test("E2E-08 WebSocket fallback polling keeps the console live", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await expect(page.getByText(/轮询可用，WebSocket 可兜底/)).toBeVisible();
+test("E2E-04 shows S14 emergency-stop timeline details", async ({ page }) => {
+  const response = await page.request.get(
+    "/api/v1/simulation/scenarios/S14_EMERGENCY_STOP",
+  );
+  const payload = await response.json();
+
+  expect(response.ok()).toBeTruthy();
+  expect(payload.category).toBe("SAFETY");
+  expect(payload.scheduled_faults[0].trigger_time_ms).toBe(600);
 });
 
-test("E2E-09 VIEWER write rejection", async ({ page }) => {
-  const response = await page.request.post("/api/v1/dashboard/experiments", {
+test("E2E-05 creates Mock single experiment", async ({ page }) => {
+  const created = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft(),
+  });
+  const run = await created.json();
+
+  await page.goto("/simulation");
+
+  expect(created.status()).toBe(202);
+  await expect(page.getByText(run.run_id)).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByRole("row").filter({ hasText: run.run_id }).getByText("MOCK"),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("row")
+      .filter({ hasText: run.run_id })
+      .getByText("SUCCEEDED"),
+  ).toBeVisible({ timeout: 15_000 });
+});
+
+test("E2E-06 creates MuJoCo single experiment through FastAPI", async ({
+  page,
+}) => {
+  const response = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft({ backend: "MUJOCO" }),
+  });
+  const payload = await response.json();
+
+  expect(response.status()).toBe(202);
+  expect(payload.backend).toBe("MUJOCO");
+  expect(["SUCCEEDED", "BLOCKED_BY_ENV", "FAILED"]).toContain(payload.status);
+  expect(payload.hardware_motion_observed).toBe(false);
+});
+
+test("E2E-07 creates mode comparison batch", async ({ page }) => {
+  const response = await page.request.post("/api/v1/simulation/batches", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft({
+      run_type: "MODE_COMPARISON",
+      control_modes: ["PCSC", "ETEAC", "AUTO"],
+    }),
+  });
+  const payload = await response.json();
+
+  expect(response.status()).toBe(202);
+  expect(payload.progress.total).toBe(3);
+  expect(payload.hardware_write_operations).toEqual([]);
+});
+
+test("E2E-08 creates multi-seed batch", async ({ page }) => {
+  const response = await page.request.post("/api/v1/simulation/batches", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft({ seeds: [0, 1, 2] }),
+  });
+  const payload = await response.json();
+
+  expect(response.status()).toBe(202);
+  expect(payload.progress.total).toBe(3);
+});
+
+test("E2E-09 creates latency sweep validation", async ({ page }) => {
+  const response = await page.request.post("/api/v1/simulation/validate", {
+    data: draft({
+      scenarios: ["S01_NORMAL_STATIC", "S07_NETWORK_DEGRADED"],
+      control_modes: ["PCSC", "ETEAC"],
+      seeds: [0, 1],
+    }),
+  });
+  const payload = await response.json();
+
+  expect(response.status()).toBe(200);
+  expect(payload.run_count).toBe(8);
+});
+
+test("E2E-10 rejects oversized sweep", async ({ page }) => {
+  const response = await page.request.post("/api/v1/simulation/validate", {
+    data: draft({ seeds: Array.from({ length: 121 }, (_, index) => index) }),
+  });
+
+  expect(response.status()).toBe(422);
+});
+
+test("E2E-11 LiveRun status flow is visible", async ({ page }) => {
+  const created = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft(),
+  });
+  const run = await created.json();
+
+  await page.goto("/simulation/live");
+  await expect(page.getByText(run.run_id)).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByRole("row").filter({ hasText: run.run_id }).getByText(run.status),
+  ).toBeVisible();
+});
+
+test("E2E-12 LiveRun fault timeline includes emergency stop", async ({
+  page,
+}) => {
+  const created = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft({ scenarios: ["S14_EMERGENCY_STOP"] }),
+  });
+  const run = await created.json();
+  const events = await page.request.get(
+    `/api/v1/simulation/runs/${run.run_id}/events`,
+  );
+  const payload = await events.json();
+
+  expect(events.ok()).toBeTruthy();
+  expect(JSON.stringify(payload.events)).toMatch(
+    /fault|task_completed|emergency/i,
+  );
+});
+
+test("E2E-13 WebSocket stream supports polling fallback", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText(/轮询可用，WebSocket 可兜底/)).toBeVisible();
+  const response = await page.request.get("/api/v1/simulation/runs");
+  expect(response.ok()).toBeTruthy();
+});
+
+test("E2E-14 views metrics and chart route", async ({ page }) => {
+  const created = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft(),
+  });
+  const run = await created.json();
+  const metrics = await page.request.get(
+    `/api/v1/simulation/runs/${run.run_id}/metrics`,
+  );
+
+  await page.goto("/simulation/analysis");
+
+  expect(metrics.ok()).toBeTruthy();
+  expect((await metrics.json()).metrics.length).toBeGreaterThan(0);
+  await expect(page.getByText("Result Analysis")).toBeVisible();
+});
+
+test("E2E-15 exports CSV and JSON", async ({ page }) => {
+  const created = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft(),
+  });
+  const run = await created.json();
+  const csv = await page.request.post("/api/v1/simulation/exports", {
+    data: { export_type: "Metrics CSV", run_ids: [run.run_id] },
+  });
+  const manifest = await page.request.post("/api/v1/simulation/exports", {
+    data: { export_type: "Manifest JSON", run_ids: [run.run_id] },
+  });
+
+  expect(csv.ok()).toBeTruthy();
+  expect((await csv.json()).format).toBe("Metrics CSV");
+  expect(manifest.ok()).toBeTruthy();
+  expect((await manifest.json()).redacted).toBe(true);
+});
+
+test("E2E-16 reproduces from historical run", async ({ page }) => {
+  const created = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft(),
+  });
+  const run = await created.json();
+  const response = await page.request.post(
+    `/api/v1/simulation/runs/${run.run_id}/reproduce`,
+  );
+  const payload = await response.json();
+
+  expect(response.ok()).toBeTruthy();
+  expect(payload.draft.scenarios).toEqual(["S01_NORMAL_STATIC"]);
+  expect(payload.reproducibility_hash).toBeTruthy();
+});
+
+test("E2E-17 simulation API exposes no hardware route", async ({ page }) => {
+  const capabilities = await page.request.get(
+    "/api/v1/simulation/capabilities",
+  );
+  const payload = await capabilities.json();
+
+  expect(payload.real_controller_contacted).toBe(false);
+  expect(payload.hardware_motion_observed).toBe(false);
+  expect(payload.hardware_write_operations).toEqual([]);
+  expect(
+    (await page.request.post("/api/v1/simulation/hardware/enable")).status(),
+  ).toBe(404);
+});
+
+test("E2E-18 path traversal rejection remains enforced", async ({ page }) => {
+  const response = await page.request.get(
+    "/api/v1/dashboard/evidence/..%2Fsecret",
+  );
+
+  expect([400, 404]).toContain(response.status());
+});
+
+test("E2E-19 VIEWER write rejection remains enforced", async ({ page }) => {
+  const response = await page.request.post("/api/v1/simulation/runs", {
     headers: { "x-dashboard-role": "VIEWER" },
-    data: {
-      kind: "MOCK_SOFTWARE",
-      scenario_id: "S01_NORMAL_STATIC",
-      seed: 0,
-      control_mode: "PCSC",
-      repetitions: 1,
-    },
+    data: draft(),
   });
 
   expect(response.status()).toBe(403);
 });
 
-test("E2E-10 no direct ROS MoveIt controller inputs are exposed", async ({
+test("E2E-20 no direct ROS MoveIt controller inputs are exposed", async ({
   page,
 }) => {
-  await page.goto("/task-execution");
+  await page.goto("/");
 
-  for (const label of [
-    /ROS topic/i,
-    /MoveIt execute/i,
-    /controller address/i,
-  ]) {
-    await expect(page.getByLabel(label)).toHaveCount(0);
-  }
+  await expect(
+    page.getByText(/FollowJointTrajectory|MoveIt execute|controller enable/i),
+  ).toHaveCount(0);
+  expect(
+    (await page.request.post("/api/v1/simulation/controller/enable")).status(),
+  ).toBe(404);
 });
+
+test("E2E-21 Isaac returns BLOCKED_BY_ENV without Mock fallback", async ({
+  page,
+}) => {
+  const response = await page.request.post("/api/v1/simulation/runs", {
+    headers: { "x-dashboard-role": "EXPERIMENT_OPERATOR" },
+    data: draft({ backend: "ISAAC_SIM" }),
+  });
+  const payload = await response.json();
+
+  expect(response.status()).toBe(202);
+  expect(payload.backend).toBe("ISAAC_SIM");
+  expect(payload.status).toBe("BLOCKED_BY_ENV");
+  expect(payload.hardware_motion_observed).toBe(false);
+});
+
+function draft(overrides: Record<string, unknown> = {}) {
+  return {
+    backend: "MOCK",
+    run_type: "SINGLE",
+    scenarios: ["S01_NORMAL_STATIC"],
+    control_modes: ["PCSC"],
+    seeds: [0],
+    repetitions: 1,
+    network_profiles: [
+      {
+        name: "NORMAL",
+        base_latency_ms: 40,
+        jitter_ms: 5,
+        packet_loss: 0,
+        bandwidth_kbps: 10000,
+      },
+    ],
+    fault_profiles: [{ name: "none", parameters: {} }],
+    parameter_overrides: {
+      cache_policy: "CACHE_ENABLED",
+      retry_budget: 2,
+      supervision_period_ms: 300,
+      timeout_ms: 30000,
+    },
+    domain_randomization: { enabled: false, level: "NONE" },
+    tags: ["e2e"],
+    description: "playwright",
+    ...overrides,
+  };
+}

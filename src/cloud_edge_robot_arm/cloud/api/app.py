@@ -114,8 +114,12 @@ def create_app(
     app.state.clock = clock or (lambda: datetime.now(UTC))
 
     from cloud_edge_robot_arm.cloud.api.dashboard import router as dashboard_router
+    from cloud_edge_robot_arm.cloud.api.simulation_workbench import (
+        router as simulation_workbench_router,
+    )
 
     app.include_router(dashboard_router)
+    app.include_router(simulation_workbench_router)
 
     # ── Health ───────────────────────────────────────────────────────────
 
