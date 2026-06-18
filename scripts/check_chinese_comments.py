@@ -21,6 +21,7 @@ CODE_SUFFIXES = {
     ".css",
     ".html",
     ".js",
+    ".md",
     ".msg",
     ".py",
     ".sh",
@@ -36,6 +37,24 @@ HASH_COMMENT_SUFFIXES = {".action", ".bash", ".msg", ".sh", ".srv", ".toml", ".y
 SLASH_COMMENT_SUFFIXES = {".css", ".js", ".ts", ".tsx"}
 XML_COMMENT_SUFFIXES = {".html", ".xml"}
 HASH_COMMENT_FILENAMES = {".gitignore", ".env.example", ".env.phase9.example"}
+MARKDOWN_FENCE_SUFFIXES = {
+    "bash": ".sh",
+    "css": ".css",
+    "html": ".html",
+    "javascript": ".js",
+    "js": ".js",
+    "python": ".py",
+    "py": ".py",
+    "shell": ".sh",
+    "sh": ".sh",
+    "toml": ".toml",
+    "ts": ".ts",
+    "tsx": ".tsx",
+    "typescript": ".ts",
+    "xml": ".xml",
+    "yaml": ".yaml",
+    "yml": ".yml",
+}
 PLACEHOLDER_EXPLANATION_MARKERS = (
     "补充该层业务逻辑的中文说明",
     "文件说明：补充中文说明",
@@ -135,6 +154,8 @@ def _extract_explanation_text(path: Path, text: str) -> str:
         return _extract_leading_hash_comment_text(text)
     if path.suffix in XML_COMMENT_SUFFIXES:
         return _extract_leading_xml_comment_text(text)
+    if path.suffix == ".md":
+        return _extract_markdown_fence_explanation_text(text)
     return ""
 
 
@@ -292,6 +313,30 @@ def _extract_xml_comment_text(text: str) -> str:
     return "\n".join(comments)
 
 
+def _extract_markdown_fence_explanation_text(text: str) -> str:
+    # Markdown 正文中文不等于代码说明；这里只审计 fenced code block 中的源码注释。
+    fragments: list[str] = []
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if not stripped.startswith("```"):
+            index += 1
+            continue
+        language = stripped[3:].strip().split(maxsplit=1)[0].lower()
+        code_lines: list[str] = []
+        index += 1
+        while index < len(lines) and not lines[index].strip().startswith("```"):
+            code_lines.append(lines[index])
+            index += 1
+        suffix = MARKDOWN_FENCE_SUFFIXES.get(language)
+        if suffix is not None:
+            virtual_path = Path(f"markdown_fence{suffix}")
+            fragments.append(_extract_explanation_text(virtual_path, "\n".join(code_lines)))
+        index += 1
+    return "\n".join(fragment for fragment in fragments if fragment)
+
+
 def _skip_javascript_string(text: str, start: int, quote: str) -> int:
     index = start + 1
     while index < len(text):
@@ -315,6 +360,8 @@ def _has_chinese(text: str) -> bool:
 def _is_audited_file(path: Path) -> bool:
     if not path.is_file():
         return False
+    if path.suffix == ".md":
+        return _has_supported_markdown_fence(path)
     return (
         path.suffix in CODE_SUFFIXES
         or path.name in HASH_COMMENT_FILENAMES
@@ -331,6 +378,21 @@ def _has_python_shebang(path: Path) -> bool:
     except (OSError, UnicodeDecodeError):
         return False
     return first_line.startswith("#!") and "python" in first_line.lower()
+
+
+def _has_supported_markdown_fence(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("```"):
+            continue
+        language = stripped[3:].strip().split(maxsplit=1)[0].lower()
+        if language in MARKDOWN_FENCE_SUFFIXES:
+            return True
+    return False
 
 
 if __name__ == "__main__":

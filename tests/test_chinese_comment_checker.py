@@ -271,3 +271,48 @@ def test_typescript_needs_file_level_chinese_explanation(tmp_path: Path) -> None
     result = _audit_file(path)
 
     assert not result.has_chinese
+
+
+def test_markdown_python_fence_requires_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "guide.md"
+    path.write_text(
+        "# Guide\n\n```python\ndef run() -> None:\n    return None\n```\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert not result.has_chinese
+    assert result.explanation_comment_count == 0
+
+
+def test_markdown_python_fence_chinese_docstring_counts(tmp_path: Path) -> None:
+    path = tmp_path / "guide.md"
+    path.write_text(
+        "# Guide\n\n"
+        "```python\n"
+        '"""示例说明：该代码块只展示仿真调用，不触碰真实硬件。"""\n'
+        "def run() -> None:\n"
+        "    return None\n"
+        "```\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert result.has_chinese
+
+
+def test_collects_markdown_only_when_it_contains_supported_code_fence(tmp_path: Path) -> None:
+    plain = tmp_path / "plain.md"
+    fenced = tmp_path / "fenced.md"
+    plain.write_text("# 说明\n\n这里只是中文文档正文。\n", encoding="utf-8")
+    fenced.write_text(
+        '# 示例\n\n```python\n"""示例说明：该片段只展示只读查询。"""\nprint(\'ok\')\n```\n',
+        encoding="utf-8",
+    )
+
+    collected = {path.name for path in _collect_files([tmp_path])}
+
+    assert "plain.md" not in collected
+    assert "fenced.md" in collected
