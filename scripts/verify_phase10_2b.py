@@ -121,6 +121,7 @@ def verify_e2e(repo: Path) -> dict[str, Any]:
 def run_commands(commands: list[VerificationCommand]) -> dict[str, Any]:
     results: list[dict[str, object]] = []
     for command in commands:
+        repo = Path(__file__).resolve().parents[1]
         result = subprocess.run(
             command.argv,
             cwd=command.cwd,
@@ -133,12 +134,12 @@ def run_commands(commands: list[VerificationCommand]) -> dict[str, Any]:
         results.append(
             {
                 "name": command.name,
-                "argv": command.argv,
-                "cwd": str(command.cwd),
+                "argv": _redact_argv(command.argv, repo=repo),
+                "cwd": _relative_cwd(command.cwd, repo=repo),
                 "returncode": result.returncode,
                 "status": "PASSED" if passed else "FAILED",
-                "stdout_tail": result.stdout[-4000:],
-                "stderr_tail": result.stderr[-4000:],
+                "stdout_tail": _redact_text(result.stdout[-4000:], repo=repo),
+                "stderr_tail": _redact_text(result.stderr[-4000:], repo=repo),
             }
         )
         if not passed:
@@ -243,6 +244,27 @@ def _file_contains_without_spaces(path: Path, text: str) -> str:
 
 def _test_contains(repo: Path, text: str) -> str:
     return _file_contains(repo / "tests/test_phase10_2b_dashboard_backend.py", text)
+
+
+def _redact_argv(argv: list[str], *, repo: Path) -> list[str]:
+    redacted: list[str] = []
+    for index, item in enumerate(argv):
+        if index == 0 and Path(item).is_absolute():
+            redacted.append(Path(item).name)
+            continue
+        redacted.append(_redact_text(item, repo=repo))
+    return redacted
+
+
+def _relative_cwd(cwd: Path, *, repo: Path) -> str:
+    try:
+        return cwd.resolve().relative_to(repo.resolve()).as_posix() or "."
+    except ValueError:
+        return "<external>"
+
+
+def _redact_text(text: str, *, repo: Path) -> str:
+    return text.replace(str(repo), "<repo>")
 
 
 if __name__ == "__main__":

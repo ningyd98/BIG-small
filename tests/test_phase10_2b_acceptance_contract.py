@@ -88,6 +88,16 @@ def test_phase10_2b_backend_only_does_not_claim_full_acceptance() -> None:
     assert summary["validation_claimed"] is False
 
 
+def test_phase10_2b_verifier_redacts_local_paths() -> None:
+    from scripts.verify_phase10_2b import _redact_argv, _redact_text, _relative_cwd
+
+    repo = ROOT
+
+    assert _redact_argv([str(repo / ".venv/bin/python"), "-m", "pytest"], repo=repo)[0] == "python"
+    assert _relative_cwd(repo / "dashboard", repo=repo) == "dashboard"
+    assert "<repo>/dashboard" in _redact_text(f"{repo}/dashboard", repo=repo)
+
+
 def test_ci_splits_python_frontend_and_e2e_jobs() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
