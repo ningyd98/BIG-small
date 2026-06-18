@@ -10,11 +10,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+# ruff: noqa: E402
 from fastapi.testclient import TestClient
 
 from cloud_edge_robot_arm.cloud.api.console_app import create_console_app
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 PHASE11_2_ACCEPTED = "PHASE11_2_MODEL_CONTROL_CENTER_ACCEPTED"
 PHASE11_2_CONSOLE_ACCEPTED = "PHASE11_2_SIMULATION_AI_CONSOLE_ACCEPTED"
