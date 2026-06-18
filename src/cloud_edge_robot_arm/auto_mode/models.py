@@ -16,6 +16,8 @@ from cloud_edge_robot_arm.contracts import (
 
 
 class AutoModePolicy(BaseModel):
+    """AUTO 模式策略阈值，约束风险分层、停留时间和任务内切换次数。"""
+
     version: str = Field(min_length=1)
     low_risk_max: float = Field(default=25.0, ge=0.0, le=100.0)
     medium_risk_max: float = Field(default=60.0, ge=0.0, le=100.0)
@@ -30,6 +32,8 @@ AutoModeState = AutoModeStatus
 
 
 class AutoModeTransitionRequest(BaseModel):
+    """模式切换准备请求，携带幂等键和期望版本以避免重复提交。"""
+
     task_id: str = Field(min_length=1)
     from_mode: ControlMode
     to_mode: ControlMode
@@ -44,6 +48,8 @@ AutoModeDecisionRecord = AutoModeDecision
 
 
 class AutoModeDecisionContext(BaseModel):
+    """AUTO 决策输入上下文，汇总风险、缓存、合同和监督可用性。"""
+
     current_state: AutoModeState
     risk_snapshot: RiskSnapshot
     cache_match_type: str

@@ -18,6 +18,8 @@ def _utc_now() -> datetime:
 
 
 class ModeTransitionService:
+    """模式切换服务，准备、提交或中止 AUTO 模式状态变更。"""
+
     def __init__(
         self, *, clock: Callable[[], datetime] | None = None, repository: object | None = None
     ) -> None:
@@ -27,6 +29,7 @@ class ModeTransitionService:
         self._by_idempotency: dict[str, str] = {}
 
     def prepare(self, request: AutoModeTransitionRequest) -> AutoModeTransitionRecord:
+        """准备一次模式切换，并用幂等键防止重复或冲突提交。"""
         if request.idempotency_key in self._by_idempotency:
             existing_id = self._by_idempotency[request.idempotency_key]
             existing = self._transitions[existing_id]
@@ -53,6 +56,7 @@ class ModeTransitionService:
         return record
 
     def commit(self, transition_id: str) -> AutoModeTransitionRecord:
+        """提交已准备的模式切换并记录提交时间。"""
         record = self._transitions[transition_id]
         updated = record.model_copy(
             update={"status": AutoModeTransitionStatus.COMMITTED, "committed_at": self._clock()},
@@ -62,6 +66,7 @@ class ModeTransitionService:
         return updated
 
     def abort(self, transition_id: str, *, reason: str) -> AutoModeTransitionRecord:
+        """中止模式切换；缺失记录时返回可审计的 ABORTED 占位记录。"""
         record = self._transitions.get(transition_id)
         if record is None:
             return AutoModeTransitionRecord(

@@ -24,6 +24,8 @@ def _utc_now() -> datetime:
 
 
 class AutoModeSelector:
+    """AUTO 模式选择器，根据风险和运行证据选择保持、切换或暂停。"""
+
     def __init__(
         self,
         *,
@@ -46,6 +48,7 @@ class AutoModeSelector:
         atomic_step_active: bool,
         mode_history: list[ControlMode],
     ) -> AutoModeDecision:
+        """根据当前状态和风险快照生成单次 AUTO 模式决策。"""
         now = self._clock()
         reason_codes: list[str] = []
         if risk_snapshot.risk_level == RiskLevel.CRITICAL:
