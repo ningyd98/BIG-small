@@ -1,3 +1,9 @@
+"""Dashboard API 路由。
+
+该路由层提供项目状态、证据、审计、WebSocket 事件流和安全验收视图。
+它复用 DashboardService 的权威数据，不在浏览器或 URL 中暴露敏感控制凭据。
+"""
+
 from __future__ import annotations
 
 import asyncio

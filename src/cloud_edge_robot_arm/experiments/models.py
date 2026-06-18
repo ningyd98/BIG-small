@@ -1,3 +1,9 @@
+"""实验领域模型。
+
+这里定义控制模式、网络/故障/任务配置、事件和结果模型，是实验 runner 与
+仿真工作台之间的结构化契约。
+"""
+
 from __future__ import annotations
 
 from datetime import datetime

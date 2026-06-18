@@ -1,3 +1,9 @@
+"""实验运行时 harness。
+
+该 harness 把 auto mode、supervision、replanning 和 artifact 写入组合到一起，
+用于可复现实验验证；所有动作仍停留在仿真/证据层。
+"""
+
 from __future__ import annotations
 
 import hashlib

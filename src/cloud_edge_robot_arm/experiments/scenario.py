@@ -1,3 +1,9 @@
+"""实验场景注册表。
+
+scenario_registry 是 S01-S15 场景的权威来源，前端和 API 都应从这里派生场景目录，
+不能在 React 页面中硬编码场景列表。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.experiments.models import (

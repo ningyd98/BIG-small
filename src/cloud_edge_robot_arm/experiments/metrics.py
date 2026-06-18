@@ -1,3 +1,9 @@
+"""实验计数器和指标聚合。
+
+这些计数器从实验事件和安全决策中累积，不代表真实硬件遥测；用于比较模式、
+故障恢复和论文图表指标。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -1,4 +1,8 @@
-"""Local dashboard API entrypoint backed by the deterministic mock planner."""
+"""本地开发 Dashboard API 入口。
+
+该入口只使用确定性 Mock planner，方便前端和 E2E 在无真实控制器环境中运行。
+它不能作为真实机械臂控制入口。
+"""
 
 from __future__ import annotations
 

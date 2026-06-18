@@ -26,6 +26,9 @@ def main() -> int:
         nargs="*",
         default=[
             "src/cloud_edge_robot_arm/simulation_runtime",
+            "src/cloud_edge_robot_arm/simulation_workbench",
+            "src/cloud_edge_robot_arm/cloud/api",
+            "src/cloud_edge_robot_arm/experiments",
             "dashboard/src/simulation/services",
             "dashboard/src/simulation/components",
             "scripts/verify_phase11_1_simulation_runtime.py",

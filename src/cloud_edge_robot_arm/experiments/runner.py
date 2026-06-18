@@ -1,3 +1,9 @@
+"""单次实验 runner。
+
+ExperimentRunner 执行受控场景、网络故障、云端调用、重试、恢复和 SafetyShield 事件。
+它用于仿真与离线验收，不发送真实机械臂运动命令。
+"""
+
 from __future__ import annotations
 
 import platform

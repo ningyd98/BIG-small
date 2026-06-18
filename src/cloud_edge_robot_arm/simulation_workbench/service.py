@@ -1,3 +1,10 @@
+"""仿真工作台服务层。
+
+该服务从 scenario_registry、ExperimentConfig 和 runtime service 派生工作台数据。
+它负责校验高层实验配置、生成 manifest、读写 artifact，并明确区分 Mock、MuJoCo、
+Isaac BLOCKED_BY_ENV 和 MoveIt dry-run。
+"""
+
 from __future__ import annotations
 
 import csv

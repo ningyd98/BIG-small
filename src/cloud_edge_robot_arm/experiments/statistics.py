@@ -1,3 +1,8 @@
+"""实验统计工具。
+
+该模块提供均值、中位数、分位数和 bootstrap 置信区间等论文实验汇总能力。
+"""
+
 from __future__ import annotations
 
 import math

@@ -1,3 +1,9 @@
+"""事件驱动指标收集器。
+
+该模块从 ExperimentEvent 流中提取成功、失败、安全介入、重试和恢复计数，
+保证指标来源可追溯到原始事件。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

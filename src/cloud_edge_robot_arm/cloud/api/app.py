@@ -1,4 +1,8 @@
-"""FastAPI application for the cloud planning service."""
+"""云端规划服务的 FastAPI 应用。
+
+该模块负责组装规划、监督、Dashboard 和仿真工作台路由，并维护应用级状态。
+任何可能触发真实硬件运动的能力都必须经过下游安全门控，不能在 API 层绕过。
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,8 @@
+"""可复现性哈希工具。
+
+stable_hash 使用规范 JSON 序列化，确保相同实验配置在不同运行中得到一致摘要。
+"""
+
 from __future__ import annotations
 
 import hashlib

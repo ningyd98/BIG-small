@@ -1,3 +1,9 @@
+"""仿真工作台 API 路由。
+
+该路由暴露 /api/v1/simulation 能力、场景、run、batch、runtime health 和 WebSocket
+stream。浏览器只能提交高层实验配置，不能直接连接 MuJoCo、Isaac、ROS 或真实硬件。
+"""
+
 from __future__ import annotations
 
 import asyncio

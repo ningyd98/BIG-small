@@ -1,3 +1,9 @@
+"""仿真工作台 API 模型。
+
+这些模型是前端 OpenAPI 类型生成的权威来源，约束 backend、run type、状态、
+manifest、metrics 和事件结构，避免前端构造低层机器人控制命令。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

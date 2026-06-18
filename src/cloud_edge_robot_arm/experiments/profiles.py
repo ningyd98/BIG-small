@@ -1,3 +1,8 @@
+"""内置网络 profile。
+
+Profile 只描述仿真通信条件，如延迟、抖动和丢包；它不配置真实网络设备或控制器。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.experiments.models import NetworkProfile, NetworkProfileName

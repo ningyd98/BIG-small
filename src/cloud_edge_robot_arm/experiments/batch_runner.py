@@ -1,3 +1,9 @@
+"""批量实验 runner。
+
+Batch runner 负责把受控 ExperimentConfig 展开为多次可复现实验，统一写入 artifact。
+它接受的是结构化配置，不接受任意脚本、命令或环境变量。
+"""
+
 from __future__ import annotations
 
 import tempfile

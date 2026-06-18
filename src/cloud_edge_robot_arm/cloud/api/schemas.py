@@ -1,4 +1,8 @@
-"""Pydantic schemas for the cloud planning API request/response bodies."""
+"""云端规划 API 的 Pydantic 请求/响应模型。
+
+这些 schema 是 HTTP 边界的结构化契约；字段校验应阻止任意 shell、路径或未授权
+控制参数穿透到规划与执行层。
+"""
 
 from __future__ import annotations
 
