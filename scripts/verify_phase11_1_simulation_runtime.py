@@ -668,10 +668,16 @@ def _read_artifact_json(
     artifacts: dict[str, str],
     key: str,
 ) -> dict[str, Any]:
-    artifact_path = artifact_root / artifacts[key]
-    if not artifact_path.exists():
-        artifact_path = artifact_root.parent / artifacts[key]
-    return cast(dict[str, Any], json.loads(artifact_path.read_text(encoding="utf-8")))
+    relative = Path(artifacts[key])
+    candidates = [
+        artifact_root / relative,
+        artifact_root.parent / relative,
+        artifact_root.parent / "runtime_artifacts" / relative,
+    ]
+    for artifact_path in candidates:
+        if artifact_path.exists():
+            return cast(dict[str, Any], json.loads(artifact_path.read_text(encoding="utf-8")))
+    raise FileNotFoundError(str(candidates[0]))
 
 
 def _verification_artifact_root(output: Path) -> Path:
