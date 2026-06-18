@@ -134,7 +134,7 @@ def _extract_explanation_text(path: Path, text: str) -> str:
     if path.suffix in HASH_COMMENT_SUFFIXES or path.name in HASH_COMMENT_FILENAMES:
         return _extract_leading_hash_comment_text(text)
     if path.suffix in XML_COMMENT_SUFFIXES:
-        return _extract_xml_comment_text(text)
+        return _extract_leading_xml_comment_text(text)
     return ""
 
 
@@ -245,6 +245,32 @@ def _extract_leading_hash_comment_text(text: str) -> str:
             continue
         if stripped.startswith("#"):
             comments.append(stripped)
+            continue
+        break
+    return "\n".join(comments)
+
+
+def _extract_leading_xml_comment_text(text: str) -> str:
+    # XML/HTML 文件的包级说明必须位于根节点前，依赖段落里的注释只算局部说明。
+    comments: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        while index < length and text[index] in {" ", "\t", "\r", "\n"}:
+            index += 1
+        if text.startswith("<?xml", index):
+            end = text.find("?>", index + 5)
+            if end == -1:
+                break
+            index = end + 2
+            continue
+        if text.startswith("<!--", index):
+            end = text.find("-->", index + 4)
+            if end == -1:
+                comments.append(text[index:])
+                break
+            comments.append(text[index : end + 3])
+            index = end + 3
             continue
         break
     return "\n".join(comments)

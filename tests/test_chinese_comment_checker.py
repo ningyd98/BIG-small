@@ -173,6 +173,22 @@ def test_xml_comment_counts_as_chinese_explanation(tmp_path: Path) -> None:
     assert result.has_chinese
 
 
+def test_xml_comment_file_needs_leading_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "package.xml"
+    path.write_text(
+        '<?xml version="1.0"?>\n'
+        "<package>\n"
+        "  <name>demo</name>\n"
+        "  <!-- 局部依赖说明：这里只解释依赖，不说明包职责。 -->\n"
+        "</package>\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert not result.has_chinese
+
+
 def test_yaml_string_does_not_count_as_chinese_explanation(tmp_path: Path) -> None:
     path = tmp_path / "ci.yml"
     path.write_text("name: 中文流水线\n", encoding="utf-8")
