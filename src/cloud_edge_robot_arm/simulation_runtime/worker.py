@@ -165,6 +165,7 @@ class SimulationWorker:
                     RuntimeJobStatus.RUNNING,
                     RuntimeJobStatus.CANCEL_REQUESTED,
                     lease_id,
+                    absorb_cancel_race=True,
                 )
                 current = self.repository.get_job(job_id)
             if current.status == RuntimeJobStatus.CANCEL_REQUESTED:

@@ -487,6 +487,87 @@ def test_duplicate_worker_competition_executes_runner_once(tmp_path: Path) -> No
     assert len(completed_events) == 1
 
 
+def test_worker_completes_cancel_when_api_wins_cancel_requested_race(tmp_path: Path) -> None:
+    # API 和 worker 可能同时观察到取消请求；如果 API 先把 RUNNING 推到
+    # CANCEL_REQUESTED，worker 不应因为自己的 CAS 失败而把 job 卡在中间态。
+    from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+        SQLiteSimulationJobRepository,
+    )
+    from cloud_edge_robot_arm.simulation_runtime.worker import (
+        CancelledByOperator,
+        SimulationWorker,
+    )
+
+    repo = SQLiteSimulationJobRepository(tmp_path / "runtime.db")
+    job = repo.create_job(
+        run_id="sim-cancel-race",
+        batch_id="",
+        backend="MOCK",
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        manifest_id="manifest-cancel-race",
+        reproducibility_hash="hash-cancel-race",
+        draft=_draft(),
+        manifest={"manifest_id": "manifest-cancel-race"},
+        timeout_seconds=30,
+        max_attempts=2,
+        artifact_root="phase11_1/runtime/sim-cancel-race",
+        source_commit="commit",
+        source_tree_hash="tree",
+    )
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.CREATED,
+        next_status=RuntimeJobStatus.QUEUED,
+        reason_code="queued_by_test",
+        worker_id="",
+        lease_id="",
+    )
+
+    class CancelRaceRepository:
+        def __init__(self, inner: SQLiteSimulationJobRepository) -> None:
+            self.inner = inner
+            self.race_injected = False
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self.inner, name)
+
+        def update_status_cas(self, job_id: str, **kwargs: Any) -> Any:
+            if (
+                kwargs["expected"] == RuntimeJobStatus.RUNNING
+                and kwargs["next_status"] == RuntimeJobStatus.CANCEL_REQUESTED
+                and not self.race_injected
+            ):
+                self.race_injected = True
+                self.inner.update_status_cas(job_id, **kwargs)
+                return None
+            return self.inner.update_status_cas(job_id, **kwargs)
+
+    class CancellingWorker(SimulationWorker):
+        def _run(self, job: Any, *, start_monotonic: float) -> Any:
+            raise CancelledByOperator("cancelled by operator")
+
+    racing_repo = CancelRaceRepository(repo)
+    worker = CancellingWorker(
+        worker_id="worker-a",
+        backend="MOCK",
+        repository=racing_repo,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    assert worker.poll_once() is True
+    terminal = repo.get_job(job.job_id)
+    attempts = repo.list_attempts(job.run_id)
+    events = [event.event_type for event in repo.list_events(job.run_id)]
+
+    assert racing_repo.race_injected is True
+    assert terminal.status == RuntimeJobStatus.CANCELLED
+    assert attempts[-1].result == RuntimeJobStatus.CANCELLED.value
+    assert "job_cancelled" in events
+
+
 def test_runtime_cancel_timeout_retry_and_recovery_api(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
