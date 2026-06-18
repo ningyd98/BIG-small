@@ -182,6 +182,22 @@ def test_yaml_string_does_not_count_as_chinese_explanation(tmp_path: Path) -> No
     assert not result.has_chinese
 
 
+def test_hash_comment_file_needs_leading_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "ci.yml"
+    path.write_text(
+        "name: ci\n"
+        "jobs:\n"
+        "  test:\n"
+        "    # 局部步骤说明：这里只解释测试步骤，不说明整个流水线职责。\n"
+        "    runs-on: ubuntu-latest\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert not result.has_chinese
+
+
 def test_placeholder_chinese_comment_is_not_accepted_as_suitable_explanation(
     tmp_path: Path,
 ) -> None:

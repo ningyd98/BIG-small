@@ -132,7 +132,7 @@ def _extract_explanation_text(path: Path, text: str) -> str:
     if path.suffix in SLASH_COMMENT_SUFFIXES:
         return _extract_leading_slash_comment_text(text)
     if path.suffix in HASH_COMMENT_SUFFIXES or path.name in HASH_COMMENT_FILENAMES:
-        return _extract_hash_comment_text(text)
+        return _extract_leading_hash_comment_text(text)
     if path.suffix in XML_COMMENT_SUFFIXES:
         return _extract_xml_comment_text(text)
     return ""
@@ -231,12 +231,22 @@ def _extract_slash_comment_text(text: str) -> str:
     return "\n".join(comments)
 
 
-def _extract_hash_comment_text(text: str) -> str:
+def _extract_leading_hash_comment_text(text: str) -> str:
+    # Shell/YAML/TOML/ROS 接口文件也必须在入口说明整体用途，局部步骤注释不算文件说明。
     comments: list[str] = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    index = 0
+    if lines and lines[0].startswith("#!"):
+        comments.append(lines[0])
+        index = 1
+    for line in lines[index:]:
         stripped = line.lstrip()
+        if not stripped:
+            continue
         if stripped.startswith("#"):
             comments.append(stripped)
+            continue
+        break
     return "\n".join(comments)
 
 
