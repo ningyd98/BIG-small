@@ -1,3 +1,4 @@
+// JSONL 解析 worker，分块解析事件文件以保护浏览器主线程。
 self.onmessage = (event: MessageEvent<string>) => {
   const rows = event.data
     .split("\n")

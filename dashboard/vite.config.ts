@@ -1,3 +1,4 @@
+// Vite 构建配置，集中管理 React 插件、代理和手动分包策略。
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 

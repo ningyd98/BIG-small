@@ -1,3 +1,4 @@
+// 实验配置构建器，禁止任意脚本、路径、环境变量和 runner 名称。
 import type { ExperimentDraft, NetworkDraft } from "../domain/ExperimentDraft";
 import type { SimulationBackend } from "../domain/SimulationBackend";
 

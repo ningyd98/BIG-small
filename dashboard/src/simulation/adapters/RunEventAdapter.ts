@@ -1,3 +1,4 @@
+// 运行事件适配器，负责 sequence 去重和 timeline 事件归一化。
 import type { TimelineEvent } from "../domain/TimelineEvent";
 
 export function eventSeverity(event: TimelineEvent): string {

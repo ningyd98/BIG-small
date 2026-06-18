@@ -1,3 +1,4 @@
+// Sweep 计划构建器，计算笛卡尔积、非法组合和超限 blocker。
 import type { SweepDefinition } from "../domain/SweepDefinition";
 import type { SimulationBackend } from "../domain/SimulationBackend";
 

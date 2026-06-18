@@ -1,3 +1,4 @@
+// 实时运行页面，展示队列、worker、lease、attempt、取消和超时状态。
 import { Button, Card, Empty, Space, Table, Typography } from "antd";
 
 import { StatusBadge } from "../../components/StatusBadge";

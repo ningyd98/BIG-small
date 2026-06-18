@@ -1,3 +1,4 @@
+// 批量实验页面，展示矩阵、并发、取消和重试入口。
 import { Button, Card, InputNumber, Select, Space, Typography } from "antd";
 import { useState } from "react";
 

@@ -1,3 +1,4 @@
+// Dashboard Provider 组合，统一注入查询客户端和应用级上下文。
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { BrowserRouter } from "react-router-dom";

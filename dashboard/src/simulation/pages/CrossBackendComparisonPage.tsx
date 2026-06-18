@@ -1,3 +1,4 @@
+// 跨后端对比页面，只允许 paired key 一致的 MuJoCo/Isaac 结果比较。
 import { Card, Descriptions, Tag } from "antd";
 
 export function CrossBackendComparisonPage() {

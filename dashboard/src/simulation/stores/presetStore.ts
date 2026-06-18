@@ -1,3 +1,4 @@
+// 预设 store，管理本地实验 preset 的保存、导入和导出。
 import type { ExperimentPreset } from "../services/PresetRepository";
 
 let presets: ExperimentPreset[] = [];

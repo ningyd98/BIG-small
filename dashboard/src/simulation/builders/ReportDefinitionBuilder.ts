@@ -1,3 +1,4 @@
+// 报告定义构建器，声明导出格式、指标和脱敏要求。
 export type ReportDefinition = {
   title: string;
   includeMetrics: string[];

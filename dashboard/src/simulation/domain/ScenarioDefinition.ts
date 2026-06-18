@@ -1,3 +1,4 @@
+// 场景定义类型，映射后端 scenario_registry 的权威场景。
 import type { components } from "../../api/generated/schema";
 
 export type ScenarioDefinition =

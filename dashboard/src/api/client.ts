@@ -1,3 +1,4 @@
+// Dashboard REST 客户端，统一设置角色头并把非 2xx 响应转为可追踪错误。
 import type {
   DashboardAcceptanceSnapshot,
   DashboardAuditEvents,

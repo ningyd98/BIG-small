@@ -1,3 +1,4 @@
+// JSON 展示组件，用于只读呈现证据和诊断载荷。
 import { Card } from "antd";
 
 type JsonViewerProps = {

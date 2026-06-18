@@ -1,3 +1,4 @@
+// 前端单元测试，验证 API、WebSocket 或仿真工具行为。
 import { describe, expect, it, vi } from "vitest";
 
 import { ScenarioCatalogService } from "./services/ScenarioCatalogService";

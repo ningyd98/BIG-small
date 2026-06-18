@@ -1,3 +1,4 @@
+// 仿真后端枚举类型，明确 Mock、MuJoCo、Isaac 和 MoveIt dry-run 的区别。
 import type { components } from "../../api/generated/schema";
 
 export type SimulationBackend = components["schemas"]["SimulationBackend"];

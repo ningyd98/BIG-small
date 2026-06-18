@@ -1,3 +1,4 @@
+// 仿真 React Query hooks，管理 run、batch、metrics 和 runtime 状态缓存。
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ExperimentDraft } from "../domain/ExperimentDraft";

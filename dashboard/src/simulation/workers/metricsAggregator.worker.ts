@@ -1,3 +1,4 @@
+// 指标聚合 worker，离线计算统计值和分布数据。
 type MetricRow = { name: string; value: unknown };
 
 self.onmessage = (event: MessageEvent<MetricRow[]>) => {

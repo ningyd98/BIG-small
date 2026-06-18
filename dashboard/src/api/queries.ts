@@ -1,3 +1,4 @@
+// Dashboard React Query hooks，集中管理权威状态、证据和实验任务请求。
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { dashboardApi } from "./client";

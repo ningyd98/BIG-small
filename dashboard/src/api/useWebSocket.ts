@@ -1,3 +1,4 @@
+// Dashboard WebSocket hook，处理实时事件、回放和断线降级。
 import { useEffect, useMemo, useState } from "react";
 
 import { dashboardStreamUrl, type DashboardSocketEvent } from "./websocket";

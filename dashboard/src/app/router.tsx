@@ -1,3 +1,4 @@
+// Dashboard 路由表，保留旧页面路径并接入仿真工作台页面。
 import { Navigate, Route, Routes } from "react-router-dom";
 import { lazy, Suspense } from "react";
 

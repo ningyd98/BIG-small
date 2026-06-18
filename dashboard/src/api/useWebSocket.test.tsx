@@ -1,3 +1,4 @@
+// 前端组件测试，验证页面状态、锁定行为和用户可见结果。
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

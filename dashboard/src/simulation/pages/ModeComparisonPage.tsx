@@ -1,3 +1,4 @@
+// 模式对比页面，比较 PCSC、ETEAC 和 AUTO 的成功率与通信指标。
 import { Card, Descriptions } from "antd";
 
 export function ModeComparisonPage() {

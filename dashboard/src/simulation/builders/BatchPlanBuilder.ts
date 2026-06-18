@@ -1,3 +1,4 @@
+// Batch 计划构建器，输出强类型 manifest 并检查后端批量限制。
 import type { BatchExperimentManifest } from "../domain/ExperimentManifest";
 import type { SimulationBackend } from "../domain/SimulationBackend";
 

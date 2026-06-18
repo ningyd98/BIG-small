@@ -1,3 +1,4 @@
+// 时间线事件类型，统一故障注入、SafetyShield 和运行状态事件。
 import type { components } from "../../api/generated/schema";
 
 export type TimelineEvent = Omit<

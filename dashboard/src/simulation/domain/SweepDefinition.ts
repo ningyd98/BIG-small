@@ -1,3 +1,4 @@
+// Sweep 定义类型，描述多 seed、多场景和网络参数扫描。
 import type { SimulationBackend } from "./SimulationBackend";
 
 export type SweepCombination = {

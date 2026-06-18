@@ -1,3 +1,4 @@
+// 场景库页面，动态展示后端提供的 S01-S15 场景定义。
 import { Card, Space, Table, Tag, Typography } from "antd";
 
 import { useSimulationScenarios } from "../api/simulationQueries";

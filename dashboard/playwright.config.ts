@@ -1,3 +1,4 @@
+// Playwright E2E 配置，固定本地 Dashboard 服务和报告输出。
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({

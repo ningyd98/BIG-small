@@ -1,3 +1,4 @@
+// 仿真 API 客户端，只提交高层实验配置，不传递 shell 或硬件控制命令。
 import type { components } from "../../api/generated/schema";
 import type { DashboardUserRole } from "../../api/types";
 import type { ExperimentDraft } from "../domain/ExperimentDraft";

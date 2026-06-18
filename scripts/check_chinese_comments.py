@@ -26,8 +26,10 @@ def main() -> int:
         nargs="*",
         default=[
             "src/cloud_edge_robot_arm",
-            "dashboard/src/simulation/services",
-            "dashboard/src/simulation/components",
+            "dashboard/src",
+            "dashboard/tests",
+            "dashboard/playwright.config.ts",
+            "dashboard/vite.config.ts",
             "scripts/verify_phase11_1_simulation_runtime.py",
             "tests/test_phase11_1_simulation_runtime.py",
         ],

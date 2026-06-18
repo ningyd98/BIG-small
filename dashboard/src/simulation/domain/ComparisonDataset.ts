@@ -1,3 +1,4 @@
+// 对比数据集类型，描述 paired delta、样本数和来源。
 import type { SimulationBackend } from "./SimulationBackend";
 import type { SimulationMetric } from "./RunMetric";
 

@@ -1,3 +1,4 @@
+// Dashboard API 类型定义，保持前端字段与 OpenAPI 生成模型对齐。
 import type { components } from "./generated/schema";
 
 export type DashboardSummary = components["schemas"]["DashboardSummary"];
