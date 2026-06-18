@@ -91,6 +91,8 @@ def test_python_docstring_counts_as_chinese_explanation(tmp_path: Path) -> None:
 
 def test_collects_script_config_and_ros_interface_files(tmp_path: Path) -> None:
     expected_names = {
+        ".env.example",
+        ".gitignore",
         "run.sh",
         "ci.yml",
         "package.xml",
@@ -124,6 +126,18 @@ def test_hash_comment_file_counts_as_chinese_explanation(tmp_path: Path) -> None
     path = tmp_path / "run.sh"
     path.write_text(
         "#!/usr/bin/env bash\n# 脚本说明：这里只做环境检查，不启动真实硬件。\nset -euo pipefail\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert result.has_chinese
+
+
+def test_dotfile_hash_comment_counts_as_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / ".env.example"
+    path.write_text(
+        "# 配置说明：示例环境变量不保存真实密钥。\nAPP_ENV=development\n",
         encoding="utf-8",
     )
 

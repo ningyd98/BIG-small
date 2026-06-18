@@ -34,6 +34,7 @@ CODE_SUFFIXES = {
 HASH_COMMENT_SUFFIXES = {".action", ".bash", ".msg", ".sh", ".srv", ".toml", ".yaml", ".yml"}
 SLASH_COMMENT_SUFFIXES = {".css", ".js", ".ts", ".tsx"}
 XML_COMMENT_SUFFIXES = {".html", ".xml"}
+HASH_COMMENT_FILENAMES = {".gitignore", ".env.example", ".env.phase9.example"}
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,11 @@ def main() -> int:
             "dashboard/tests",
             "dashboard/playwright.config.ts",
             "dashboard/vite.config.ts",
+            ".env.example",
+            ".env.phase9.example",
+            ".github/workflows",
+            ".gitignore",
+            "pyproject.toml",
             "scripts",
             "tests",
             "ros2_ws/src",
@@ -119,7 +125,7 @@ def _extract_explanation_text(path: Path, text: str) -> str:
         return _extract_python_explanation_text(text)
     if path.suffix in SLASH_COMMENT_SUFFIXES:
         return _extract_slash_comment_text(text)
-    if path.suffix in HASH_COMMENT_SUFFIXES:
+    if path.suffix in HASH_COMMENT_SUFFIXES or path.name in HASH_COMMENT_FILENAMES:
         return _extract_hash_comment_text(text)
     if path.suffix in XML_COMMENT_SUFFIXES:
         return _extract_xml_comment_text(text)
@@ -227,9 +233,11 @@ def _has_chinese(text: str) -> bool:
 def _is_audited_file(path: Path) -> bool:
     if not path.is_file():
         return False
-    return (path.suffix in CODE_SUFFIXES or _has_python_shebang(path)) and not path.name.endswith(
-        ".d.ts"
-    )
+    return (
+        path.suffix in CODE_SUFFIXES
+        or path.name in HASH_COMMENT_FILENAMES
+        or _has_python_shebang(path)
+    ) and not path.name.endswith(".d.ts")
 
 
 def _has_python_shebang(path: Path) -> bool:
