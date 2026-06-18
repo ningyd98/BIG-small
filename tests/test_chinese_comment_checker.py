@@ -418,3 +418,5 @@ def test_default_paths_collect_dashboard_root_configs() -> None:
     assert "contracts/examples/valid/pick_red_cube.json" in collected
     assert "contracts/examples/invalid/unsupported_skill.json" in collected
     assert "simulation/README.md" in collected
+    assert "experiments/baselines/phase8_1/run_manifest.json" in collected
+    assert "experiments/baselines/phase9/phase9_smoke_mujoco/config.json" in collected
