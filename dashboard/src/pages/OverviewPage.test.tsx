@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { OverviewPageView } from "./OverviewPage";
 
+// 概览页测试固定 dry-run 权威状态，防止回归时误展示真实硬件验收通过。
 describe("OverviewPageView", () => {
   it("展示权威状态和硬件边界", () => {
     render(

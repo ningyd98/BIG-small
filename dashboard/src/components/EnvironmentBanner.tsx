@@ -3,6 +3,7 @@ import { Alert, Space, Tag, Tooltip, Typography } from "antd";
 
 import { StatusBadge } from "./StatusBadge";
 
+// 顶部环境横幅始终强调 dry-run 与硬件边界，防止用户把控制台状态误读为实机授权。
 type EnvironmentBannerProps = {
   projectStatus: string;
   realRobotValidation: string;

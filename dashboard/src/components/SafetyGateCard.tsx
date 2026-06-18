@@ -1,6 +1,7 @@
 import { LockOutlined } from "@ant-design/icons";
 import { Card, Empty, Space, Typography } from "antd";
 
+// 硬件执行门卡片只渲染后端安全门结论，前端不提供任何解锁或运动授权入口。
 type SafetyGateCardProps = {
   hardwareMotionAuthorized: boolean;
   reasonCodes: string[];

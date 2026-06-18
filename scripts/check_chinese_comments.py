@@ -7,6 +7,9 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import io
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,7 +72,85 @@ def _collect_files(paths: list[Path]) -> list[Path]:
 
 def _audit_file(path: Path) -> CommentAuditResult:
     text = path.read_text(encoding="utf-8")
-    return CommentAuditResult(path=path, has_chinese=_has_chinese(text))
+    comment_text = _extract_explanation_text(path, text)
+    return CommentAuditResult(path=path, has_chinese=_has_chinese(comment_text))
+
+
+def _extract_explanation_text(path: Path, text: str) -> str:
+    if path.suffix == ".py":
+        return _extract_python_explanation_text(text)
+    if path.suffix in {".ts", ".tsx"}:
+        return _extract_typescript_comment_text(text)
+    return ""
+
+
+def _extract_python_explanation_text(text: str) -> str:
+    fragments: list[str] = []
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        tree = None
+
+    if tree is not None:
+        # Python 文件里的模块、类和函数 docstring 承担正式说明职责，普通字符串不计入。
+        module_docstring = ast.get_docstring(tree, clean=False)
+        if module_docstring:
+            fragments.append(module_docstring)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                docstring = ast.get_docstring(node, clean=False)
+                if docstring:
+                    fragments.append(docstring)
+
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+        fragments.extend(token.string for token in tokens if token.type == tokenize.COMMENT)
+    except tokenize.TokenError:
+        pass
+
+    return "\n".join(fragments)
+
+
+def _extract_typescript_comment_text(text: str) -> str:
+    comments: list[str] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < length else ""
+        if char in {"'", '"', "`"}:
+            index = _skip_javascript_string(text, index, char)
+            continue
+        if char == "/" and next_char == "/":
+            end = text.find("\n", index + 2)
+            if end == -1:
+                end = length
+            comments.append(text[index:end])
+            index = end
+            continue
+        if char == "/" and next_char == "*":
+            end = text.find("*/", index + 2)
+            if end == -1:
+                comments.append(text[index:])
+                break
+            comments.append(text[index : end + 2])
+            index = end + 2
+            continue
+        index += 1
+    return "\n".join(comments)
+
+
+def _skip_javascript_string(text: str, start: int, quote: str) -> int:
+    index = start + 1
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == quote:
+            return index + 1
+        index += 1
+    return len(text)
 
 
 def _has_chinese(text: str) -> bool:

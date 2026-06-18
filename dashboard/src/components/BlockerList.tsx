@@ -1,5 +1,6 @@
 import { Empty } from "antd";
 
+// 阻塞项组件只呈现后端判定结果，避免前端自行推断安全或环境状态。
 type BlockerListProps = {
   blockers: string[];
 };

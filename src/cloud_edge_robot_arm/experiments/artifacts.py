@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from cloud_edge_robot_arm.experiments.models import ExperimentEvent, ExperimentResult
 from cloud_edge_robot_arm.experiments.runner import git_sha
 
+# Phase 8/9 实验 artifact 写出器只记录仿真证据，报告文字必须明确不能代表真实硬件。
 SUMMARY_COLUMNS = [
     "run_id",
     "experiment_id",

@@ -13,6 +13,7 @@ import { useDashboardSocket } from "../api/useWebSocket";
 import { EnvironmentBanner } from "../components/EnvironmentBanner";
 import { DashboardRoutes } from "./router";
 
+// 控制台外壳只负责路由、导航和只读环境状态展示；所有实验/模型动作仍经后端鉴权 API。
 const navItems = [
   {
     key: "/",

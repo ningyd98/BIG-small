@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SafetyAcceptancePage } from "./SafetyAcceptancePage";
 
+// 安全验收页测试复核备注流程，同时确认备注不会变成硬件运动授权。
 function renderWithQueryClient(children: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

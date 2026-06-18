@@ -7,6 +7,7 @@ import { ProvenanceCard } from "../components/ProvenanceCard";
 import { SafetyGateCard } from "../components/SafetyGateCard";
 import { StatusBadge } from "../components/StatusBadge";
 
+// 概览页集中展示权威状态、硬件边界和最新证据，不在前端推导验收结论。
 type OverviewPageViewProps = {
   summary: DashboardSummary;
 };

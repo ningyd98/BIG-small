@@ -5,6 +5,7 @@ import { useDashboardComparison } from "../api/queries";
 import { useSimulationRuns } from "../simulation/api/simulationQueries";
 import { MetricChart } from "../simulation/components/MetricChart";
 
+// 指标对比页优先使用仿真工作台运行记录，缺数据时才展示 artifact 来源提示。
 type ComparisonRow = {
   run_id: string;
   backend: string;

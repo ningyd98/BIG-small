@@ -22,6 +22,7 @@ import type {
   DashboardSafetyReviewNoteResponse,
 } from "../api/types";
 
+// 安全验收页允许记录复核备注，但硬件运动授权仍只能来自后端安全门。
 export function SafetyAcceptancePage() {
   const acceptance = useDashboardAcceptance();
   const [form] = Form.useForm<DashboardSafetyReviewNoteRequest>();

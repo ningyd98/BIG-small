@@ -1,5 +1,6 @@
 import { Card, Descriptions } from "antd";
 
+// 证据溯源卡片展示提交和源码树哈希，帮助区分当前运行结果与历史 artifact。
 type ProvenanceCardProps = {
   commit: string;
   sourceTreeHash: string;

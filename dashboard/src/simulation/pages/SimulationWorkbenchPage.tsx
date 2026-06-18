@@ -30,6 +30,7 @@ import { QueueStatusPanel } from "../components/QueueStatusPanel";
 import { RuntimeHealthCard } from "../components/RuntimeHealthCard";
 import type { ExperimentDraft } from "../domain/ExperimentDraft";
 
+// 仿真工作台只构造高层实验草案，提交后由后端 allowlist runner 和队列执行。
 type FormValues = {
   backend: "MOCK" | "MUJOCO" | "ISAAC_SIM" | "MOVEIT_DRY_RUN";
   scenario: string;

@@ -6,6 +6,7 @@ import {
 } from "@ant-design/icons";
 import { Tag, Tooltip } from "antd";
 
+// 状态徽标只做视觉归类，权威状态仍来自 API 字符串本身，不能在这里改写业务语义。
 type StatusBadgeProps = {
   status: string;
 };

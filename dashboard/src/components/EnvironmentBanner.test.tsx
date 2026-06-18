@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { EnvironmentBanner } from "./EnvironmentBanner";
 
+// 测试确保安全横幅用可读文本表达硬件边界，而不是只依赖颜色或图标。
 describe("EnvironmentBanner", () => {
   it("不用只靠颜色表达 dry-run 和硬件边界", () => {
     render(

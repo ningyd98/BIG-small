@@ -18,6 +18,7 @@ import type {
 } from "../api/types";
 import { JsonViewer } from "../components/JsonViewer";
 
+// 证据浏览页只通过后端 evidence API 读取相对路径，下载和对比都避免浏览器拼接本机路径。
 type EvidenceFilters = {
   status?: string;
   sort: string;

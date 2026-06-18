@@ -2,6 +2,7 @@ import { Card, Descriptions, Empty, Space, Spin, Table, Tag } from "antd";
 
 import { useDashboardRuntime, useDashboardSummary } from "../api/queries";
 
+// 任务执行页展示运行配置和活动实验，不提供控制器启用、轨迹发送或真实硬件入口。
 export function TaskExecutionPage() {
   const runtime = useDashboardRuntime();
   const summary = useDashboardSummary();

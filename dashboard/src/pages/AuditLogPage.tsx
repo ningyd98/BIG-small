@@ -2,6 +2,7 @@ import { Card, Empty, Table } from "antd";
 
 import { useDashboardAuditEvents } from "../api/queries";
 
+// 审计页读取后端事件流快照，保留 sequence 顺序，便于核对 WebSocket 与轮询事件。
 export function AuditLogPage() {
   const audit = useDashboardAuditEvents();
   return (
