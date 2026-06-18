@@ -1,5 +1,7 @@
 """中文注释审计脚本的回归测试，防止 UI 文案被误判为源码说明。"""
 
+import subprocess
+import sys
 from pathlib import Path
 
 from scripts.check_chinese_comments import _audit_file, _collect_files
@@ -32,6 +34,35 @@ def test_typescript_comment_counts_as_chinese_explanation(tmp_path: Path) -> Non
     result = _audit_file(path)
 
     assert result.has_chinese
+
+
+def test_english_only_comment_is_not_accepted_as_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "service.py"
+    path.write_text(
+        '"""Runtime helper that only documents behavior in English."""\n',
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert not result.has_chinese
+    assert result.explanation_comment_count == 1
+
+
+def test_cli_reports_english_only_comments_separately(tmp_path: Path) -> None:
+    path = tmp_path / "service.py"
+    path.write_text('"""English-only module comment."""\n', encoding="utf-8")
+
+    completed = subprocess.run(
+        [sys.executable, "scripts/check_chinese_comments.py", str(tmp_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 1
+    assert "只有非中文说明的文件" in completed.stdout
+    assert str(path) in completed.stdout
 
 
 def test_python_string_does_not_count_as_chinese_comment(tmp_path: Path) -> None:

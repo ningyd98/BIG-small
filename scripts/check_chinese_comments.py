@@ -40,6 +40,7 @@ XML_COMMENT_SUFFIXES = {".html", ".xml"}
 class CommentAuditResult:
     path: Path
     has_chinese: bool
+    explanation_comment_count: int
 
 
 def main() -> int:
@@ -64,6 +65,11 @@ def main() -> int:
     files = _collect_files([Path(value) for value in args.paths])
     results = [_audit_file(path) for path in files]
     missing = [result.path for result in results if not result.has_chinese]
+    english_only = [
+        result.path
+        for result in results
+        if not result.has_chinese and result.explanation_comment_count > 0
+    ]
 
     for result in results:
         status = "OK" if result.has_chinese else "MISSING"
@@ -73,7 +79,12 @@ def main() -> int:
         print("\n缺少中文说明的文件：")
         for path in missing:
             print(f"- {path}")
+        if english_only:
+            print("\n只有非中文说明的文件：")
+            for path in english_only:
+                print(f"- {path}")
         return 1
+    print(f"\n中文说明审计通过：files={len(results)} english_only=0 missing=0")
     return 0
 
 
@@ -89,8 +100,18 @@ def _collect_files(paths: list[Path]) -> list[Path]:
 
 def _audit_file(path: Path) -> CommentAuditResult:
     text = path.read_text(encoding="utf-8")
+    explanation_fragments = _extract_explanation_fragments(path, text)
+    comment_text = "\n".join(explanation_fragments)
+    return CommentAuditResult(
+        path=path,
+        has_chinese=_has_chinese(comment_text),
+        explanation_comment_count=len(explanation_fragments),
+    )
+
+
+def _extract_explanation_fragments(path: Path, text: str) -> list[str]:
     comment_text = _extract_explanation_text(path, text)
-    return CommentAuditResult(path=path, has_chinese=_has_chinese(comment_text))
+    return [fragment for fragment in comment_text.splitlines() if fragment.strip()]
 
 
 def _extract_explanation_text(path: Path, text: str) -> str:
