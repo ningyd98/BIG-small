@@ -91,6 +91,8 @@ FORBIDDEN_FIELDS = [
 
 
 class SimulationWorkbenchService:
+    """仿真工作台服务 facade，桥接 scenario registry、runtime 和 artifact 导出。"""
+
     def __init__(self, *, artifact_root: Path, event_stream: DashboardEventStream | None = None):
         self.artifact_root = artifact_root
         self.phase_root = artifact_root / "phase11"
@@ -121,6 +123,7 @@ class SimulationWorkbenchService:
         )
 
     def capabilities(self) -> SimulationCapabilitiesResponse:
+        """返回后端能力和 readiness，不把枚举存在误判为 READY。"""
         env = detect_environment()
         isaac_blockers = [str(item) for item in env.details.get("isaac_blockers", [])]
         mujoco_ready = bool(env.details.get("mujoco_version"))
@@ -209,14 +212,17 @@ class SimulationWorkbenchService:
         )
 
     def scenarios(self) -> ScenarioListResponse:
+        """从 scenario_registry 动态返回全部场景视图。"""
         return ScenarioListResponse(
             scenarios=[_scenario_view(item) for item in scenario_registry()]
         )
 
     def scenario(self, scenario_id: str) -> ScenarioDefinitionView:
+        """按场景 ID 返回单个场景视图。"""
         return _scenario_view(get_scenario(scenario_id))
 
     def parameter_schema(self) -> ParameterSchemaResponse:
+        """返回前端参数编辑器使用的权威枚举、边界和禁用字段。"""
         return ParameterSchemaResponse(
             authoritative_models=["ExperimentConfig", "ScenarioDefinition", "ExperimentDraft"],
             enums={
@@ -243,6 +249,7 @@ class SimulationWorkbenchService:
         )
 
     def validate(self, draft: ExperimentDraft) -> ValidationResponse:
+        """校验实验草稿并生成 manifest，但不启动任何运行。"""
         run_count = _run_count(draft)
         if run_count > MAX_BATCH_RUNS:
             raise ValueError(f"batch run count {run_count} exceeds limit {MAX_BATCH_RUNS}")
@@ -258,12 +265,15 @@ class SimulationWorkbenchService:
         )
 
     def list_runs(self) -> SimulationRunListResponse:
+        """列出持久化 runtime 中的仿真运行。"""
         return self.runtime.list_runs()
 
     def get_run(self, run_id: str) -> SimulationRunRecord:
+        """按 run_id 查询仿真运行记录。"""
         return self.runtime.get_run(run_id)
 
     def create_run(self, draft: ExperimentDraft) -> SimulationRunRecord:
+        """创建仿真运行并立即交给异步 runtime 队列。"""
         validation = self.validate(draft)
         return self.runtime.create_run(
             draft,
@@ -272,27 +282,35 @@ class SimulationWorkbenchService:
         )
 
     def cancel_run(self, run_id: str) -> SimulationRunRecord:
+        """请求取消单个仿真运行，保留已有 evidence。"""
         return self.runtime.cancel_run(run_id)
 
     def retry_run(self, run_id: str) -> SimulationRunRecord:
+        """重试失败或可恢复的仿真运行。"""
         return self.runtime.retry_run(run_id)
 
     def clone_run(self, run_id: str) -> ReproductionResponse:
+        """从历史 run 克隆复现实验草稿。"""
         return self.runtime.clone_run(run_id)
 
     def reproduce_run(self, run_id: str) -> ReproductionResponse:
+        """从持久化 manifest 构造复现实验响应。"""
         return self.runtime.reproduce_run(run_id)
 
     def events_for(self, run_id: str) -> SimulationEventsResponse:
+        """读取 run 的持久化时间线事件。"""
         return self.runtime.events_for(run_id)
 
     def metrics_for(self, run_id: str) -> SimulationMetricsResponse:
+        """读取 run 的持久化指标。"""
         return self.runtime.metrics_for(run_id)
 
     def artifacts_for(self, run_id: str) -> SimulationArtifactsResponse:
+        """读取 run 的 artifact 相对路径。"""
         return self.runtime.artifacts_for(run_id)
 
     def create_batch(self, draft: ExperimentDraft) -> BatchRecord:
+        """创建批量实验并按 manifest 派生多个异步 run。"""
         validation = self.validate(draft)
         return self.runtime.create_batch(
             draft,
@@ -301,18 +319,23 @@ class SimulationWorkbenchService:
         )
 
     def get_batch(self, batch_id: str) -> BatchRecord:
+        """按 batch_id 查询批量实验记录。"""
         return self.runtime.get_batch(batch_id)
 
     def batch_runs(self, batch_id: str) -> SimulationRunListResponse:
+        """列出指定 batch 下的全部 run。"""
         return self.runtime.batch_runs(batch_id)
 
     def cancel_batch(self, batch_id: str) -> BatchRecord:
+        """请求取消批量实验中未完成的 run。"""
         return self.runtime.cancel_batch(batch_id)
 
     def retry_failed_batch(self, batch_id: str) -> BatchRecord:
+        """重试 batch 中失败且可重试的 run。"""
         return self.runtime.retry_failed_batch(batch_id)
 
     def compare(self, request: ComparisonRequest) -> ComparisonResponse:
+        """根据已有 run 指标计算模式或后端对比统计。"""
         runs: list[SimulationRunRecord] = []
         metrics: list[SimulationMetric] = []
         for run_id in request.run_ids:
@@ -352,6 +375,7 @@ class SimulationWorkbenchService:
         return response
 
     def export(self, request: ExportRequest) -> ExportResponse:
+        """导出 metrics CSV 或 manifest JSON，并对预览内容脱敏。"""
         export_id = "export-" + stable_hash(request.model_dump(mode="json"))[:12]
         self.exports_root.mkdir(parents=True, exist_ok=True)
         if request.export_type == "Metrics CSV":
@@ -793,6 +817,7 @@ def _metrics_from_result(
     source = "ExperimentRunner"
 
     def metric(name: str, value: int | float | str | bool | Any, unit: str) -> SimulationMetric:
+        """把 ExperimentRunner 字段转换为统一 SimulationMetric。"""
         return _metric(name, value, unit, source, backend, scenario_id, seed, control_mode)
 
     return [
@@ -839,6 +864,7 @@ def _metrics_from_trial(
     source = "MuJoCoPhysicalTrial"
 
     def metric(name: str, value: int | float | str | bool | Any, unit: str) -> SimulationMetric:
+        """把 MuJoCo trial 字段转换为统一 SimulationMetric。"""
         return _metric(name, value, unit, source, backend, scenario_id, seed, control_mode)
 
     return [
@@ -1084,6 +1110,7 @@ def _relative_delta(metrics: list[SimulationMetric]) -> float:
 
 
 def build_cross_backend_preview(scenario_id: str, seed: int) -> dict[str, object]:
+    """构造跨后端预览结果，Isaac 不可用时保持 BLOCKED 语义。"""
     env = detect_environment()
     return compare_backend_results(
         scenario_id=scenario_id,
@@ -1093,6 +1120,7 @@ def build_cross_backend_preview(scenario_id: str, seed: int) -> dict[str, object
 
 
 def parse_draft(payload: dict[str, Any]) -> ExperimentDraft:
+    """将 API payload 解析为 ExperimentDraft，保留 Pydantic 校验错误。"""
     try:
         return ExperimentDraft.model_validate(payload)
     except ValidationError:

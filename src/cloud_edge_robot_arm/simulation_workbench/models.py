@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SimulationBackend(StrEnum):
+    """仿真后端枚举，严格区分 Mock、MuJoCo、Isaac 和 MoveIt dry-run。"""
+
     MOCK = "MOCK"
     MUJOCO = "MUJOCO"
     ISAAC_SIM = "ISAAC_SIM"
@@ -21,6 +23,8 @@ class SimulationBackend(StrEnum):
 
 
 class SimulationRunType(StrEnum):
+    """仿真运行类型，覆盖单次、批量、扫描、后端配对和模式对比。"""
+
     SINGLE = "SINGLE"
     BATCH = "BATCH"
     SWEEP = "SWEEP"
@@ -29,6 +33,8 @@ class SimulationRunType(StrEnum):
 
 
 class SimulationRunStatus(StrEnum):
+    """仿真任务状态机枚举，包含队列、执行、取消、超时和恢复状态。"""
+
     CREATED = "CREATED"
     QUEUED = "QUEUED"
     VALIDATING = "VALIDATING"
@@ -48,6 +54,8 @@ class SimulationRunStatus(StrEnum):
 
 
 class SimulationRunnerKind(StrEnum):
+    """安全 runner allowlist，禁止前端提交任意脚本、shell 或可执行文件。"""
+
     MOCK_SCENARIO = "MOCK_SCENARIO"
     MUJOCO_SCENARIO = "MUJOCO_SCENARIO"
     PHASE8_BATCH = "PHASE8_BATCH"
@@ -58,6 +66,8 @@ class SimulationRunnerKind(StrEnum):
 
 
 class BackendReadiness(StrEnum):
+    """后端可用性状态，区分 READY、降级、环境阻塞和未配置。"""
+
     READY = "READY"
     DEGRADED = "DEGRADED"
     BLOCKED_BY_ENV = "BLOCKED_BY_ENV"
@@ -65,6 +75,8 @@ class BackendReadiness(StrEnum):
 
 
 class ScenarioCategory(StrEnum):
+    """场景分类枚举，用于前端筛选故障、网络、安全和恢复场景。"""
+
     NORMAL = "NORMAL"
     SCENE_CHANGE = "SCENE_CHANGE"
     PERCEPTION = "PERCEPTION"
@@ -78,6 +90,8 @@ class ScenarioCategory(StrEnum):
 
 
 class NetworkDraft(BaseModel):
+    """网络配置草稿，描述延迟、抖动、丢包和带宽上限。"""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = "NORMAL"
@@ -88,6 +102,8 @@ class NetworkDraft(BaseModel):
 
 
 class FaultProfileDraft(BaseModel):
+    """故障注入配置草稿，只允许结构化参数，不允许任意执行字段。"""
+
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="none", min_length=1, max_length=80)
@@ -95,6 +111,8 @@ class FaultProfileDraft(BaseModel):
 
 
 class DomainRandomizationDraft(BaseModel):
+    """域随机化配置草稿，控制仿真扰动是否启用及其等级。"""
+
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
@@ -102,6 +120,8 @@ class DomainRandomizationDraft(BaseModel):
 
 
 class ExperimentDraft(BaseModel):
+    """前端提交的高层实验草稿，不包含机器人低层控制命令。"""
+
     model_config = ConfigDict(extra="forbid")
 
     backend: SimulationBackend
@@ -119,6 +139,7 @@ class ExperimentDraft(BaseModel):
 
     @model_validator(mode="after")
     def reject_forbidden_parameters(self) -> ExperimentDraft:
+        """拒绝 shell、路径、模块、环境变量和非 allowlist 控制模式。"""
         forbidden = {
             "shell",
             "command",
@@ -143,6 +164,8 @@ class ExperimentDraft(BaseModel):
 
 
 class ExperimentManifest(BaseModel):
+    """规范化实验 manifest，记录来源 commit、tree hash 和复现哈希。"""
+
     manifest_id: str
     schema_version: str = "phase11.simulation.v1"
     normalized_config: dict[str, Any]
@@ -154,6 +177,8 @@ class ExperimentManifest(BaseModel):
 
 
 class BatchProgress(BaseModel):
+    """批量任务进度统计，记录各状态计数和整体进度比例。"""
+
     total: int = Field(ge=0)
     queued: int = Field(ge=0)
     running: int = Field(ge=0)
@@ -167,6 +192,8 @@ class BatchProgress(BaseModel):
 
 
 class SimulationMetric(BaseModel):
+    """仿真指标记录，绑定后端、场景、seed、控制模式和聚合方式。"""
+
     name: str
     value: int | float | str | bool
     unit: str = ""
@@ -180,6 +207,8 @@ class SimulationMetric(BaseModel):
 
 
 class TimelineEvent(BaseModel):
+    """运行时间线事件，记录序列、来源、严重级别和虚拟时间。"""
+
     sequence: int
     event_type: str
     source: str
@@ -190,6 +219,8 @@ class TimelineEvent(BaseModel):
 
 
 class ScenarioDefinitionView(BaseModel):
+    """面向前端的场景定义视图，暴露故障、预期不变量和后端支持。"""
+
     scenario_id: str
     description: str
     category: ScenarioCategory
@@ -204,6 +235,8 @@ class ScenarioDefinitionView(BaseModel):
 
 
 class BackendCapability(BaseModel):
+    """单个后端能力描述，包含 readiness、支持模式、runner 和限制。"""
+
     backend: SimulationBackend
     readiness: BackendReadiness
     supported_modes: list[str]
@@ -216,6 +249,8 @@ class BackendCapability(BaseModel):
 
 
 class SimulationCapabilitiesResponse(BaseModel):
+    """仿真工作台能力响应，包含全部后端和硬件安全声明。"""
+
     schema_version: str = "phase11.simulation.v1"
     backends: list[BackendCapability]
     supported_modes: list[str]
@@ -229,10 +264,14 @@ class SimulationCapabilitiesResponse(BaseModel):
 
 
 class ScenarioListResponse(BaseModel):
+    """场景列表响应，返回 scenario_registry 派生的场景视图。"""
+
     scenarios: list[ScenarioDefinitionView]
 
 
 class ParameterSchemaResponse(BaseModel):
+    """参数 schema 响应，声明权威模型、枚举、数值边界和禁用字段。"""
+
     schema_version: str = "phase11.simulation.v1"
     authoritative_models: list[str]
     enums: dict[str, list[str]]
@@ -241,6 +280,8 @@ class ParameterSchemaResponse(BaseModel):
 
 
 class ValidationResponse(BaseModel):
+    """实验草稿校验结果，返回 manifest、run 数、blocker 和 warning。"""
+
     valid: bool
     manifest: ExperimentManifest
     run_count: int
@@ -249,6 +290,8 @@ class ValidationResponse(BaseModel):
 
 
 class SimulationRunRecord(BaseModel):
+    """仿真运行记录，统一运行状态、队列信息、artifact 和硬件声明。"""
+
     run_id: str
     job_id: str = ""
     queue_position: int = 0
@@ -281,22 +324,32 @@ class SimulationRunRecord(BaseModel):
 
 
 class SimulationRunListResponse(BaseModel):
+    """仿真运行列表响应。"""
+
     runs: list[SimulationRunRecord]
 
 
 class SimulationEventsResponse(BaseModel):
+    """仿真事件列表响应。"""
+
     events: list[TimelineEvent]
 
 
 class SimulationMetricsResponse(BaseModel):
+    """仿真指标列表响应。"""
+
     metrics: list[SimulationMetric]
 
 
 class SimulationArtifactsResponse(BaseModel):
+    """仿真 artifact 路径响应，只返回相对路径。"""
+
     artifacts: dict[str, str]
 
 
 class ReproductionResponse(BaseModel):
+    """复现实验响应，携带复现草稿、环境匹配状态和 warning。"""
+
     draft: ExperimentDraft
     environment_match: bool
     warnings: list[str] = Field(default_factory=list)
@@ -304,6 +357,8 @@ class ReproductionResponse(BaseModel):
 
 
 class BatchRecord(BaseModel):
+    """批量实验记录，保存 manifest、进度、run IDs 和安全声明。"""
+
     batch_id: str
     manifest: ExperimentManifest
     progress: BatchProgress
@@ -316,6 +371,8 @@ class BatchRecord(BaseModel):
 
 
 class ComparisonRequest(BaseModel):
+    """对比请求，指定对比类型、run IDs 和可选 paired key。"""
+
     model_config = ConfigDict(extra="forbid")
 
     comparison_type: str
@@ -324,6 +381,8 @@ class ComparisonRequest(BaseModel):
 
 
 class ComparisonResponse(BaseModel):
+    """对比响应，返回统计结果、参与指标和 warning。"""
+
     comparison_id: str
     comparison_type: str
     statistics: dict[str, Any]
@@ -332,6 +391,8 @@ class ComparisonResponse(BaseModel):
 
 
 class ExportRequest(BaseModel):
+    """导出请求，指定导出类型、runs、batch 或 comparison。"""
+
     model_config = ConfigDict(extra="forbid")
 
     export_type: str
@@ -341,6 +402,8 @@ class ExportRequest(BaseModel):
 
 
 class ExportResponse(BaseModel):
+    """导出响应，返回相对路径、格式、脱敏标记和预览文本。"""
+
     export_id: str
     format: str
     relative_path: str
