@@ -12,15 +12,27 @@ from typing import Any, Protocol, cast
 
 
 class OllamaTransport(Protocol):
-    def get_version(self) -> dict[str, Any]: ...
+    """Ollama 传输协议，便于测试注入 fake server。"""
 
-    def list_models(self) -> list[dict[str, Any]]: ...
+    def get_version(self) -> dict[str, Any]:
+        """读取 Ollama daemon 版本。"""
+        ...
 
-    def show_model(self, model_name: str) -> dict[str, Any]: ...
+    def list_models(self) -> list[dict[str, Any]]:
+        """列出已安装模型。"""
+        ...
 
-    def pull_model(self, model_name: str) -> list[dict[str, Any]]: ...
+    def show_model(self, model_name: str) -> dict[str, Any]:
+        """读取指定模型详情。"""
+        ...
 
-    def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]: ...
+    def pull_model(self, model_name: str) -> list[dict[str, Any]]:
+        """通过 HTTP pull 流下载指定模型。"""
+        ...
+
+    def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+        """调用 OpenAI-compatible chat completions 接口。"""
+        ...
 
 
 class OllamaHttpClient:
@@ -31,16 +43,24 @@ class OllamaHttpClient:
         self.timeout_s = timeout_s
 
     def get_version(self) -> dict[str, Any]:
+        """读取本地 Ollama 版本。"""
+
         return self._json("GET", "/api/version")
 
     def list_models(self) -> list[dict[str, Any]]:
+        """返回 Ollama `/api/tags` 中的模型列表。"""
+
         payload = self._json("GET", "/api/tags")
         return list(payload.get("models", []))
 
     def show_model(self, model_name: str) -> dict[str, Any]:
+        """返回单个模型的详情元数据。"""
+
         return self._json("POST", "/api/show", {"model": model_name})
 
     def pull_model(self, model_name: str) -> list[dict[str, Any]]:
+        """拉取模型并解析 Ollama NDJSON 进度事件。"""
+
         response = self._raw("POST", "/api/pull", {"model": model_name, "stream": True})
         rows: list[dict[str, Any]] = []
         for line in response.splitlines():
@@ -49,6 +69,8 @@ class OllamaHttpClient:
         return rows
 
     def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+        """向本地模型发送 chat completion 测试请求。"""
+
         return self._json(
             "POST",
             "/v1/chat/completions",

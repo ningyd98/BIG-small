@@ -23,7 +23,7 @@ def load_small_model_catalog(
     catalog_path: Path = DEFAULT_CATALOG_PATH,
     installed_models: set[str] | None = None,
 ) -> list[SmallModelCatalogItem]:
-    """Load catalog entries from YAML and annotate installed state."""
+    """读取小模型目录并标记 Ollama 已安装状态。"""
 
     installed = installed_models or set()
     if not catalog_path.exists():

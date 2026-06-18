@@ -51,6 +51,8 @@ class ModelControlService:
         max_retries: int = 2,
         json_mode: bool = True,
     ) -> ModelProviderProfile:
+        """创建模型 profile，并把 API key 写入 SecretStore 而不是 SQLite。"""
+
         safe_url = self.endpoint_policy.validate(provider_kind, base_url)
         now = datetime.now(UTC)
         profile = ModelProviderProfile(
@@ -86,6 +88,8 @@ class ModelControlService:
         model_name: str | None = None,
         api_key: str | None = None,
     ) -> ModelProviderProfile:
+        """更新 profile 配置，必要时轮换或清除 secret。"""
+
         current = self.repository.get_profile(profile_id)
         provider_kind = current.provider_kind
         safe_url = (
@@ -120,12 +124,18 @@ class ModelControlService:
         return self.repository.update_profile(updated)
 
     def get_profile(self, profile_id: str) -> ModelProviderProfile:
+        """读取 profile 并标记是否为当前 active。"""
+
         return self._with_active_flag(self.repository.get_profile(profile_id))
 
     def list_profiles(self) -> list[ModelProviderProfile]:
+        """列出所有 profile，并附加 active 标记。"""
+
         return [self._with_active_flag(profile) for profile in self.repository.list_profiles()]
 
     def delete_profile(self, profile_id: str) -> None:
+        """删除非 active profile，同时清理对应 secret。"""
+
         if self.repository.get_active_profile_id() == profile_id:
             raise ValueError("active_profile_delete_rejected")
         self.repository.delete_profile(profile_id)
@@ -134,6 +144,8 @@ class ModelControlService:
     def activate_profile(
         self, profile_id: str, *, expected_config_version: int | None = None
     ) -> PlannerRuntimeStatus:
+        """按版本可选 CAS 激活 profile，避免过期配置被误切换。"""
+
         profile = self.repository.get_profile(profile_id)
         if (
             expected_config_version is not None
@@ -146,6 +158,8 @@ class ModelControlService:
         return self.runtime_status()
 
     def runtime_status(self) -> PlannerRuntimeStatus:
+        """返回当前 active planner 的脱敏运行状态。"""
+
         active_id = self.repository.get_active_profile_id()
         if not active_id:
             return PlannerRuntimeStatus()
@@ -160,6 +174,8 @@ class ModelControlService:
         )
 
     def ollama_status(self, transport: OllamaTransport) -> dict[str, Any]:
+        """探测 Ollama 是否可达，并只返回脱敏错误类型。"""
+
         try:
             version = transport.get_version()
         except Exception as exc:
@@ -167,12 +183,16 @@ class ModelControlService:
         return {"reachable": True, "version": str(version.get("version", ""))}
 
     def ollama_models(self, transport: OllamaTransport) -> list[dict[str, Any]]:
+        """列出 Ollama 已安装模型；不可达时返回空列表。"""
+
         try:
             return transport.list_models()
         except Exception:
             return []
 
     def small_model_catalog(self, transport: OllamaTransport | None = None) -> list[dict[str, Any]]:
+        """返回小模型目录，并用 Ollama 实时列表标记 installed。"""
+
         installed: set[str] = set()
         if transport is not None:
             try:
@@ -191,6 +211,8 @@ class ModelControlService:
         transport: OllamaTransport,
         requested_by: str = "",
     ) -> ModelDownloadJob:
+        """启动一次 Ollama 模型下载任务，只接受模型名而不是任意 URL。"""
+
         _validate_model_name(model_name)
         now = datetime.now(UTC)
         job = ModelDownloadJob(
@@ -234,6 +256,8 @@ class ModelControlService:
         return self.repository.save_download_job(job)
 
     def list_downloads(self) -> list[ModelDownloadJob]:
+        """列出模型下载任务历史。"""
+
         return self.repository.list_download_jobs()
 
     def activate_ollama_model(
@@ -242,6 +266,8 @@ class ModelControlService:
         model_name: str,
         transport: OllamaTransport,
     ) -> PlannerRuntimeStatus:
+        """校验本地模型已安装且可 chat 后激活 Ollama profile。"""
+
         _validate_model_name(model_name)
         installed = {str(item.get("name", "")) for item in transport.list_models()}
         if model_name not in installed:
@@ -263,6 +289,8 @@ class ModelControlService:
         control_mode: str,
         transport: OllamaTransport | None = None,
     ) -> dict[str, Any]:
+        """执行 planner dry-run，明确 dispatch=false 且 hardware_execution=false。"""
+
         active_id = self.repository.get_active_profile_id()
         profile = self.repository.get_profile(active_id) if active_id else None
         provider = profile.provider_kind if profile else PlannerProviderKind.MOCK

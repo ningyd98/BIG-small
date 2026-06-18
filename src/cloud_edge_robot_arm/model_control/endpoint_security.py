@@ -29,6 +29,8 @@ class EndpointSecurityPolicy:
     }
 
     def validate(self, provider_kind: PlannerProviderKind, base_url: str) -> str:
+        """校验 provider endpoint 并返回规范化后的安全 URL。"""
+
         if provider_kind in {PlannerProviderKind.MOCK, PlannerProviderKind.RULE_BASED}:
             return ""
         parsed = urlparse(base_url)

@@ -12,13 +12,21 @@ class SecretStore(Protocol):
 
     kind: SecretStoreKind
 
-    def set_secret(self, profile_id: str, value: str) -> None: ...
+    def set_secret(self, profile_id: str, value: str) -> None:
+        """保存单个 profile 的 secret。"""
+        ...
 
-    def get_secret(self, profile_id: str) -> str | None: ...
+    def get_secret(self, profile_id: str) -> str | None:
+        """读取单个 profile 的 secret。"""
+        ...
 
-    def delete_secret(self, profile_id: str) -> None: ...
+    def delete_secret(self, profile_id: str) -> None:
+        """删除单个 profile 的 secret。"""
+        ...
 
-    def has_secret(self, profile_id: str) -> bool: ...
+    def has_secret(self, profile_id: str) -> bool:
+        """判断 profile 是否已配置 secret。"""
+        ...
 
 
 class InMemorySecretStore:
@@ -30,13 +38,21 @@ class InMemorySecretStore:
         self._secrets: dict[str, str] = {}
 
     def set_secret(self, profile_id: str, value: str) -> None:
+        """在进程内保存 secret，进程退出后自动丢失。"""
+
         self._secrets[profile_id] = value
 
     def get_secret(self, profile_id: str) -> str | None:
+        """读取进程内 secret。"""
+
         return self._secrets.get(profile_id)
 
     def delete_secret(self, profile_id: str) -> None:
+        """删除进程内 secret。"""
+
         self._secrets.pop(profile_id, None)
 
     def has_secret(self, profile_id: str) -> bool:
+        """检查进程内是否存在 secret。"""
+
         return profile_id in self._secrets

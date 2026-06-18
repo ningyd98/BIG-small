@@ -26,6 +26,8 @@ class SQLiteModelProfileRepository:
         self._initialize()
 
     def create_profile(self, profile: ModelProviderProfile) -> ModelProviderProfile:
+        """创建一条模型 provider profile，只持久化脱敏后的配置。"""
+
         self._initialize()
         with self._connect() as conn:
             conn.execute(
@@ -45,6 +47,8 @@ class SQLiteModelProfileRepository:
         return self.get_profile(profile.profile_id)
 
     def update_profile(self, profile: ModelProviderProfile) -> ModelProviderProfile:
+        """更新模型 provider profile，并保持 API key 不进入 SQLite。"""
+
         self._initialize()
         with self._connect() as conn:
             conn.execute(
@@ -63,6 +67,8 @@ class SQLiteModelProfileRepository:
         return self.get_profile(profile.profile_id)
 
     def get_profile(self, profile_id: str) -> ModelProviderProfile:
+        """按 profile id 读取模型配置，不返回任何明文 secret。"""
+
         self._initialize()
         with self._connect() as conn:
             row = conn.execute(
@@ -74,6 +80,8 @@ class SQLiteModelProfileRepository:
         return ModelProviderProfile.model_validate(json.loads(str(row["payload_json"])))
 
     def list_profiles(self) -> list[ModelProviderProfile]:
+        """列出所有模型配置，结果仍保持脱敏。"""
+
         self._initialize()
         with self._connect() as conn:
             rows = conn.execute(
@@ -85,11 +93,15 @@ class SQLiteModelProfileRepository:
         ]
 
     def delete_profile(self, profile_id: str) -> None:
+        """删除指定 profile 的非敏感配置记录。"""
+
         self._initialize()
         with self._connect() as conn:
             conn.execute("DELETE FROM model_provider_profiles WHERE profile_id = ?", (profile_id,))
 
     def get_active_profile_id(self) -> str:
+        """读取当前 active planner profile id。"""
+
         self._initialize()
         with self._connect() as conn:
             row = conn.execute(
@@ -98,6 +110,8 @@ class SQLiteModelProfileRepository:
         return str(row["value"]) if row else ""
 
     def set_active_profile_id(self, profile_id: str) -> None:
+        """原子写入当前 active planner profile id。"""
+
         self._initialize()
         with self._connect() as conn:
             conn.execute(
@@ -112,6 +126,8 @@ class SQLiteModelProfileRepository:
             )
 
     def save_download_job(self, job: ModelDownloadJob) -> ModelDownloadJob:
+        """保存 Ollama 下载任务快照，供断线后继续查询进度。"""
+
         self._initialize()
         now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
@@ -134,6 +150,8 @@ class SQLiteModelProfileRepository:
         return self.get_download_job(job.download_id)
 
     def get_download_job(self, download_id: str) -> ModelDownloadJob:
+        """按下载 id 读取模型下载任务。"""
+
         self._initialize()
         with self._connect() as conn:
             row = conn.execute(
@@ -145,6 +163,8 @@ class SQLiteModelProfileRepository:
         return ModelDownloadJob.model_validate(json.loads(str(row["payload_json"])))
 
     def list_download_jobs(self) -> list[ModelDownloadJob]:
+        """按创建时间倒序列出模型下载任务。"""
+
         self._initialize()
         with self._connect() as conn:
             rows = conn.execute(
@@ -242,6 +262,8 @@ def _profile_payload(profile: ModelProviderProfile) -> str:
 
 
 def default_profile(provider_kind: PlannerProviderKind) -> ModelProviderProfile:
+    """为测试和首次启动构造不含 secret 的默认 profile。"""
+
     return ModelProviderProfile(
         profile_id="default-" + provider_kind.value.lower(),
         display_name=provider_kind.value,

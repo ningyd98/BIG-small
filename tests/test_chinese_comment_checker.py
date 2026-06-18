@@ -1,10 +1,38 @@
 """中文注释审计脚本的回归测试，防止 UI 文案被误判为源码说明。"""
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
 
 from scripts.check_chinese_comments import _audit_file, _collect_files
+
+
+def _has_chinese(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _public_python_api_without_chinese_docstrings(root: Path) -> list[str]:
+    missing: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if node.name.startswith("_"):
+                continue
+            docstring = ast.get_docstring(node, clean=False) or ""
+            if not _has_chinese(docstring):
+                missing.append(f"{path}:{node.lineno}:{node.name}")
+    return missing
+
+
+def test_model_control_public_api_has_chinese_docstrings() -> None:
+    missing = _public_python_api_without_chinese_docstrings(
+        Path("src/cloud_edge_robot_arm/model_control")
+    )
+
+    assert missing == []
 
 
 def test_typescript_ui_text_does_not_count_as_chinese_comment(tmp_path: Path) -> None:

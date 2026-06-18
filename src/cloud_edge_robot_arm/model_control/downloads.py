@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 
 class ModelDownloadStatus(StrEnum):
+    """Ollama 模型下载任务状态。"""
+
     CREATED = "CREATED"
     QUEUED = "QUEUED"
     CONNECTING = "CONNECTING"
@@ -22,6 +24,11 @@ class ModelDownloadStatus(StrEnum):
 
 
 class ModelDownloadJob(BaseModel):
+    """本地模型下载任务快照。
+
+    只记录模型名、进度和错误摘要；模型二进制仍由 Ollama 自己管理。
+    """
+
     download_id: str
     provider: str = "OLLAMA"
     model_name: str
