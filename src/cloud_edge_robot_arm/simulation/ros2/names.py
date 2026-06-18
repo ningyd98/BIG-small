@@ -1,3 +1,5 @@
+"""ROS2 名称约定，集中管理 topic、frame 和 namespace。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,5 @@
+"""ROS2 QoS 配置，统一仿真桥接的可靠性和队列策略。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

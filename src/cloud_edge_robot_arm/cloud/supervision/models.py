@@ -1,4 +1,6 @@
-"""Phase 5 supervision data models.
+"""结构化数据模型，作为 API、测试和服务之间的稳定契约。
+
+Phase 5 supervision data models.
 
 Periodic Cloud Supervisory Control (PCSC):
 - SupervisoryDecision — the structured output of each supervision cycle

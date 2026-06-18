@@ -1,3 +1,5 @@
+"""评估收集器，将 run 指标、事件和摘要写入 artifact。"""
+
 from __future__ import annotations
 
 import csv

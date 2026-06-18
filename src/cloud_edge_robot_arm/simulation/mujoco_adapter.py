@@ -1,3 +1,5 @@
+"""MuJoCo 适配层，把通用仿真接口映射到 MuJoCo 后端。"""
+
 from __future__ import annotations
 
 from importlib.util import find_spec

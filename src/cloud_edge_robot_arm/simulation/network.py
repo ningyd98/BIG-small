@@ -1,3 +1,5 @@
+"""网络仿真模型，描述延迟、抖动、丢包和带宽限制。"""
+
 from __future__ import annotations
 
 import random

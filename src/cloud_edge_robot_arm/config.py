@@ -1,3 +1,5 @@
+"""项目级配置模型和加载入口，集中管理运行时默认值和路径约定。"""
+
 from __future__ import annotations
 
 from collections.abc import Mapping

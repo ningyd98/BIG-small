@@ -1,4 +1,6 @@
-"""Phase 4 cloud planning data models.
+"""结构化数据模型，作为 API、测试和服务之间的稳定契约。
+
+Phase 4 cloud planning data models.
 
 These models define the cloud-side contract for planning requests, scene
 understanding, planner adapters, and planning outcomes.  The cloud NEVER

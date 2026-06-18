@@ -1,3 +1,5 @@
+"""provenance 生成器，记录提交、环境和配置哈希以支持复现。"""
+
 from __future__ import annotations
 
 

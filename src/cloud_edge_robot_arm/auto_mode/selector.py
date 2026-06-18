@@ -1,3 +1,5 @@
+"""AUTO 模式选择器，根据风险、缓存和合同状态确定控制模式。"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

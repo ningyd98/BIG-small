@@ -1,3 +1,5 @@
+"""物理仿真机器人适配器，统一仿真后端与技能执行接口。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

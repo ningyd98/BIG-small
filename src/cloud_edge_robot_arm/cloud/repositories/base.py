@@ -1,4 +1,7 @@
-"""Abstract base for cloud planning repositories."""
+"""基础仓储协议，定义持久化层必须满足的最小方法。
+
+Abstract base for cloud planning repositories.
+"""
 
 from __future__ import annotations
 

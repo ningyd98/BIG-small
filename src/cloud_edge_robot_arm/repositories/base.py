@@ -1,3 +1,5 @@
+"""基础仓储协议，定义持久化层必须满足的最小方法。"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

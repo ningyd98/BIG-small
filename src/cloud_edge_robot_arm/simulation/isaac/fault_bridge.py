@@ -1,3 +1,5 @@
+"""Isaac 故障桥接器，把统一故障配置映射到 Isaac 场景。"""
+
 from __future__ import annotations
 
 

@@ -1,3 +1,5 @@
+"""仿真时钟工具，让测试和运行时使用可控时间推进。"""
+
 from __future__ import annotations
 
 import heapq

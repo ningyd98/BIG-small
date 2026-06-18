@@ -1,3 +1,5 @@
+"""日志配置工具，避免各模块重复初始化 handler 或泄露敏感路径。"""
+
 from __future__ import annotations
 
 import json

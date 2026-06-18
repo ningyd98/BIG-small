@@ -1,3 +1,5 @@
+"""Isaac 通信协议模型，限制前端或服务只能发送受控仿真消息。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

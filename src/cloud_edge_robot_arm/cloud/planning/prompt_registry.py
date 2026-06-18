@@ -1,4 +1,6 @@
-"""Prompt registry for cloud planner prompts.
+"""提示词注册表，集中管理规划提示和版本，避免散落硬编码。
+
+Prompt registry for cloud planner prompts.
 
 Every prompt has a version, hash, and template.  Every model call records
 the prompt version used, enabling full traceability.

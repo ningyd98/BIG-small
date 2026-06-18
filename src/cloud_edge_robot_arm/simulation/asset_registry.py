@@ -1,3 +1,5 @@
+"""仿真资产注册表，解析场景资源并保持路径受控。"""
+
 from __future__ import annotations
 
 import hashlib

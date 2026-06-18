@@ -1,3 +1,5 @@
+"""结构化数据模型，作为 API、测试和服务之间的稳定契约。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

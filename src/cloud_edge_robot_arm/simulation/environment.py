@@ -1,3 +1,5 @@
+"""仿真环境探测，报告 MuJoCo/Isaac/ROS2 可用性和 blocker。"""
+
 from __future__ import annotations
 
 import importlib.metadata

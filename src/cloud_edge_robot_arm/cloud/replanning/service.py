@@ -1,4 +1,7 @@
-"""Local replanning service — cloud-side pipeline for edge-requested replanning."""
+"""业务服务编排层，连接仓储、规则和外部适配器。
+
+Local replanning service — cloud-side pipeline for edge-requested replanning.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""Cloud planning pipeline: from natural-language task to validated, dispatched TaskContract."""
+"""云端初始规划包，负责把高层请求转换成受校验的 TaskContract。
+
+Cloud planning pipeline: from natural-language task to validated, dispatched TaskContract.
+"""
 
 from __future__ import annotations
 

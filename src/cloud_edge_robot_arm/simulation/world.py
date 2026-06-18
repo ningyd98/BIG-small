@@ -1,3 +1,5 @@
+"""仿真世界状态模型，记录对象、目标、故障和场景约束。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

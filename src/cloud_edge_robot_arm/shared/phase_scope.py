@@ -1,3 +1,5 @@
+"""Phase 范围辅助工具，避免验收脚本误触不属于当前阶段的能力。"""
+
 from __future__ import annotations
 
 ASYNC_RUNTIME = "asyncio"

@@ -1,3 +1,5 @@
+"""阶段验证入口，汇总检查结果并写入验收 evidence。"""
+
 from __future__ import annotations
 
 import json

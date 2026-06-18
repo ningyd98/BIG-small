@@ -1,3 +1,5 @@
+"""风险评估器，把任务、场景和遥测转换为结构化风险等级。"""
+
 from __future__ import annotations
 
 import hashlib

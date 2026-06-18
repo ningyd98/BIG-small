@@ -1,4 +1,6 @@
-"""EdgeGateway Protocol and InProcessEdgeGateway.
+"""云边网关服务，统一处理边缘侧事件、确认和待发送消息。
+
+EdgeGateway Protocol and InProcessEdgeGateway.
 
 The EdgeGateway is the cloud-side dispatch channel.  The cloud must NEVER
 assume that "generated successfully" == "executed successfully" — the edge

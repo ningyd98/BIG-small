@@ -1,4 +1,7 @@
-"""Apply validated local replan results to the active TaskContract."""
+"""重规划应用服务，负责版本、检查点和安全前置条件校验。
+
+Apply validated local replan results to the active TaskContract.
+"""
 
 from __future__ import annotations
 

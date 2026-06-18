@@ -1,3 +1,5 @@
+"""AUTO 模式转换服务，记录切换原因并限制非法模式跳转。"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

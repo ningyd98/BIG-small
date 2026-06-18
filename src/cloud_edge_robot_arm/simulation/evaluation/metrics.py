@@ -1,3 +1,5 @@
+"""仿真指标模型和计算函数，保证单位、来源和聚合方式明确。"""
+
 from __future__ import annotations
 
 import hashlib

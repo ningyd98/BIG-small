@@ -1,4 +1,6 @@
-"""Replanner adapters — Mock, RuleBased, and OpenAICompatible.
+"""重规划适配器，定义本地规则和云端模型重规划的统一接口。
+
+Replanner adapters — Mock, RuleBased, and OpenAICompatible.
 
 Extends the PlannerAdapter pattern from cloud/planning/adapter.py.
 ReplannerAdapter operates on LocalReplanningRequest → LocalReplanningResponse.

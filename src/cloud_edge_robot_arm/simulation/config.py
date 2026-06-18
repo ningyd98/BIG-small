@@ -1,3 +1,5 @@
+"""simulation 模块实现，补充该层业务逻辑的中文说明。"""
+
 from __future__ import annotations
 
 from enum import StrEnum

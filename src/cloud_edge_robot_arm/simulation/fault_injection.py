@@ -1,3 +1,5 @@
+"""故障注入模型，用于可复现实验中触发网络、感知和安全事件。"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.experiments.models import FaultEvent, FaultType

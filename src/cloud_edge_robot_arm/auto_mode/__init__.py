@@ -1,3 +1,5 @@
+"""AUTO 控制模式包，负责根据风险、缓存和合同状态选择 PCSC 或 ETEAC。"""
+
 from cloud_edge_robot_arm.auto_mode.models import (
     AutoModeDecisionContext,
     AutoModePolicy,

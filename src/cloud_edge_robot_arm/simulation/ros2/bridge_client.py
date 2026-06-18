@@ -1,3 +1,5 @@
+"""ROS2 仿真桥客户端，约束桥接调用而不触碰真实控制器。"""
+
 from __future__ import annotations
 
 import importlib.util

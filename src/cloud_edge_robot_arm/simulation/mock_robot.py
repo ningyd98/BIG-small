@@ -1,3 +1,5 @@
+"""Mock 机器人后端，只用于仿真和测试，不能冒充真实硬件。"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

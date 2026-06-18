@@ -1,4 +1,7 @@
-"""Cloud periodic supervision (PCSC) — Phase 5."""
+"""云端监督包，管理心跳、遥测和重规划触发条件。
+
+Cloud periodic supervision (PCSC) — Phase 5.
+"""
 
 from __future__ import annotations
 

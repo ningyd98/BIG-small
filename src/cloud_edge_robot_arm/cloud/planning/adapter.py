@@ -1,4 +1,6 @@
-"""PlannerAdapter Protocol and concrete implementations.
+"""规划适配器协议，隔离 LLM/规则规划器与合同校验管线。
+
+PlannerAdapter Protocol and concrete implementations.
 
 The PlannerAdapter is the *only* module that may call an LLM — and even then
 it produces unvalidated JSON.  That JSON MUST pass through the planning

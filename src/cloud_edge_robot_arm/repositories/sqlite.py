@@ -1,3 +1,5 @@
+"""SQLite 仓储实现，负责事务、幂等写入和可恢复状态。"""
+
 from __future__ import annotations
 
 import json

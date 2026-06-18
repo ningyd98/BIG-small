@@ -1,3 +1,5 @@
+"""统一错误模型，保证 API、运行时和测试可以用稳定 code 判断失败原因。"""
+
 from __future__ import annotations
 
 from typing import Any

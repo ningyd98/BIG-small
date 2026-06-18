@@ -1,4 +1,7 @@
-"""Merge and assemble locally replanned TaskContracts."""
+"""重规划合并逻辑，决定保留、替换或追加任务步骤。
+
+Merge and assemble locally replanned TaskContracts.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""Edge gateway: cloud-side dispatch of validated contracts to the edge runtime."""
+"""云边网关包，处理边缘事件上报、命令确认和合同同步。
+
+Edge gateway: cloud-side dispatch of validated contracts to the edge runtime.
+"""
 
 from __future__ import annotations
 

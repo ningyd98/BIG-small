@@ -1,4 +1,7 @@
-"""Cloud-side repositories for planning artifacts."""
+"""云端仓储包，提供内存和协议抽象，避免服务直接依赖具体存储。
+
+Cloud-side repositories for planning artifacts.
+"""
 
 from __future__ import annotations
 

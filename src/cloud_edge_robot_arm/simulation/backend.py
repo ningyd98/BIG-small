@@ -1,3 +1,5 @@
+"""仿真后端抽象或具体实现，区分 Mock、MuJoCo、Isaac 和 dry-run。"""
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable

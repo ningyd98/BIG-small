@@ -1,3 +1,5 @@
+"""ROS2 消息转换工具，确保仿真数据和内部模型字段一致。"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.contracts import Pose

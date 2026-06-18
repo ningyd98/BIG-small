@@ -1,3 +1,5 @@
+"""随机化采样器，根据 seed 和配置生成确定性扰动。"""
+
 from __future__ import annotations
 
 import random

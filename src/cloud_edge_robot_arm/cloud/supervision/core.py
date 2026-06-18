@@ -1,4 +1,6 @@
-"""Phase 5 supervision core: Clock, SceneChangeDetector, PlanValidityEvaluator,
+"""监督核心逻辑，判断遥测新鲜度、心跳和重规划触发条件。
+
+Phase 5 supervision core: Clock, SceneChangeDetector, PlanValidityEvaluator,
 DeterministicSupervisionPolicy, and SupervisionScheduler.
 
 The supervision system is split into two layers:

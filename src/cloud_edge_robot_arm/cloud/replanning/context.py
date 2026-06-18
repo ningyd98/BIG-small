@@ -1,4 +1,7 @@
-"""Replanning context passed to cloud adapters and validators."""
+"""重规划上下文模型，汇总事件、合同、执行状态和恢复预算。
+
+Replanning context passed to cloud adapters and validators.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,6 @@
-"""Planning pipeline: from InitialPlanningRequest to validated TaskContract.
+"""规划管线，把不可信模型输出修复并校验为可执行合同。
+
+Planning pipeline: from InitialPlanningRequest to validated TaskContract.
 
 The pipeline enforces the *model untrusted boundary*:
 - Models may *never* decide task_id, plan_version, command_seq, issued_at,

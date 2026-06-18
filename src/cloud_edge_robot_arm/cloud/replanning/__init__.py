@@ -1,4 +1,7 @@
-"""Cloud-side local replanning — adapters, validators, service."""
+"""云端重规划包，处理边缘事件触发后的修复、合并和安全校验。
+
+Cloud-side local replanning — adapters, validators, service.
+"""
 
 from cloud_edge_robot_arm.cloud.replanning.adapters import (
     MockReplannerAdapter,

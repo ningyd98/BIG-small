@@ -1,4 +1,6 @@
-"""PeriodicSupervisorService: the main orchestration class for PCSC.
+"""业务服务编排层，连接仓储、规则和外部适配器。
+
+PeriodicSupervisorService: the main orchestration class for PCSC.
 
 Orchestrates the supervision cycle:
 1. Receive/read edge status snapshot

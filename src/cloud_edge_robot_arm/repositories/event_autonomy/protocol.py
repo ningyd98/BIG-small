@@ -1,4 +1,6 @@
-"""EventAutonomyRepository Protocol — persistence contract for Phase 6.
+"""Isaac 通信协议模型，限制前端或服务只能发送受控仿真消息。
+
+EventAutonomyRepository Protocol — persistence contract for Phase 6.
 
 The repository is the durable source of truth for event-triggered autonomy.
 Duplicate writes are idempotent only when the payload hash matches; otherwise

@@ -1,4 +1,7 @@
-"""In-memory cloud planning repository (default for tests)."""
+"""内存仓储实现，主要用于测试和本地开发，不作为持久真源。
+
+In-memory cloud planning repository (default for tests).
+"""
 
 from __future__ import annotations
 

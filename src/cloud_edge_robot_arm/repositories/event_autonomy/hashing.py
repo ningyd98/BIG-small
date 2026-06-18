@@ -1,4 +1,7 @@
-"""Stable payload hashes for persisted event-autonomy records."""
+"""事件自治哈希工具，用于幂等键和证据一致性校验。
+
+Stable payload hashes for persisted event-autonomy records.
+"""
 
 from __future__ import annotations
 

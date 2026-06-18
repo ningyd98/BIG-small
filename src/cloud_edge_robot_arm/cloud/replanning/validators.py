@@ -1,4 +1,6 @@
-"""Validators for local replanning.
+"""重规划校验器，拒绝不安全、过期或破坏合同不变量的变更。
+
+Validators for local replanning.
 
 - CompletedStepsProtectionValidator: ensures completed steps are immutable
 - ReplanScopeValidator: validates scope appropriateness

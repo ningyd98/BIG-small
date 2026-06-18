@@ -1,3 +1,5 @@
+"""跨后端对比逻辑，只在 paired key 一致时比较结果。"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.simulation.evaluation.metrics import run_mujoco_physical_trial

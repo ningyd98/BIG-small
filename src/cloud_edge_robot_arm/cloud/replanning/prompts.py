@@ -1,4 +1,6 @@
-"""Prompt templates for local replanning.
+"""重规划提示词定义，约束模型只能生成可验证的高层修复方案。
+
+Prompt templates for local replanning.
 
 System prompt enforces strict constraints:
 - Preserve completed steps

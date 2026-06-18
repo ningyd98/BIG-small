@@ -1,3 +1,5 @@
+"""仓储接口或实现，隔离业务服务与底层存储细节。"""
+
 from __future__ import annotations
 
 import json

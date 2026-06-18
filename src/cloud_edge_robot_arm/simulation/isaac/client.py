@@ -1,3 +1,5 @@
+"""Isaac 客户端抽象，隔离外部仿真服务通信。"""
+
 from __future__ import annotations
 
 import json

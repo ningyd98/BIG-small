@@ -1,4 +1,7 @@
-"""SQLite-backed EventAutonomyRepository with conflict-aware idempotency."""
+"""SQLite 仓储实现，负责事务、幂等写入和可恢复状态。
+
+SQLite-backed EventAutonomyRepository with conflict-aware idempotency.
+"""
 
 from __future__ import annotations
 

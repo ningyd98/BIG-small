@@ -1,3 +1,5 @@
+"""合同模型包，定义云边共享的任务、事件、技能和安全契约。"""
+
 from cloud_edge_robot_arm.contracts.models import (
     ActionResult,
     ActiveContractStatus,
