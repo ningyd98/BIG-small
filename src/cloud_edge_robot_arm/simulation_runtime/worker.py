@@ -134,6 +134,7 @@ class SimulationWorker:
                 error="",
                 artifact_paths=artifacts,
             )
+            self.repository.save_artifacts(job_id, artifacts)
             self._transition(
                 job_id,
                 RuntimeJobStatus.FINALIZING,
@@ -172,6 +173,7 @@ class SimulationWorker:
                     RuntimeJobStatus.CANCEL_REQUESTED,
                     RuntimeJobStatus.CANCELLING,
                     lease_id,
+                    absorb_cancel_race=True,
                 )
             current = self.repository.get_job(job_id)
             if current.status == RuntimeJobStatus.CANCELLING:
@@ -180,6 +182,7 @@ class SimulationWorker:
                     RuntimeJobStatus.CANCELLING,
                     RuntimeJobStatus.CANCELLED,
                     lease_id,
+                    absorb_cancel_race=True,
                 )
             artifacts = self._write_terminal_artifacts(
                 job_id,
@@ -562,6 +565,7 @@ class SimulationWorker:
         lease_id: str,
         *,
         error_message: str = "",
+        absorb_cancel_race: bool = False,
     ) -> None:
         updated = self.repository.update_status_cas(
             job_id,
@@ -579,6 +583,8 @@ class SimulationWorker:
                 RuntimeJobStatus.CANCELLING,
                 RuntimeJobStatus.CANCELLED,
             }:
+                if absorb_cancel_race:
+                    return
                 raise CancelledByOperator("cancelled by operator")
             if current.status != next_status:
                 raise RuntimeError(f"state transition lost: {expected.value}->{next_status.value}")

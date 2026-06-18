@@ -121,6 +121,14 @@ class SimulationJobRepository(Protocol):
         artifact_paths: dict[str, str],
     ) -> None: ...
 
+    def finish_open_attempts(
+        self,
+        job_id: str,
+        *,
+        result: str,
+        error: str,
+    ) -> None: ...
+
     def find_queued_jobs(self) -> list[SimulationJobRecord]: ...
 
     def find_recoverable_jobs(self) -> list[SimulationJobRecord]: ...

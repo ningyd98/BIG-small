@@ -73,7 +73,9 @@ def _wait_for_status(client: TestClient, run_id: str, statuses: set[str]) -> dic
     raise AssertionError(f"run did not reach {statuses}: {last}")
 
 
-def _wait_for_artifact_paths(client: TestClient, run_id: str) -> dict[str, str]:
+def _wait_for_artifact_paths(
+    client: TestClient, run_id: str, *, artifact_root: Path | None = None
+) -> dict[str, str]:
     deadline = time.monotonic() + 10.0
     last: dict[str, Any] | None = None
     while time.monotonic() < deadline:
@@ -81,8 +83,12 @@ def _wait_for_artifact_paths(client: TestClient, run_id: str) -> dict[str, str]:
         assert response.status_code == 200
         last = response.json()
         artifact_paths = last.get("artifact_paths", {})
-        if artifact_paths.get("evidence_consistency"):
-            return artifact_paths
+        evidence_path = artifact_paths.get("evidence_consistency")
+        if evidence_path:
+            if artifact_root is None:
+                return artifact_paths
+            if (artifact_root / evidence_path).exists():
+                return artifact_paths
         time.sleep(0.05)
     raise AssertionError(f"run did not expose final artifact paths: {last}")
 
@@ -235,7 +241,9 @@ def test_success_terminal_evidence_is_consistent(
         json=_draft(),
     ).json()
     terminal = _wait_for_status(client, created["run_id"], {"SUCCEEDED"})
-    artifact_paths = _wait_for_artifact_paths(client, created["run_id"])
+    artifact_paths = _wait_for_artifact_paths(
+        client, created["run_id"], artifact_root=tmp_path / "artifacts"
+    )
 
     job = _artifact_json(tmp_path, artifact_paths, "job")
     runtime_job = _artifact_json(tmp_path, artifact_paths, "runtime_job")
@@ -279,7 +287,9 @@ def test_cancelled_and_timed_out_terminal_evidence_are_consistent(
         headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
     )
     cancelled = _wait_for_status(client, cancellable["run_id"], {"CANCELLED"})
-    cancelled_paths = _wait_for_artifact_paths(client, cancellable["run_id"])
+    cancelled_paths = _wait_for_artifact_paths(
+        client, cancellable["run_id"], artifact_root=tmp_path / "artifacts"
+    )
 
     timed = client.post(
         "/api/v1/simulation/runs",
@@ -287,7 +297,9 @@ def test_cancelled_and_timed_out_terminal_evidence_are_consistent(
         json=_draft(parameter_overrides={"runtime_delay_ms": 1500, "timeout_seconds": 1}),
     ).json()
     timed_out = _wait_for_status(client, timed["run_id"], {"TIMED_OUT"})
-    timed_out_paths = _wait_for_artifact_paths(client, timed["run_id"])
+    timed_out_paths = _wait_for_artifact_paths(
+        client, timed["run_id"], artifact_root=tmp_path / "artifacts"
+    )
 
     for terminal, artifact_paths, expected in [
         (cancelled, cancelled_paths, "CANCELLED"),
@@ -308,6 +320,170 @@ def test_cancelled_and_timed_out_terminal_evidence_are_consistent(
         assert transitions[-1]["next_status"] == expected
         assert consistency["terminal_event_present"] is True
         assert "artifact_created" in {event["event_type"] for event in events}
+
+
+def test_stale_lease_recovery_requeues_and_worker_b_completes(tmp_path: Path) -> None:
+    from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+    from cloud_edge_robot_arm.simulation_runtime.recovery import ArtifactRecoveryService
+    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+        SQLiteSimulationJobRepository,
+    )
+    from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+
+    repo = SQLiteSimulationJobRepository(tmp_path / "runtime.db")
+    job = repo.create_job(
+        run_id="sim-recovery",
+        batch_id="",
+        backend="MOCK",
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        manifest_id="manifest-recovery",
+        reproducibility_hash="hash-recovery",
+        draft=_draft(),
+        manifest={"manifest_id": "manifest-recovery"},
+        timeout_seconds=30,
+        max_attempts=2,
+        artifact_root="phase11_1/runtime/sim-recovery",
+        source_commit="commit",
+        source_tree_hash="tree",
+    )
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.CREATED,
+        next_status=RuntimeJobStatus.QUEUED,
+        reason_code="queued_by_test",
+        worker_id="",
+        lease_id="",
+    )
+    lease = repo.acquire_lease(worker_id="worker-a", backend="MOCK", lease_ttl_seconds=1)
+    assert lease is not None
+    repo.start_attempt(job.job_id, worker_id="worker-a")
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.LEASED,
+        next_status=RuntimeJobStatus.STARTING,
+        reason_code="starting",
+        worker_id="worker-a",
+        lease_id=lease.lease_id,
+    )
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.STARTING,
+        next_status=RuntimeJobStatus.RUNNING,
+        reason_code="running",
+        worker_id="worker-a",
+        lease_id=lease.lease_id,
+    )
+
+    time.sleep(1.1)
+    recovery = ArtifactRecoveryService(
+        repository=repo,
+        artifact_root=tmp_path / "artifacts",
+        requeue_recoverable=True,
+    ).recover_interrupted_jobs()
+
+    recovered_job = repo.get_job(job.job_id)
+    transitions = [
+        (event.previous_status, event.next_status)
+        for event in repo.list_events(job.run_id)
+        if event.previous_status or event.next_status
+    ]
+    assert recovered_job.status == RuntimeJobStatus.QUEUED
+    assert recovery.interrupted_jobs == [job.job_id]
+    assert recovery.recovered_jobs == [job.job_id]
+    assert ("RUNNING", "INTERRUPTED") in transitions
+    assert ("INTERRUPTED", "RECOVERY_PENDING") in transitions
+    assert ("RECOVERY_PENDING", "QUEUED") in transitions
+
+    worker_b = SimulationWorker(
+        worker_id="worker-b",
+        backend="MOCK",
+        repository=repo,
+        artifact_root=tmp_path / "artifacts",
+    )
+    assert worker_b.poll_once() is True
+    terminal = repo.get_job(job.job_id)
+    attempts = repo.list_attempts(job.run_id)
+    leases = repo.list_leases(job.run_id)
+    assert terminal.status == RuntimeJobStatus.SUCCEEDED
+    assert [attempt.worker_id for attempt in attempts] == ["worker-a", "worker-b"]
+    assert attempts[-1].result == "SUCCEEDED"
+    assert len(leases) == 2
+    assert leases[-1].released_at is not None
+
+
+def test_duplicate_worker_competition_executes_runner_once(tmp_path: Path) -> None:
+    from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+        SQLiteSimulationJobRepository,
+    )
+    from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+
+    repo = SQLiteSimulationJobRepository(tmp_path / "runtime.db")
+    job = repo.create_job(
+        run_id="sim-duplicate-worker",
+        batch_id="",
+        backend="MOCK",
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        manifest_id="manifest-duplicate",
+        reproducibility_hash="hash-duplicate",
+        draft=_draft(),
+        manifest={"manifest_id": "manifest-duplicate"},
+        timeout_seconds=30,
+        max_attempts=2,
+        artifact_root="phase11_1/runtime/sim-duplicate-worker",
+        source_commit="commit",
+        source_tree_hash="tree",
+    )
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.CREATED,
+        next_status=RuntimeJobStatus.QUEUED,
+        reason_code="queued_by_test",
+        worker_id="",
+        lease_id="",
+    )
+
+    invocation_count = 0
+
+    class CountingWorker(SimulationWorker):
+        def _run_mock(self, job: Any, draft: Any) -> Any:
+            nonlocal invocation_count
+            invocation_count += 1
+            return super()._run_mock(job, draft)
+
+    worker_a = CountingWorker(
+        worker_id="worker-a",
+        backend="MOCK",
+        repository=repo,
+        artifact_root=tmp_path / "artifacts",
+    )
+    worker_b = CountingWorker(
+        worker_id="worker-b",
+        backend="MOCK",
+        repository=repo,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    consumed_a = worker_a.poll_once()
+    consumed_b = worker_b.poll_once()
+    attempts = repo.list_attempts(job.run_id)
+    leases = repo.list_leases(job.run_id)
+    terminal = repo.get_job(job.job_id)
+    completed_events = [
+        event for event in repo.list_events(job.run_id) if event.event_type == "job_completed"
+    ]
+
+    assert (consumed_a, consumed_b).count(True) == 1
+    assert terminal.status == RuntimeJobStatus.SUCCEEDED
+    assert len(leases) == 1
+    assert len(attempts) == 1
+    assert attempts[0].result == "SUCCEEDED"
+    assert invocation_count == 1
+    assert len(completed_events) == 1
 
 
 def test_runtime_cancel_timeout_retry_and_recovery_api(

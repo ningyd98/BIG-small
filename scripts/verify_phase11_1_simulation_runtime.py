@@ -9,9 +9,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +29,18 @@ from cloud_edge_robot_arm.cloud.planning.adapter import (  # type: ignore[import
 )
 from cloud_edge_robot_arm.cloud.planning.pipeline import (  # type: ignore[import-not-found]
     PlanningPipeline,
+)
+from cloud_edge_robot_arm.simulation_runtime.models import (  # type: ignore[import-not-found]
+    RuntimeJobStatus,
+)
+from cloud_edge_robot_arm.simulation_runtime.recovery import (  # type: ignore[import-not-found]
+    ArtifactRecoveryService,
+)
+from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (  # type: ignore[import-not-found]
+    SQLiteSimulationJobRepository,
+)
+from cloud_edge_robot_arm.simulation_runtime.worker import (  # type: ignore[import-not-found]
+    SimulationWorker,
 )
 from cloud_edge_robot_arm.simulation_workbench.models import (  # type: ignore[import-not-found]
     ExperimentDraft,
@@ -137,7 +151,7 @@ def verify_ci_backend(repo: Path) -> dict[str, Any]:
 
 
 def verify_persistence_sample(output: Path) -> dict[str, Any]:
-    artifact_root = output.parents[1]
+    artifact_root = _verification_artifact_root(output)
     service = SimulationWorkbenchService(artifact_root=artifact_root)
     draft = ExperimentDraft.model_validate(_draft("MOCK", "S01_NORMAL_STATIC", "PCSC", 0))
     run = service.create_run(draft)
@@ -161,15 +175,204 @@ def verify_persistence_sample(output: Path) -> dict[str, Any]:
 
 
 def verify_recovery(output: Path) -> dict[str, Any]:
-    artifact_root = output.parents[1]
-    service = SimulationWorkbenchService(artifact_root=artifact_root)
-    response = service.runtime.recover()
+    recovery_root = output / "runtime_recovery"
+    artifact_root = recovery_root / "artifacts"
+    recovery_root.mkdir(parents=True, exist_ok=True)
+    stale = _verify_stale_lease_recovery(recovery_root, artifact_root)
+    duplicate = _verify_duplicate_worker_competition(recovery_root, artifact_root)
+    accepted = bool(stale["accepted"] and duplicate["accepted"])
     return {
-        "status": "PASSED",
-        "restart_recovery_accepted": True,
-        "lease_recovery_accepted": True,
-        **response.model_dump(mode="json"),
+        "status": "PASSED" if accepted else "FAILED",
+        "restart_recovery_accepted": bool(stale["accepted"]),
+        "lease_recovery_accepted": bool(stale["accepted"]),
+        "duplicate_execution_prevented": bool(duplicate["accepted"]),
+        "no_duplicate_runner_invocation": bool(duplicate["accepted"]),
+        "M11-09": stale,
+        "M11-10": duplicate,
+        "real_controller_contacted": False,
+        "hardware_motion_observed": False,
+        "hardware_write_operations": [],
     }
+
+
+def _verify_stale_lease_recovery(recovery_root: Path, artifact_root: Path) -> dict[str, Any]:
+    repo = SQLiteSimulationJobRepository(recovery_root / f"stale-{time.time_ns()}.db")
+    run_id = "sim-recovery-" + str(time.time_ns())
+    job = _create_runtime_job(repo, run_id=run_id, artifact_root=f"runs/{run_id}")
+    lease = repo.acquire_lease(worker_id="worker-a", backend="MOCK", lease_ttl_seconds=1)
+    if lease is None:
+        return {"accepted": False, "error": "worker-a failed to acquire initial lease"}
+    repo.start_attempt(job.job_id, worker_id="worker-a")
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.LEASED,
+        next_status=RuntimeJobStatus.STARTING,
+        reason_code="starting",
+        worker_id="worker-a",
+        lease_id=lease.lease_id,
+    )
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.STARTING,
+        next_status=RuntimeJobStatus.RUNNING,
+        reason_code="running",
+        worker_id="worker-a",
+        lease_id=lease.lease_id,
+    )
+    time.sleep(1.1)
+    recovery = ArtifactRecoveryService(
+        repository=repo,
+        artifact_root=artifact_root,
+        requeue_recoverable=True,
+    ).recover_interrupted_jobs()
+    worker_b = SimulationWorker(
+        worker_id="worker-b",
+        backend="MOCK",
+        repository=repo,
+        artifact_root=artifact_root,
+    )
+    worker_b_consumed = worker_b.poll_once()
+    terminal = repo.get_job(job.job_id)
+    attempts = repo.list_attempts(run_id)
+    transitions = [
+        {
+            "previous_status": event.previous_status,
+            "next_status": event.next_status,
+            "reason_code": event.reason_code,
+            "sequence": event.sequence,
+        }
+        for event in repo.list_events(run_id)
+        if event.previous_status or event.next_status
+    ]
+    accepted = (
+        worker_b_consumed
+        and terminal.status == RuntimeJobStatus.SUCCEEDED
+        and recovery.interrupted_jobs == [job.job_id]
+        and recovery.recovered_jobs == [job.job_id]
+        and len(attempts) == 2
+        and attempts[0].result == RuntimeJobStatus.INTERRUPTED.value
+        and attempts[-1].result == RuntimeJobStatus.SUCCEEDED.value
+    )
+    return {
+        "accepted": accepted,
+        "stale_lease_id": lease.lease_id,
+        "interrupted_job_id": job.job_id,
+        "recovery_transitions": transitions,
+        "recovered_job_id": job.job_id if accepted else "",
+        "final_status": terminal.status.value,
+        "attempt_count": len(attempts),
+        "attempt_results": [attempt.result for attempt in attempts],
+        "worker_b_consumed": worker_b_consumed,
+        "recovery_response": recovery.model_dump(mode="json"),
+    }
+
+
+def _verify_duplicate_worker_competition(
+    recovery_root: Path, artifact_root: Path
+) -> dict[str, Any]:
+    repo = SQLiteSimulationJobRepository(recovery_root / f"duplicate-{time.time_ns()}.db")
+    run_id = "sim-duplicate-" + str(time.time_ns())
+    job = _create_runtime_job(repo, run_id=run_id, artifact_root=f"runs/{run_id}")
+    invocation_lock = threading.Lock()
+    invocation_count = 0
+
+    class CountingWorker(SimulationWorker):
+        def _run_mock(self, job: Any, draft: Any) -> Any:
+            nonlocal invocation_count
+            with invocation_lock:
+                invocation_count += 1
+            return super()._run_mock(job, draft)
+
+    barrier = threading.Barrier(2)
+    poll_results: dict[str, bool] = {}
+
+    def poll(worker: CountingWorker) -> None:
+        barrier.wait(timeout=5)
+        poll_results[worker.worker_id] = worker.poll_once()
+
+    workers = [
+        CountingWorker(
+            worker_id="worker-a",
+            backend="MOCK",
+            repository=repo,
+            artifact_root=artifact_root,
+        ),
+        CountingWorker(
+            worker_id="worker-b",
+            backend="MOCK",
+            repository=repo,
+            artifact_root=artifact_root,
+        ),
+    ]
+    threads = [threading.Thread(target=poll, args=(worker,), daemon=True) for worker in workers]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    terminal = repo.get_job(job.job_id)
+    attempts = repo.list_attempts(run_id)
+    leases = repo.list_leases(run_id)
+    winner = next((worker_id for worker_id, consumed in poll_results.items() if consumed), "")
+    losers = [worker_id for worker_id, consumed in poll_results.items() if not consumed]
+    result_hashes: set[str] = set()
+    if terminal.artifact_paths.get("result"):
+        result_path = artifact_root / terminal.artifact_paths["result"]
+        if result_path.exists():
+            result_hashes.add(hashlib.sha256(result_path.read_bytes()).hexdigest())
+    accepted = (
+        list(poll_results.values()).count(True) == 1
+        and invocation_count == 1
+        and len(attempts) == 1
+        and len(leases) == 1
+        and terminal.status == RuntimeJobStatus.SUCCEEDED
+        and len(result_hashes) == 1
+    )
+    return {
+        "accepted": accepted,
+        "competing_worker_ids": [worker.worker_id for worker in workers],
+        "lease_winner": winner,
+        "lease_loser": losers,
+        "runner_invocation_count": invocation_count,
+        "attempt_count": len(attempts),
+        "lease_count": len(leases),
+        "result_hash_count": len(result_hashes),
+        "final_status": terminal.status.value,
+        "poll_results": poll_results,
+    }
+
+
+def _create_runtime_job(
+    repo: SQLiteSimulationJobRepository,
+    *,
+    run_id: str,
+    artifact_root: str,
+) -> Any:
+    job = repo.create_job(
+        run_id=run_id,
+        batch_id="",
+        backend="MOCK",
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        manifest_id="manifest-" + run_id,
+        reproducibility_hash="hash-" + run_id,
+        draft=_draft("MOCK", "S01_NORMAL_STATIC", "PCSC", 0),
+        manifest={"manifest_id": "manifest-" + run_id},
+        timeout_seconds=30,
+        max_attempts=2,
+        artifact_root=artifact_root,
+        source_commit="phase11-1-verifier",
+        source_tree_hash="phase11-1-verifier",
+    )
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.CREATED,
+        next_status=RuntimeJobStatus.QUEUED,
+        reason_code="queued_by_verifier",
+        worker_id="",
+        lease_id="",
+    )
+    return job
 
 
 def verify_frontend(repo: Path) -> dict[str, Any]:
@@ -203,7 +406,7 @@ def verify_mujoco_runtime(output: Path) -> dict[str, Any]:
     except Exception as exc:
         return {"status": "BLOCKED_BY_ENV", "blocker": str(exc), "accepted": False}
 
-    artifact_root = output.parents[1]
+    artifact_root = _verification_artifact_root(output)
     service = SimulationWorkbenchService(artifact_root=artifact_root)
     cases: list[tuple[str, str, str, int, dict[str, int | float | str | bool]]] = [
         ("M11-01", "S01_NORMAL_STATIC", "PCSC", 0, {}),
@@ -444,6 +647,18 @@ def _read_result(artifact_root: Path, artifacts: dict[str, str]) -> dict[str, An
     if not result_path.exists():
         result_path = artifact_root.parent / artifacts["result"]
     return cast(dict[str, Any], json.loads(result_path.read_text(encoding="utf-8")))
+
+
+def _verification_artifact_root(output: Path) -> Path:
+    resolved = output.resolve()
+    try:
+        relative = resolved.relative_to((REPO_ROOT / "artifacts").resolve())
+    except ValueError:
+        root = output.parent / "runtime_artifacts"
+    else:
+        root = REPO_ROOT / "artifacts" if relative.parts else output
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def _redact_text(value: str) -> str:

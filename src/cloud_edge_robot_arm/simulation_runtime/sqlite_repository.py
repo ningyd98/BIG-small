@@ -689,6 +689,18 @@ class SQLiteSimulationJobRepository:
                 (_dt(_now()), result, error, _dumps(artifact_paths), job_id, attempt),
             )
 
+    def finish_open_attempts(self, job_id: str, *, result: str, error: str) -> None:
+        self._initialize()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE simulation_job_attempts
+                SET ended_at = ?, result = ?, error = ?
+                WHERE job_id = ? AND ended_at = ''
+                """,
+                (_dt(_now()), result, error, job_id),
+            )
+
     def find_queued_jobs(self) -> list[SimulationJobRecord]:
         self._initialize()
         with self._connect() as conn:
