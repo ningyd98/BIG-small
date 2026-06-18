@@ -94,7 +94,7 @@ def _audit_file(path: Path) -> CommentAuditResult:
 
 
 def _extract_explanation_text(path: Path, text: str) -> str:
-    if path.suffix == ".py":
+    if path.suffix == ".py" or _has_python_shebang(path):
         return _extract_python_explanation_text(text)
     if path.suffix in SLASH_COMMENT_SUFFIXES:
         return _extract_slash_comment_text(text)
@@ -204,7 +204,22 @@ def _has_chinese(text: str) -> bool:
 
 
 def _is_audited_file(path: Path) -> bool:
-    return path.suffix in CODE_SUFFIXES and not path.name.endswith(".d.ts")
+    if not path.is_file():
+        return False
+    return (path.suffix in CODE_SUFFIXES or _has_python_shebang(path)) and not path.name.endswith(
+        ".d.ts"
+    )
+
+
+def _has_python_shebang(path: Path) -> bool:
+    if path.suffix:
+        return False
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            first_line = file.readline(128)
+    except (OSError, UnicodeDecodeError):
+        return False
+    return first_line.startswith("#!") and "python" in first_line.lower()
 
 
 if __name__ == "__main__":

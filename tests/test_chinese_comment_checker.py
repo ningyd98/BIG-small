@@ -80,6 +80,15 @@ def test_collects_script_config_and_ros_interface_files(tmp_path: Path) -> None:
     assert expected_names <= collected
 
 
+def test_collects_extensionless_python_entrypoint(tmp_path: Path) -> None:
+    path = tmp_path / "console_entry"
+    path.write_text("#!/usr/bin/env python3\nprint('ok')\n", encoding="utf-8")
+
+    collected = {item.name for item in _collect_files([tmp_path])}
+
+    assert "console_entry" in collected
+
+
 def test_hash_comment_file_counts_as_chinese_explanation(tmp_path: Path) -> None:
     path = tmp_path / "run.sh"
     path.write_text(
