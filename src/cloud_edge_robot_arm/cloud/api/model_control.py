@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -199,7 +200,7 @@ async def planner_dry_run(request: Request, body: PlannerDryRunRequest) -> dict[
 def _service(request: Request) -> ModelControlService:
     service = getattr(request.app.state, "model_control_service", None)
     if service is not None:
-        return service
+        return cast(ModelControlService, service)
     database_path = Path(os.environ.get("MODEL_CONTROL_DB", "data/model_control.db"))
     service = ModelControlService(
         repository=SQLiteModelProfileRepository(database_path),
@@ -212,7 +213,7 @@ def _service(request: Request) -> ModelControlService:
 def _ollama_transport(request: Request) -> OllamaTransport:
     transport = getattr(request.app.state, "ollama_transport", None)
     if transport is not None:
-        return transport
+        return cast(OllamaTransport, transport)
     transport = OllamaHttpClient()
     request.app.state.ollama_transport = transport
     return transport

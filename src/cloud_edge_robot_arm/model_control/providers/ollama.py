@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import urllib.request
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 
 class OllamaTransport(Protocol):
@@ -61,7 +61,8 @@ class OllamaHttpClient:
         path: str,
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return json.loads(self._raw(method, path, payload))
+        parsed = json.loads(self._raw(method, path, payload))
+        return cast(dict[str, Any], parsed)
 
     def _raw(self, method: str, path: str, payload: dict[str, Any] | None = None) -> str:
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -72,4 +73,5 @@ class OllamaHttpClient:
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-            return response.read(4_000_000).decode("utf-8")
+            body = response.read(4_000_000).decode("utf-8")
+            return cast(str, body)

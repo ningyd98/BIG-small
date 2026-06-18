@@ -13,6 +13,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -50,6 +51,7 @@ from cloud_edge_robot_arm.simulation_workbench.service import (  # type: ignore[
 )
 
 PHASE11_1_ACCEPTED = "PHASE11_1_SIMULATION_RUNTIME_ACCEPTED"
+PHASE11_1_RUNTIME_EVIDENCE_ACCEPTED = "PHASE11_1_RUNTIME_EVIDENCE_ACCEPTED"
 PHASE11_1_ENV_BLOCK = "PHASE11_1_RUNTIME_ACCEPTED_WITH_MUJOCO_ENV_BLOCK"
 PHASE11_1_REJECTED = "PHASE11_1_SIMULATION_RUNTIME_REJECTED"
 
@@ -187,11 +189,12 @@ def verify_persistence_sample(output: Path) -> dict[str, Any]:
 
 
 def verify_recovery(output: Path) -> dict[str, Any]:
-    recovery_root = output / "runtime_recovery"
-    artifact_root = recovery_root / "artifacts"
-    recovery_root.mkdir(parents=True, exist_ok=True)
-    stale = _verify_stale_lease_recovery(recovery_root, artifact_root)
-    duplicate = _verify_duplicate_worker_competition(recovery_root, artifact_root)
+    with tempfile.TemporaryDirectory(prefix="phase11_1_recovery_") as tmpdir:
+        recovery_root = Path(tmpdir)
+        artifact_root = recovery_root / "artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        stale = _verify_stale_lease_recovery(recovery_root, artifact_root)
+        duplicate = _verify_duplicate_worker_competition(recovery_root, artifact_root)
     accepted = bool(stale["accepted"] and duplicate["accepted"])
     return {
         "status": "PASSED" if accepted else "FAILED",
@@ -528,7 +531,7 @@ def build_summary(
     elif ci_ok and mujoco.get("status") == "BLOCKED_BY_ENV":
         status = PHASE11_1_ENV_BLOCK
     elif ci_ok and not full_requested:
-        status = "PHASE11_1_SIMULATION_RUNTIME_CI_ACCEPTED"
+        status = PHASE11_1_RUNTIME_EVIDENCE_ACCEPTED
     else:
         status = PHASE11_1_REJECTED
     return {
@@ -536,9 +539,9 @@ def build_summary(
         "validation_claimed": status
         in {
             PHASE11_1_ACCEPTED,
+            PHASE11_1_RUNTIME_EVIDENCE_ACCEPTED,
             PHASE11_1_ENV_BLOCK,
             "PHASE11_1_MUJOCO_RUNTIME_ACCEPTED",
-            "PHASE11_1_SIMULATION_RUNTIME_CI_ACCEPTED",
         },
         "async_queue_accepted": bool(persistence.get("async_queue_accepted")),
         "persistent_repository_accepted": bool(persistence.get("persistent_repository_accepted")),
@@ -594,6 +597,7 @@ def run_commands(commands: list[VerificationCommand]) -> dict[str, Any]:
         results.append(
             {
                 "name": command.name,
+                "argv": _redact_argv(command.argv),
                 "returncode": completed.returncode,
                 "stdout_tail": _redact_text(completed.stdout[-2000:]),
                 "stderr_tail": _redact_text(completed.stderr[-2000:]),
@@ -605,6 +609,12 @@ def run_commands(commands: list[VerificationCommand]) -> dict[str, Any]:
 
 def skipped(name: str, reason: str) -> dict[str, Any]:
     return {"status": "SKIPPED", "name": name, "reason": reason}
+
+
+def _redact_argv(argv: list[str]) -> list[str]:
+    return [
+        "python" if Path(item).name.startswith("python") else _redact_text(item) for item in argv
+    ]
 
 
 def _draft(

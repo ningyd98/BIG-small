@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -319,3 +320,18 @@ def test_fake_ollama_models_download_activate_and_planner_dry_run(
     assert dry_run.json()["dispatch"] is False
     assert dry_run.json()["hardware_execution"] is False
     assert dry_run.json()["provider_kind"] == "OLLAMA"
+
+
+def test_phase11_2_command_artifacts_redact_local_python_path() -> None:
+    # verifier artifact 只需要可复现命令语义，不应泄露本机 Python 解释器绝对路径。
+    from scripts.verify_phase11_2_model_control import run_command
+
+    result = run_command(
+        [sys.executable, "-c", "print('ok')"],
+        Path.cwd(),
+        timeout=30,
+    )
+
+    assert result["returncode"] == 0
+    assert str(Path(sys.executable).parent) not in str(result["argv"])
+    assert result["argv"][0] == "python"

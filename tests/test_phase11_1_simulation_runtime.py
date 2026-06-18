@@ -85,10 +85,11 @@ def _wait_for_artifact_paths(
         artifact_paths = last.get("artifact_paths", {})
         evidence_path = artifact_paths.get("evidence_consistency")
         if evidence_path:
+            typed_paths = {str(key): str(value) for key, value in artifact_paths.items()}
             if artifact_root is None:
-                return artifact_paths
+                return typed_paths
             if (artifact_root / evidence_path).exists():
-                return artifact_paths
+                return typed_paths
         time.sleep(0.05)
     raise AssertionError(f"run did not expose final artifact paths: {last}")
 
@@ -532,6 +533,38 @@ def test_runtime_cancel_timeout_retry_and_recovery_api(
     assert "recovered_jobs" in recovery.json()
 
 
+def test_repeated_identical_batches_do_not_merge_historical_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 同一批量配置可以重复提交；batch_id 必须代表一次提交，而不是只代表
+    # reproducibility manifest，否则旧 job 会被 list_batch_jobs 合并进新批次。
+    client = _client(monkeypatch, tmp_path)
+    payload = _draft(seeds=[0, 1, 2])
+
+    first = client.post(
+        "/api/v1/simulation/batches",
+        headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
+        json=payload,
+    )
+    second = client.post(
+        "/api/v1/simulation/batches",
+        headers={"x-dashboard-role": "EXPERIMENT_OPERATOR"},
+        json=payload,
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    first_batch = first.json()
+    second_batch = second.json()
+    assert first_batch["batch_id"] != second_batch["batch_id"]
+    assert first_batch["progress"]["total"] == 3
+    assert second_batch["progress"]["total"] == 3
+    first_runs = client.get(f"/api/v1/simulation/batches/{first_batch['batch_id']}/runs")
+    second_runs = client.get(f"/api/v1/simulation/batches/{second_batch['batch_id']}/runs")
+    assert len(first_runs.json()["runs"]) == 3
+    assert len(second_runs.json()["runs"]) == 3
+
+
 def test_runtime_health_queue_workers_websocket_replay_and_no_hardware(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -580,3 +613,45 @@ def test_runtime_health_queue_workers_websocket_replay_and_no_hardware(
     assert "/api/v1/simulation/runtime/health" in paths
     assert not any("level1" in path or "real-robot" in path for path in paths)
     assert "controller" not in json.dumps(paths).lower()
+
+
+def test_ci_summary_reports_runtime_evidence_acceptance_status() -> None:
+    # Phase 11.1-R 是证据一致性修复，不应再只用普通 CI 状态表达验收结果。
+    from scripts.verify_phase11_1_simulation_runtime import build_summary
+
+    summary = build_summary(
+        backend={
+            "status": "PASSED",
+            "retry_api": True,
+            "runtime_health_api": True,
+            "openapi_path_count": 89,
+        },
+        persistence={
+            "status": "PASSED",
+            "async_queue_accepted": True,
+            "persistent_repository_accepted": True,
+            "terminal_evidence_consistent": True,
+            "atomic_artifact_finalization_accepted": True,
+        },
+        recovery={"status": "PASSED", "restart_recovery_accepted": True},
+        frontend={"status": "PASSED"},
+        e2e={"status": "PASSED", "playwright_test_count": 37},
+        mujoco={"status": "SKIPPED"},
+        full_requested=False,
+        mujoco_requested=False,
+    )
+
+    assert summary["status"] == "PHASE11_1_RUNTIME_EVIDENCE_ACCEPTED"
+    assert summary["validation_claimed"] is True
+    assert summary["terminal_evidence_consistent"] is True
+
+
+def test_recovery_verifier_does_not_leave_sqlite_databases_in_artifacts(tmp_path: Path) -> None:
+    # Recovery 验收要记录 JSON 证据，不能把临时 SQLite 运行库作为 artifact 提交。
+    from scripts.verify_phase11_1_simulation_runtime import verify_recovery
+
+    output = tmp_path / "verification"
+    result = verify_recovery(output)
+
+    assert result["status"] == "PASSED"
+    assert not list(output.rglob("*.db"))

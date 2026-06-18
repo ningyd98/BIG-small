@@ -8,7 +8,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -267,7 +267,7 @@ def run_command(argv: list[str], cwd: Path, *, timeout: int) -> dict[str, Any]:
         check=False,
     )
     return {
-        "argv": argv,
+        "argv": _redact_argv(argv),
         "returncode": completed.returncode,
         "stdout_tail": _redact(completed.stdout[-2000:]),
         "stderr_tail": _redact(completed.stderr[-2000:]),
@@ -279,11 +279,15 @@ def skipped(name: str, reason: str) -> dict[str, Any]:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
 def _redact(text: str) -> str:
     return text.replace(str(REPO_ROOT), "<repo>").replace(str(Path.home()), "<home>")
+
+
+def _redact_argv(argv: list[str]) -> list[str]:
+    return ["python" if Path(item).name.startswith("python") else _redact(item) for item in argv]
 
 
 if __name__ == "__main__":
