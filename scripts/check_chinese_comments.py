@@ -18,6 +18,7 @@ HAN_RANGE = ("\u4e00", "\u9fff")
 CODE_SUFFIXES = {
     ".action",
     ".bash",
+    ".cmake",
     ".css",
     ".dockerfile",
     ".html",
@@ -39,6 +40,7 @@ CODE_SUFFIXES = {
 HASH_COMMENT_SUFFIXES = {
     ".action",
     ".bash",
+    ".cmake",
     ".dockerfile",
     ".msg",
     ".sh",
@@ -50,6 +52,7 @@ HASH_COMMENT_SUFFIXES = {
 SLASH_COMMENT_SUFFIXES = {".css", ".js", ".jsonc", ".ts", ".tsx"}
 XML_COMMENT_SUFFIXES = {".html", ".xml"}
 HASH_COMMENT_FILENAMES = {".gitignore", ".env.example", ".env.phase9.example"}
+HASH_COMMENT_NAMES = {"CMakeLists.txt"}
 DOCKERFILE_NAMES = {"Dockerfile"}
 MARKDOWN_FENCE_SUFFIXES = {
     "bash": ".sh",
@@ -78,6 +81,7 @@ DEFAULT_AUDIT_PATHS = [
     "src",
     "dashboard/src",
     "dashboard/tests",
+    "dashboard/index.html",
     "dashboard/playwright.config.ts",
     "dashboard/vite.config.ts",
     "dashboard/eslint.config.js",
@@ -176,6 +180,7 @@ def _extract_explanation_text(path: Path, text: str) -> str:
     if (
         path.suffix in HASH_COMMENT_SUFFIXES
         or path.name in HASH_COMMENT_FILENAMES
+        or path.name in HASH_COMMENT_NAMES
         or _is_dockerfile(path)
     ):
         return _extract_leading_hash_comment_text(text)
@@ -401,6 +406,7 @@ def _is_audited_file(path: Path) -> bool:
     return (
         path.suffix in CODE_SUFFIXES
         or path.name in HASH_COMMENT_FILENAMES
+        or path.name in HASH_COMMENT_NAMES
         or _is_dockerfile(path)
         or _has_python_shebang(path)
     ) and not path.name.endswith(".d.ts")

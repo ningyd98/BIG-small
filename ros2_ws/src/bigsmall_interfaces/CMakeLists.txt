@@ -1,3 +1,4 @@
+# CMake 说明：生成 BIG-small ROS 2 消息、服务和动作接口，不发送控制命令。
 cmake_minimum_required(VERSION 3.20)
 project(bigsmall_interfaces)
 find_package(ament_cmake REQUIRED)

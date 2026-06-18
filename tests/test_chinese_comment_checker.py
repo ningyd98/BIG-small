@@ -341,6 +341,30 @@ def test_dockerfile_leading_hash_comment_counts(tmp_path: Path) -> None:
     assert result.has_chinese
 
 
+def test_collects_cmake_lists_for_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "CMakeLists.txt"
+    path.write_text("cmake_minimum_required(VERSION 3.20)\n", encoding="utf-8")
+
+    collected = {item.name for item in _collect_files([tmp_path])}
+    result = _audit_file(path)
+
+    assert "CMakeLists.txt" in collected
+    assert not result.has_chinese
+
+
+def test_cmake_leading_hash_comment_counts(tmp_path: Path) -> None:
+    path = tmp_path / "CMakeLists.txt"
+    path.write_text(
+        "# CMake 说明：只声明 ROS 2 仿真接口构建规则，不连接真实控制器。\n"
+        "cmake_minimum_required(VERSION 3.20)\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert result.has_chinese
+
+
 def test_json_config_uses_neighbor_chinese_note(tmp_path: Path) -> None:
     path = tmp_path / "package.json"
     note = tmp_path / "package.json.zh.md"
@@ -387,3 +411,5 @@ def test_default_paths_collect_dashboard_root_configs() -> None:
     assert "dashboard/package.json" in collected
     assert "dashboard/tsconfig.json" in collected
     assert "dashboard/eslint.config.js" in collected
+    assert "dashboard/index.html" in collected
+    assert "ros2_ws/src/bigsmall_interfaces/CMakeLists.txt" in collected
