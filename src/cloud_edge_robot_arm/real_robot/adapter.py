@@ -1,3 +1,9 @@
+"""真实机器人 adapter 协议。
+
+ReadOnly 协议只暴露连接、健康和状态读取；只读 adapter 中不得出现 execute、move
+或 command 方法。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

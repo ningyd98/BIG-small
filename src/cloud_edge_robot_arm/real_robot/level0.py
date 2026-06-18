@@ -1,3 +1,9 @@
+"""Level 0 只读真实硬件框架。
+
+Level 0 仅允许连接、断开和读取控制器/关节/TCP/e-stop/fault/mode/identity 状态。
+任何可能产生位移的厂商 SDK 调用都不得出现在这里。
+"""
+
 from __future__ import annotations
 
 import hashlib

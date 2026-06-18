@@ -1,3 +1,9 @@
+"""Dashboard API 读模型。
+
+这些模型描述前端展示的项目状态、证据、事件、验收等级和运行时信息；模型中不得
+携带 token、credential、真实 IP 或本机绝对路径。
+"""
+
 from __future__ import annotations
 
 from datetime import datetime

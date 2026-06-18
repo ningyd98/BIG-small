@@ -1,3 +1,9 @@
+"""Dashboard evidence 索引。
+
+索引器读取 artifact 元数据并输出脱敏后的证据目录，帮助前端区分 authoritative、
+derived、configured default 和 unavailable 等来源。
+"""
+
 from __future__ import annotations
 
 import hashlib

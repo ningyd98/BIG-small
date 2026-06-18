@@ -1,3 +1,8 @@
+"""真实硬件前置规划摘要模型。
+
+这些 planner 接口只生成 dry-run/安全评估摘要，不能直接执行轨迹或释放制动。
+"""
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable

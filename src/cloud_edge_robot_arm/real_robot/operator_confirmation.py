@@ -1,3 +1,8 @@
+"""现场操作员确认模型。
+
+确认记录只保存哈希和时间戳，不保存个人敏感信息或明文 token。
+"""
+
 from __future__ import annotations
 
 import hashlib

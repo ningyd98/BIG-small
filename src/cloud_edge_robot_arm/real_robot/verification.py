@@ -1,3 +1,9 @@
+"""真实机器人验证编排。
+
+普通 CI 只能运行 fake/framework 路径；hardware verifier 必须由现场人员单独运行，
+并且不得在自动化脚本中触发真实运动。
+"""
+
 from __future__ import annotations
 
 import json

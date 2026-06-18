@@ -1,3 +1,9 @@
+"""真实机器人配置模型。
+
+真实 IP、serial、credential 和 token 必须从仓库外部配置或环境变量加载，并在日志、
+Dashboard 和 artifact 中脱敏。
+"""
+
 from __future__ import annotations
 
 import hashlib

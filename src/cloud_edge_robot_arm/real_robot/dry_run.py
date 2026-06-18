@@ -1,3 +1,9 @@
+"""真机前置 dry-run 验证服务。
+
+该模块只验证合同、规划和安全门控，不连接真实控制器，也不发送 MoveIt execute 或
+trajectory。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

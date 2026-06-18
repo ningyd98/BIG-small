@@ -1,3 +1,9 @@
+"""Dashboard 实验 job 管理器。
+
+这里的 runner 通过固定 allowlist 映射到安全实验入口，不接受浏览器提交的任意
+shell、脚本路径、模块名或环境变量。
+"""
+
 from __future__ import annotations
 
 import contextlib

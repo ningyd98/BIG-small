@@ -1,3 +1,9 @@
+"""真实机械臂安全边界模块。
+
+当前项目主线已冻结真机开发；该包保留回归和 Level 0 只读框架，不允许自动进入
+Level 1，也不应从仿真工作台触发真实控制器写操作。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.real_robot.acceptance import (

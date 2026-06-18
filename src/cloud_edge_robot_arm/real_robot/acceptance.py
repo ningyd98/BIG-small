@@ -1,3 +1,9 @@
+"""真实硬件验收等级存储。
+
+AcceptanceStore 只有在证据完整、reviewer 批准、worktree clean、write count 为 0
+且未观察到硬件运动时才允许提升到 Level 0；绝不自动进入 Level 1。
+"""
+
 from __future__ import annotations
 
 import json

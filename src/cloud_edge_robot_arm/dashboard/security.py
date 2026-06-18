@@ -1,3 +1,8 @@
+"""Dashboard 鉴权和角色校验。
+
+HTTP 与 WebSocket 必须复用同一访问策略；写操作需要更高角色，VIEWER 只能读取。
+"""
+
 from __future__ import annotations
 
 import hashlib

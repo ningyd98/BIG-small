@@ -1,3 +1,8 @@
+"""Dashboard 脱敏工具。
+
+所有向前端、日志和 artifact 摘要暴露的数据都应先经过这里或同等脱敏逻辑。
+"""
+
 from __future__ import annotations
 
 import re

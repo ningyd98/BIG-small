@@ -1,3 +1,9 @@
+"""硬件执行门控。
+
+HardwareExecutionGate 是真实动作前的 fail-closed 边界；当前最高硬件等级为 NONE 时，
+hardware_motion_authorized 必须保持 false。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

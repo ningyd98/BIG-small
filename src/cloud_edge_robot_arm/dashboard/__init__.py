@@ -1,1 +1,5 @@
-"""Dashboard read models and safe console services."""
+"""Dashboard 只读模型和安全控制台服务。
+
+Dashboard 层负责展示证据、状态、审计和仿真运行时信息；除经过后端安全策略允许的
+操作外，不能提供真实机器人写命令入口。
+"""

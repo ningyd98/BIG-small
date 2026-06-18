@@ -1,3 +1,9 @@
+"""Dashboard 事件流。
+
+该模块维护内存 replay 缓冲，用于 WebSocket 断线恢复。持久化运行时事件仍以
+repository 为真源，内存队列只作为短期推送缓存。
+"""
+
 from __future__ import annotations
 
 from collections import deque

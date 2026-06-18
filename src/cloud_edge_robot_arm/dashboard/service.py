@@ -1,3 +1,9 @@
+"""Dashboard 聚合服务。
+
+该服务把项目状态、Phase evidence、实验 job 和 runtime 事件聚合成前端视图。
+找不到权威证据时必须返回 UNKNOWN/unavailable，不能硬编码成功状态。
+"""
+
 from __future__ import annotations
 
 import json

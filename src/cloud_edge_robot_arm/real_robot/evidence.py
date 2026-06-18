@@ -1,3 +1,8 @@
+"""真实机器人证据模型。
+
+证据对象记录安全门控、验收等级、硬件声明和执行摘要；不得包含明文凭据或本机绝对路径。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

@@ -1,3 +1,8 @@
+"""Sim-to-real 准入检查模型。
+
+该模块只比较仿真与真实证据指标是否具备进入下一阶段的条件，不执行硬件动作。
+"""
+
 from __future__ import annotations
 
 from typing import Any

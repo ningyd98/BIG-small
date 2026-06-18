@@ -1,3 +1,9 @@
+"""真实硬件证据 provenance。
+
+Provenance 记录 commit、source tree hash、命令和环境摘要，用于证明验收证据来自
+干净源码树；输出必须脱敏。
+"""
+
 from __future__ import annotations
 
 import hashlib
