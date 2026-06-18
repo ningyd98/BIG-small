@@ -147,6 +147,11 @@ async def ollama_models(request: Request) -> list[dict[str, object]]:
     return _service(request).ollama_models(_ollama_transport(request))
 
 
+@router.get("/catalog")
+async def small_model_catalog(request: Request) -> list[dict[str, object]]:
+    return _service(request).small_model_catalog(_ollama_transport(request))
+
+
 @router.post(
     "/ollama/downloads",
     response_model=ModelDownloadJob,

@@ -2,6 +2,7 @@ import {
   DashboardOutlined,
   ExperimentOutlined,
   FileSearchOutlined,
+  RobotOutlined,
   SafetyOutlined,
 } from "@ant-design/icons";
 import { Layout, Menu, Space, Typography } from "antd";
@@ -38,6 +39,19 @@ const navItems = [
   {
     key: "/simulation/analysis",
     label: <Link to="/simulation/analysis">结果分析</Link>,
+  },
+  {
+    key: "/models",
+    icon: <RobotOutlined />,
+    label: <Link to="/models">AI 模型</Link>,
+  },
+  {
+    key: "/models/local",
+    label: <Link to="/models/local">本地模型</Link>,
+  },
+  {
+    key: "/models/test",
+    label: <Link to="/models/test">Planner 测试</Link>,
   },
   {
     key: "/task-execution",

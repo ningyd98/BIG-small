@@ -66,3 +66,30 @@ class PlannerRuntimeStatus(BaseModel):
     health: str = "READY"
     circuit_breaker: str = "CLOSED"
     last_test: dict[str, object] = Field(default_factory=dict)
+
+
+class SmallModelCatalogItem(BaseModel):
+    """本地小模型目录条目。
+
+    目录只记录可核验的 Ollama tag 和非敏感元数据；下载大小未知时显式为
+    ``None``，前端显示“大小未知”。
+    """
+
+    catalog_id: str
+    display_name: str
+    ollama_model: str
+    family: str
+    parameter_size_b: float | None = None
+    quantization: str = "UNKNOWN"
+    estimated_download_bytes: int | None = None
+    minimum_ram_gb: float | None = None
+    recommended_vram_gb: float | None = None
+    context_length: int | None = None
+    capabilities: list[str] = Field(default_factory=list)
+    recommended_for: list[str] = Field(default_factory=list)
+    source: str
+    license: str = "UNKNOWN"
+    tested: bool = False
+    checked_at: str
+    notes: str = ""
+    installed: bool = False

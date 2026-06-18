@@ -558,6 +558,82 @@ test("E2E-33 Phase11.1 WebSocket replay is persisted without duplicates", async 
   );
 });
 
+test("E2E-M01 opens AI model control center", async ({ page }) => {
+  await page.goto("/models");
+
+  await expect(
+    page.getByRole("heading", { name: "AI 模型控制中心" }),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".ant-card-head-title")
+      .filter({ hasText: /^Planner Dry-Run$/ }),
+  ).toBeVisible();
+  await expect(page.getByText(/hardware_execution=false/i)).toBeVisible();
+  await expect(page.getByText(/execute hardware/i)).toHaveCount(0);
+});
+
+test("E2E-M02 creates and activates RuleBased profile", async ({ page }) => {
+  await page.goto("/models");
+  const created = await page.request.post("/api/v1/model-control/profiles", {
+    data: {
+      display_name: "E2E RuleBased",
+      provider_kind: "RULE_BASED",
+      model_name: "rule-based",
+    },
+  });
+  const profile = await created.json();
+  await page.request.post(
+    `/api/v1/model-control/profiles/${profile.profile_id}/activate`,
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("cell", { name: "E2E RuleBased" }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("RULE_BASED").first()).toBeVisible();
+});
+
+test("E2E-M03 API key is write-only in model profile response", async ({
+  page,
+}) => {
+  const created = await page.request.post("/api/v1/model-control/profiles", {
+    data: {
+      display_name: "E2E Cloud",
+      provider_kind: "OPENAI_COMPATIBLE",
+      base_url: "https://api.example.test/v1",
+      chat_completions_path: "/chat/completions",
+      model_name: "safe-model",
+      api_key: "TEST_SECRET_VALUE_E2E",
+    },
+  });
+  const payload = await created.json();
+  const listed = await page.request.get("/api/v1/model-control/profiles");
+  const listPayload = await listed.json();
+
+  expect(created.status()).toBe(201);
+  expect(payload.secret_present).toBe(true);
+  expect(JSON.stringify(payload)).not.toContain("TEST_SECRET_VALUE_E2E");
+  expect(JSON.stringify(listPayload)).not.toContain("TEST_SECRET_VALUE_E2E");
+});
+
+test("E2E-M04 planner dry-run never dispatches hardware", async ({ page }) => {
+  const response = await page.request.post(
+    "/api/v1/model-control/planner/dry-run",
+    {
+      data: {
+        user_instruction: "pick red cube",
+        sample_scene: "S01_NORMAL_STATIC",
+        control_mode: "PCSC",
+      },
+    },
+  );
+  const payload = await response.json();
+
+  expect(response.ok()).toBeTruthy();
+  expect(payload.dispatch).toBe(false);
+  expect(payload.hardware_execution).toBe(false);
+});
+
 async function createRuntimeRun(
   page: Page,
   parameterOverrides: Record<string, unknown> = {},

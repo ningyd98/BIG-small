@@ -345,6 +345,196 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/model-control/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Capabilities */
+    get: operations["capabilities_api_v1_model_control_capabilities_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/catalog": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Small Model Catalog */
+    get: operations["small_model_catalog_api_v1_model_control_catalog_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/ollama/downloads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Ollama Downloads */
+    get: operations["list_ollama_downloads_api_v1_model_control_ollama_downloads_get"];
+    put?: never;
+    /** Create Ollama Download */
+    post: operations["create_ollama_download_api_v1_model_control_ollama_downloads_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/ollama/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Ollama Models */
+    get: operations["ollama_models_api_v1_model_control_ollama_models_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/ollama/models/{model_name}/activate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Activate Ollama Model */
+    post: operations["activate_ollama_model_api_v1_model_control_ollama_models__model_name__activate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/ollama/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Ollama Status */
+    get: operations["ollama_status_api_v1_model_control_ollama_status_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/planner/dry-run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Planner Dry Run */
+    post: operations["planner_dry_run_api_v1_model_control_planner_dry_run_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/profiles": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Profiles */
+    get: operations["list_profiles_api_v1_model_control_profiles_get"];
+    put?: never;
+    /** Create Profile */
+    post: operations["create_profile_api_v1_model_control_profiles_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/profiles/{profile_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Profile */
+    delete: operations["delete_profile_api_v1_model_control_profiles__profile_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Profile */
+    patch: operations["update_profile_api_v1_model_control_profiles__profile_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/model-control/profiles/{profile_id}/activate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Activate Profile */
+    post: operations["activate_profile_api_v1_model_control_profiles__profile_id__activate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/runtime": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Runtime */
+    get: operations["runtime_api_v1_model_control_runtime_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/planning/capabilities": {
     parameters: {
       query?: never;
@@ -1910,6 +2100,11 @@ export interface components {
        */
       level: string;
     };
+    /** DownloadCreateRequest */
+    DownloadCreateRequest: {
+      /** Model Name */
+      model_name: string;
+    };
     /** EdgeEventListResponse */
     EdgeEventListResponse: {
       /** Events */
@@ -2671,6 +2866,212 @@ export interface components {
       /** Transition Id */
       transition_id: string;
     };
+    /** ModelCapabilitiesResponse */
+    ModelCapabilitiesResponse: {
+      /**
+       * Hardware Motion Observed
+       * @default false
+       */
+      hardware_motion_observed: boolean;
+      /** Hardware Write Operations */
+      hardware_write_operations?: string[];
+      /**
+       * Ollama Default Base Url
+       * @default http://127.0.0.1:11434
+       */
+      ollama_default_base_url: string;
+      /**
+       * Profile Limit
+       * @default 64
+       */
+      profile_limit: number;
+      /**
+       * Real Controller Contacted
+       * @default false
+       */
+      real_controller_contacted: boolean;
+      /** Secret Store Modes */
+      secret_store_modes: components["schemas"]["SecretStoreKind"][];
+      /** Supported Provider Kinds */
+      supported_provider_kinds: components["schemas"]["PlannerProviderKind"][];
+    };
+    /** ModelDownloadJob */
+    ModelDownloadJob: {
+      /**
+       * Cancel Requested
+       * @default false
+       */
+      cancel_requested: boolean;
+      /** Completed At */
+      completed_at?: string | null;
+      /**
+       * Completed Bytes
+       * @default 0
+       */
+      completed_bytes: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Current Layer
+       * @default
+       */
+      current_layer: string;
+      /**
+       * Digest
+       * @default
+       */
+      digest: string;
+      /** Download Id */
+      download_id: string;
+      /**
+       * Error Code
+       * @default
+       */
+      error_code: string;
+      /**
+       * Error Message
+       * @default
+       */
+      error_message: string;
+      /**
+       * Message
+       * @default
+       */
+      message: string;
+      /** Model Name */
+      model_name: string;
+      /**
+       * Progress Ratio
+       * @default 0
+       */
+      progress_ratio: number;
+      /**
+       * Provider
+       * @default OLLAMA
+       */
+      provider: string;
+      /**
+       * Requested By
+       * @default
+       */
+      requested_by: string;
+      /** Started At */
+      started_at?: string | null;
+      /** @default CREATED */
+      status: components["schemas"]["ModelDownloadStatus"];
+      /**
+       * Total Bytes
+       * @default 0
+       */
+      total_bytes: number;
+    };
+    /**
+     * ModelDownloadStatus
+     * @enum {string}
+     */
+    ModelDownloadStatus:
+      | "CREATED"
+      | "QUEUED"
+      | "CONNECTING"
+      | "DOWNLOADING"
+      | "VERIFYING"
+      | "SUCCEEDED"
+      | "FAILED"
+      | "CANCEL_REQUESTED"
+      | "CANCELLED"
+      | "BLOCKED_BY_ENV";
+    /**
+     * ModelProviderProfile
+     * @description 非敏感模型 profile。
+     */
+    ModelProviderProfile: {
+      /**
+       * Active
+       * @default false
+       */
+      active: boolean;
+      /** Api Key */
+      api_key?: null;
+      /**
+       * Base Url
+       * @default
+       */
+      base_url: string;
+      /**
+       * Chat Completions Path
+       * @default /v1/chat/completions
+       */
+      chat_completions_path: string;
+      /**
+       * Config Version
+       * @default 1
+       */
+      config_version: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Display Name */
+      display_name: string;
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled: boolean;
+      /**
+       * Endpoint Hash
+       * @default
+       */
+      endpoint_hash: string;
+      /**
+       * Json Mode
+       * @default true
+       */
+      json_mode: boolean;
+      /**
+       * Max Retries
+       * @default 2
+       */
+      max_retries: number;
+      /**
+       * Max Tokens
+       * @default 4096
+       */
+      max_tokens: number;
+      /** Model Name */
+      model_name: string;
+      /** Profile Id */
+      profile_id: string;
+      provider_kind: components["schemas"]["PlannerProviderKind"];
+      /**
+       * Secret Present
+       * @default false
+       */
+      secret_present: boolean;
+      /** @default SESSION_ONLY */
+      secret_store_kind: components["schemas"]["SecretStoreKind"];
+      /** Secret Updated At */
+      secret_updated_at?: string | null;
+      /**
+       * Temperature
+       * @default 0
+       */
+      temperature: number;
+      /**
+       * Timeout Seconds
+       * @default 30
+       */
+      timeout_seconds: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at?: string;
+    };
     /** NetworkDraft */
     NetworkDraft: {
       /**
@@ -2720,6 +3121,63 @@ export interface components {
        * @default phase11.simulation.v1
        */
       schema_version: string;
+    };
+    /** PlannerDryRunRequest */
+    PlannerDryRunRequest: {
+      /** Control Mode */
+      control_mode: string;
+      /** Sample Scene */
+      sample_scene: string;
+      /** User Instruction */
+      user_instruction: string;
+    };
+    /**
+     * PlannerProviderKind
+     * @description 支持的 Planner provider 类型。
+     * @enum {string}
+     */
+    PlannerProviderKind: "MOCK" | "RULE_BASED" | "OPENAI_COMPATIBLE" | "OLLAMA";
+    /**
+     * PlannerRuntimeStatus
+     * @description 当前 active planner 状态。
+     */
+    PlannerRuntimeStatus: {
+      /**
+       * Active Model
+       * @default mock
+       */
+      active_model: string;
+      /**
+       * Active Profile Id
+       * @default
+       */
+      active_profile_id: string;
+      /** @default MOCK */
+      active_provider: components["schemas"]["PlannerProviderKind"];
+      /**
+       * Circuit Breaker
+       * @default CLOSED
+       */
+      circuit_breaker: string;
+      /**
+       * Config Version
+       * @default 0
+       */
+      config_version: number;
+      /**
+       * Endpoint Hash
+       * @default
+       */
+      endpoint_hash: string;
+      /**
+       * Health
+       * @default READY
+       */
+      health: string;
+      /** Last Test */
+      last_test?: {
+        [key: string]: unknown;
+      };
     };
     /** PlanningRequest */
     PlanningRequest: {
@@ -2772,6 +3230,64 @@ export interface components {
       y: number;
       /** Z */
       z: number;
+    };
+    /** ProfileCreateRequest */
+    ProfileCreateRequest: {
+      /** Api Key */
+      api_key?: string | null;
+      /**
+       * Base Url
+       * @default
+       */
+      base_url: string;
+      /**
+       * Chat Completions Path
+       * @default /v1/chat/completions
+       */
+      chat_completions_path: string;
+      /** Display Name */
+      display_name: string;
+      /**
+       * Json Mode
+       * @default true
+       */
+      json_mode: boolean;
+      /**
+       * Max Retries
+       * @default 2
+       */
+      max_retries: number;
+      /**
+       * Max Tokens
+       * @default 4096
+       */
+      max_tokens: number;
+      /** Model Name */
+      model_name: string;
+      provider_kind: components["schemas"]["PlannerProviderKind"];
+      /**
+       * Temperature
+       * @default 0
+       */
+      temperature: number;
+      /**
+       * Timeout Seconds
+       * @default 30
+       */
+      timeout_seconds: number;
+    };
+    /** ProfilePatchRequest */
+    ProfilePatchRequest: {
+      /** Api Key */
+      api_key?: string | null;
+      /** Base Url */
+      base_url?: string | null;
+      /** Chat Completions Path */
+      chat_completions_path?: string | null;
+      /** Display Name */
+      display_name?: string | null;
+      /** Model Name */
+      model_name?: string | null;
     };
     /** QueueStatusResponse */
     QueueStatusResponse: {
@@ -3352,6 +3868,12 @@ export interface components {
        */
       updated_at: string;
     };
+    /**
+     * SecretStoreKind
+     * @description Secret 存储模式。
+     * @enum {string}
+     */
+    SecretStoreKind: "SESSION_ONLY" | "ENVIRONMENT" | "ENCRYPTED_FILE";
     /** ServiceHealth */
     ServiceHealth: {
       /**
@@ -4801,6 +5323,379 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  capabilities_api_v1_model_control_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelCapabilitiesResponse"];
+        };
+      };
+    };
+  };
+  small_model_catalog_api_v1_model_control_catalog_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          }[];
+        };
+      };
+    };
+  };
+  list_ollama_downloads_api_v1_model_control_ollama_downloads_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelDownloadJob"][];
+        };
+      };
+    };
+  };
+  create_ollama_download_api_v1_model_control_ollama_downloads_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DownloadCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelDownloadJob"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  ollama_models_api_v1_model_control_ollama_models_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          }[];
+        };
+      };
+    };
+  };
+  activate_ollama_model_api_v1_model_control_ollama_models__model_name__activate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PlannerRuntimeStatus"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  ollama_status_api_v1_model_control_ollama_status_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  planner_dry_run_api_v1_model_control_planner_dry_run_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PlannerDryRunRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_profiles_api_v1_model_control_profiles_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelProviderProfile"][];
+        };
+      };
+    };
+  };
+  create_profile_api_v1_model_control_profiles_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProfileCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelProviderProfile"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_profile_api_v1_model_control_profiles__profile_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        profile_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_profile_api_v1_model_control_profiles__profile_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        profile_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProfilePatchRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelProviderProfile"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  activate_profile_api_v1_model_control_profiles__profile_id__activate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        profile_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PlannerRuntimeStatus"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  runtime_api_v1_model_control_runtime_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PlannerRuntimeStatus"];
         };
       };
     };

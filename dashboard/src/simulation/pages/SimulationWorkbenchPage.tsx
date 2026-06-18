@@ -16,6 +16,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { StatusBadge } from "../../components/StatusBadge";
+import { usePlannerRuntime } from "../../modelControl/api/modelControlQueries";
 import { ExperimentConfigBuilder } from "../builders/ExperimentConfigBuilder";
 import {
   useSimulationCapabilities,
@@ -49,6 +50,7 @@ export function SimulationWorkbenchPage() {
   const runs = useSimulationRuns();
   const runtimeHealth = useSimulationRuntimeHealth();
   const runtimeQueue = useSimulationRuntimeQueue();
+  const plannerRuntime = usePlannerRuntime();
   const submit = useSubmitSimulationRun();
   const scenarioItems = useMemo(
     () => scenarios.data?.scenarios ?? [],
@@ -232,6 +234,22 @@ export function SimulationWorkbenchPage() {
       <div className="simulation-workbench-grid">
         <RuntimeHealthCard health={runtimeHealth.data} />
         <QueueStatusPanel queue={runtimeQueue.data} />
+        <Card title="Planner Configuration" size="small">
+          <Descriptions column={1} size="small">
+            <Descriptions.Item label="Provider">
+              {plannerRuntime.data?.active_provider ?? "MOCK"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Model">
+              {plannerRuntime.data?.active_model ?? "mock"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Health">
+              <StatusBadge status={plannerRuntime.data?.health ?? "READY"} />
+            </Descriptions.Item>
+            <Descriptions.Item label="Profile version">
+              {plannerRuntime.data?.config_version ?? 0}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
       </div>
 
       <Card title="Active and recent runs">

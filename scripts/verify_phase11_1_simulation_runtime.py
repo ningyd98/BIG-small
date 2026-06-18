@@ -158,16 +158,26 @@ def verify_persistence_sample(output: Path) -> dict[str, Any]:
     terminal = _wait_for_terminal(service, run.run_id)
     events = service.events_for(run.run_id).events
     metrics = service.metrics_for(run.run_id).metrics
+    consistency = _read_artifact_json(
+        artifact_root,
+        terminal.artifact_paths,
+        "evidence_consistency",
+    )
     return {
-        "status": "PASSED" if terminal.status.value == "SUCCEEDED" else "FAILED",
+        "status": "PASSED"
+        if terminal.status.value == "SUCCEEDED" and consistency.get("consistent") is True
+        else "FAILED",
         "run_id": run.run_id,
         "initial_status": run.status.value,
         "terminal_status": terminal.status.value,
         "event_count": len(events),
         "metric_count": len(metrics),
         "artifact_paths": terminal.artifact_paths,
+        "evidence_consistency": consistency,
         "async_queue_accepted": run.status.value == "QUEUED",
         "persistent_repository_accepted": bool(events and metrics),
+        "terminal_evidence_consistent": consistency.get("consistent") is True,
+        "atomic_artifact_finalization_accepted": bool(consistency.get("file_hashes")),
         "real_controller_contacted": False,
         "hardware_motion_observed": False,
         "hardware_write_operations": [],
@@ -530,6 +540,10 @@ def build_summary(
         },
         "async_queue_accepted": bool(persistence.get("async_queue_accepted")),
         "persistent_repository_accepted": bool(persistence.get("persistent_repository_accepted")),
+        "terminal_evidence_consistent": bool(persistence.get("terminal_evidence_consistent")),
+        "atomic_artifact_finalization_accepted": bool(
+            persistence.get("atomic_artifact_finalization_accepted")
+        ),
         "restart_recovery_accepted": bool(recovery.get("restart_recovery_accepted")),
         "cancellation_accepted": mujoco.get("M11-07", {}).get("status") in {"CANCELLED", None},
         "timeout_accepted": mujoco.get("M11-08", {}).get("status") in {"TIMED_OUT", None},
@@ -647,6 +661,17 @@ def _read_result(artifact_root: Path, artifacts: dict[str, str]) -> dict[str, An
     if not result_path.exists():
         result_path = artifact_root.parent / artifacts["result"]
     return cast(dict[str, Any], json.loads(result_path.read_text(encoding="utf-8")))
+
+
+def _read_artifact_json(
+    artifact_root: Path,
+    artifacts: dict[str, str],
+    key: str,
+) -> dict[str, Any]:
+    artifact_path = artifact_root / artifacts[key]
+    if not artifact_path.exists():
+        artifact_path = artifact_root.parent / artifacts[key]
+    return cast(dict[str, Any], json.loads(artifact_path.read_text(encoding="utf-8")))
 
 
 def _verification_artifact_root(output: Path) -> Path:

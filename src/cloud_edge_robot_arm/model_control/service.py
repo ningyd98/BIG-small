@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from cloud_edge_robot_arm.model_control.catalog import load_small_model_catalog
 from cloud_edge_robot_arm.model_control.downloads import ModelDownloadJob, ModelDownloadStatus
 from cloud_edge_robot_arm.model_control.endpoint_security import (
     EndpointSecurityPolicy,
@@ -166,7 +167,22 @@ class ModelControlService:
         return {"reachable": True, "version": str(version.get("version", ""))}
 
     def ollama_models(self, transport: OllamaTransport) -> list[dict[str, Any]]:
-        return transport.list_models()
+        try:
+            return transport.list_models()
+        except Exception:
+            return []
+
+    def small_model_catalog(self, transport: OllamaTransport | None = None) -> list[dict[str, Any]]:
+        installed: set[str] = set()
+        if transport is not None:
+            try:
+                installed = {str(item.get("name", "")) for item in transport.list_models()}
+            except Exception:
+                installed = set()
+        return [
+            item.model_dump(mode="json")
+            for item in load_small_model_catalog(installed_models=installed)
+        ]
 
     def start_ollama_download(
         self,

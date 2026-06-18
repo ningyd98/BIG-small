@@ -60,6 +60,31 @@ const CrossBackendComparisonPage = lazy(() =>
     default: module.CrossBackendComparisonPage,
   })),
 );
+const ModelControlCenterPage = lazy(() =>
+  import("../modelControl/pages/ModelControlCenterPage").then((module) => ({
+    default: module.ModelControlCenterPage,
+  })),
+);
+const LocalModelsPage = lazy(() =>
+  import("../modelControl/pages/LocalModelsPage").then((module) => ({
+    default: module.LocalModelsPage,
+  })),
+);
+const ProviderProfilesPage = lazy(() =>
+  import("../modelControl/pages/ProviderProfilesPage").then((module) => ({
+    default: module.ProviderProfilesPage,
+  })),
+);
+const ModelDownloadCenterPage = lazy(() =>
+  import("../modelControl/pages/ModelDownloadCenterPage").then((module) => ({
+    default: module.ModelDownloadCenterPage,
+  })),
+);
+const PlannerTestConsolePage = lazy(() =>
+  import("../modelControl/pages/PlannerTestConsolePage").then((module) => ({
+    default: module.PlannerTestConsolePage,
+  })),
+);
 const TaskExecutionPage = lazy(() =>
   import("../pages/TaskExecutionPage").then((module) => ({
     default: module.TaskExecutionPage,
@@ -81,6 +106,11 @@ export function DashboardRoutes() {
           path="/simulation/backends"
           element={<CrossBackendComparisonPage />}
         />
+        <Route path="/models" element={<ModelControlCenterPage />} />
+        <Route path="/models/providers" element={<ProviderProfilesPage />} />
+        <Route path="/models/local" element={<LocalModelsPage />} />
+        <Route path="/models/downloads" element={<ModelDownloadCenterPage />} />
+        <Route path="/models/test" element={<PlannerTestConsolePage />} />
         <Route path="/task-execution" element={<TaskExecutionPage />} />
         <Route path="/safety-acceptance" element={<SafetyAcceptancePage />} />
         <Route path="/evidence" element={<EvidenceExplorerPage />} />

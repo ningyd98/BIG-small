@@ -45,7 +45,7 @@ def test_profile_crud_keeps_api_key_write_only_and_out_of_sqlite(tmp_path: Path)
         base_url="https://api.example.test/v1",
         chat_completions_path="/chat/completions",
         model_name="safe-model",
-        api_key="sk-test-secret-value",
+        api_key="TEST_SECRET_VALUE_CREATE",
     )
     profiles = service.list_profiles()
     stored = service.get_profile(created.profile_id)
@@ -55,16 +55,16 @@ def test_profile_crud_keeps_api_key_write_only_and_out_of_sqlite(tmp_path: Path)
     assert stored.secret_present is True
     assert stored.api_key is None
     assert profiles[0].api_key is None
-    assert b"sk-test-secret-value" not in (tmp_path / "model_control.db").read_bytes()
+    assert b"TEST_SECRET_VALUE_CREATE" not in (tmp_path / "model_control.db").read_bytes()
 
     updated = service.update_profile(
         created.profile_id,
         display_name="Cloud compatible renamed",
-        api_key="sk-rotated-secret-value",
+        api_key="TEST_SECRET_VALUE_ROTATED",
     )
     assert updated.display_name == "Cloud compatible renamed"
     assert updated.secret_present is True
-    assert b"sk-rotated-secret-value" not in (tmp_path / "model_control.db").read_bytes()
+    assert b"TEST_SECRET_VALUE_ROTATED" not in (tmp_path / "model_control.db").read_bytes()
 
 
 def test_endpoint_security_rejects_unsafe_remote_targets(tmp_path: Path) -> None:
@@ -147,14 +147,14 @@ def test_model_control_api_profiles_runtime_and_write_only_secret(
             "base_url": "https://api.example.test/v1",
             "chat_completions_path": "/chat/completions",
             "model_name": "safe-model",
-            "api_key": "sk-api-route-secret",
+            "api_key": "TEST_SECRET_VALUE_API_ROUTE",
         },
     )
     assert created.status_code == 201
     profile = created.json()
     assert profile["secret_present"] is True
     assert "api_key" not in profile or profile["api_key"] is None
-    assert b"sk-api-route-secret" not in (tmp_path / "model_control_api.db").read_bytes()
+    assert b"TEST_SECRET_VALUE_API_ROUTE" not in (tmp_path / "model_control_api.db").read_bytes()
 
     listed = client.get("/api/v1/model-control/profiles")
     assert listed.status_code == 200
@@ -168,6 +168,77 @@ def test_model_control_api_profiles_runtime_and_write_only_secret(
     runtime = client.get("/api/v1/model-control/runtime")
     assert runtime.status_code == 200
     assert runtime.json()["active_provider"] == "OPENAI_COMPATIBLE"
+
+
+def test_model_catalog_is_loaded_from_backend_and_marks_installed_models(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class FakeCatalogOllamaTransport:
+        def get_version(self) -> dict[str, str]:
+            return {"version": "0.9.0"}
+
+        def list_models(self) -> list[dict[str, Any]]:
+            return [{"name": "llama3.2:1b", "size": 1, "modified_at": "2026-01-01T00:00:00Z"}]
+
+        def show_model(self, model_name: str) -> dict[str, Any]:
+            return {"model": model_name}
+
+        def pull_model(self, model_name: str) -> list[dict[str, Any]]:
+            return []
+
+        def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+            return {"choices": [{"message": {"content": "{}"}}]}
+
+    monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "model_control_api.db"))
+    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
+    app.state.ollama_transport = FakeCatalogOllamaTransport()
+    client = TestClient(app)
+
+    response = client.get("/api/v1/model-control/catalog")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) >= 5
+    models = {item["ollama_model"]: item for item in payload}
+    assert models["llama3.2:1b"]["installed"] is True
+    assert models["gemma3:4b"]["installed"] is False
+    assert models["llama3.2:1b"]["estimated_download_bytes"] is None
+
+
+def test_model_catalog_still_loads_when_ollama_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class FailingOllamaTransport:
+        def get_version(self) -> dict[str, str]:
+            raise ConnectionError("offline")
+
+        def list_models(self) -> list[dict[str, Any]]:
+            raise ConnectionError("offline")
+
+        def show_model(self, model_name: str) -> dict[str, Any]:
+            raise ConnectionError("offline")
+
+        def pull_model(self, model_name: str) -> list[dict[str, Any]]:
+            raise ConnectionError("offline")
+
+        def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+            raise ConnectionError("offline")
+
+    monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "model_control_api.db"))
+    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
+    app.state.ollama_transport = FailingOllamaTransport()
+    client = TestClient(app)
+
+    catalog = client.get("/api/v1/model-control/catalog")
+    models = client.get("/api/v1/model-control/ollama/models")
+
+    assert catalog.status_code == 200
+    assert len(catalog.json()) >= 5
+    assert all(item["installed"] is False for item in catalog.json())
+    assert models.status_code == 200
+    assert models.json() == []
 
 
 def test_fake_ollama_models_download_activate_and_planner_dry_run(
