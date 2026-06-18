@@ -19,6 +19,7 @@ CODE_SUFFIXES = {
     ".action",
     ".bash",
     ".css",
+    ".dockerfile",
     ".html",
     ".js",
     ".md",
@@ -33,10 +34,21 @@ CODE_SUFFIXES = {
     ".yaml",
     ".yml",
 }
-HASH_COMMENT_SUFFIXES = {".action", ".bash", ".msg", ".sh", ".srv", ".toml", ".yaml", ".yml"}
+HASH_COMMENT_SUFFIXES = {
+    ".action",
+    ".bash",
+    ".dockerfile",
+    ".msg",
+    ".sh",
+    ".srv",
+    ".toml",
+    ".yaml",
+    ".yml",
+}
 SLASH_COMMENT_SUFFIXES = {".css", ".js", ".ts", ".tsx"}
 XML_COMMENT_SUFFIXES = {".html", ".xml"}
 HASH_COMMENT_FILENAMES = {".gitignore", ".env.example", ".env.phase9.example"}
+DOCKERFILE_NAMES = {"Dockerfile"}
 MARKDOWN_FENCE_SUFFIXES = {
     "bash": ".sh",
     "css": ".css",
@@ -150,7 +162,11 @@ def _extract_explanation_text(path: Path, text: str) -> str:
         return _extract_python_explanation_text(text)
     if path.suffix in SLASH_COMMENT_SUFFIXES:
         return _extract_leading_slash_comment_text(text)
-    if path.suffix in HASH_COMMENT_SUFFIXES or path.name in HASH_COMMENT_FILENAMES:
+    if (
+        path.suffix in HASH_COMMENT_SUFFIXES
+        or path.name in HASH_COMMENT_FILENAMES
+        or _is_dockerfile(path)
+    ):
         return _extract_leading_hash_comment_text(text)
     if path.suffix in XML_COMMENT_SUFFIXES:
         return _extract_leading_xml_comment_text(text)
@@ -365,8 +381,13 @@ def _is_audited_file(path: Path) -> bool:
     return (
         path.suffix in CODE_SUFFIXES
         or path.name in HASH_COMMENT_FILENAMES
+        or _is_dockerfile(path)
         or _has_python_shebang(path)
     ) and not path.name.endswith(".d.ts")
+
+
+def _is_dockerfile(path: Path) -> bool:
+    return path.name in DOCKERFILE_NAMES or path.name.startswith("Dockerfile.")
 
 
 def _has_python_shebang(path: Path) -> bool:

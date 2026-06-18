@@ -316,3 +316,26 @@ def test_collects_markdown_only_when_it_contains_supported_code_fence(tmp_path: 
 
     assert "plain.md" not in collected
     assert "fenced.md" in collected
+
+
+def test_collects_dockerfile_for_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "Dockerfile"
+    path.write_text("FROM python:3.12-slim\n", encoding="utf-8")
+
+    collected = {item.name for item in _collect_files([tmp_path])}
+    result = _audit_file(path)
+
+    assert "Dockerfile" in collected
+    assert not result.has_chinese
+
+
+def test_dockerfile_leading_hash_comment_counts(tmp_path: Path) -> None:
+    path = tmp_path / "Dockerfile.console"
+    path.write_text(
+        "# 容器说明：只启动仿真控制台，不包含真实机械臂驱动。\nFROM python:3.12-slim\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert result.has_chinese
