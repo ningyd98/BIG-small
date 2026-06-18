@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""仓库回归辅助脚本，保持命令入口职责清晰并记录安全边界。"""
+
 from __future__ import annotations
 
 import argparse

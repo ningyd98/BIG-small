@@ -1,3 +1,5 @@
+"""中文注释审计脚本的回归测试，防止 UI 文案被误判为源码说明。"""
+
 from pathlib import Path
 
 from scripts.check_chinese_comments import _audit_file

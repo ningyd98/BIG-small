@@ -1,4 +1,6 @@
-"""Phase 6 event detection tests — unit tests for all event detectors."""
+"""Phase 6 执行与恢复回归测试，覆盖安全边界、证据契约和关键失败路径。
+
+Phase 6 event detection tests — unit tests for all event detectors."""
 
 from __future__ import annotations
 

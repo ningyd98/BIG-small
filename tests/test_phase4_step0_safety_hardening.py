@@ -1,4 +1,6 @@
-"""Phase 4 Step 0: safety hardening tests — RUNTIME_PROFILE, provider restrictions,
+"""Phase 4 云端规划和契约修复回归测试，覆盖安全边界、证据契约和关键失败路径。
+
+Phase 4 Step 0: safety hardening tests — RUNTIME_PROFILE, provider restrictions,
 telemetry velocity propagation, post-check improvements."""
 
 from __future__ import annotations

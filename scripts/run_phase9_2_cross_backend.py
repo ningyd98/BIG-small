@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""Phase 9.2 跨后端和 Isaac 环境演示或实验入口，用固定参数运行受控流程并输出可追溯结果。"""
+
 from __future__ import annotations
 
 import argparse

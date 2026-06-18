@@ -1,3 +1,5 @@
+"""Phase 8 实验场景和指标回归测试，覆盖安全边界、证据契约和关键失败路径。"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.experiments.profiles import NetworkProfileName, get_network_profile

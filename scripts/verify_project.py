@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""项目级验证编排脚本，按固定 allowlist 执行检查命令并汇总 artifact。"""
+
 from __future__ import annotations
 
 import argparse

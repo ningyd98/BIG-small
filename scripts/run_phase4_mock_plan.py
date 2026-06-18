@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Phase 4 acceptance: Mock planner produces a valid, edge-ready TaskContract."""
+"""Phase 4 云端规划和契约修复演示或实验入口，用固定参数运行受控流程并输出可追溯结果。
+
+Phase 4 acceptance: Mock planner produces a valid, edge-ready TaskContract."""
 
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+"""Phase 1 Mock 机械臂基础能力回归测试，覆盖安全边界、证据契约和关键失败路径。"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.contracts import Pose

@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""仓库回归演示或实验入口，用固定参数运行受控流程并输出可追溯结果。"""
+
 from __future__ import annotations
 
 import json

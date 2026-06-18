@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Phase 6.1 acceptance verification.
+"""Phase 6 执行与恢复验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
+
+Phase 6.1 acceptance verification.
 
 The script performs behavioral checks against production code paths. It prints
-one line per check immediately and exits non-zero if any check fails.
-"""
+one line per check immediately and exits non-zero if any check fails."""
 
 from __future__ import annotations
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Phase 4 acceptance: API smoke test.
+"""Phase 4 云端规划和契约修复演示或实验入口，用固定参数运行受控流程并输出可追溯结果。
+
+Phase 4 acceptance: API smoke test.
 
 Verifies:
 - FastAPI health endpoint
 - Capabilities endpoint
-- TaskContract schema endpoint
-"""
+- TaskContract schema endpoint"""
 
 from __future__ import annotations
 

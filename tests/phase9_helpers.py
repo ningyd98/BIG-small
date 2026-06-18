@@ -1,3 +1,5 @@
+"""Phase 9 物理仿真和跨后端验证测试辅助模块，封装夹具以保持回归用例可读。"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,6 @@
-"""Phase 6 recovery and replanning tests."""
+"""Phase 6 执行与恢复回归测试，覆盖安全边界、证据契约和关键失败路径。
+
+Phase 6 recovery and replanning tests."""
 
 from __future__ import annotations
 

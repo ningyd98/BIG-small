@@ -1,7 +1,8 @@
-"""Phase 5: Periodic Cloud Supervisory Control (PCSC) comprehensive tests.
+"""Phase 5 监督控制回归测试，覆盖安全边界、证据契约和关键失败路径。
 
-Covers unit tests and integration tests for the supervision system.
-"""
+Phase 5: Periodic Cloud Supervisory Control (PCSC) comprehensive tests.
+
+Covers unit tests and integration tests for the supervision system."""
 
 from __future__ import annotations
 

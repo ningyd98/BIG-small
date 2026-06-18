@@ -1,3 +1,5 @@
+"""Phase 2 任务运行时和恢复回归测试，覆盖安全边界、证据契约和关键失败路径。"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.contracts import SkillName

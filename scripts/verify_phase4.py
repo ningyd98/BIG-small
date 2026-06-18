@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Phase 4 comprehensive verification script.
+"""Phase 4 云端规划和契约修复验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
 
-Runs all Phase 4 acceptance scenarios and reports pass/fail for each.
-"""
+Phase 4 comprehensive verification script.
+
+Runs all Phase 4 acceptance scenarios and reports pass/fail for each."""
 
 from __future__ import annotations
 

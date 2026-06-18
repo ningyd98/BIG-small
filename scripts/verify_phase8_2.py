@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Phase 8.2 acceptance verification.
+"""Phase 8.2 故障交错和敏感性验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
+
+Phase 8.2 acceptance verification.
 
 The checks execute the experiment harness and fail if the added Phase 8.2
-signals collapse to identical or synthetic values.
-"""
+signals collapse to identical or synthetic values."""
 
 from __future__ import annotations
 

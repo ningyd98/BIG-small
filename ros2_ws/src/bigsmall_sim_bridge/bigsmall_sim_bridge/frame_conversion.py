@@ -1,3 +1,5 @@
+"""仿真与 ROS 坐标时间封装工具，保留时间戳来源以便验证 freshness。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

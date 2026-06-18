@@ -1,3 +1,5 @@
+"""Phase 3.2 集成验收回归测试，覆盖安全边界、证据契约和关键失败路径。"""
+
 from __future__ import annotations
 
 import pytest

@@ -1,4 +1,6 @@
-"""Phase 4 cloud planning comprehensive test suite.
+"""Phase 4 云端规划和契约修复回归测试，覆盖安全边界、证据契约和关键失败路径。
+
+Phase 4 cloud planning comprehensive test suite.
 
 Covers:
 - Legal planning (Mock + RuleBased)
@@ -17,8 +19,7 @@ Covers:
 - InProcess dispatch / edge rejection propagation
 - Repository persistence (InMemory)
 - Prompt version tracking
-- Key sanitization (no plaintext keys)
-"""
+- Key sanitization (no plaintext keys)"""
 
 from __future__ import annotations
 

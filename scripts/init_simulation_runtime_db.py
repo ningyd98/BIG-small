@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""仿真运行时 SQLite 初始化脚本，只创建持久化表结构，不启动任务。"""
+
 from __future__ import annotations
 
 import argparse

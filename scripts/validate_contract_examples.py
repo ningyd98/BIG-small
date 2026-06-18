@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""契约样例校验脚本，确保文档中的任务契约能被当前模型解析。"""
+
 from __future__ import annotations
 
 import json

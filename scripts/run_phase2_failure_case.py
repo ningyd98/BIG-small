@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""Phase 2 任务运行时和恢复演示或实验入口，用固定参数运行受控流程并输出可追溯结果。"""
+
 from __future__ import annotations
 
 import argparse

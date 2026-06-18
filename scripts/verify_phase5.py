@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Phase 5 verification: Periodic Cloud Supervisory Control (PCSC).
+"""Phase 5 监督控制验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
+
+Phase 5 verification: Periodic Cloud Supervisory Control (PCSC).
 
 Verifies:
 1. Stable state produces KEEP
@@ -9,8 +11,7 @@ Verifies:
 5. Stale/expired commands rejected
 6. PathCollision rule real rejection
 7. Acceleration rule real evaluation
-8. All Phase 3/3.1/3.2/4 scripts continue to pass
-"""
+8. All Phase 3/3.1/3.2/4 scripts continue to pass"""
 
 from __future__ import annotations
 

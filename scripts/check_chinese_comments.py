@@ -28,13 +28,14 @@ def main() -> int:
         "paths",
         nargs="*",
         default=[
-            "src/cloud_edge_robot_arm",
+            "src",
             "dashboard/src",
             "dashboard/tests",
             "dashboard/playwright.config.ts",
             "dashboard/vite.config.ts",
-            "scripts/verify_phase11_1_simulation_runtime.py",
-            "tests/test_phase11_1_simulation_runtime.py",
+            "scripts",
+            "tests",
+            "ros2_ws/src",
         ],
         help="需要审计的文件或目录。",
     )

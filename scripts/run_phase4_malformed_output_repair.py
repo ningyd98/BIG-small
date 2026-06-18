@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Phase 4 acceptance: malformed output detection and repair.
+"""Phase 4 云端规划和契约修复演示或实验入口，用固定参数运行受控流程并输出可追溯结果。
+
+Phase 4 acceptance: malformed output detection and repair.
 
 Tests:
 - Malformed JSON (non-list steps → PLANNER_FAILED)
 - Repair fixes timeout < duration
-- Repair exhaustion (max attempts)
-"""
+- Repair exhaustion (max attempts)"""
 
 from __future__ import annotations
 

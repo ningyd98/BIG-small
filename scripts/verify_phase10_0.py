@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""Phase 10 MoveIt dry-run 和硬件边界验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。"""
+
 from __future__ import annotations
 
 import argparse

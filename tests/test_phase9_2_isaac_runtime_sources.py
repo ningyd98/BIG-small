@@ -1,3 +1,5 @@
+"""Phase 9.2 跨后端和 Isaac 环境回归测试，覆盖安全边界、证据契约和关键失败路径。"""
+
 from __future__ import annotations
 
 from pathlib import Path

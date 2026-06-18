@@ -1,3 +1,5 @@
+"""MoveIt 边界节点，只暴露受控桥接入口，禁止浏览器或仿真工作台直接执行轨迹。"""
+
 from __future__ import annotations
 
 import json

@@ -1,3 +1,5 @@
+"""Phase 2 任务运行时和恢复测试辅助模块，封装夹具以保持回归用例可读。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Phase 6.2 final acceptance verification."""
+"""Phase 6.2 重规划恢复验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
+
+Phase 6.2 final acceptance verification."""
 
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+"""Phase 7 风险评估和 AUTO 模式回归测试，覆盖安全边界、证据契约和关键失败路径。"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

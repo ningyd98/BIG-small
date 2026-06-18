@@ -1,3 +1,5 @@
+"""ROS2 仿真安全限制检查工具，用关节边界拒绝越界轨迹。"""
+
 from __future__ import annotations
 
 import math

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Phase 8 实验场景和指标演示或实验入口，用固定参数运行受控流程并输出可追溯结果。"""
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""仿真运行时数据库只读检查脚本，用于排查队列、租约和恢复状态。"""
+
 from __future__ import annotations
 
 import argparse

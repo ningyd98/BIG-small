@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""Phase 3 安全屏障和故障场景验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。"""
+
 from __future__ import annotations
 
 import json

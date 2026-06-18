@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Phase 7 acceptance verification.
+"""Phase 7 风险评估和 AUTO 模式验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
+
+Phase 7 acceptance verification.
 
 The script exercises production code paths for Skill Cache, RiskEvaluator,
 AUTO selection, mode transitions, persistence, production configuration gates,
-and Phase 5/6 regressions. Any failed check exits non-zero.
-"""
+and Phase 5/6 regressions. Any failed check exits non-zero."""
 
 from __future__ import annotations
 

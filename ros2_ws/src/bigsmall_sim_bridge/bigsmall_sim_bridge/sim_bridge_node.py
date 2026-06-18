@@ -1,3 +1,5 @@
+"""仿真 ROS2 桥接节点，负责场景和状态消息转换，不连接真实机械臂控制器。"""
+
 from __future__ import annotations
 
 import json

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Phase 8.1 experimental-validity verification.
+"""Phase 8.1 PCSC/ETEAC 集成验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
+
+Phase 8.1 experimental-validity verification.
 
 The checks execute the real runtime harness, ExperimentRunner, Phase 8 smoke
-suite, and Phase 3-8 regressions. They do not rely on text search.
-"""
+suite, and Phase 3-8 regressions. They do not rely on text search."""
 
 from __future__ import annotations
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Phase 8 acceptance verification.
+"""Phase 8 实验场景和指标验证入口，按固定检查流程生成验收证据，不执行未授权硬件动作。
+
+Phase 8 acceptance verification.
 
 This script runs executable checks for the reproducible experiment framework.
-It does not merely scan files.
-"""
+It does not merely scan files."""
 
 from __future__ import annotations
 

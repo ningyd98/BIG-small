@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""Check model runtime prerequisites without contacting hardware."""
+"""模型运行时检查入口，只读取 API、Ollama 和数据库状态，不保存密钥。
+
+Check model runtime prerequisites without contacting hardware."""
 
 from __future__ import annotations
 

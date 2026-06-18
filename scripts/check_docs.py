@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""文档检查入口，确保仓库关键说明文件存在并覆盖当前阶段交付物。"""
+
 from __future__ import annotations
 
 import argparse

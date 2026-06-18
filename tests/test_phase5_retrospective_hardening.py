@@ -1,4 +1,6 @@
-"""Retrospective hardening tests for the Phase 0-5 audit."""
+"""Phase 5 监督控制回归测试，覆盖安全边界、证据契约和关键失败路径。
+
+Retrospective hardening tests for the Phase 0-5 audit."""
 
 from __future__ import annotations
 

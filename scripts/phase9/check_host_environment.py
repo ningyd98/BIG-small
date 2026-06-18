@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""仓库回归环境检查入口，只读取依赖和配置状态，不执行真实机械臂动作。"""
+
 from __future__ import annotations
 
 import sys

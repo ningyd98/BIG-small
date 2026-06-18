@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""Phase 11 运行时恢复入口，默认 dry-run，避免重复执行已完成仿真。"""
+
 from __future__ import annotations
 
 import argparse

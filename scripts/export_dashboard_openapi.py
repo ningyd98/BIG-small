@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+"""Dashboard OpenAPI 导出脚本，用真实 FastAPI schema 驱动前端类型检查。"""
+
 from __future__ import annotations
 
 import argparse
