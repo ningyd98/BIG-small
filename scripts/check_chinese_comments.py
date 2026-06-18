@@ -10,6 +10,7 @@ import argparse
 import ast
 import io
 import tokenize
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -145,23 +146,32 @@ def _extract_python_explanation_text(text: str) -> str:
         tree = None
 
     if tree is not None:
-        # Python 文件里的模块、类和函数 docstring 承担正式说明职责，普通字符串不计入。
+        # Python 文件必须在模块入口说明职责；类/函数 docstring 只解释局部 API。
         module_docstring = ast.get_docstring(tree, clean=False)
         if module_docstring:
             fragments.append(module_docstring)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
-                docstring = ast.get_docstring(node, clean=False)
-                if docstring:
-                    fragments.append(docstring)
 
     try:
         tokens = tokenize.generate_tokens(io.StringIO(text).readline)
-        fragments.extend(token.string for token in tokens if token.type == tokenize.COMMENT)
+        fragments.extend(_leading_python_comments(tokens))
     except tokenize.TokenError:
         pass
 
     return "\n".join(fragments)
+
+
+def _leading_python_comments(tokens: Iterable[tokenize.TokenInfo]) -> list[str]:
+    comments: list[str] = []
+    for token in tokens:
+        if token.type in {tokenize.ENCODING, tokenize.NL, tokenize.NEWLINE}:
+            continue
+        if token.type == tokenize.COMMENT:
+            comments.append(token.string)
+            continue
+        if token.type == tokenize.STRING and token.start[0] <= 3:
+            continue
+        break
+    return comments
 
 
 def _extract_leading_slash_comment_text(text: str) -> str:

@@ -1,4 +1,8 @@
-"""EventDetector protocol — the interface all detectors must implement."""
+"""事件检测器协议定义。
+
+所有 detector 都必须只读取 DetectionContext 并返回结构化 EdgeEvent 或 None，
+不得在检测阶段调用大模型、外部服务或隐藏的全局状态。
+"""
 
 from __future__ import annotations
 

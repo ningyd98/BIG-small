@@ -1,4 +1,8 @@
-"""Detects network events: NETWORK_DEGRADED, NETWORK_LOST, NETWORK_RECOVERED."""
+"""网络状态事件检测器。
+
+该模块根据当前任务的网络连接状态和上一帧状态识别断连、恢复和退化事件，为
+PCSC/ETEAC/AUTO 的云边协同策略切换提供审计输入。
+"""
 
 from __future__ import annotations
 

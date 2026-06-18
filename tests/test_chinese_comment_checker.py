@@ -89,6 +89,20 @@ def test_python_docstring_counts_as_chinese_explanation(tmp_path: Path) -> None:
     assert result.has_chinese
 
 
+def test_python_requires_module_level_chinese_explanation(tmp_path: Path) -> None:
+    path = tmp_path / "service.py"
+    path.write_text(
+        "def run() -> None:\n"
+        '    """函数说明：这里只解释局部函数，不能替代模块职责。"""\n'
+        "    return None\n",
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert not result.has_chinese
+
+
 def test_collects_script_config_and_ros_interface_files(tmp_path: Path) -> None:
     expected_names = {
         ".env.example",

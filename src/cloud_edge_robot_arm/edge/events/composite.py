@@ -1,4 +1,8 @@
-"""Composite event detector — orchestrates all detectors with dedup and debounce."""
+"""组合事件检测入口。
+
+该模块按固定 detector 列表汇总完成、设备、网络、场景和安全事件，并在统一出口做
+去重、抑制窗口和严重级别排序，避免同一运行现象生成重复审计事件。
+"""
 
 from __future__ import annotations
 

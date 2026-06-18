@@ -1,4 +1,8 @@
-"""Detection context and shared types for event detectors."""
+"""事件检测共享输入模型。
+
+DetectionContext 汇集任务合同、机器人状态、网络状态、场景状态和安全状态，是各
+detector 的只读数据边界，避免检测逻辑直接读取全局运行时状态。
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,9 @@
+"""实验 artifact 写出器。
+
+该模块负责把 Phase 8/9 仿真实验结果写成 manifest、JSONL、CSV 和 Markdown 报告；
+输出只代表仿真证据，不能被解释为真实硬件验收。
+"""
+
 from __future__ import annotations
 
 import csv

@@ -1,4 +1,8 @@
-"""Detects scene-related events: SCENE_CHANGED, SCENE_CONFIDENCE_LOW, PATH_BLOCKED."""
+"""场景变化事件检测器。
+
+该模块识别路径阻塞、场景置信度过低和场景版本变化，为安全暂停、云端重规划和
+恢复策略提供统一事件输入。
+"""
 
 from __future__ import annotations
 

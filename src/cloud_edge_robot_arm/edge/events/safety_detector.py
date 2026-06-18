@@ -1,4 +1,8 @@
-"""Detects safety-related events: SAFETY_REJECTED, SAFETY_PAUSED, EMERGENCY_STOP_TRIGGERED."""
+"""安全状态事件检测器。
+
+该模块把 SafetyShield 的拒绝、暂停和急停状态转换为高优先级 EdgeEvent，确保
+安全介入能进入运行时审计链路。
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,8 @@
-"""Detects device health events: DEVICE_FAULT, TELEMETRY_STALE (from device side)."""
+"""设备健康事件检测器。
+
+该模块把碰撞、急停、断连和设备侧遥测过期映射为 DEVICE_FAULT/TELEMETRY_STALE
+事件；UNKNOWN 或 stale 状态不能被解释为健康。
+"""
 
 from __future__ import annotations
 
