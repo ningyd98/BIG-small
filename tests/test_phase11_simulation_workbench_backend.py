@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.testclient import WebSocketDenialResponse
+from starlette.websockets import WebSocketDisconnect
 
 from cloud_edge_robot_arm.cloud.api.app import create_app
 from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
@@ -18,6 +21,12 @@ def _client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
     monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
     app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
     return TestClient(app)
+
+
+def _app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FastAPI:
+    monkeypatch.setenv("DASHBOARD_ARTIFACT_ROOT", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+    return create_app(PlanningPipeline(planner=MockPlannerAdapter()))
 
 
 def _draft(**overrides: Any) -> dict[str, Any]:
@@ -328,3 +337,40 @@ def test_simulation_api_has_no_hardware_or_level1_routes(
     )
     assert client.post("/api/v1/simulation/hardware/enable").status_code == 404
     assert client.post("/api/v1/simulation/level1").status_code == 404
+
+
+def test_simulation_websocket_uses_dashboard_auth_replay_and_size_limit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from cloud_edge_robot_arm.simulation_workbench.service import SimulationWorkbenchService
+
+    app = _app(monkeypatch, tmp_path)
+    service = SimulationWorkbenchService(artifact_root=tmp_path / "artifacts")
+    app.state.simulation_workbench_service = service
+    service.events.publish("run_state", "test", {"status": "RUNNING"}, experiment_id="sim-test")
+    client = TestClient(app)
+
+    with client.websocket_connect("/api/v1/simulation/stream?last_sequence=0") as ws:
+        replayed = ws.receive_json()
+        assert replayed["event_type"] == "run_state"
+        assert replayed["sequence"] == 1
+        heartbeat = ws.receive_json()
+        assert heartbeat["event_type"] == "heartbeat"
+        ws.send_json({"last_sequence": 1, "padding": "x" * 4096})
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+
+    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "TOKEN")
+    monkeypatch.setenv("DASHBOARD_TOKEN", "phase11-token")
+    token_app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
+    token_client = TestClient(token_app)
+
+    with pytest.raises(WebSocketDenialResponse):
+        with token_client.websocket_connect("/api/v1/simulation/stream?token=phase11-token"):
+            pass
+
+    with token_client.websocket_connect(
+        "/api/v1/simulation/stream",
+        headers={"cookie": "dashboard_token=phase11-token"},
+    ) as ws:
+        assert ws.receive_json()["event_type"] == "heartbeat"

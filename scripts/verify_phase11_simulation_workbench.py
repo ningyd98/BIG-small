@@ -99,7 +99,7 @@ def verify_backend(repo: Path) -> dict[str, Any]:
             "batch_api": "/api/v1/simulation/batches" in paths,
             "comparison_api": "/api/v1/simulation/comparisons" in paths,
             "export_api": "/api/v1/simulation/exports" in paths,
-            "stream_api": "/api/v1/simulation/stream" in paths,
+            "stream_api": _has_route(app, "/api/v1/simulation/stream"),
             "openapi_path_count": len(paths) if isinstance(paths, dict) else 0,
             "runner_allowlist": capabilities["runner_allowlist"],
             "real_controller_contacted": capabilities["real_controller_contacted"],
@@ -221,6 +221,7 @@ def build_summary(
         and backend["scenario_count"] == 15
         and backend["capability_api"]
         and backend["parameter_schema"]
+        and backend["stream_api"]
         and set(backend.get("runner_allowlist", []))
         == {
             "MOCK_SCENARIO",
@@ -348,6 +349,10 @@ def skipped_section(name: str, reason: str) -> dict[str, Any]:
         "commands": [],
         "generated_at": datetime.now(UTC).isoformat(),
     }
+
+
+def _has_route(app: Any, path: str) -> bool:
+    return any(getattr(route, "path", "") == path for route in app.routes)
 
 
 def _backend_readiness(backend: dict[str, Any], name: str) -> str:
