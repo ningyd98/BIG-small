@@ -20,6 +20,7 @@ def build_json_log_record(
     extra: Mapping[str, Any] | None = None,
     timestamp: datetime | None = None,
 ) -> str:
+    """构造稳定 JSON 日志行，保留任务上下文并避免模块各自拼接日志。"""
     occurred_at = timestamp if timestamp is not None else datetime.now(UTC)
     payload: dict[str, Any] = {
         "timestamp": occurred_at.isoformat(),

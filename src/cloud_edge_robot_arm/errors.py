@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class StructuredError(BaseModel):
-    """A machine-readable error returned instead of leaking raw exceptions."""
+    """结构化错误响应，用稳定 code 替代原始异常泄露。"""
 
     model_config = ConfigDict(frozen=True)
 

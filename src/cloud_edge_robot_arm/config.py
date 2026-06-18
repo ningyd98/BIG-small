@@ -30,6 +30,8 @@ def _read_float(env: Mapping[str, str], key: str, default: float) -> float:
 
 @dataclass(frozen=True)
 class CoordinationModeDefaults:
+    """云边协同模式的默认时间参数，用于监督周期、命令 TTL 和断网宽限。"""
+
     periodic_supervision_ms: int = 1_000
     command_ttl_ms: int = 2_500
     network_loss_grace_ms: int = 3_000
@@ -37,6 +39,8 @@ class CoordinationModeDefaults:
 
 @dataclass(frozen=True)
 class AppConfig:
+    """应用运行配置快照，集中保存环境、规划器、仓储和 AUTO 模式参数。"""
+
     app_name: str
     app_env: str
     database_url: str
@@ -74,6 +78,7 @@ class AppConfig:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> AppConfig:
+        """从环境变量加载配置，并在 production profile 下拒绝测试替身默认值。"""
         source = environ if env is None else env
         runtime_profile = source.get("RUNTIME_PROFILE", "test").strip().lower()
         if runtime_profile not in {"test", "simulation", "production"}:

@@ -14,7 +14,8 @@ def _has_chinese(text: str) -> bool:
 
 def _public_python_api_without_chinese_docstrings(root: Path) -> list[str]:
     missing: list[str] = []
-    for path in sorted(root.rglob("*.py")):
+    paths = [root] if root.is_file() else sorted(root.rglob("*.py"))
+    for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
@@ -45,6 +46,18 @@ def test_auto_mode_public_api_has_chinese_docstrings() -> None:
 
 def test_risk_public_api_has_chinese_docstrings() -> None:
     missing = _public_python_api_without_chinese_docstrings(Path("src/cloud_edge_robot_arm/risk"))
+
+    assert missing == []
+
+
+def test_root_utility_public_api_has_chinese_docstrings() -> None:
+    missing: list[str] = []
+    for path in (
+        Path("src/cloud_edge_robot_arm/config.py"),
+        Path("src/cloud_edge_robot_arm/errors.py"),
+        Path("src/cloud_edge_robot_arm/logging_utils.py"),
+    ):
+        missing.extend(_public_python_api_without_chinese_docstrings(path))
 
     assert missing == []
 
