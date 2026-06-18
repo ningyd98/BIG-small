@@ -74,6 +74,27 @@ PLACEHOLDER_EXPLANATION_MARKERS = (
     "文件说明：补充中文说明",
     "测试说明：覆盖该阶段关键业务约束",
 )
+DEFAULT_AUDIT_PATHS = [
+    "src",
+    "dashboard/src",
+    "dashboard/tests",
+    "dashboard/playwright.config.ts",
+    "dashboard/vite.config.ts",
+    "dashboard/eslint.config.js",
+    "dashboard/package.json",
+    "dashboard/package-lock.json",
+    "dashboard/tsconfig.app.json",
+    "dashboard/tsconfig.json",
+    "dashboard/tsconfig.node.json",
+    ".env.example",
+    ".env.phase9.example",
+    ".github/workflows",
+    ".gitignore",
+    "pyproject.toml",
+    "scripts",
+    "tests",
+    "ros2_ws/src",
+]
 
 
 @dataclass(frozen=True)
@@ -88,21 +109,7 @@ def main() -> int:
     parser.add_argument(
         "paths",
         nargs="*",
-        default=[
-            "src",
-            "dashboard/src",
-            "dashboard/tests",
-            "dashboard/playwright.config.ts",
-            "dashboard/vite.config.ts",
-            ".env.example",
-            ".env.phase9.example",
-            ".github/workflows",
-            ".gitignore",
-            "pyproject.toml",
-            "scripts",
-            "tests",
-            "ros2_ws/src",
-        ],
+        default=DEFAULT_AUDIT_PATHS,
         help="需要审计的文件或目录。",
     )
     args = parser.parse_args()

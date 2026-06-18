@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from scripts.check_chinese_comments import _audit_file, _collect_files
+from scripts.check_chinese_comments import DEFAULT_AUDIT_PATHS, _audit_file, _collect_files
 
 
 def _has_chinese(text: str) -> bool:
@@ -377,3 +377,13 @@ def test_jsonc_leading_slash_comment_counts(tmp_path: Path) -> None:
     result = _audit_file(path)
 
     assert result.has_chinese
+
+
+def test_default_paths_collect_dashboard_root_configs() -> None:
+    collected = {
+        str(path) for path in _collect_files([Path(value) for value in DEFAULT_AUDIT_PATHS])
+    }
+
+    assert "dashboard/package.json" in collected
+    assert "dashboard/tsconfig.json" in collected
+    assert "dashboard/eslint.config.js" in collected
