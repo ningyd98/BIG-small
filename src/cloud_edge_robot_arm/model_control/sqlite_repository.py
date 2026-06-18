@@ -174,6 +174,27 @@ class SQLiteModelProfileRepository:
             ModelDownloadJob.model_validate(json.loads(str(row["payload_json"]))) for row in rows
         ]
 
+    def request_download_cancel(self, download_id: str) -> ModelDownloadJob:
+        """标记下载任务取消请求，不删除 Ollama 管理的模型缓存。"""
+
+        job = self.get_download_job(download_id)
+        if job.status in {
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED",
+            "BLOCKED_BY_ENV",
+        }:
+            return job
+        cancelled = job.model_copy(
+            update={
+                "status": "CANCELLED",
+                "cancel_requested": True,
+                "message": "best-effort cancellation requested",
+                "completed_at": datetime.now(UTC),
+            }
+        )
+        return self.save_download_job(cancelled)
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.database_path, isolation_level=None, check_same_thread=False)
         conn.row_factory = sqlite3.Row

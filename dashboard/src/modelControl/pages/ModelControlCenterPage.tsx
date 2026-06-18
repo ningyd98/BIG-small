@@ -18,7 +18,9 @@ import { useState } from "react";
 import {
   useActivateModelProfile,
   useActivateOllamaModel,
+  useCancelModelDownload,
   useCreateModelProfile,
+  useDeleteOllamaModel,
   useModelCapabilities,
   useModelDownloads,
   useModelProfiles,
@@ -26,11 +28,14 @@ import {
   useOllamaStatus,
   usePlannerDryRun,
   usePlannerRuntime,
+  useReloadPlannerRuntime,
   useSmallModelCatalog,
   useStartModelDownload,
+  useTestModelProfile,
 } from "../api/modelControlQueries";
 import type {
   LocalModel,
+  ModelTestResult,
   ModelProviderProfile,
   PlannerProviderKind,
   SmallModelCatalogItem,
@@ -55,11 +60,16 @@ export function ModelControlCenterPage() {
   const downloads = useModelDownloads();
   const createProfile = useCreateModelProfile();
   const activateProfile = useActivateModelProfile();
+  const testProfile = useTestModelProfile();
+  const reloadRuntime = useReloadPlannerRuntime();
   const startDownload = useStartModelDownload();
+  const cancelDownload = useCancelModelDownload();
   const activateOllama = useActivateOllamaModel();
+  const deleteOllama = useDeleteOllamaModel();
   const dryRun = usePlannerDryRun();
   const [downloadModel, setDownloadModel] = useState("llama3.2:3b");
   const [dryRunInstruction, setDryRunInstruction] = useState("pick red cube");
+  const [lastTest, setLastTest] = useState<ModelTestResult | null>(null);
 
   const handleCreateProfile = async (values: ProfileForm) => {
     await createProfile.mutateAsync({
@@ -76,7 +86,7 @@ export function ModelControlCenterPage() {
       <Alert
         showIcon
         type="info"
-        message="Planner dry-run 只生成规划合同预览，dispatch=false，hardware_execution=false。"
+        title="Planner dry-run 只生成规划合同预览，dispatch=false，hardware_execution=false。"
       />
 
       <div className="simulation-workbench-grid">
@@ -95,6 +105,13 @@ export function ModelControlCenterPage() {
               {runtime.data?.config_version ?? 0}
             </Descriptions.Item>
           </Descriptions>
+          <Button
+            size="small"
+            onClick={() => reloadRuntime.mutate()}
+            loading={reloadRuntime.isPending}
+          >
+            Reload
+          </Button>
         </Card>
 
         <Card title="Ollama 本地运行时" size="small">
@@ -180,16 +197,38 @@ export function ModelControlCenterPage() {
             {
               title: "操作",
               render: (_, row) => (
-                <Button
-                  size="small"
-                  onClick={() => activateProfile.mutate(row.profile_id)}
-                >
-                  激活
-                </Button>
+                <Space>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      testProfile.mutate(row.profile_id, {
+                        onSuccess: setLastTest,
+                      })
+                    }
+                    loading={testProfile.isPending}
+                  >
+                    测试
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => activateProfile.mutate(row.profile_id)}
+                  >
+                    激活
+                  </Button>
+                </Space>
               ),
             },
           ]}
         />
+        {lastTest && (
+          <Alert
+            showIcon
+            type={lastTest.reachable ? "success" : "warning"}
+            title={`连接测试：reachable=${String(lastTest.reachable)} authenticated=${String(
+              lastTest.authenticated,
+            )} model_available=${String(lastTest.model_available)}`}
+          />
+        )}
       </Card>
 
       <Card title="本地模型" size="small">
@@ -205,12 +244,25 @@ export function ModelControlCenterPage() {
             {
               title: "操作",
               render: (_, row) => (
-                <Button
-                  size="small"
-                  onClick={() => activateOllama.mutate(row.name)}
-                >
-                  设为当前模型
-                </Button>
+                <Space>
+                  <Button
+                    size="small"
+                    onClick={() => activateOllama.mutate(row.name)}
+                  >
+                    设为当前模型
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    disabled={
+                      runtime.data?.active_provider === "OLLAMA" &&
+                      runtime.data.active_model === row.name
+                    }
+                    onClick={() => deleteOllama.mutate(row.name)}
+                  >
+                    删除
+                  </Button>
+                </Space>
               ),
             },
           ]}
@@ -272,6 +324,15 @@ export function ModelControlCenterPage() {
               <Typography.Text>{job.model_name}</Typography.Text>
               <Progress percent={Math.round(job.progress_ratio * 100)} />
               <Tag>{job.status}</Tag>
+              <Button
+                size="small"
+                disabled={["SUCCEEDED", "FAILED", "CANCELLED"].includes(
+                  job.status,
+                )}
+                onClick={() => cancelDownload.mutate(job.download_id)}
+              >
+                取消
+              </Button>
             </div>
           ))}
         </Space>

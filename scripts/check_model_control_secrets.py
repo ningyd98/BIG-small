@@ -33,11 +33,14 @@ IGNORED_PARTS = {
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    "__pycache__",
     "node_modules",
     "dist",
     "playwright-report",
     "test-results",
 }
+
+IGNORED_SUFFIXES = {".pyc", ".pyo", ".so", ".sqlite", ".db-journal", ".db-wal", ".db-shm"}
 
 
 def main() -> int:
@@ -77,7 +80,9 @@ def _files(path: Path) -> list[Path]:
     return [
         item
         for item in path.rglob("*")
-        if item.is_file() and not any(part in IGNORED_PARTS for part in item.parts)
+        if item.is_file()
+        and not any(part in IGNORED_PARTS for part in item.parts)
+        and item.suffix not in IGNORED_SUFFIXES
     ]
 
 

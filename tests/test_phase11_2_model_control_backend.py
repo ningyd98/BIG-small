@@ -322,6 +322,118 @@ def test_fake_ollama_models_download_activate_and_planner_dry_run(
     assert dry_run.json()["provider_kind"] == "OLLAMA"
 
 
+def test_model_control_api_exposes_test_reload_model_delete_download_cancel_and_stream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """模型控制中心必须提供可运行的管理 API，而不只是静态 profile 列表。"""
+
+    class ManageableOllamaTransport:
+        def __init__(self) -> None:
+            self.installed = {
+                "llama3.2:3b": {
+                    "name": "llama3.2:3b",
+                    "size": 2_000_000_000,
+                    "modified_at": "2026-01-01T00:00:00Z",
+                },
+                "qwen2.5:3b": {
+                    "name": "qwen2.5:3b",
+                    "size": 1_800_000_000,
+                    "modified_at": "2026-01-01T00:00:00Z",
+                },
+            }
+            self.deleted: list[str] = []
+
+        def get_version(self) -> dict[str, str]:
+            return {"version": "0.9.0"}
+
+        def list_models(self) -> list[dict[str, Any]]:
+            return list(self.installed.values())
+
+        def show_model(self, model_name: str) -> dict[str, Any]:
+            if model_name not in self.installed:
+                raise KeyError(model_name)
+            return {"model": model_name, "details": {"family": "llama"}}
+
+        def pull_model(self, model_name: str) -> list[dict[str, Any]]:
+            self.installed[model_name] = {
+                "name": model_name,
+                "size": 123,
+                "modified_at": "2026-01-01T00:00:00Z",
+            }
+            return [{"status": "success", "completed": 100, "total": 100}]
+
+        def delete_model(self, model_name: str) -> dict[str, str]:
+            if model_name not in self.installed:
+                raise KeyError(model_name)
+            self.deleted.append(model_name)
+            self.installed.pop(model_name)
+            return {"status": "deleted"}
+
+        def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+            if model_name not in self.installed:
+                raise KeyError(model_name)
+            return {"choices": [{"message": {"content": '{"steps": []}'}}]}
+
+    monkeypatch.setenv("MODEL_CONTROL_DB", str(tmp_path / "model_control_api.db"))
+    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
+    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
+    app.state.ollama_transport = ManageableOllamaTransport()
+    client = TestClient(app)
+
+    profile = client.post(
+        "/api/v1/model-control/profiles",
+        json={
+            "display_name": "Local test",
+            "provider_kind": "OLLAMA",
+            "base_url": "http://127.0.0.1:11434",
+            "model_name": "llama3.2:3b",
+        },
+    ).json()
+
+    test_result = client.post(f"/api/v1/model-control/profiles/{profile['profile_id']}/test")
+    assert test_result.status_code == 200
+    assert test_result.json()["reachable"] is True
+    assert test_result.json()["authenticated"] is True
+    assert test_result.json()["model_available"] is True
+    assert "api_key" not in str(test_result.json()).lower()
+
+    reload_response = client.post("/api/v1/model-control/runtime/reload")
+    assert reload_response.status_code == 200
+    assert reload_response.json()["real_controller_contacted"] is False
+
+    detail = client.get("/api/v1/model-control/ollama/models/llama3.2:3b")
+    assert detail.status_code == 200
+    assert detail.json()["model"] == "llama3.2:3b"
+
+    activated = client.post("/api/v1/model-control/ollama/models/llama3.2:3b/activate")
+    assert activated.status_code == 200
+    active_delete = client.delete("/api/v1/model-control/ollama/models/llama3.2:3b")
+    assert active_delete.status_code == 409
+
+    inactive_delete = client.delete("/api/v1/model-control/ollama/models/qwen2.5:3b")
+    assert inactive_delete.status_code == 200
+    assert inactive_delete.json()["deleted"] is True
+
+    download = client.post(
+        "/api/v1/model-control/ollama/downloads",
+        json={"model_name": "phi3:mini"},
+    ).json()
+    download_detail = client.get(
+        f"/api/v1/model-control/ollama/downloads/{download['download_id']}"
+    )
+    cancel = client.post(f"/api/v1/model-control/ollama/downloads/{download['download_id']}/cancel")
+    assert download_detail.status_code == 200
+    assert download_detail.json()["download_id"] == download["download_id"]
+    assert cancel.status_code == 200
+    assert cancel.json()["status"] in {"SUCCEEDED", "CANCELLED"}
+
+    with client.websocket_connect("/api/v1/model-control/stream?last_sequence=0") as ws:
+        event = ws.receive_json()
+        assert event["event_type"] == "heartbeat"
+        assert event["payload"]["real_controller_contacted"] is False
+        assert event["payload"]["hardware_motion_observed"] is False
+
+
 def test_phase11_2_command_artifacts_redact_local_python_path() -> None:
     # verifier artifact 只需要可复现命令语义，不应泄露本机 Python 解释器绝对路径。
     from scripts.verify_phase11_2_model_control import run_command
@@ -335,3 +447,19 @@ def test_phase11_2_command_artifacts_redact_local_python_path() -> None:
     assert result["returncode"] == 0
     assert str(Path(sys.executable).parent) not in str(result["argv"])
     assert result["argv"][0] == "python"
+
+
+def test_model_control_secret_scanner_ignores_python_bytecode_cache(tmp_path: Path) -> None:
+    # compileall 会在源码目录产生 __pycache__；scanner 应扫描源码/产物文本，
+    # 不应把二进制 pyc 中的随机字节当成 secret 泄露。
+    from scripts.check_model_control_secrets import _files
+
+    source = tmp_path / "src/cloud_edge_robot_arm/model_control"
+    cache = source / "__pycache__"
+    cache.mkdir(parents=True)
+    (source / "service.py").write_text('"""安全源码。"""\n', encoding="utf-8")
+    (cache / "service.cpython-312.pyc").write_bytes(b"bytecode cache placeholder")
+
+    scanned = [path.name for path in _files(source)]
+
+    assert scanned == ["service.py"]

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import time
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -157,6 +161,66 @@ class ModelControlService:
         self.repository.set_active_profile_id(profile_id)
         return self.runtime_status()
 
+    def test_profile(
+        self,
+        profile_id: str,
+        *,
+        transport: OllamaTransport | None = None,
+    ) -> dict[str, Any]:
+        """测试单个 profile 的连接和模型可用性，只返回脱敏摘要。"""
+
+        profile = self.repository.get_profile(profile_id)
+        started = time.monotonic()
+        try:
+            if profile.provider_kind in {PlannerProviderKind.MOCK, PlannerProviderKind.RULE_BASED}:
+                return _test_result(
+                    reachable=True,
+                    authenticated=True,
+                    model_available=True,
+                    response_format_valid=True,
+                    started=started,
+                    provider_kind=profile.provider_kind,
+                    model_name=profile.model_name,
+                    endpoint_hash=profile.endpoint_hash,
+                )
+            if profile.provider_kind == PlannerProviderKind.OLLAMA:
+                if transport is None:
+                    raise RuntimeError("ollama_transport_unavailable")
+                installed = {str(item.get("name", "")) for item in transport.list_models()}
+                model_available = profile.model_name in installed
+                response_format_valid = False
+                if model_available:
+                    response = transport.chat(
+                        profile.model_name,
+                        [{"role": "user", "content": "return {}"}],
+                    )
+                    response_format_valid = _chat_response_has_choice(response)
+                return _test_result(
+                    reachable=True,
+                    authenticated=True,
+                    model_available=model_available,
+                    response_format_valid=response_format_valid,
+                    started=started,
+                    provider_kind=profile.provider_kind,
+                    model_name=profile.model_name,
+                    endpoint_hash=profile.endpoint_hash,
+                    error_code="" if model_available else "model_not_installed",
+                )
+            return self._test_openai_compatible(profile, started=started)
+        except Exception as exc:
+            return _test_result(
+                reachable=False,
+                authenticated=False,
+                model_available=False,
+                response_format_valid=False,
+                started=started,
+                provider_kind=profile.provider_kind,
+                model_name=profile.model_name,
+                endpoint_hash=profile.endpoint_hash,
+                error_code=type(exc).__name__,
+                sanitized_message=_sanitize_error(exc),
+            )
+
     def runtime_status(self) -> PlannerRuntimeStatus:
         """返回当前 active planner 的脱敏运行状态。"""
 
@@ -172,6 +236,17 @@ class ModelControlService:
             config_version=profile.config_version,
             health="READY",
         )
+
+    def runtime_reload(self) -> dict[str, Any]:
+        """重新读取安全 runtime 状态，不加载任意代码或触碰硬件。"""
+
+        return {
+            "runtime": self.runtime_status().model_dump(mode="json"),
+            "reloaded": True,
+            "real_controller_contacted": False,
+            "hardware_motion_observed": False,
+            "hardware_write_operations": [],
+        }
 
     def ollama_status(self, transport: OllamaTransport) -> dict[str, Any]:
         """探测 Ollama 是否可达，并只返回脱敏错误类型。"""
@@ -189,6 +264,25 @@ class ModelControlService:
             return transport.list_models()
         except Exception:
             return []
+
+    def ollama_model_detail(self, model_name: str, transport: OllamaTransport) -> dict[str, Any]:
+        """读取单个 Ollama 模型详情，模型名不能是路径或 URL。"""
+
+        _validate_model_name(model_name)
+        return transport.show_model(model_name)
+
+    def delete_ollama_model(self, model_name: str, transport: OllamaTransport) -> dict[str, Any]:
+        """删除非 active Ollama 模型，禁止删除当前 planner 使用的模型。"""
+
+        _validate_model_name(model_name)
+        runtime = self.runtime_status()
+        if (
+            runtime.active_provider == PlannerProviderKind.OLLAMA
+            and runtime.active_model == model_name
+        ):
+            raise ValueError("active_model_delete_rejected")
+        transport.delete_model(model_name)
+        return {"deleted": True, "model_name": model_name}
 
     def small_model_catalog(self, transport: OllamaTransport | None = None) -> list[dict[str, Any]]:
         """返回小模型目录，并用 Ollama 实时列表标记 installed。"""
@@ -260,6 +354,16 @@ class ModelControlService:
 
         return self.repository.list_download_jobs()
 
+    def get_download(self, download_id: str) -> ModelDownloadJob:
+        """读取单个模型下载任务。"""
+
+        return self.repository.get_download_job(download_id)
+
+    def cancel_download(self, download_id: str) -> ModelDownloadJob:
+        """请求取消下载任务；已完成任务保持终态不变。"""
+
+        return self.repository.request_download_cancel(download_id)
+
     def activate_ollama_model(
         self,
         *,
@@ -323,7 +427,105 @@ class ModelControlService:
             update={"active": self.repository.get_active_profile_id() == profile.profile_id}
         )
 
+    def _test_openai_compatible(
+        self,
+        profile: ModelProviderProfile,
+        *,
+        started: float,
+    ) -> dict[str, Any]:
+        secret = self.secret_store.get_secret(profile.profile_id)
+        payload = json.dumps(
+            {
+                "model": profile.model_name,
+                "messages": [{"role": "user", "content": "return {}"}],
+                "stream": False,
+            }
+        ).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if secret:
+            headers["Authorization"] = "Bearer " + secret
+        request = urllib.request.Request(
+            profile.base_url.rstrip("/") + profile.chat_completions_path,
+            data=payload,
+            method="POST",
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=profile.timeout_seconds) as response:
+                body = response.read(1_000_000)
+        except urllib.error.HTTPError as exc:
+            return _test_result(
+                reachable=True,
+                authenticated=exc.code not in {401, 403},
+                model_available=exc.code != 404,
+                response_format_valid=False,
+                started=started,
+                provider_kind=profile.provider_kind,
+                model_name=profile.model_name,
+                endpoint_hash=profile.endpoint_hash,
+                error_code=f"http_{exc.code}",
+                sanitized_message="provider returned non-success status",
+            )
+        parsed = json.loads(body.decode("utf-8"))
+        return _test_result(
+            reachable=True,
+            authenticated=True,
+            model_available=True,
+            response_format_valid=_chat_response_has_choice(parsed),
+            started=started,
+            provider_kind=profile.provider_kind,
+            model_name=profile.model_name,
+            endpoint_hash=profile.endpoint_hash,
+        )
+
 
 def _validate_model_name(model_name: str) -> None:
     if not model_name or "://" in model_name or "/" in model_name or "\\" in model_name:
         raise ValueError("invalid_ollama_model_name")
+
+
+def _chat_response_has_choice(response: dict[str, Any]) -> bool:
+    choices = response.get("choices")
+    return bool(
+        isinstance(choices, list)
+        and choices
+        and isinstance(choices[0], dict)
+        and isinstance(choices[0].get("message"), dict)
+    )
+
+
+def _test_result(
+    *,
+    reachable: bool,
+    authenticated: bool,
+    model_available: bool,
+    response_format_valid: bool,
+    started: float,
+    provider_kind: PlannerProviderKind,
+    model_name: str,
+    endpoint_hash: str,
+    error_code: str = "",
+    sanitized_message: str = "",
+) -> dict[str, Any]:
+    return {
+        "reachable": reachable,
+        "authenticated": authenticated,
+        "model_available": model_available,
+        "response_format_valid": response_format_valid,
+        "latency_ms": round((time.monotonic() - started) * 1000, 3),
+        "provider_kind": provider_kind.value,
+        "model_name": model_name,
+        "endpoint_hash": endpoint_hash,
+        "error_code": error_code,
+        "sanitized_message": sanitized_message,
+        "real_controller_contacted": False,
+        "hardware_motion_observed": False,
+        "hardware_write_operations": [],
+    }
+
+
+def _sanitize_error(exc: Exception) -> str:
+    text = str(exc)
+    if len(text) > 240:
+        text = text[:240]
+    return text.replace("Authorization", "<redacted>").replace("Bearer", "<redacted>")

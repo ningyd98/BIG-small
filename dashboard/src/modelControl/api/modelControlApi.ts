@@ -19,6 +19,15 @@ async function writeJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function deleteJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_PREFIX}${path}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return (await response.json()) as T;
+}
+
 export type PlannerProviderKind =
   | "MOCK"
   | "RULE_BASED"
@@ -65,6 +74,16 @@ export type LocalModel = {
   modified_at?: string;
 };
 
+export type ModelTestResult = {
+  reachable: boolean;
+  authenticated: boolean;
+  model_available: boolean;
+  response_format_valid: boolean;
+  latency_ms?: number;
+  error_code?: string;
+  sanitized_message?: string;
+};
+
 export type SmallModelCatalogItem = {
   catalog_id: string;
   display_name: string;
@@ -101,16 +120,37 @@ export const modelControlApi = {
   }) => writeJson<ModelProviderProfile>("/profiles", body),
   activateProfile: (profileId: string) =>
     writeJson<PlannerRuntimeStatus>(`/profiles/${profileId}/activate`, {}),
+  testProfile: (profileId: string) =>
+    writeJson<ModelTestResult>(`/profiles/${profileId}/test`, {}),
   runtime: () => readJson<PlannerRuntimeStatus>("/runtime"),
+  reloadRuntime: () =>
+    writeJson<{
+      reloaded: boolean;
+      real_controller_contacted: boolean;
+      hardware_motion_observed: boolean;
+      hardware_write_operations: string[];
+    }>("/runtime/reload", {}),
   ollamaStatus: () =>
     readJson<{ reachable: boolean; version: string; error_code?: string }>(
       "/ollama/status",
     ),
   ollamaModels: () => readJson<LocalModel[]>("/ollama/models"),
+  ollamaModelDetail: (modelName: string) =>
+    readJson<Record<string, unknown>>(
+      `/ollama/models/${encodeURIComponent(modelName)}`,
+    ),
+  deleteOllamaModel: (modelName: string) =>
+    deleteJson<{ deleted: boolean; model_name: string }>(
+      `/ollama/models/${encodeURIComponent(modelName)}`,
+    ),
   catalog: () => readJson<SmallModelCatalogItem[]>("/catalog"),
   startDownload: (modelName: string) =>
     writeJson<ModelDownloadJob>("/ollama/downloads", { model_name: modelName }),
   downloads: () => readJson<ModelDownloadJob[]>("/ollama/downloads"),
+  download: (downloadId: string) =>
+    readJson<ModelDownloadJob>(`/ollama/downloads/${downloadId}`),
+  cancelDownload: (downloadId: string) =>
+    writeJson<ModelDownloadJob>(`/ollama/downloads/${downloadId}/cancel`, {}),
   activateOllamaModel: (modelName: string) =>
     writeJson<PlannerRuntimeStatus>(
       `/ollama/models/${encodeURIComponent(modelName)}/activate`,

@@ -50,3 +50,7 @@ class PlannerProfileRepository(Protocol):
     def list_download_jobs(self) -> list[ModelDownloadJob]:
         """按时间倒序列出下载任务。"""
         ...
+
+    def request_download_cancel(self, download_id: str) -> ModelDownloadJob:
+        """标记下载任务取消请求，保留已有进度 evidence。"""
+        ...

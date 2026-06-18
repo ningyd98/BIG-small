@@ -397,6 +397,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/model-control/ollama/downloads/{download_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Ollama Download */
+    get: operations["get_ollama_download_api_v1_model_control_ollama_downloads__download_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/ollama/downloads/{download_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Ollama Download */
+    post: operations["cancel_ollama_download_api_v1_model_control_ollama_downloads__download_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/model-control/ollama/models": {
     parameters: {
       query?: never;
@@ -409,6 +443,24 @@ export interface paths {
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/ollama/models/{model_name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Ollama Model Detail */
+    get: operations["ollama_model_detail_api_v1_model_control_ollama_models__model_name__get"];
+    put?: never;
+    post?: never;
+    /** Delete Ollama Model */
+    delete: operations["delete_ollama_model_api_v1_model_control_ollama_models__model_name__delete"];
     options?: never;
     head?: never;
     patch?: never;
@@ -518,6 +570,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/model-control/profiles/{profile_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Profile */
+    post: operations["test_profile_api_v1_model_control_profiles__profile_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/model-control/runtime": {
     parameters: {
       query?: never;
@@ -529,6 +598,23 @@ export interface paths {
     get: operations["runtime_api_v1_model_control_runtime_get"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-control/runtime/reload": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Runtime Reload */
+    post: operations["runtime_reload_api_v1_model_control_runtime_reload_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2895,7 +2981,12 @@ export interface components {
       /** Supported Provider Kinds */
       supported_provider_kinds: components["schemas"]["PlannerProviderKind"][];
     };
-    /** ModelDownloadJob */
+    /**
+     * ModelDownloadJob
+     * @description 本地模型下载任务快照。
+     *
+     *     只记录模型名、进度和错误摘要；模型二进制仍由 Ollama 自己管理。
+     */
     ModelDownloadJob: {
       /**
        * Cancel Requested
@@ -2970,6 +3061,7 @@ export interface components {
     };
     /**
      * ModelDownloadStatus
+     * @description Ollama 模型下载任务状态。
      * @enum {string}
      */
     ModelDownloadStatus:
@@ -5422,6 +5514,68 @@ export interface operations {
       };
     };
   };
+  get_ollama_download_api_v1_model_control_ollama_downloads__download_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        download_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelDownloadJob"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  cancel_ollama_download_api_v1_model_control_ollama_downloads__download_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        download_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelDownloadJob"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   ollama_models_api_v1_model_control_ollama_models_get: {
     parameters: {
       query?: never;
@@ -5440,6 +5594,72 @@ export interface operations {
           "application/json": {
             [key: string]: unknown;
           }[];
+        };
+      };
+    };
+  };
+  ollama_model_detail_api_v1_model_control_ollama_models__model_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_ollama_model_api_v1_model_control_ollama_models__model_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -5680,6 +5900,39 @@ export interface operations {
       };
     };
   };
+  test_profile_api_v1_model_control_profiles__profile_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        profile_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   runtime_api_v1_model_control_runtime_get: {
     parameters: {
       query?: never;
@@ -5696,6 +5949,28 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["PlannerRuntimeStatus"];
+        };
+      };
+    };
+  };
+  runtime_reload_api_v1_model_control_runtime_reload_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
         };
       };
     };

@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import cast
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, WebSocket, status
 from pydantic import BaseModel, Field
 
 from cloud_edge_robot_arm.model_control.downloads import ModelDownloadJob
@@ -133,9 +133,25 @@ async def activate_profile(request: Request, profile_id: str) -> PlannerRuntimeS
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/profiles/{profile_id}/test")
+async def test_profile(request: Request, profile_id: str) -> dict[str, object]:
+    try:
+        return _service(request).test_profile(
+            profile_id,
+            transport=_ollama_transport(request),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="profile_not_found") from exc
+
+
 @router.get("/runtime", response_model=PlannerRuntimeStatus)
 async def runtime(request: Request) -> PlannerRuntimeStatus:
     return _service(request).runtime_status()
+
+
+@router.post("/runtime/reload")
+async def runtime_reload(request: Request) -> dict[str, object]:
+    return _service(request).runtime_reload()
 
 
 @router.get("/ollama/status")
@@ -146,6 +162,30 @@ async def ollama_status(request: Request) -> dict[str, object]:
 @router.get("/ollama/models")
 async def ollama_models(request: Request) -> list[dict[str, object]]:
     return _service(request).ollama_models(_ollama_transport(request))
+
+
+@router.get("/ollama/models/{model_name:path}")
+async def ollama_model_detail(request: Request, model_name: str) -> dict[str, object]:
+    try:
+        return _service(request).ollama_model_detail(
+            model_name,
+            transport=_ollama_transport(request),
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail="model_not_found") from exc
+
+
+@router.delete("/ollama/models/{model_name:path}")
+async def delete_ollama_model(request: Request, model_name: str) -> dict[str, object]:
+    try:
+        return _service(request).delete_ollama_model(
+            model_name,
+            transport=_ollama_transport(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="model_not_found") from exc
 
 
 @router.get("/catalog")
@@ -173,6 +213,22 @@ async def list_ollama_downloads(request: Request) -> list[ModelDownloadJob]:
     return _service(request).list_downloads()
 
 
+@router.get("/ollama/downloads/{download_id}", response_model=ModelDownloadJob)
+async def get_ollama_download(request: Request, download_id: str) -> ModelDownloadJob:
+    try:
+        return _service(request).get_download(download_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="download_not_found") from exc
+
+
+@router.post("/ollama/downloads/{download_id}/cancel", response_model=ModelDownloadJob)
+async def cancel_ollama_download(request: Request, download_id: str) -> ModelDownloadJob:
+    try:
+        return _service(request).cancel_download(download_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="download_not_found") from exc
+
+
 @router.post("/ollama/models/{model_name:path}/activate", response_model=PlannerRuntimeStatus)
 async def activate_ollama_model(request: Request, model_name: str) -> PlannerRuntimeStatus:
     try:
@@ -195,6 +251,23 @@ async def planner_dry_run(request: Request, body: PlannerDryRunRequest) -> dict[
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.websocket("/stream")
+async def model_control_stream(websocket: WebSocket, last_sequence: int = 0) -> None:
+    await websocket.accept()
+    await websocket.send_json(
+        {
+            "sequence": max(1, last_sequence + 1),
+            "event_type": "heartbeat",
+            "payload": {
+                "real_controller_contacted": False,
+                "hardware_motion_observed": False,
+                "hardware_write_operations": [],
+            },
+        }
+    )
+    await websocket.close()
 
 
 def _service(request: Request) -> ModelControlService:

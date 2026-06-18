@@ -30,6 +30,10 @@ class OllamaTransport(Protocol):
         """通过 HTTP pull 流下载指定模型。"""
         ...
 
+    def delete_model(self, model_name: str) -> dict[str, Any]:
+        """删除 Ollama 管理的本地模型。"""
+        ...
+
     def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
         """调用 OpenAI-compatible chat completions 接口。"""
         ...
@@ -67,6 +71,11 @@ class OllamaHttpClient:
             if line.strip():
                 rows.append(json.loads(line))
         return rows
+
+    def delete_model(self, model_name: str) -> dict[str, Any]:
+        """通过 Ollama HTTP API 删除本地模型，不执行 CLI 命令。"""
+
+        return self._json("DELETE", "/api/delete", {"model": model_name})
 
     def chat(self, model_name: str, messages: list[dict[str, str]]) -> dict[str, Any]:
         """向本地模型发送 chat completion 测试请求。"""

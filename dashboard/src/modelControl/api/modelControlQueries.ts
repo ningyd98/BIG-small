@@ -96,6 +96,23 @@ export function useActivateModelProfile() {
   });
 }
 
+export function useTestModelProfile() {
+  return useMutation({ mutationFn: modelControlApi.testProfile });
+}
+
+export function useReloadPlannerRuntime() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: modelControlApi.reloadRuntime,
+    onSuccess: () => {
+      // reload 只刷新脱敏 runtime 状态，不触碰 secret 或硬件。
+      void queryClient.invalidateQueries({
+        queryKey: modelControlKeys.runtime,
+      });
+    },
+  });
+}
+
 export function useStartModelDownload() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -112,6 +129,19 @@ export function useStartModelDownload() {
   });
 }
 
+export function useCancelModelDownload() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: modelControlApi.cancelDownload,
+    onSuccess: () => {
+      // 取消是 best-effort 状态更新；下载任务列表需要重取以展示最终结果。
+      void queryClient.invalidateQueries({
+        queryKey: modelControlKeys.downloads,
+      });
+    },
+  });
+}
+
 export function useActivateOllamaModel() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -123,6 +153,22 @@ export function useActivateOllamaModel() {
       });
       void queryClient.invalidateQueries({
         queryKey: modelControlKeys.profiles,
+      });
+    },
+  });
+}
+
+export function useDeleteOllamaModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: modelControlApi.deleteOllamaModel,
+    onSuccess: () => {
+      // 删除模型后刷新本地模型和目录 installed 标记。
+      void queryClient.invalidateQueries({
+        queryKey: modelControlKeys.ollamaModels,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: modelControlKeys.catalog,
       });
     },
   });
