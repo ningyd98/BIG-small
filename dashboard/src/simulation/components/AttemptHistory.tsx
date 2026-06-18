@@ -2,6 +2,7 @@ import { Card, Empty, Table } from "antd";
 
 import type { components } from "../../api/generated/schema";
 
+// AttemptHistory 展示持久化 attempt 审计，不把失败 attempt 覆盖成最终结果。
 type Props = {
   attempts?: components["schemas"]["AttemptView"][];
 };

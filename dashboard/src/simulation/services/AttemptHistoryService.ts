@@ -1,3 +1,5 @@
+// AttemptHistoryService 只整理后端返回的 attempt 历史，用于区分最终状态和历史尝试。
+// 它不修改 run，也不触发 retry/cancel。
 type Attempt = {
   attempt: number;
   worker_id: string;

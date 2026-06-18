@@ -1,3 +1,4 @@
+// ExportService 在浏览器侧导出报告前做最后一道脱敏；后端 artifact 仍是权威来源。
 const sensitiveKeys = new Set([
   "token",
   "credential",

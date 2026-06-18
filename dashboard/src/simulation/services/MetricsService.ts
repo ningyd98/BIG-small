@@ -1,5 +1,6 @@
 import type { MetricSummary, SimulationMetric } from "../domain/RunMetric";
 
+// MetricsService 汇总指标单位和 sample count，避免页面各自硬编码指标语义。
 export class MetricsService {
   constructor(private readonly metrics: SimulationMetric[]) {}
 

@@ -1,5 +1,6 @@
 import type { TimelineEvent, TimelineItem } from "../domain/TimelineEvent";
 
+// EventTimelineAssembler 负责把持久化事件转换为 UI 时间线项，不丢弃原始事件。
 export class EventTimelineAssembler {
   static assemble(events: TimelineEvent[]): TimelineItem[] {
     return [...events]

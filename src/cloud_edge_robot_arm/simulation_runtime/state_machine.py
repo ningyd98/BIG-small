@@ -1,7 +1,14 @@
+"""仿真 job 状态机。
+
+状态转换表是运行时安全边界之一：所有 repository 状态更新都必须先经过这里。
+非法转换直接抛错，避免取消、超时、恢复和重试互相覆盖。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
 
+# 只列出允许的正向转换；终态默认不可再推进，除非显式允许人工 retry。
 ALLOWED_TRANSITIONS: dict[RuntimeJobStatus, set[RuntimeJobStatus]] = {
     RuntimeJobStatus.CREATED: {RuntimeJobStatus.QUEUED, RuntimeJobStatus.BLOCKED_BY_ENV},
     RuntimeJobStatus.QUEUED: {
@@ -52,6 +59,12 @@ ALLOWED_TRANSITIONS: dict[RuntimeJobStatus, set[RuntimeJobStatus]] = {
 
 
 def validate_transition(previous: RuntimeJobStatus, next_status: RuntimeJobStatus) -> bool:
+    """校验状态转换是否合法。
+
+    幂等转换允许通过，方便重复 replay 或状态查询；跨状态推进必须出现在
+    ALLOWED_TRANSITIONS 中。
+    """
+
     if previous == next_status:
         return True
     if next_status not in ALLOWED_TRANSITIONS.get(previous, set()):

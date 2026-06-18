@@ -1,3 +1,10 @@
+"""仿真 worker 执行器。
+
+Worker 只消费 repository 中已租约保护的 job，并通过固定 runner 分支执行
+Mock 或 MuJoCo。这里刻意不暴露 shell、脚本路径或真实机械臂写操作；所有输出
+都落到相对 artifact 路径，供验收和重启恢复读取。
+"""
+
 from __future__ import annotations
 
 import json
@@ -31,14 +38,24 @@ from cloud_edge_robot_arm.simulation_workbench.models import (
 
 
 class CancelledByOperator(RuntimeError):
+    """操作员取消请求被 worker 观察到时使用的内部异常。"""
+
     pass
 
 
 class TimedOut(RuntimeError):
+    """任务超过 job timeout 后使用的内部异常。"""
+
     pass
 
 
 class SimulationWorker:
+    """单 backend 的租约 worker。
+
+    每次只领取一个 job，执行期间写 heartbeat/attempt/event/metric/artifact。
+    取消和超时采用协作式检查，保证已有部分证据不会因为终止而被删除。
+    """
+
     def __init__(
         self,
         *,
@@ -57,6 +74,7 @@ class SimulationWorker:
         self.heartbeat_at: str | None = None
 
     def poll_once(self) -> bool:
+        # acquire_lease 是跨进程/跨线程的唯一消费门；没有租约就不能执行 job。
         lease = self.repository.acquire_lease(
             worker_id=self.worker_id,
             backend=self.backend,
@@ -209,6 +227,7 @@ class SimulationWorker:
             return self._run_mock(job, draft)
         if job.backend == SimulationBackend.MUJOCO.value:
             return self._run_mujoco(job, draft)
+        # 非可用后端必须明确 BLOCKED_BY_ENV，不能回退到 Mock 冒充成功。
         blockers = ["backend is blocked by environment"]
         self.repository.append_event(
             job.job_id,
@@ -302,6 +321,8 @@ class SimulationWorker:
     ) -> dict[str, str]:
         run_dir = self.artifact_root / job.artifact_root
         run_dir.mkdir(parents=True, exist_ok=True)
+        # artifact 文件是重启恢复和验收的第二真源；数据库缺记录时可以从这里恢复，
+        # 但写入时仍只保存相对路径，避免泄露本机目录。
         paths = {
             "run_manifest": run_dir / "run_manifest.json",
             "events": run_dir / "events.jsonl",
@@ -625,6 +646,8 @@ def _metrics_from_result(
     seed: int,
     reproducibility_hash: str,
 ) -> list[SimulationMetric]:
+    """把 Mock runner 结果投影为统一指标模型。"""
+
     def metric(name: str, value: int | float | str | bool | Any, unit: str) -> SimulationMetric:
         return _metric(
             name,
@@ -674,6 +697,12 @@ def _metrics_from_trial(
     seed: int,
     reproducibility_hash: str,
 ) -> list[SimulationMetric]:
+    """把真实 MuJoCo trial 结果投影为统一指标模型。
+
+    这里的 backend 固定为 MUJOCO，并显式记录 mock_fallback_used=false，
+    供 Phase 11.1 验收区分 readiness 与 runtime acceptance。
+    """
+
     def metric(name: str, value: int | float | str | bool | Any, unit: str) -> SimulationMetric:
         return _metric(
             name,

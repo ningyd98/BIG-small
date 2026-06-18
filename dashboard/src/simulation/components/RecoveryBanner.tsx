@@ -2,6 +2,7 @@ import { Alert } from "antd";
 
 import type { components } from "../../api/generated/schema";
 
+// RecoveryBanner 只在存在 interrupted job 或不完整 artifact 时提示人工关注。
 type Props = {
   recovery?: components["schemas"]["RecoveryResponse"];
 };

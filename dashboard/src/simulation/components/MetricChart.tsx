@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+// MetricChart 动态加载 ECharts，避免首屏把图表库打进主 bundle。
 type MetricChartProps = {
   title: string;
   labels: string[];

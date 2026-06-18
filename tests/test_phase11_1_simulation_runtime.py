@@ -1,3 +1,9 @@
+"""Phase 11.1 运行时回归测试。
+
+这些测试使用真实 FastAPI app、临时 SQLite 和 Mock 仿真任务，覆盖状态机、CAS、
+租约、取消、超时、重试、恢复和 WebSocket replay；普通 CI 不运行 MuJoCo 或真实硬件。
+"""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +20,7 @@ from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
 
 
 def _client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
+    # 每个测试使用独立 artifact root 和 runtime DB，避免共享状态影响 CAS/lease 判断。
     monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
     monkeypatch.setenv("DASHBOARD_ARTIFACT_ROOT", str(tmp_path / "artifacts"))
     monkeypatch.setenv("SIMULATION_RUNTIME_DB", str(tmp_path / "runtime.db"))
@@ -67,6 +74,7 @@ def _wait_for_status(client: TestClient, run_id: str, statuses: set[str]) -> dic
 
 
 def test_runtime_state_machine_rejects_illegal_transition() -> None:
+    # 状态机必须拒绝跳过队列/运行阶段的非法终态，防止 API 或 worker 覆盖真实状态。
     from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
     from cloud_edge_robot_arm.simulation_runtime.state_machine import validate_transition
 

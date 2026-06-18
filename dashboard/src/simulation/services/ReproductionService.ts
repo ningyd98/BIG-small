@@ -1,3 +1,4 @@
+// ReproductionService 校验 artifact 中的复现签名；环境不一致只给 warning，不声明完全可复现。
 type ReproductionSignature = {
   source_commit: string;
   source_tree_hash: string;

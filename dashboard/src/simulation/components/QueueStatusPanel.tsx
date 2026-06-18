@@ -2,6 +2,7 @@ import { Card, Descriptions, Progress } from "antd";
 
 import type { components } from "../../api/generated/schema";
 
+// QueueStatusPanel 展示后端持久队列状态；容量百分比只是提示，不在前端放行任务。
 type Props = {
   queue?: components["schemas"]["QueueStatusResponse"];
 };

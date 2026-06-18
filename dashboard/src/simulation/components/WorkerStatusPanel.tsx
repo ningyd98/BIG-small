@@ -2,6 +2,7 @@ import { Card, Table, Tag } from "antd";
 
 import type { components } from "../../api/generated/schema";
 
+// WorkerStatusPanel 展示固定 worker 列表；用户不能从 UI 提交任意 runner。
 type Props = {
   workers?: components["schemas"]["WorkerStatusView"][];
 };

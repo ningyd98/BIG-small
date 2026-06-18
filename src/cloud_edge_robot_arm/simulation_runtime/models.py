@@ -1,3 +1,9 @@
+"""仿真运行时持久化模型。
+
+dataclass 模型用于 repository 内部读写，Pydantic 模型用于 API 响应。
+这些模型只表达仿真任务状态，不承载真实控制器连接信息。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,6 +15,8 @@ from pydantic import BaseModel, Field
 
 
 class RuntimeJobStatus(StrEnum):
+    """Phase 11.1 统一 job 状态枚举。"""
+
     CREATED = "CREATED"
     QUEUED = "QUEUED"
     VALIDATING = "VALIDATING"
@@ -38,6 +46,11 @@ TERMINAL_STATUSES = {
 
 @dataclass(frozen=True)
 class SimulationJobRecord:
+    """持久化 job 主记录。
+
+    artifact_root 必须是仓库相对路径，不能保存本机绝对路径或敏感配置。
+    """
+
     job_id: str
     run_id: str
     batch_id: str

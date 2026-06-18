@@ -1,4 +1,11 @@
 #!/usr/bin/env python
+"""Phase 11.1 仿真运行时验收脚本。
+
+--ci 只验证异步队列、持久化、恢复、前端和 E2E，不声明 MuJoCo runtime accepted。
+--mujoco/--full 才会实际运行 MuJoCo M11-01 到 M11-10，并且必须证明未使用 Mock fallback。
+该脚本始终保持真实控制器未接触、真实硬件未运动。
+"""
+
 from __future__ import annotations
 
 import argparse

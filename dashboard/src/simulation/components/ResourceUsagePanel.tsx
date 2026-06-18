@@ -2,6 +2,7 @@ import { Card, Descriptions } from "antd";
 
 import type { components } from "../../api/generated/schema";
 
+// ResourceUsagePanel 展示后端资源策略，前端不能绕过 max queue/batch 限制。
 type Props = {
   queue?: components["schemas"]["QueueStatusResponse"];
 };

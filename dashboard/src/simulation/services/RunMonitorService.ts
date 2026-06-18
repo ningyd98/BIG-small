@@ -1,3 +1,4 @@
+// RunMonitorService 维护 WebSocket/polling 事件的前端缓存，按 sequence 去重并检测断档。
 type StreamEvent = {
   sequence: number;
   event_type: string;

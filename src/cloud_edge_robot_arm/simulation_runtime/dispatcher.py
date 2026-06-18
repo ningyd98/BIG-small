@@ -1,3 +1,9 @@
+"""后台 dispatcher。
+
+Dispatcher 周期性过期租约并让固定 backend worker 轮询队列。API 线程只入队，
+长时间 MuJoCo/Sweep 运行不在 HTTP 请求线程里执行。
+"""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +20,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 class SimulationJobDispatcher:
+    """轻量后台调度器。
+
+    当前每个 backend 一个固定 worker；后续扩展外部进程池时，也应保持
+    “固定 worker 类型 + 持久租约 + allowlist runner”的边界。
+    """
+
     def __init__(
         self,
         *,
@@ -66,6 +78,8 @@ class SimulationJobDispatcher:
     def poll_once(self) -> bool:
         consumed = False
         for worker in self._workers:
+            # worker 内部会根据 backend 和租约判断是否能消费；dispatcher 不把
+            # 用户输入映射成任意执行器。
             consumed = worker.poll_once() or consumed
         return consumed
 

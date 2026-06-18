@@ -3,6 +3,7 @@ import type {
   ScenarioFilter,
 } from "../domain/ScenarioDefinition";
 
+// ScenarioCatalogService 只消费后端 scenario_registry 投影，避免 React 页面硬编码 S01-S15。
 export class ScenarioCatalogService {
   constructor(private readonly scenarios: ScenarioDefinition[]) {}
 

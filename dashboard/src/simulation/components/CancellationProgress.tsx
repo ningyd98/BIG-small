@@ -2,6 +2,7 @@ import { Alert } from "antd";
 
 import type { components } from "../../api/generated/schema";
 
+// CancellationProgress 只显示取消进度；真正的取消由后端 worker 协作完成。
 type Props = {
   run?: components["schemas"]["SimulationRunRecord"];
 };

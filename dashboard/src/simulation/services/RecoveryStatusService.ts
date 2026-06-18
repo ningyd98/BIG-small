@@ -1,3 +1,4 @@
+// RecoveryStatusService 展示恢复结果和阻塞项；是否重新入队仍由后端 runtime/recover 决定。
 type RecoveryStatus = {
   recovered_jobs: string[];
   interrupted_jobs: string[];

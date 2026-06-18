@@ -2,6 +2,8 @@ import type { components } from "../../api/generated/schema";
 import type { ExperimentDraft } from "../domain/ExperimentDraft";
 import { simulationApi } from "../api/simulationApi";
 
+// ExperimentSubmissionService 只提交高层实验配置；提交前剥离 shell/path/env 等危险字段，
+// 浏览器不直接连接 MuJoCo、ROS、MoveIt 或真实机械臂。
 export class ExperimentSubmissionService {
   async validate(
     draft: ExperimentDraft,

@@ -4,6 +4,7 @@ import type {
 } from "../domain/ComparisonDataset";
 import type { SimulationMetric } from "../domain/RunMetric";
 
+// ComparisonService 在前端做只读统计汇总；原始指标仍以后端 artifact/API 为真源。
 export class ComparisonService {
   constructor(private readonly metrics: SimulationMetric[]) {}
 

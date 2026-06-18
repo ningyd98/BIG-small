@@ -1,3 +1,10 @@
+"""仿真运行时门面。
+
+本模块把 FastAPI 工作台请求转换为持久化 job，并负责把运行记录重新投影成
+Phase 11 已有的 run/batch API 模型。它不直接执行任意命令，也不接触真实控制器；
+所有实际运行都交给带 allowlist 的 dispatcher/worker。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -44,6 +51,13 @@ from cloud_edge_robot_arm.simulation_workbench.models import (
 
 
 class SimulationRuntimeService:
+    """仿真任务编排服务。
+
+    该服务是 API 层唯一应该调用的运行时入口：创建任务立即返回 QUEUED，
+    后台 worker 再推进状态。这里保留 Phase 11 API 兼容性，同时把真源放到
+    SQLite repository，避免进程重启后丢失 run/history/event。
+    """
+
     def __init__(
         self,
         *,
@@ -68,6 +82,8 @@ class SimulationRuntimeService:
 
     def start(self) -> None:
         if not self._started:
+            # 启动时先恢复遗留状态，再启动后台 dispatcher；顺序不能反过来，
+            # 否则过期租约可能被新 worker 和恢复流程同时处理。
             ArtifactRecoveryService(
                 repository=self.repository, artifact_root=self.artifact_root
             ).recover_interrupted_jobs()
@@ -133,6 +149,8 @@ class SimulationRuntimeService:
             provenance=_provenance(manifest),
         )
         if blockers:
+            # 被环境阻塞的后端仍会产生持久化 job，前端和审计才能看到真实
+            # BLOCKED_BY_ENV 历史，而不是把 Isaac 等不可用环境静默吞掉。
             self.repository.update_status_cas(
                 job.job_id,
                 expected=RuntimeJobStatus.CREATED,
@@ -144,6 +162,8 @@ class SimulationRuntimeService:
             )
             return self._run_record(self.repository.get_job(job.job_id))
         accepted_at = datetime.now(UTC)
+        # HTTP 请求线程只负责入队，不等待 worker 执行；这是 Phase 11.1
+        # 解决长时间 MuJoCo/Sweep 阻塞 API 的核心边界。
         self.repository.update_status_cas(
             job.job_id,
             expected=RuntimeJobStatus.CREATED,

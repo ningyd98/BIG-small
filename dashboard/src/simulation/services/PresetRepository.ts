@@ -1,5 +1,6 @@
 import type { ExperimentDraft } from "../domain/ExperimentDraft";
 
+// PresetRepository 只保存仿真实验草稿；sanitizePreset 会去掉 token/IP/credential 等敏感字段。
 const storageKey = "big-small-simulation-presets";
 
 export type ExperimentPreset = {

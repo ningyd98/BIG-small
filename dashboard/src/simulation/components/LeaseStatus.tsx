@@ -2,6 +2,7 @@ import { Descriptions } from "antd";
 
 import type { components } from "../../api/generated/schema";
 
+// LeaseStatus 展示当前 worker/lease/attempt，帮助确认任务是否由持久租约保护。
 type Props = {
   run?: components["schemas"]["SimulationRunRecord"];
 };

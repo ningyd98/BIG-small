@@ -1,3 +1,4 @@
+// QueueMonitorService 将运行时队列状态投影成 UI 可读摘要；不改变后端调度策略。
 type QueueStatus = {
   queued: number;
   running: number;

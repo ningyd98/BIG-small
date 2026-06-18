@@ -1,3 +1,9 @@
+"""仿真 job 仓库协议。
+
+服务和 worker 只依赖这个 Protocol，因此 SQLite 可以作为默认真源，
+InMemory/临时 SQLite 可以用于测试。状态更新必须由实现层保证 CAS 和事件序列。
+"""
+
 from __future__ import annotations
 
 from typing import Protocol
@@ -13,6 +19,8 @@ from cloud_edge_robot_arm.simulation_runtime.models import (
 
 
 class SimulationJobRepository(Protocol):
+    """运行时持久化接口。"""
+
     def create_job(
         self,
         *,

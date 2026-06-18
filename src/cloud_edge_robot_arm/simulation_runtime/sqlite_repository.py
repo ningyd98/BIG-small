@@ -1,3 +1,10 @@
+"""SQLite 持久化仓库。
+
+该仓库是仿真运行时的默认真源：job 状态、事件序列、租约、attempt、metrics 和
+artifact 索引都写入事务。状态推进使用 CAS，避免多个 worker 或服务实例重复消费
+同一任务。
+"""
+
 from __future__ import annotations
 
 import json
@@ -22,6 +29,12 @@ SCHEMA_VERSION = 1
 
 
 class SQLiteSimulationJobRepository:
+    """SQLite 版 SimulationJobRepository。
+
+    方法内多次调用 _initialize 是刻意设计：测试和本地运行可能删除数据库文件，
+    每次访问前确保 schema 存在，避免后台线程在重启恢复场景中崩溃。
+    """
+
     def __init__(self, database_path: Path) -> None:
         self.database_path = database_path
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,6 +183,8 @@ class SQLiteSimulationJobRepository:
             params.append(_dt(now))
         params.extend([job_id, expected.value])
         with self._connect() as conn:
+            # CAS 条件同时检查 job_id 和 previous status；如果状态已被取消、
+            # 超时或其他 worker 推进，本次更新必须失败，避免覆盖真实状态。
             cursor = conn.execute(
                 f"""
                 UPDATE simulation_jobs SET {", ".join(updates)}
@@ -262,6 +277,8 @@ class SQLiteSimulationJobRepository:
         lease_id = "lease-" + uuid4().hex[:16]
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            # SQLite 没有 SKIP LOCKED；这里在同一事务里选择并更新 QUEUED job，
+            # 状态条件就是防止重复消费的主要防线。
             row = conn.execute(
                 """
                 SELECT * FROM simulation_jobs
@@ -354,6 +371,8 @@ class SQLiteSimulationJobRepository:
         now = _dt(_now())
         expired: list[str] = []
         with self._connect() as conn:
+            # 租约过期只标记 INTERRUPTED，不自动重跑；恢复策略之后再判断
+            # artifact 是否完整，避免重复执行已经完成的任务。
             rows = conn.execute(
                 """
                 SELECT job_id, status FROM simulation_jobs
@@ -417,6 +436,8 @@ class SQLiteSimulationJobRepository:
             stream = conn.execute(
                 "SELECT COALESCE(MAX(stream_sequence), 0) AS sequence FROM simulation_job_events"
             ).fetchone()
+            # run 内 sequence 和全局 stream_sequence 都在事务中递增，
+            # WebSocket replay 因而不依赖进程内队列。
             sequence = int(row["sequence"]) + 1
             stream_sequence = int(stream["sequence"]) + 1
             conn.execute(
@@ -715,6 +736,8 @@ class SQLiteSimulationJobRepository:
             raise ValueError("job_not_retryable")
         queued_at = _now()
         with self._connect() as conn:
+            # retry 只重置运行时字段，不改变 manifest/reproducibility hash；
+            # 因此重试仍指向同一个实验定义。
             conn.execute(
                 """
                 UPDATE simulation_jobs
