@@ -1,3 +1,8 @@
+"""任务运行时上下文。
+
+上下文记录当前 task、状态、错误和执行元数据，是状态机和执行器共享的可审计对象。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

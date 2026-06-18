@@ -12,14 +12,18 @@ from cloud_edge_robot_arm.edge.events.models import DetectionContext
 class EventDetector(Protocol):
     """Protocol for event detectors.
 
-    Each detector examines a DetectionContext and returns an EdgeEvent
-    if its triggering condition is met, or None otherwise.
+        Each detector examines a DetectionContext and returns an EdgeEvent
+        if its triggering condition is met, or None otherwise.
 
-    Detectors must be:
-    - Stateless (or only hold configuration)
-    - Deterministic for the same input
-    - Free of LLM / external service calls
-    - Free of direct global variable access
+        Detectors must be:
+        - Stateless (or only hold configuration)
+        - Deterministic for the same input
+        - Free of LLM / external service calls
+        - Free of direct global variable access
+    事件检测器协议。
+
+    所有 detector 必须实现同一接口，输入 DetectionContext，输出结构化 EdgeEvent 列表。
+
     """
 
     def detect(self, context: DetectionContext) -> EdgeEvent | None:

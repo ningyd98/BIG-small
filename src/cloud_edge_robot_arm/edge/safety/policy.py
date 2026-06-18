@@ -1,3 +1,8 @@
+"""安全策略合并。
+
+将合同约束、操作策略和硬件硬限制合并为最保守的安全约束。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

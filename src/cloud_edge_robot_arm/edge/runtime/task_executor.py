@@ -1,3 +1,9 @@
+"""边缘任务执行器。
+
+TaskExecutor 串联合同校验、状态机、SafetyShield、技能执行和监督事件；
+任何步骤失败都必须产生结构化证据。
+"""
+
 from __future__ import annotations
 
 import hashlib

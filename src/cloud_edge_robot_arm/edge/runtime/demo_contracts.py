@@ -1,3 +1,8 @@
+"""演示任务合同。
+
+这些合同用于测试和示例，提供受控 pick-place 场景，不代表真实现场配置。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

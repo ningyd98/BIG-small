@@ -17,8 +17,12 @@ from cloud_edge_robot_arm.contracts.models import (
 class DetectionContext:
     """Structured input for event detectors.
 
-    All fields are read-only. Detectors must not mutate this context.
-    No direct global variable access — all data flows through this struct.
+        All fields are read-only. Detectors must not mutate this context.
+        No direct global variable access — all data flows through this struct.
+    事件检测共享模型。
+
+    DetectionContext 汇集任务合同、机器人状态、网络状态和安全状态，是 detector 的只读输入。
+
     """
 
     task_id: str

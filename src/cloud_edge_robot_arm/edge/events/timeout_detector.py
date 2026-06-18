@@ -1,6 +1,10 @@
 """Detects timeout-related events: STEP_TIMEOUT, TASK_TIMEOUT, TELEMETRY_STALE.
 
 Uses injected Clock — never wall-clock or sleep.
+超时事件检测器。
+
+使用注入的 Clock 判断步骤、任务和遥测超时，避免测试或仿真中依赖真实 sleep。
+
 """
 
 from __future__ import annotations

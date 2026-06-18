@@ -3,6 +3,10 @@
 Replaces the in-memory RetryBudgetManager with persistent CAS semantics.
 Effective limit = min(current_step.retry_limit, skill_policy.limit,
                       task_remaining_limit, safety_policy.limit)
+重试预算服务。
+
+预算使用 repository/CAS 语义，综合步骤限制、技能策略、任务剩余额度和安全策略，防止无限重试。
+
 """
 
 from __future__ import annotations

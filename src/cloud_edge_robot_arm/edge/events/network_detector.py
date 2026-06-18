@@ -15,7 +15,11 @@ from cloud_edge_robot_arm.edge.events.models import DetectionContext
 class NetworkEventDetector:
     """Detects network state changes.
 
-    Tracks previous network state per task to detect transitions.
+        Tracks previous network state per task to detect transitions.
+    网络事件检测器。
+
+    根据网络状态识别退化、断连和恢复事件，帮助 PCSC/ETEAC/AUTO 模式判断云边协同策略。
+
     """
 
     def __init__(self) -> None:

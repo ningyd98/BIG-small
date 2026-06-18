@@ -1,3 +1,8 @@
+"""安全数据 freshness 判断。
+
+场景、遥测和命令过期时必须 fail-closed，不能把 stale 数据当作 fresh。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

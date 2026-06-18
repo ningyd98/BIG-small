@@ -1,3 +1,8 @@
+"""安全上下文构建器。
+
+从任务、步骤、遥测、场景和策略合并 SafetyContext，供规则引擎做确定性判断。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

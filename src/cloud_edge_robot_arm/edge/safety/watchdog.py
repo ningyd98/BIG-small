@@ -1,3 +1,8 @@
+"""安全 watchdog。
+
+通过 heartbeat 检测执行器是否卡死，超时后触发回调并记录 watchdog 状态。
+"""
+
 from __future__ import annotations
 
 import time

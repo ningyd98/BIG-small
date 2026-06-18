@@ -18,10 +18,14 @@ from cloud_edge_robot_arm.edge.events.timeout_detector import TimeoutEventDetect
 class CompositeEventDetector:
     """Runs all registered detectors against a DetectionContext.
 
-    Handles:
-    - Deduplication: same event_type + step_id → only first recorded
-    - Event suppression window: rapid-fire events within cooldown are suppressed
-    - Priority ordering: CRITICAL events always reported first
+        Handles:
+        - Deduplication: same event_type + step_id → only first recorded
+        - Event suppression window: rapid-fire events within cooldown are suppressed
+        - Priority ordering: CRITICAL events always reported first
+    组合事件检测器。
+
+    该模块按固定顺序调用各类 detector，并统一去重和 debounce，避免同一物理现象生成重复事件。
+
     """
 
     def __init__(

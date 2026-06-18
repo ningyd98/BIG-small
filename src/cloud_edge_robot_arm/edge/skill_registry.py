@@ -1,3 +1,8 @@
+"""旧版技能注册表。
+
+将受控 SkillName 绑定到机器人方法，不能注册任意用户提供的 callable。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping

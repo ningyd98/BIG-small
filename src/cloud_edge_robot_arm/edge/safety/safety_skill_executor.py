@@ -1,3 +1,8 @@
+"""安全技能执行器。
+
+在每个技能执行前后调用 SafetyShield，并把拒绝、暂停和急停转换为结构化运行时结果。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

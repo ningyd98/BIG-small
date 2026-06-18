@@ -1,3 +1,8 @@
+"""旧版技能执行器。
+
+该执行器保留基础技能调用和耗时记录；新运行时路径应优先使用 edge.runtime.skill_executor。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

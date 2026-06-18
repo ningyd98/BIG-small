@@ -1,3 +1,8 @@
+"""边缘机器人 adapter 协议。
+
+该协议抽象机器人动作、状态和急停接口；真实实现必须由安全门控包裹，不能直接暴露给前端。
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta

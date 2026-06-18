@@ -1,6 +1,10 @@
 """Event-triggered mode state machine.
 
 Manages all legal state transitions for Phase 6 event-triggered edge autonomy.
+事件模式状态机。
+
+该状态机限定 Phase 6 边缘自治的合法转换，防止恢复、暂停、重规划和完成状态互相覆盖。
+
 """
 
 from __future__ import annotations

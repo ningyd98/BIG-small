@@ -1,3 +1,8 @@
+"""安全错误构造工具。
+
+统一生成安全相关 StructuredError，保证拒绝、暂停和急停原因可审计。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.errors import StructuredError

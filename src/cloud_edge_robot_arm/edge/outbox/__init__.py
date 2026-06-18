@@ -2,6 +2,10 @@
 
 Persist-before-send semantics: messages are persisted before transmission.
 Network recovery: messages are retried with idempotency keys and backoff.
+边缘 outbox 持久消息队列。
+
+Outbox 采用先持久化再发送的语义，网络恢复后用幂等键重试，避免消息丢失或重复副作用。
+
 """
 
 from __future__ import annotations

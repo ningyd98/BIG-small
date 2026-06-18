@@ -2,6 +2,10 @@
 
 Distinguishes TARGET_JITTER (no event), TARGET_MOVED, and TARGET_LOST.
 Uses position threshold, consecutive observation count, and debounce.
+目标事件检测器。
+
+区分目标轻微抖动、真实移动和目标丢失，避免感知噪声导致不必要的恢复动作。
+
 """
 
 from __future__ import annotations

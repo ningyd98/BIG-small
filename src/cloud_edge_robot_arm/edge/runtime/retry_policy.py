@@ -1,3 +1,8 @@
+"""运行时重试策略。
+
+该模块只允许特定错误码重试，并使用任务步骤的 retry_limit 限制重试次数。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,8 @@
+"""运行时中断恢复。
+
+恢复流程把重启前处于 EXECUTING 的任务回收为可审查状态，避免服务重启后任务永久悬挂。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.contracts import TaskState

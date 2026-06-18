@@ -1,6 +1,10 @@
 """Detects execution-related events.
 
 Detects GRASP_FAILED, PLACE_FAILED, VERIFY_FAILED, SKILL_EXECUTION_FAILED.
+执行事件检测器。
+
+将抓取、放置、验证和技能执行失败转换为 EdgeEvent，供本地恢复或云端重规划判断。
+
 """
 
 from __future__ import annotations

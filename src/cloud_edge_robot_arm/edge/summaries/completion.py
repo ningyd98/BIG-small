@@ -1,6 +1,10 @@
 """Deterministic CompletionSummary builder.
 
 Validates all completion criteria before declaring success.
+完成摘要构建器。
+
+只有所有完成条件通过后才声明成功，摘要哈希用于证据追溯。
+
 """
 
 from __future__ import annotations

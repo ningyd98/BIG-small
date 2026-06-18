@@ -1,3 +1,8 @@
+"""障碍物距离检查。
+
+用于计算 TCP/目标点到障碍物的安全余量，低于阈值时应拒绝或暂停。
+"""
+
 from __future__ import annotations
 
 from math import hypot

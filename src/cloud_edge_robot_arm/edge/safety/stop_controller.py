@@ -1,3 +1,8 @@
+"""停止控制器。
+
+封装 stop/急停动作结果，停止失败必须以结构化安全错误上报。
+"""
+
 from __future__ import annotations
 
 from typing import Protocol

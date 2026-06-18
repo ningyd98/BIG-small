@@ -13,7 +13,11 @@ from cloud_edge_robot_arm.edge.events.models import DetectionContext
 
 
 class DeviceHealthEventDetector:
-    """Detects device faults from the robot state and device health data."""
+    """设备健康事件检测器。
+    用于识别设备故障和设备侧遥测过期；UNKNOWN 或 stale 状态不能被当作健康。
+
+    Detects device faults from the robot state and device health data.
+    """
 
     @property
     def detector_name(self) -> str:

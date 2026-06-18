@@ -1,3 +1,8 @@
+"""运动学限速工具。
+
+有效速度取任务约束和设备上限的更严格值，防止配置放宽真实能力限制。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.contracts import TaskContract

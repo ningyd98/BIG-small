@@ -1,3 +1,8 @@
+"""技能意图解析器。
+
+把高层任务步骤解析为运动/非运动意图和目标位姿，为 SafetyShield 规则提供输入。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

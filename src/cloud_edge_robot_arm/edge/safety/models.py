@@ -1,3 +1,8 @@
+"""安全领域模型。
+
+定义 SafetyContext、规则结果、障碍物、工作空间和硬限制，是 SafetyShield 的结构化契约。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

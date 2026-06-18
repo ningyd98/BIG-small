@@ -2,6 +2,11 @@
 
 Does NOT rely on LLM. Evaluates whether a task is truly complete beyond
 simple step exhaustion. Step exhaustion != task success.
+任务完成评估器。
+
+该模块用确定性 9 点检查判断任务是否真正完成；步骤耗尽不等于任务成功，
+完成判定必须结合状态、目标和后置校验。
+
 """
 
 from __future__ import annotations

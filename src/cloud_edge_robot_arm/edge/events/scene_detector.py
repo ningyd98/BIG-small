@@ -15,9 +15,13 @@ from cloud_edge_robot_arm.edge.events.models import DetectionContext
 class SceneChangeEventDetector:
     """Detects scene changes, low confidence, and path blockage.
 
-    Configuration:
-    - min_scene_confidence: below this threshold → SCENE_CONFIDENCE_LOW
-    - scene_version_check: if scene_version changes → SCENE_CHANGED
+        Configuration:
+        - min_scene_confidence: below this threshold → SCENE_CONFIDENCE_LOW
+        - scene_version_check: if scene_version changes → SCENE_CHANGED
+    场景事件检测器。
+
+    用于识别场景变化、置信度低和路径阻塞，为重规划和安全暂停提供依据。
+
     """
 
     def __init__(

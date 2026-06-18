@@ -3,6 +3,10 @@
 Same input → same output (stable hash).
 Separates confirmed_facts from diagnostic_findings from suspected_causes.
 Marks missing information as "unknown".
+失败摘要构建器。
+
+将确认事实、诊断发现和疑似原因分开记录，缺失信息标记为 unknown，避免猜测。
+
 """
 
 from __future__ import annotations

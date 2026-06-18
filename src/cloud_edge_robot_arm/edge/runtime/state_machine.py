@@ -1,3 +1,8 @@
+"""任务运行时状态机。
+
+状态机限定 CREATED、VALIDATING、EXECUTING、PAUSED、COMPLETED、FAILED 等转换，防止非法状态跳转。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -29,6 +29,7 @@ def main() -> int:
             "src/cloud_edge_robot_arm/simulation_workbench",
             "src/cloud_edge_robot_arm/cloud/api",
             "src/cloud_edge_robot_arm/dashboard",
+            "src/cloud_edge_robot_arm/edge",
             "src/cloud_edge_robot_arm/experiments",
             "src/cloud_edge_robot_arm/real_robot",
             "dashboard/src/simulation/services",

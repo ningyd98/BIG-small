@@ -1,3 +1,8 @@
+"""固定 pick-place 机器人协议和执行器。
+
+该模块定义最小技能接口，便于测试和演示；真实硬件执行仍应通过安全门控和 adapter。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable

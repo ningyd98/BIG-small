@@ -2,6 +2,10 @@
 
 TASK_COMPLETED requires all completion criteria, step list exhaustion,
 gripper state, target position, and post-check to pass.
+完成事件检测器。
+
+TASK_COMPLETED 需要满足所有完成条件、夹爪状态、目标位置和后置检查，不能只依赖步骤列表结束。
+
 """
 
 from __future__ import annotations

@@ -1,3 +1,8 @@
+"""运行时条件评估器。
+
+执行技能前检查任务前置条件和机器人状态，失败时返回结构化错误而不是继续执行。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

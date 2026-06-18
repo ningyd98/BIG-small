@@ -2,6 +2,10 @@
 
 Top-level orchestrator for Phase 6 event-triggered edge autonomy.
 Manages detection -> recovery evaluation -> replanning -> resume lifecycle.
+事件触发模式控制器。
+
+控制器负责检测事件、评估本地恢复、请求重规划并恢复任务；所有恢复动作仍必须重新通过 SafetyShield。
+
 """
 
 from __future__ import annotations

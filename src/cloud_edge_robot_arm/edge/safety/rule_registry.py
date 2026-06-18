@@ -1,3 +1,8 @@
+"""安全规则注册表。
+
+注册表按优先级汇总规则结果，急停/拒绝优先于允许，保证最保守决策。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

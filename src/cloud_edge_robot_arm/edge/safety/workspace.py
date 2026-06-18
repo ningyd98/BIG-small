@@ -1,3 +1,8 @@
+"""工作空间边界检查。
+
+判断目标坐标是否落在允许工作空间内，越界必须被安全规则拒绝。
+"""
+
 from __future__ import annotations
 
 from cloud_edge_robot_arm.edge.safety.models import WorkspaceDefinition

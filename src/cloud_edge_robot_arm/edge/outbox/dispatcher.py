@@ -7,6 +7,10 @@ idempotency-key deduplication.
 Lifecycle: PENDING → SENDING → SENT
            PENDING → SENDING → PENDING (retry with backoff)
            PENDING → SENDING → DEAD_LETTER (max retries)
+Outbox 后台发送器。
+
+发送器通过 CAS claim、指数退避和 DEAD_LETTER 状态实现至少一次投递；消费者必须使用幂等键去重。
+
 """
 
 from __future__ import annotations

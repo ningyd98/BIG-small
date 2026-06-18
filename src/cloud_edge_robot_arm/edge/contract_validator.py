@@ -1,3 +1,8 @@
+"""任务合同校验器。
+
+合同校验发生在边缘执行前，用于拒绝缺失字段、非法技能、过期或不一致的任务定义，防止无效合同进入执行器。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping

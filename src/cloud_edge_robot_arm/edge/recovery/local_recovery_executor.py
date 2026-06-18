@@ -3,6 +3,10 @@
 This service no longer pretends to execute motion. It only authorizes or
 rejects recovery based on budget and safety recheck. The TaskExecutor remains
 responsible for re-running the real step.
+本地恢复授权器。
+
+该服务只判断恢复是否被预算和安全复检允许，不假装执行运动；真正步骤执行由 TaskExecutor 完成。
+
 """
 
 from __future__ import annotations

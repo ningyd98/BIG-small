@@ -13,7 +13,11 @@ from cloud_edge_robot_arm.edge.events.models import DetectionContext
 
 
 class SafetyEventDetector:
-    """Detects safety shield events from safety_state in DetectionContext."""
+    """安全事件检测器。
+    将 SafetyShield 的拒绝、暂停和急停状态转为事件；安全事件优先级高于普通执行事件。
+
+    Detects safety shield events from safety_state in DetectionContext.
+    """
 
     @property
     def detector_name(self) -> str:

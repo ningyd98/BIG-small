@@ -1,3 +1,8 @@
+"""边缘 SafetyShield。
+
+Shield 汇总安全上下文、策略和规则，输出 ALLOW/PAUSE/REJECT/EMERGENCY_STOP 等确定性决策。
+"""
+
 from __future__ import annotations
 
 import hashlib

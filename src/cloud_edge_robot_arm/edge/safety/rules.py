@@ -1,3 +1,8 @@
+"""SafetyShield 规则集合。
+
+规则检查急停、命令时效、工作空间、障碍物、速度、加速度、碰撞和绕过尝试等安全条件。
+"""
+
 from __future__ import annotations
 
 import time

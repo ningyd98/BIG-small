@@ -1,3 +1,8 @@
+"""技能执行器。
+
+执行器负责参数校验、前置条件检查、调用注册表技能并记录结果；它不绕过 SafetyShield。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

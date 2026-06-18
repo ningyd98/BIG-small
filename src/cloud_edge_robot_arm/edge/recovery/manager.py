@@ -2,6 +2,10 @@
 
 Deterministic recovery decisions — no LLM calls.
 Every recovery action must re-pass SafetyShield.
+本地恢复决策管理器。
+
+恢复决策是确定性的，不调用 LLM；每个恢复动作都必须重新通过 SafetyShield。
+
 """
 
 from __future__ import annotations

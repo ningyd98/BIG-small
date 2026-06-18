@@ -1,3 +1,8 @@
+"""运行时技能注册表。
+
+注册表把受控 SkillName 映射到固定 Python callable，避免任意函数或脚本被执行。
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping

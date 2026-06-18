@@ -1,3 +1,8 @@
+"""安全数据 provider 协议。
+
+Provider 提供遥测、场景和工作空间数据；缺失或过期数据应由规则 fail-closed 处理。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
