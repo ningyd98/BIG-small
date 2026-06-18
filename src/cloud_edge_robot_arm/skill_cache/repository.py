@@ -29,15 +29,27 @@ from cloud_edge_robot_arm.skill_cache.models import (
 
 @runtime_checkable
 class SkillCacheRepository(Protocol):
-    def save_template(self, template: SkillTemplate) -> SkillTemplate: ...
+    """技能缓存仓储协议，统一内存和 SQLite 的模板、记录与审计操作。"""
 
-    def get_template(self, template_id: str) -> SkillTemplate | None: ...
+    def save_template(self, template: SkillTemplate) -> SkillTemplate:
+        """保存技能模板；相同 ID 的不同 payload 必须触发幂等冲突。"""
+        ...
 
-    def lookup_templates(self, key: SkillCacheKey) -> SkillCacheLookupResult: ...
+    def get_template(self, template_id: str) -> SkillTemplate | None:
+        """按模板 ID 读取技能模板，缺失时返回 None。"""
+        ...
 
-    def save_execution_record(self, record: SkillExecutionRecord) -> SkillExecutionRecord: ...
+    def lookup_templates(self, key: SkillCacheKey) -> SkillCacheLookupResult:
+        """按缓存键查询可信且未过期的技能模板。"""
+        ...
 
-    def get_statistics(self, template_id: str) -> SkillStatistics: ...
+    def save_execution_record(self, record: SkillExecutionRecord) -> SkillExecutionRecord:
+        """保存执行记录，并在安全拒绝时触发模板隔离。"""
+        ...
+
+    def get_statistics(self, template_id: str) -> SkillStatistics:
+        """按模板 ID 聚合执行统计。"""
+        ...
 
     def promote_template(
         self,
@@ -45,13 +57,21 @@ class SkillCacheRepository(Protocol):
         *,
         policy: SkillCachePromotionPolicy,
         expected_template_version: int,
-    ) -> SkillTemplate: ...
+    ) -> SkillTemplate:
+        """按晋级策略和期望版本尝试将候选模板提升为 TRUSTED。"""
+        ...
 
-    def quarantine_template(self, template_id: str, reason: str) -> SkillTemplate: ...
+    def quarantine_template(self, template_id: str, reason: str) -> SkillTemplate:
+        """将模板标记为 QUARANTINED，并记录隔离原因。"""
+        ...
 
-    def invalidate_template(self, template_id: str, reason: str) -> SkillTemplate: ...
+    def invalidate_template(self, template_id: str, reason: str) -> SkillTemplate:
+        """将模板标记为 INVALIDATED，阻止后续命中。"""
+        ...
 
-    def expire_templates(self, *, now: datetime | None = None) -> list[str]: ...
+    def expire_templates(self, *, now: datetime | None = None) -> list[str]:
+        """扫描过期模板并返回被标记为 EXPIRED 的模板 ID。"""
+        ...
 
     def compare_and_set_template_version(
         self,
@@ -59,15 +79,23 @@ class SkillCacheRepository(Protocol):
         *,
         expected_template_version: int,
         new_status: SkillTemplateStatus,
-    ) -> bool: ...
+    ) -> bool:
+        """按版本执行 CAS 状态更新，版本不匹配时返回 False。"""
+        ...
 
-    def list_templates(self) -> list[SkillTemplate]: ...
+    def list_templates(self) -> list[SkillTemplate]:
+        """列出仓储中的全部技能模板副本。"""
+        ...
 
     def record_audit_event(
         self, template_id: str, event_type: str, details: dict[str, object] | None = None
-    ) -> None: ...
+    ) -> None:
+        """记录技能缓存审计事件，不保存真实控制器凭据。"""
+        ...
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """释放仓储资源；内存实现保持空操作。"""
+        ...
 
 
 def _utc_now() -> datetime:
@@ -75,6 +103,8 @@ def _utc_now() -> datetime:
 
 
 class InMemorySkillCacheRepository:
+    """线程安全的内存技能缓存仓储，供测试和轻量运行时使用。"""
+
     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self._clock = clock or _utc_now
         self._lock = threading.RLock()
@@ -86,6 +116,7 @@ class InMemorySkillCacheRepository:
         self._audit: list[dict[str, object]] = []
 
     def save_template(self, template: SkillTemplate) -> SkillTemplate:
+        """保存模板深拷贝，并对同 ID 不同 payload 抛出幂等冲突。"""
         with self._lock:
             h = stable_payload_hash(template)
             existing = self._templates.get(template.template_id)
@@ -106,11 +137,13 @@ class InMemorySkillCacheRepository:
             return saved.model_copy(deep=True)
 
     def get_template(self, template_id: str) -> SkillTemplate | None:
+        """按模板 ID 返回深拷贝，避免调用方修改内部状态。"""
         with self._lock:
             template = self._templates.get(template_id)
             return None if template is None else template.model_copy(deep=True)
 
     def lookup_templates(self, key: SkillCacheKey) -> SkillCacheLookupResult:
+        """先查精确可信模板，再查校准兼容模板，最后返回不命中原因。"""
         with self._lock:
             now = self._clock()
             active = [
@@ -141,6 +174,7 @@ class InMemorySkillCacheRepository:
             )
 
     def save_execution_record(self, record: SkillExecutionRecord) -> SkillExecutionRecord:
+        """保存执行记录，并在安全拒绝或急停结果下自动隔离模板。"""
         with self._lock:
             h = stable_payload_hash(record)
             existing = self._records.get(record.execution_id)
@@ -165,6 +199,7 @@ class InMemorySkillCacheRepository:
             return saved.model_copy(deep=True)
 
     def get_statistics(self, template_id: str) -> SkillStatistics:
+        """聚合模板执行记录，计算成功率、失败次数和持续时间。"""
         with self._lock:
             return _statistics(
                 [
@@ -181,6 +216,7 @@ class InMemorySkillCacheRepository:
         policy: SkillCachePromotionPolicy,
         expected_template_version: int,
     ) -> SkillTemplate:
+        """按版本和统计策略尝试将候选模板提升为可信模板。"""
         with self._lock:
             template = self._require_template(template_id)
             if template.template_version != expected_template_version:
@@ -199,14 +235,17 @@ class InMemorySkillCacheRepository:
             )
 
     def quarantine_template(self, template_id: str, reason: str) -> SkillTemplate:
+        """手动隔离模板并记录隔离原因。"""
         with self._lock:
             return self._set_status(template_id, SkillTemplateStatus.QUARANTINED, reason)
 
     def invalidate_template(self, template_id: str, reason: str) -> SkillTemplate:
+        """手动废弃模板并记录废弃原因。"""
         with self._lock:
             return self._set_status(template_id, SkillTemplateStatus.INVALIDATED, reason)
 
     def expire_templates(self, *, now: datetime | None = None) -> list[str]:
+        """扫描 TTL 已到期模板，并返回本次过期的模板 ID。"""
         checked_at = now or self._clock()
         expired: list[str] = []
         with self._lock:
@@ -228,6 +267,7 @@ class InMemorySkillCacheRepository:
         expected_template_version: int,
         new_status: SkillTemplateStatus,
     ) -> bool:
+        """在模板版本匹配时更新状态，防止并发覆盖。"""
         with self._lock:
             template = self._templates.get(template_id)
             if template is None or template.template_version != expected_template_version:
@@ -236,12 +276,14 @@ class InMemorySkillCacheRepository:
             return True
 
     def list_templates(self) -> list[SkillTemplate]:
+        """列出所有模板的深拷贝。"""
         with self._lock:
             return [template.model_copy(deep=True) for template in self._templates.values()]
 
     def record_audit_event(
         self, template_id: str, event_type: str, details: dict[str, object] | None = None
     ) -> None:
+        """追加内存审计事件，用于测试和本地调试。"""
         self._audit.append(
             {
                 "template_id": template_id,
@@ -252,6 +294,7 @@ class InMemorySkillCacheRepository:
         )
 
     def close(self) -> None:
+        """内存仓储无需释放外部资源，关闭操作保持幂等。"""
         return None
 
     def _require_template(self, template_id: str) -> SkillTemplate:
@@ -279,6 +322,8 @@ class InMemorySkillCacheRepository:
 
 
 class SQLiteSkillCacheRepository:
+    """SQLite 技能缓存仓储，将模板、执行记录和审计事件持久化。"""
+
     def __init__(self, path: str | Path, *, clock: Callable[[], datetime] | None = None) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -291,17 +336,21 @@ class SQLiteSkillCacheRepository:
         self._load()
 
     def save_template(self, template: SkillTemplate) -> SkillTemplate:
+        """保存模板到内存镜像和 SQLite 表。"""
         saved = self._memory.save_template(template)
         self._upsert_template(saved)
         return saved
 
     def get_template(self, template_id: str) -> SkillTemplate | None:
+        """按模板 ID 从内存镜像读取模板。"""
         return self._memory.get_template(template_id)
 
     def lookup_templates(self, key: SkillCacheKey) -> SkillCacheLookupResult:
+        """使用内存镜像执行技能模板匹配。"""
         return self._memory.lookup_templates(key)
 
     def save_execution_record(self, record: SkillExecutionRecord) -> SkillExecutionRecord:
+        """保存执行记录并同步可能被隔离的模板状态。"""
         saved = self._memory.save_execution_record(record)
         h = stable_payload_hash(saved)
         row = self._conn.execute(
@@ -330,6 +379,7 @@ class SQLiteSkillCacheRepository:
         return saved
 
     def get_statistics(self, template_id: str) -> SkillStatistics:
+        """从内存镜像聚合模板执行统计。"""
         return self._memory.get_statistics(template_id)
 
     def promote_template(
@@ -339,6 +389,7 @@ class SQLiteSkillCacheRepository:
         policy: SkillCachePromotionPolicy,
         expected_template_version: int,
     ) -> SkillTemplate:
+        """按策略晋级模板，并把新状态落盘。"""
         saved = self._memory.promote_template(
             template_id, policy=policy, expected_template_version=expected_template_version
         )
@@ -346,16 +397,19 @@ class SQLiteSkillCacheRepository:
         return saved
 
     def quarantine_template(self, template_id: str, reason: str) -> SkillTemplate:
+        """隔离模板，并把隔离状态落盘。"""
         saved = self._memory.quarantine_template(template_id, reason)
         self._upsert_template(saved)
         return saved
 
     def invalidate_template(self, template_id: str, reason: str) -> SkillTemplate:
+        """废弃模板，并把废弃状态落盘。"""
         saved = self._memory.invalidate_template(template_id, reason)
         self._upsert_template(saved)
         return saved
 
     def expire_templates(self, *, now: datetime | None = None) -> list[str]:
+        """过期到期模板，并同步每个过期模板的 SQLite 记录。"""
         expired = self._memory.expire_templates(now=now)
         for template_id in expired:
             self._upsert_template(self._memory.get_template(template_id))
@@ -368,6 +422,7 @@ class SQLiteSkillCacheRepository:
         expected_template_version: int,
         new_status: SkillTemplateStatus,
     ) -> bool:
+        """执行版本 CAS 状态更新，成功时同步 SQLite。"""
         ok = self._memory.compare_and_set_template_version(
             template_id,
             expected_template_version=expected_template_version,
@@ -378,11 +433,13 @@ class SQLiteSkillCacheRepository:
         return ok
 
     def list_templates(self) -> list[SkillTemplate]:
+        """列出内存镜像中的全部模板。"""
         return self._memory.list_templates()
 
     def record_audit_event(
         self, template_id: str, event_type: str, details: dict[str, object] | None = None
     ) -> None:
+        """记录技能缓存审计事件并持久化 details JSON。"""
         self._memory.record_audit_event(template_id, event_type, details)
         self._conn.execute(
             """
@@ -394,6 +451,7 @@ class SQLiteSkillCacheRepository:
         self._conn.commit()
 
     def close(self) -> None:
+        """关闭 SQLite 连接，避免测试进程泄漏文件句柄。"""
         self._conn.close()
 
     def _create_schema(self) -> None:

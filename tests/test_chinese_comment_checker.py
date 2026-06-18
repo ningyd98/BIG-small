@@ -62,6 +62,14 @@ def test_root_utility_public_api_has_chinese_docstrings() -> None:
     assert missing == []
 
 
+def test_skill_cache_public_api_has_chinese_docstrings() -> None:
+    missing = _public_python_api_without_chinese_docstrings(
+        Path("src/cloud_edge_robot_arm/skill_cache")
+    )
+
+    assert missing == []
+
+
 def test_typescript_ui_text_does_not_count_as_chinese_comment(tmp_path: Path) -> None:
     path = tmp_path / "Widget.tsx"
     path.write_text(
