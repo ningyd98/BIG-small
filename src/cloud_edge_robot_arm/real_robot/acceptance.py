@@ -165,10 +165,73 @@ def _validate_acceptance_evidence(
     robot_identity_hash: str,
     operator_confirmation: dict[str, object],
 ) -> None:
+    if level == RealRobotAcceptanceLevel.LEVEL_0:
+        _validate_level0_read_only_evidence(
+            evidence,
+            config_hash=config_hash,
+            source_tree_hash=source_tree_hash,
+            robot_identity_hash=robot_identity_hash,
+            operator_confirmation=operator_confirmation,
+        )
+        return
     if evidence.get("status") not in {"ACCEPTED", "LEVEL_ACCEPTED"}:
         raise ValueError("acceptance evidence status is not accepted")
     if evidence.get("requested_level") != level.value:
         raise ValueError("acceptance evidence requested_level mismatch")
+    if evidence.get("config_hash") != config_hash:
+        raise ValueError("acceptance evidence config_hash mismatch")
+    if evidence.get("source_tree_hash") != source_tree_hash:
+        raise ValueError("acceptance evidence source_tree_hash mismatch")
+    if evidence.get("robot_identity_hash") != robot_identity_hash:
+        raise ValueError("acceptance evidence robot_identity_hash mismatch")
+    evidence_confirmation = evidence.get("operator_confirmation")
+    if not isinstance(evidence_confirmation, dict):
+        raise ValueError("acceptance evidence operator_confirmation is missing")
+    expected_confirmation = operator_confirmation.get("confirmation_id")
+    if (
+        not expected_confirmation
+        or evidence_confirmation.get("confirmation_id") != expected_confirmation
+    ):
+        raise ValueError("acceptance evidence operator_confirmation mismatch")
+
+
+def _validate_level0_read_only_evidence(
+    evidence: dict[str, Any],
+    *,
+    config_hash: str,
+    source_tree_hash: str,
+    robot_identity_hash: str,
+    operator_confirmation: dict[str, object],
+) -> None:
+    if evidence.get("status") != "PHASE10_HARDWARE_READ_ONLY_ACCEPTED":
+        raise ValueError("level0 evidence is not accepted real hardware read-only evidence")
+    if evidence.get("requested_level") != RealRobotAcceptanceLevel.LEVEL_0.value:
+        raise ValueError("level0 evidence requested_level mismatch")
+    if evidence.get("highest_acceptance_level") != RealRobotAcceptanceLevel.LEVEL_0.value:
+        raise ValueError("level0 evidence highest_acceptance_level mismatch")
+    if evidence.get("level1_allowed") is not False:
+        raise ValueError("level0 evidence must not allow LEVEL_1")
+    if evidence.get("validation_claimed") is not True:
+        raise ValueError("level0 evidence validation_claimed is not true")
+    if evidence.get("real_hardware_validation_claimed") is not True:
+        raise ValueError("level0 evidence is not real hardware validation")
+    if evidence.get("controller_contacted") is not True:
+        raise ValueError("level0 evidence did not contact controller")
+    if evidence.get("hardware_state_sampled") is not True:
+        raise ValueError("level0 evidence did not sample hardware state")
+    if evidence.get("write_operation_count") != 0:
+        raise ValueError("level0 evidence write operation count is not zero")
+    if evidence.get("hardware_motion_observed") is not False:
+        raise ValueError("level0 evidence observed hardware motion")
+    if evidence.get("evidence_complete") is not True:
+        raise ValueError("level0 evidence is incomplete")
+    if evidence.get("worktree_clean") is not True:
+        raise ValueError("level0 evidence worktree is not clean")
+    checks = evidence.get("checks")
+    if not isinstance(checks, dict) or not all(
+        checks.get(f"L0-{index:02d}") is True for index in range(1, 21)
+    ):
+        raise ValueError("level0 evidence checks are incomplete")
     if evidence.get("config_hash") != config_hash:
         raise ValueError("acceptance evidence config_hash mismatch")
     if evidence.get("source_tree_hash") != source_tree_hash:

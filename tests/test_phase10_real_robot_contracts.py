@@ -178,11 +178,22 @@ def test_acceptance_levels_are_persistent_and_block_higher_level_skills(tmp_path
     level0.write_text(
         json.dumps(
             {
-                "status": "ACCEPTED",
+                "status": "PHASE10_HARDWARE_READ_ONLY_ACCEPTED",
                 "requested_level": "LEVEL_0",
+                "validation_claimed": True,
+                "real_hardware_validation_claimed": True,
+                "controller_contacted": True,
+                "hardware_state_sampled": True,
+                "hardware_motion_observed": False,
+                "write_operation_count": 0,
+                "highest_acceptance_level": "LEVEL_0",
+                "level1_allowed": False,
                 "config_hash": "cfg",
                 "source_tree_hash": "tree",
                 "robot_identity_hash": "robot",
+                "worktree_clean": True,
+                "evidence_complete": True,
+                "checks": {f"L0-{index:02d}": True for index in range(1, 21)},
                 "operator_confirmation": {"confirmation_id": "session-1"},
             }
         )
