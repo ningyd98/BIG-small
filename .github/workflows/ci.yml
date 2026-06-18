@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  python:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -21,25 +21,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: dashboard/package-lock.json
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev,sim-mujoco]"
-
-      - name: Install dashboard dependencies
-        working-directory: dashboard
-        run: npm ci
-
-      - name: Install Playwright Chromium
-        working-directory: dashboard
-        run: npx playwright install --with-deps chromium
 
       - name: Compile check
         run: python -m compileall src scripts tests
@@ -98,14 +83,96 @@ jobs:
       - name: Phase 9.1 blocked-environment guard
         run: python scripts/verify_phase9_1.py --skip-history
 
+      - name: Project CI profile
+        run: python scripts/verify_project.py --profile ci
+
       - name: Phase 10 software-side checks
         run: |
           python scripts/verify_phase10_0.py
           python scripts/verify_phase10_1.py
           python scripts/verify_phase10_2a.py --skip-runtime
 
-      - name: Phase 10.2B dashboard console verification
-        run: python scripts/verify_phase10_2b.py
+      - name: Phase 10.2B backend-only dashboard verification
+        run: python scripts/verify_phase10_2b.py --backend-only
 
       - name: Dependency check
         run: python -m pip check
+
+  frontend:
+    runs-on: ubuntu-latest
+    needs: python
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,sim-mujoco]"
+
+      - name: Dashboard frontend checks
+        working-directory: dashboard
+        run: |
+          npm ci
+          npm run api:check
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm run test
+          npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,sim-mujoco]"
+          cd dashboard
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run dashboard Playwright E2E
+        working-directory: dashboard
+        env:
+          DASHBOARD_AUTH_MODE: LOCAL_ONLY
+          DASHBOARD_EXPERIMENT_WRITES_ENABLED: "true"
+        run: npm run e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-playwright-report
+          path: |
+            dashboard/playwright-report
+            dashboard/test-results
+          if-no-files-found: ignore

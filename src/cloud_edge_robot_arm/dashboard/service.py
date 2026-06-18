@@ -19,6 +19,7 @@ from cloud_edge_robot_arm.dashboard.models import (
     ComparisonResponse,
     DashboardEnvironment,
     DashboardSummary,
+    DataSourceKind,
     EvidenceIndexRecord,
     EvidenceStatus,
     ExperimentKind,
@@ -92,7 +93,7 @@ class DashboardService:
 
     def summary(self) -> DashboardSummary:
         records = self.evidence_index.refresh()
-        status = _latest_project_status(records)
+        status, status_source = _latest_project_status(records)
         provenance = _latest_provenance(records)
         safety = self.safety()
         services = _service_health_from_safety(safety)
@@ -103,6 +104,7 @@ class DashboardService:
             source_tree_hash=provenance.source_tree_hash,
             worktree_clean=provenance.worktree_clean,
             current_project_status=status,
+            current_project_status_source=status_source,
             hardware_claim=hardware_claim,
             real_robot_validation="NOT_STARTED",
             highest_acceptance_level="NONE",
@@ -175,7 +177,11 @@ class DashboardService:
         )
 
     def comparisons(self) -> ComparisonResponse:
-        return ComparisonResponse(metrics=_comparison_metrics(self.artifact_root))
+        metrics = _comparison_metrics(self.artifact_root)
+        return ComparisonResponse(
+            metrics=metrics,
+            source=DataSourceKind.AUTHORITATIVE if metrics else DataSourceKind.UNAVAILABLE,
+        )
 
     def record_safety_review_note(
         self, request: SafetyReviewNoteRequest, *, role: UserRole
@@ -202,7 +208,7 @@ class DashboardService:
         return response
 
 
-def _latest_project_status(records: object) -> str:
+def _latest_project_status(records: object) -> tuple[str, DataSourceKind]:
     accepted_statuses = {
         "PHASE10_MOVEIT_DRY_RUN_ACCEPTED",
         "PHASE10_FRAMEWORK_DRY_RUN_ACCEPTED_WITH_MOVEIT_ENV_BLOCK",
@@ -218,15 +224,17 @@ def _latest_project_status(records: object) -> str:
             continue
         summary = str(getattr(record, "summary", ""))
         if summary in accepted_statuses:
-            return summary
+            return summary, DataSourceKind.AUTHORITATIVE
         if "PHASE10_MOVEIT_DRY_RUN_ACCEPTED" in summary:
-            return "PHASE10_MOVEIT_DRY_RUN_ACCEPTED"
+            return "PHASE10_MOVEIT_DRY_RUN_ACCEPTED", DataSourceKind.AUTHORITATIVE
         if (
             getattr(record, "status", None) == EvidenceStatus.BLOCKED_BY_ENV
             and not fallback_blocked
         ):
             fallback_blocked = summary or "BLOCKED_BY_ENV"
-    return fallback_blocked or "UNKNOWN"
+    if fallback_blocked:
+        return fallback_blocked, DataSourceKind.AUTHORITATIVE
+    return "UNKNOWN", DataSourceKind.UNAVAILABLE
 
 
 def _highest_hardware_claim(records: list[EvidenceIndexRecord]) -> HardwareClaim:
@@ -252,9 +260,21 @@ def _service_health_from_safety(safety: SafetyGateSnapshot) -> list[ServiceHealt
         else ServiceStatus.UNKNOWN
     )
     return [
-        ServiceHealth(name="SafetyShield", status=safety.safety_shield_state),
-        ServiceHealth(name="HardwareExecutionGate", status=gate_status),
-        ServiceHealth(name="RealRobotController", status=ServiceStatus.NOT_CONFIGURED),
+        ServiceHealth(
+            name="SafetyShield",
+            status=safety.safety_shield_state,
+            source=DataSourceKind.DERIVED,
+        ),
+        ServiceHealth(
+            name="HardwareExecutionGate",
+            status=gate_status,
+            source=DataSourceKind.DERIVED,
+        ),
+        ServiceHealth(
+            name="RealRobotController",
+            status=ServiceStatus.NOT_CONFIGURED,
+            source=DataSourceKind.CONFIGURED_DEFAULT,
+        ),
     ]
 
 

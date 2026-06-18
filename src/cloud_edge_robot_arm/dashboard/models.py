@@ -60,6 +60,13 @@ class FreshnessStatus(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class DataSourceKind(StrEnum):
+    AUTHORITATIVE = "authoritative"
+    DERIVED = "derived"
+    CONFIGURED_DEFAULT = "configured_default"
+    UNAVAILABLE = "unavailable"
+
+
 class ExperimentKind(StrEnum):
     MOCK_SOFTWARE = "MOCK_SOFTWARE"
     MUJOCO_SMOKE = "MUJOCO_SMOKE"
@@ -77,6 +84,7 @@ class ServiceHealth(BaseModel):
     name: str
     status: ServiceStatus = ServiceStatus.UNKNOWN
     detail: str = ""
+    source: DataSourceKind = DataSourceKind.UNAVAILABLE
 
 
 class SafetyGateSnapshot(BaseModel):
@@ -160,6 +168,7 @@ class DashboardSummary(BaseModel):
     runtime_profile: str = "local"
     current_environment: DashboardEnvironment = DashboardEnvironment.MOVEIT_DRY_RUN
     current_project_status: str = "UNKNOWN"
+    current_project_status_source: DataSourceKind = DataSourceKind.UNAVAILABLE
     hardware_claim: HardwareClaim = HardwareClaim.NONE
     real_robot_validation: str = "NOT_STARTED"
     highest_acceptance_level: str = "NONE"
@@ -253,6 +262,7 @@ class ExperimentListResponse(BaseModel):
 
 class ComparisonResponse(BaseModel):
     metrics: list[dict[str, Any]]
+    source: DataSourceKind = DataSourceKind.UNAVAILABLE
 
 
 class AuditEventResponse(BaseModel):

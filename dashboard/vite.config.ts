@@ -3,6 +3,29 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes("node_modules/echarts")) return "echarts";
+          if (
+            id.includes("node_modules/react") ||
+            id.includes("node_modules/@tanstack/react-query")
+          ) {
+            return "react";
+          }
+          if (
+            id.includes("node_modules/antd") ||
+            id.includes("node_modules/@ant-design/icons") ||
+            id.includes("node_modules/@ant-design")
+          ) {
+            return "antd";
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

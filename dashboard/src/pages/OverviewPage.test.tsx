@@ -10,6 +10,7 @@ describe("OverviewPageView", () => {
         summary={{
           current_environment: "MOVEIT_DRY_RUN",
           current_project_status: "PHASE10_MOVEIT_DRY_RUN_ACCEPTED",
+          current_project_status_source: "authoritative",
           generated_at: "2026-06-17T00:00:00Z",
           real_robot_validation: "NOT_STARTED",
           highest_acceptance_level: "NONE",
@@ -47,5 +48,6 @@ describe("OverviewPageView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("真实机械臂验证：NOT_STARTED")).toBeInTheDocument();
     expect(screen.getByText("最高硬件级别：NONE")).toBeInTheDocument();
+    expect(screen.getByText("状态来源：authoritative")).toBeInTheDocument();
   });
 });

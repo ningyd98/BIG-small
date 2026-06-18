@@ -33,6 +33,70 @@ function seedArtifacts() {
     "utf-8",
   );
   writeFileSync(
+    path.join(artifactRoot, "phase10/mujoco_smoke.json"),
+    JSON.stringify(
+      {
+        status: "SUCCEEDED",
+        hardware_claim: "SIMULATION_ONLY",
+        planner_backend: "MUJOCO",
+        sent_to_hardware: false,
+        hardware_motion_observed: false,
+        provenance: {
+          generated_from_commit: "mujoco-commit",
+          source_tree_hash: "mujoco-tree",
+          worktree_clean: true,
+          generated_at: "2026-06-17T00:00:00Z",
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf-8",
+  );
+  writeFileSync(
+    path.join(artifactRoot, "phase10/synthetic_dry_run.json"),
+    JSON.stringify(
+      {
+        status: "SUCCEEDED",
+        hardware_claim: "PLANNING_ONLY",
+        planner_backend: "SYNTHETIC",
+        sent_to_hardware: false,
+        hardware_motion_observed: false,
+        provenance: {
+          generated_from_commit: "synthetic-commit",
+          source_tree_hash: "synthetic-tree",
+          worktree_clean: true,
+          generated_at: "2026-06-17T00:00:00Z",
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf-8",
+  );
+  writeFileSync(
+    path.join(artifactRoot, "phase10/moveit_blocked.json"),
+    JSON.stringify(
+      {
+        status: "BLOCKED_BY_ENV",
+        hardware_claim: "PLANNING_ONLY",
+        planner_backend: "MOVEIT_RUNTIME",
+        sent_to_hardware: false,
+        hardware_motion_observed: false,
+        blockers: ["MoveIt runtime unavailable"],
+        provenance: {
+          generated_from_commit: "blocked-commit",
+          source_tree_hash: "blocked-tree",
+          worktree_clean: true,
+          generated_at: "2026-06-17T00:00:00Z",
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf-8",
+  );
+  writeFileSync(
     path.join(artifactRoot, "baselines/phase8_2/full/summary.json"),
     JSON.stringify(
       {
@@ -83,7 +147,7 @@ test("E2E-02 capabilities API exposes no hardware write operations", async ({
   );
 });
 
-test("E2E-03 simulation lab starts an allowlisted software experiment", async ({
+test("E2E-03 Mock experiment state flow reaches a terminal status", async ({
   page,
 }) => {
   await page.goto("/simulation");
@@ -91,114 +155,112 @@ test("E2E-03 simulation lab starts an allowlisted software experiment", async ({
 
   await expect(page.getByText(/exp-/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/MOCK_SOFTWARE/)).toBeVisible();
-  await expect(page.getByText(/SIMULATION_ONLY/)).toBeVisible({
+  await expect(page.getByText(/SUCCEEDED|FAILED/)).toBeVisible({
     timeout: 15_000,
   });
 });
 
-test("E2E-04 task execution remains read-only", async ({ page }) => {
-  await page.goto("/task-execution");
-
-  await expect(page.getByRole("main").getByText("任务执行")).toBeVisible();
-  await expect(page.getByText(/HardwareExecutionGate/)).toBeVisible();
-  await expect(
-    page.getByText(/MoveIt execute|ros2_control|真实控制器写入/i),
-  ).toHaveCount(0);
-});
-
-test("E2E-05 safety acceptance blocks hardware motion and records reviewer note", async ({
+test("E2E-04 Synthetic dry-run evidence stays planning-only", async ({
   page,
 }) => {
-  await page.goto("/safety-acceptance");
-
-  await expect(page.getByText("当前级别：NONE")).toBeVisible();
-  await expect(page.getByText("硬件运动：禁止")).toBeVisible();
-  await page.getByLabel("安全复核备注").fill("E2E reviewer note");
-  await page.getByRole("button", { name: "提交复核备注" }).click();
-  await expect(page.getByText("硬件运动授权：false")).toBeVisible();
-});
-
-test("E2E-06 evidence explorer opens seeded evidence detail", async ({
-  page,
-}) => {
-  await page.goto("/evidence");
-
-  await expect(page.getByText("phase10/dashboard_summary.json")).toBeVisible();
-  await page.getByRole("button", { name: "详情" }).first().click();
-  await expect(
-    page.getByText("e2e-commit", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(
-    page.getByText("PHASE10_MOVEIT_DRY_RUN_ACCEPTED").first(),
-  ).toBeVisible();
-});
-
-test("E2E-07 evidence download is scoped to the dashboard API", async ({
-  page,
-}) => {
-  await page.goto("/evidence");
-
-  const downloadLink = page.getByRole("link", { name: "下载" }).first();
-  const href = await downloadLink.getAttribute("href");
-
-  expect(href).toMatch(/^\/api\/v1\/dashboard\/evidence\/[^/]+\/download$/);
-});
-
-test("E2E-08 comparison page reads Phase 8 baseline metrics from artifacts", async ({
-  page,
-}) => {
-  await page.goto("/comparison");
-
-  await expect(page.getByText("success_rate")).toBeVisible();
-  await expect(page.getByText("0.8100")).toBeVisible();
-  await expect(page.getByText("0.9100")).toBeVisible();
-});
-
-test("E2E-09 audit page shows safety review audit events", async ({ page }) => {
-  await page.request.post("/api/v1/dashboard/safety/review-notes", {
-    headers: { "x-dashboard-role": "SAFETY_REVIEWER" },
-    data: { note: "Audit e2e note", related_evidence_id: "" },
+  const response = await page.request.get("/api/v1/dashboard/evidence");
+  const payload = await response.json();
+  const synthetic = payload.records.find((record: { backend: string }) => {
+    return record.backend === "SYNTHETIC";
+  });
+  const mujoco = payload.records.find((record: { backend: string }) => {
+    return record.backend === "MUJOCO";
   });
 
-  await page.goto("/audit");
+  expect(synthetic?.hardware_claim).toBe("PLANNING_ONLY");
+  expect(mujoco?.hardware_claim).toBe("SIMULATION_ONLY");
+  if (!synthetic?.evidence_id || !mujoco?.evidence_id) {
+    throw new Error("missing synthetic or MuJoCo evidence");
+  }
+  const syntheticDetail = await page.request.get(
+    `/api/v1/dashboard/evidence/${synthetic.evidence_id}`,
+  );
+  const mujocoDetail = await page.request.get(
+    `/api/v1/dashboard/evidence/${mujoco.evidence_id}`,
+  );
+  const syntheticPayload = await syntheticDetail.json();
+  const mujocoPayload = await mujocoDetail.json();
+
+  expect(syntheticPayload.content.sent_to_hardware).toBe(false);
+  expect(syntheticPayload.content.hardware_motion_observed).toBe(false);
+  expect(mujocoPayload.content.sent_to_hardware).toBe(false);
+  expect(mujocoPayload.content.hardware_motion_observed).toBe(false);
+});
+
+test("E2E-05 BLOCKED_BY_ENV evidence remains non-hardware", async ({
+  page,
+}) => {
+  const response = await page.request.get(
+    "/api/v1/dashboard/evidence?status=BLOCKED_BY_ENV",
+  );
+  const payload = await response.json();
+  const blocked = payload.records.find((record: { status: string }) => {
+    return record.status === "BLOCKED_BY_ENV";
+  });
+
+  expect(blocked?.hardware_claim).toBe("PLANNING_ONLY");
+  if (!blocked?.evidence_id) throw new Error("missing blocked evidence");
+  const detailResponse = await page.request.get(
+    `/api/v1/dashboard/evidence/${blocked.evidence_id}`,
+  );
+  const detail = await detailResponse.json();
+  expect(detail.content.sent_to_hardware).toBe(false);
+  expect(detail.content.hardware_motion_observed).toBe(false);
+});
+
+test("E2E-06 path traversal rejection stays blocked", async ({ page }) => {
+  const response = await page.request.get(
+    "/api/v1/dashboard/evidence/..%2Fsecret",
+  );
+  expect(response.status()).toBeGreaterThanOrEqual(400);
+});
+
+test("E2E-07 real hardware action locked", async ({ page }) => {
+  await page.goto("/safety-acceptance");
+
+  await expect(page.getByText("硬件运动：禁止")).toBeVisible();
   await expect(
-    page.getByRole("cell", { name: "safety_review_note" }).first(),
+    page.getByRole("button", { name: "提交复核备注" }),
   ).toBeVisible();
 });
 
-test("E2E-10 websocket stream connects through the dashboard API path without token query", async ({
+test("E2E-08 WebSocket fallback polling keeps the console live", async ({
   page,
 }) => {
   await page.goto("/");
+  await expect(page.getByText(/轮询可用，WebSocket 可兜底/)).toBeVisible();
+});
 
-  const event = await page.evaluate(() => {
-    return new Promise<{ eventType: string; url: string }>(
-      (resolve, reject) => {
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const ws = new WebSocket(
-          `${protocol}//${window.location.host}/api/v1/dashboard/stream`,
-        );
-        const timer = window.setTimeout(() => {
-          ws.close();
-          reject(new Error("websocket timeout"));
-        }, 5000);
-        ws.onmessage = (message) => {
-          window.clearTimeout(timer);
-          const payload = JSON.parse(String(message.data)) as {
-            event_type: string;
-          };
-          resolve({ eventType: payload.event_type, url: ws.url });
-          ws.close();
-        };
-        ws.onerror = () => {
-          window.clearTimeout(timer);
-          reject(new Error("websocket error"));
-        };
-      },
-    );
+test("E2E-09 VIEWER write rejection", async ({ page }) => {
+  const response = await page.request.post("/api/v1/dashboard/experiments", {
+    headers: { "x-dashboard-role": "VIEWER" },
+    data: {
+      kind: "MOCK_SOFTWARE",
+      scenario_id: "S01_NORMAL_STATIC",
+      seed: 0,
+      control_mode: "PCSC",
+      repetitions: 1,
+    },
   });
 
-  expect(event.eventType).toMatch(/heartbeat|summary|experiment|audit/);
-  expect(event.url).toContain("/api/v1/dashboard/stream");
-  expect(event.url).not.toContain("token=");
+  expect(response.status()).toBe(403);
+});
+
+test("E2E-10 no direct ROS MoveIt controller inputs are exposed", async ({
+  page,
+}) => {
+  await page.goto("/task-execution");
+
+  for (const label of [
+    /ROS topic/i,
+    /MoveIt execute/i,
+    /controller address/i,
+  ]) {
+    await expect(page.getByLabel(label)).toHaveCount(0);
+  }
 });

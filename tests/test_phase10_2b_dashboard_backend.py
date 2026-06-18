@@ -27,6 +27,7 @@ def test_dashboard_summary_never_claims_real_hardware(
     summary = DashboardService.from_environment().summary()
 
     assert summary.current_project_status == "UNKNOWN"
+    assert summary.current_project_status_source == "unavailable"
     assert summary.hardware_claim == "NONE"
     assert summary.real_robot_validation == "NOT_STARTED"
     assert summary.highest_acceptance_level == "NONE"
@@ -34,6 +35,11 @@ def test_dashboard_summary_never_claims_real_hardware(
         "SafetyShield": "UNKNOWN",
         "HardwareExecutionGate": "NOT_CONFIGURED",
         "RealRobotController": "NOT_CONFIGURED",
+    }
+    assert {service.name: service.source for service in summary.services} == {
+        "SafetyShield": "derived",
+        "HardwareExecutionGate": "derived",
+        "RealRobotController": "configured_default",
     }
     assert summary.safety_summary.hardware_motion_authorized is False
 
@@ -255,6 +261,7 @@ def test_dashboard_api_capabilities_summary_safety_acceptance_evidence(
     assert summary.status_code == 200
     assert summary.json()["real_robot_validation"] == "NOT_STARTED"
     assert summary.json()["hardware_claim"] == "PLANNING_ONLY"
+    assert summary.json()["current_project_status_source"] == "authoritative"
 
     safety = client.get("/api/v1/dashboard/safety")
     assert safety.status_code == 200
@@ -278,6 +285,15 @@ def test_dashboard_api_capabilities_summary_safety_acceptance_evidence(
     errors = client.get("/api/v1/dashboard/evidence-errors")
     assert errors.status_code == 200
     assert errors.json()["errors"]
+
+    comparison = client.get("/api/v1/dashboard/comparisons")
+    assert comparison.status_code == 200
+    assert comparison.json()["source"] in {
+        "authoritative",
+        "derived",
+        "configured_default",
+        "unavailable",
+    }
 
 
 def test_dashboard_api_write_default_disabled_and_auth_roles(

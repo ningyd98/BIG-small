@@ -11,6 +11,8 @@ Phase 10.2B implements the dashboard console layer.
 - Added safety-review notes restricted to `SAFETY_REVIEWER`.
 - Added Playwright E2E coverage for overview, capabilities, simulation, task execution, safety acceptance, evidence detail/download, comparisons, audit, and WebSocket pathing.
 - Added CI and local scripts for dashboard build, dev startup, and Phase 10.2B verification.
+- Added route-level lazy loading and vendor manual chunks. The remaining Ant Design vendor
+  chunk warning is non-blocking technical debt; the build limit was not raised to hide it.
 
 ## Hardware Claim
 

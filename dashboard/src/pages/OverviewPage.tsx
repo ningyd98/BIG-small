@@ -33,6 +33,9 @@ export function OverviewPageView({ summary }: OverviewPageViewProps) {
             <Typography.Text>
               硬件声明：{summary.hardware_claim}
             </Typography.Text>
+            <Typography.Text>
+              状态来源：{summary.current_project_status_source}
+            </Typography.Text>
           </Space>
         </Space>
       </Card>

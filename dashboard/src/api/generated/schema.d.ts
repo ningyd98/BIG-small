@@ -1125,6 +1125,8 @@ export interface components {
       metrics: {
         [key: string]: unknown;
       }[];
+      /** @default unavailable */
+      source: components["schemas"]["DataSourceKind"];
     };
     /** CompletionEvidenceRequest */
     CompletionEvidenceRequest: {
@@ -1265,6 +1267,8 @@ export interface components {
        * @default UNKNOWN
        */
       current_project_status: string;
+      /** @default unavailable */
+      current_project_status_source: components["schemas"]["DataSourceKind"];
       /**
        * Generated At
        * Format: date-time
@@ -1305,6 +1309,15 @@ export interface components {
       /** Worktree Clean */
       worktree_clean?: boolean | null;
     };
+    /**
+     * DataSourceKind
+     * @enum {string}
+     */
+    DataSourceKind:
+      | "authoritative"
+      | "derived"
+      | "configured_default"
+      | "unavailable";
     /**
      * DispatchRequest
      * @description Empty dispatch command body.
@@ -2415,6 +2428,8 @@ export interface components {
       detail: string;
       /** Name */
       name: string;
+      /** @default unavailable */
+      source: components["schemas"]["DataSourceKind"];
       /** @default UNKNOWN */
       status: components["schemas"]["ServiceStatus"];
     };
