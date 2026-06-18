@@ -10,6 +10,8 @@ from cloud_edge_robot_arm.contracts import ControlMode
 
 
 class RiskPolicy(BaseModel):
+    """风险评估策略参数，定义各维度权重、等级阈值和缺失证据惩罚。"""
+
     model_config = ConfigDict(use_enum_values=False)
 
     version: str = Field(min_length=1)
@@ -32,6 +34,8 @@ class RiskPolicy(BaseModel):
 
 
 class RiskSnapshotInput(BaseModel):
+    """风险评估输入快照，汇总任务、场景、网络、执行和安全证据。"""
+
     model_config = ConfigDict(use_enum_values=False)
 
     task_id: str = Field(min_length=1)
@@ -72,6 +76,7 @@ class RiskSnapshotInput(BaseModel):
     @field_validator("current_time", "scene_updated_at", "last_heartbeat_at")
     @classmethod
     def datetimes_must_be_timezone_aware(cls, value: datetime | None) -> datetime | None:
+        """将无时区时间补为 UTC，保证风险 freshness 计算可比较。"""
         if value is not None and value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value

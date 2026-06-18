@@ -16,6 +16,8 @@ def _utc_now() -> datetime:
 
 
 class RiskEvaluator:
+    """风险评估器，将结构化输入转换为可审计的 RiskSnapshot。"""
+
     def __init__(
         self,
         *,
@@ -26,6 +28,7 @@ class RiskEvaluator:
         self._clock = clock or _utc_now
 
     def evaluate(self, data: RiskSnapshotInput) -> RiskSnapshot:
+        """计算风险分数、等级、缺失输入和原因码。"""
         now = data.current_time or self._clock()
         missing_inputs = _missing_inputs(data)
         data_freshness = _freshness(data, now)
