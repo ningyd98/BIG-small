@@ -10,5 +10,6 @@ Phase 1 包含：
 安装 MuJoCo 支持：
 
 ```bash
+# 安装仿真可选依赖，只启用本地仿真后端，不连接真实控制器。
 python -m pip install -e ".[sim]"
 ```

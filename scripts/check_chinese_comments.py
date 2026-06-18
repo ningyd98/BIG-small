@@ -95,8 +95,10 @@ DEFAULT_AUDIT_PATHS = [
     ".github/workflows",
     ".gitignore",
     "configs",
+    "contracts/examples",
     "pyproject.toml",
     "scripts",
+    "simulation",
     "tests",
     "ros2_ws/src",
 ]

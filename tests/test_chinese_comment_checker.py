@@ -415,3 +415,6 @@ def test_default_paths_collect_dashboard_root_configs() -> None:
     assert "ros2_ws/src/bigsmall_interfaces/CMakeLists.txt" in collected
     assert "configs/models/small_model_catalog.yaml" in collected
     assert "configs/phase1_mock.json" in collected
+    assert "contracts/examples/valid/pick_red_cube.json" in collected
+    assert "contracts/examples/invalid/unsupported_skill.json" in collected
+    assert "simulation/README.md" in collected
