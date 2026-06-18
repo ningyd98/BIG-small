@@ -35,6 +35,11 @@ HASH_COMMENT_SUFFIXES = {".action", ".bash", ".msg", ".sh", ".srv", ".toml", ".y
 SLASH_COMMENT_SUFFIXES = {".css", ".js", ".ts", ".tsx"}
 XML_COMMENT_SUFFIXES = {".html", ".xml"}
 HASH_COMMENT_FILENAMES = {".gitignore", ".env.example", ".env.phase9.example"}
+PLACEHOLDER_EXPLANATION_MARKERS = (
+    "补充该层业务逻辑的中文说明",
+    "文件说明：补充中文说明",
+    "测试说明：覆盖该阶段关键业务约束",
+)
 
 
 @dataclass(frozen=True)
@@ -227,6 +232,9 @@ def _skip_javascript_string(text: str, start: int, quote: str) -> int:
 
 
 def _has_chinese(text: str) -> bool:
+    # 占位式中文不解释模块边界或安全语义，不能作为“合适说明”的证据。
+    if any(marker in text for marker in PLACEHOLDER_EXPLANATION_MARKERS):
+        return False
     return any(HAN_RANGE[0] <= char <= HAN_RANGE[1] for char in text)
 
 
