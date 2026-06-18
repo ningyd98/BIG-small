@@ -1,4 +1,9 @@
-// React Query hooks for Model Control Center.
+// 模型控制中心的 React Query 边界。
+//
+// 这里集中定义浏览器侧缓存键和失效规则：API key 只在提交表单时经过
+// modelControlApi 写入请求体，不进入 Query cache；profile、runtime、Ollama
+// 模型列表和下载任务都以后端状态为准，mutation 成功后主动失效相关缓存，避免
+// 页面显示旧的 active planner 或误把未安装模型显示为可用。
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { modelControlApi } from "./modelControlApi";
@@ -67,6 +72,7 @@ export function useCreateModelProfile() {
   return useMutation({
     mutationFn: modelControlApi.createProfile,
     onSuccess: () => {
+      // 新建 profile 后只刷新非敏感 profile 列表；secret 明文不会被缓存。
       void queryClient.invalidateQueries({
         queryKey: modelControlKeys.profiles,
       });
@@ -79,6 +85,7 @@ export function useActivateModelProfile() {
   return useMutation({
     mutationFn: modelControlApi.activateProfile,
     onSuccess: () => {
+      // 激活 profile 会同时改变运行时快照和列表中的 active 标记。
       void queryClient.invalidateQueries({
         queryKey: modelControlKeys.runtime,
       });
@@ -94,6 +101,7 @@ export function useStartModelDownload() {
   return useMutation({
     mutationFn: modelControlApi.startDownload,
     onSuccess: () => {
+      // 下载完成与否由后端/Ollama tags 决定；下载任务和已安装模型都需要重取。
       void queryClient.invalidateQueries({
         queryKey: modelControlKeys.downloads,
       });
@@ -109,6 +117,7 @@ export function useActivateOllamaModel() {
   return useMutation({
     mutationFn: modelControlApi.activateOllamaModel,
     onSuccess: () => {
+      // 本地模型激活会创建/切换 OLLAMA profile，因此刷新 runtime 和 profile 列表。
       void queryClient.invalidateQueries({
         queryKey: modelControlKeys.runtime,
       });
