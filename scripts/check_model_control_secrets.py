@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 SECRET_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
+    re.compile(r"(?<![A-Za-z0-9])sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}"),
     re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{8,}"),
     re.compile(r"(?i)authorization\s*[:=]"),
 ]

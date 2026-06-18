@@ -158,10 +158,12 @@ def verify_persistence_sample(output: Path) -> dict[str, Any]:
     terminal = _wait_for_terminal(service, run.run_id)
     events = service.events_for(run.run_id).events
     metrics = service.metrics_for(run.run_id).metrics
-    consistency = _read_artifact_json(
+    consistency = _wait_for_artifact_json(
         artifact_root,
         terminal.artifact_paths,
         "evidence_consistency",
+        expected_key="consistent",
+        expected_value=True,
     )
     return {
         "status": "PASSED"
@@ -678,6 +680,32 @@ def _read_artifact_json(
         if artifact_path.exists():
             return cast(dict[str, Any], json.loads(artifact_path.read_text(encoding="utf-8")))
     raise FileNotFoundError(str(candidates[0]))
+
+
+def _wait_for_artifact_json(
+    artifact_root: Path,
+    artifacts: dict[str, str],
+    key: str,
+    *,
+    expected_key: str,
+    expected_value: Any,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            payload = _read_artifact_json(artifact_root, artifacts, key)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            last_error = exc
+        else:
+            if payload.get(expected_key) == expected_value:
+                return payload
+            last_error = RuntimeError(f"{key}.{expected_key}={payload.get(expected_key)!r}")
+        time.sleep(0.05)
+    if last_error is not None:
+        raise last_error
+    raise TimeoutError(f"artifact {key} did not become ready")
 
 
 def _verification_artifact_root(output: Path) -> Path:
