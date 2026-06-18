@@ -22,6 +22,8 @@ CODE_SUFFIXES = {
     ".dockerfile",
     ".html",
     ".js",
+    ".json",
+    ".jsonc",
     ".md",
     ".msg",
     ".py",
@@ -45,7 +47,7 @@ HASH_COMMENT_SUFFIXES = {
     ".yaml",
     ".yml",
 }
-SLASH_COMMENT_SUFFIXES = {".css", ".js", ".ts", ".tsx"}
+SLASH_COMMENT_SUFFIXES = {".css", ".js", ".jsonc", ".ts", ".tsx"}
 XML_COMMENT_SUFFIXES = {".html", ".xml"}
 HASH_COMMENT_FILENAMES = {".gitignore", ".env.example", ".env.phase9.example"}
 DOCKERFILE_NAMES = {"Dockerfile"}
@@ -162,6 +164,8 @@ def _extract_explanation_text(path: Path, text: str) -> str:
         return _extract_python_explanation_text(text)
     if path.suffix in SLASH_COMMENT_SUFFIXES:
         return _extract_leading_slash_comment_text(text)
+    if path.suffix == ".json":
+        return _extract_neighbor_note_text(path)
     if (
         path.suffix in HASH_COMMENT_SUFFIXES
         or path.name in HASH_COMMENT_FILENAMES
@@ -351,6 +355,15 @@ def _extract_markdown_fence_explanation_text(text: str) -> str:
             fragments.append(_extract_explanation_text(virtual_path, "\n".join(code_lines)))
         index += 1
     return "\n".join(fragment for fragment in fragments if fragment)
+
+
+def _extract_neighbor_note_text(path: Path) -> str:
+    # 标准 JSON 不能内联注释，因此使用同目录 .zh.md 说明文件承载配置职责说明。
+    note_path = path.with_name(path.name + ".zh.md")
+    try:
+        return note_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
 
 
 def _skip_javascript_string(text: str, start: int, quote: str) -> int:

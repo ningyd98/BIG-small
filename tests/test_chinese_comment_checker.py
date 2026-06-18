@@ -339,3 +339,41 @@ def test_dockerfile_leading_hash_comment_counts(tmp_path: Path) -> None:
     result = _audit_file(path)
 
     assert result.has_chinese
+
+
+def test_json_config_uses_neighbor_chinese_note(tmp_path: Path) -> None:
+    path = tmp_path / "package.json"
+    note = tmp_path / "package.json.zh.md"
+    path.write_text('{"scripts": {"test": "vitest run"}}\n', encoding="utf-8")
+    note.write_text(
+        "# package.json 说明\n\n该配置只声明前端脚本和依赖，不保存密钥。\n",
+        encoding="utf-8",
+    )
+
+    collected = {item.name for item in _collect_files([tmp_path])}
+    result = _audit_file(path)
+
+    assert "package.json" in collected
+    assert result.has_chinese
+
+
+def test_json_config_without_neighbor_note_is_missing(tmp_path: Path) -> None:
+    path = tmp_path / "package.json"
+    path.write_text('{"scripts": {"test": "vitest run"}}\n', encoding="utf-8")
+
+    result = _audit_file(path)
+
+    assert not result.has_chinese
+
+
+def test_jsonc_leading_slash_comment_counts(tmp_path: Path) -> None:
+    path = tmp_path / "tsconfig.jsonc"
+    path.write_text(
+        "// 配置说明：这里只约束 TypeScript 编译，不连接运行时服务。\n"
+        '{"compilerOptions": {"strict": true}}\n',
+        encoding="utf-8",
+    )
+
+    result = _audit_file(path)
+
+    assert result.has_chinese
