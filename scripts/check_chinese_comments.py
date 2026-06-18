@@ -14,6 +14,26 @@ from dataclasses import dataclass
 from pathlib import Path
 
 HAN_RANGE = ("\u4e00", "\u9fff")
+CODE_SUFFIXES = {
+    ".action",
+    ".bash",
+    ".css",
+    ".html",
+    ".js",
+    ".msg",
+    ".py",
+    ".sh",
+    ".srv",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+HASH_COMMENT_SUFFIXES = {".action", ".bash", ".msg", ".sh", ".srv", ".toml", ".yaml", ".yml"}
+SLASH_COMMENT_SUFFIXES = {".css", ".js", ".ts", ".tsx"}
+XML_COMMENT_SUFFIXES = {".html", ".xml"}
 
 
 @dataclass(frozen=True)
@@ -61,12 +81,8 @@ def _collect_files(paths: list[Path]) -> list[Path]:
     files: list[Path] = []
     for path in paths:
         if path.is_dir():
-            files.extend(
-                child
-                for child in path.rglob("*")
-                if child.suffix in {".py", ".ts", ".tsx"} and not child.name.endswith(".d.ts")
-            )
-        elif path.suffix in {".py", ".ts", ".tsx"}:
+            files.extend(child for child in path.rglob("*") if _is_audited_file(child))
+        elif _is_audited_file(path):
             files.append(path)
     return sorted(files)
 
@@ -80,8 +96,12 @@ def _audit_file(path: Path) -> CommentAuditResult:
 def _extract_explanation_text(path: Path, text: str) -> str:
     if path.suffix == ".py":
         return _extract_python_explanation_text(text)
-    if path.suffix in {".ts", ".tsx"}:
-        return _extract_typescript_comment_text(text)
+    if path.suffix in SLASH_COMMENT_SUFFIXES:
+        return _extract_slash_comment_text(text)
+    if path.suffix in HASH_COMMENT_SUFFIXES:
+        return _extract_hash_comment_text(text)
+    if path.suffix in XML_COMMENT_SUFFIXES:
+        return _extract_xml_comment_text(text)
     return ""
 
 
@@ -112,7 +132,7 @@ def _extract_python_explanation_text(text: str) -> str:
     return "\n".join(fragments)
 
 
-def _extract_typescript_comment_text(text: str) -> str:
+def _extract_slash_comment_text(text: str) -> str:
     comments: list[str] = []
     index = 0
     length = len(text)
@@ -141,6 +161,31 @@ def _extract_typescript_comment_text(text: str) -> str:
     return "\n".join(comments)
 
 
+def _extract_hash_comment_text(text: str) -> str:
+    comments: list[str] = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            comments.append(stripped)
+    return "\n".join(comments)
+
+
+def _extract_xml_comment_text(text: str) -> str:
+    comments: list[str] = []
+    index = 0
+    while index < len(text):
+        start = text.find("<!--", index)
+        if start == -1:
+            break
+        end = text.find("-->", start + 4)
+        if end == -1:
+            comments.append(text[start:])
+            break
+        comments.append(text[start : end + 3])
+        index = end + 3
+    return "\n".join(comments)
+
+
 def _skip_javascript_string(text: str, start: int, quote: str) -> int:
     index = start + 1
     while index < len(text):
@@ -156,6 +201,10 @@ def _skip_javascript_string(text: str, start: int, quote: str) -> int:
 
 def _has_chinese(text: str) -> bool:
     return any(HAN_RANGE[0] <= char <= HAN_RANGE[1] for char in text)
+
+
+def _is_audited_file(path: Path) -> bool:
+    return path.suffix in CODE_SUFFIXES and not path.name.endswith(".d.ts")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 脚本说明：Phase 1 Mock 演示入口，仅使用模拟适配器验证基础任务流程。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

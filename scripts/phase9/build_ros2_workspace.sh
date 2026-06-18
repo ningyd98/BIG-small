@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 脚本说明：构建持久化 ROS2 工作区，只执行 colcon 构建和依赖准备。
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT_DIR/artifacts/phase9_1/install}"

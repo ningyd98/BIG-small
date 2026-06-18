@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 脚本说明：安装 Isaac/Vulkan 运行依赖，只做图形运行时环境准备。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

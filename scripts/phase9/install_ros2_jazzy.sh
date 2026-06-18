@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 脚本说明：安装 ROS2 Jazzy 依赖，作为环境准备步骤，不触碰机械臂。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

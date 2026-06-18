@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 脚本说明：激活 ROS2/MoveIt 环境并打印环境信息，不执行 MoveIt execute。
 set -euo pipefail
 
 CONDA_ENV="${BIGSMALL_CONDA_ENV:-bigsmall-ros2-jazzy-moveit}"

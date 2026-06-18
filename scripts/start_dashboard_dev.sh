@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 脚本说明：启动 Dashboard 开发服务，用于前端调试，不启动真实控制器。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

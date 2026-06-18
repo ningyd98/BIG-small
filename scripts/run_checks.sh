@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 脚本说明：本地综合回归入口，只运行软件验证和仿真检查，不连接真实硬件。
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
