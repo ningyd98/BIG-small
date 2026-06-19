@@ -124,6 +124,24 @@ def test_phase12_sensitive_text_scan_ignores_sqlite3_runtime_databases(tmp_path:
     assert phase12_validation._contains_sensitive_text(root) is False
 
 
+def test_hardware_boundary_rejects_top_level_real_controller_contact() -> None:
+    """Hardware boundary checks must reject legacy top-level hardware contact claims."""
+
+    row = _row("top-level-hardware-contact")
+    row["real_controller_contacted"] = True
+
+    assert phase12_validation._all_false([row], "real_controller_contacted") is False
+
+
+def test_hardware_boundary_rejects_top_level_hardware_write_operations() -> None:
+    """Hardware write checks must reject legacy top-level write-operation claims."""
+
+    row = _row("top-level-hardware-write")
+    row["hardware_write_operations"] = ["servo_enable"]
+
+    assert phase12_validation._all_empty([row], "hardware_write_operations") is False
+
+
 def test_metric_provenance_excludes_placeholder_and_adapter_derived_statistics() -> None:
     """Only measured/event-derived metric values enter thesis statistics by default."""
 

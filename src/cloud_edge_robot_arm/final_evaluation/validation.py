@@ -367,11 +367,16 @@ def _normalize_rows_for_profile(
 
 
 def _all_false(rows: list[dict[str, Any]], key: str) -> bool:
-    return all(row.get("hardware_claims", {}).get(key, False) is False for row in rows)
+    return all(
+        row.get(key, False) is False and row.get("hardware_claims", {}).get(key, False) is False
+        for row in rows
+    )
 
 
 def _all_empty(rows: list[dict[str, Any]], key: str) -> bool:
-    return all(row.get("hardware_claims", {}).get(key, []) == [] for row in rows)
+    return all(
+        row.get(key, []) == [] and row.get("hardware_claims", {}).get(key, []) == [] for row in rows
+    )
 
 
 def _failed_or_blocked_counts_match(rows: list[dict[str, Any]], aggregate: dict[str, Any]) -> bool:
