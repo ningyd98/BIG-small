@@ -20,10 +20,12 @@ from typing import cast
 
 import pytest
 
+import cloud_edge_robot_arm.final_evaluation.runner as phase12_runner
 from cloud_edge_robot_arm.final_evaluation import validation as phase12_validation
 from cloud_edge_robot_arm.final_evaluation.adapters.base import (
     Phase12AdapterResult,
     Phase12RunContext,
+    sha256_path,
 )
 from cloud_edge_robot_arm.final_evaluation.adapters.phase8 import Phase8ExperimentRunnerAdapter
 from cloud_edge_robot_arm.final_evaluation.adapters.simulation_runtime import Phase11RuntimeAdapter
@@ -32,6 +34,7 @@ from cloud_edge_robot_arm.final_evaluation.models import (
     BlockerStage,
     EnvironmentStatus,
     ExecutionSource,
+    HardwareClaims,
     MetricProvenance,
     MetricSource,
     Phase12Backend,
@@ -43,6 +46,8 @@ from cloud_edge_robot_arm.final_evaluation.plots import export_plots
 from cloud_edge_robot_arm.final_evaluation.report import export_thesis_assets
 from cloud_edge_robot_arm.final_evaluation.runner import (
     _authoritative_for_thesis,
+    _event,
+    _hardware_claims_from_results,
     _normalize_source_artifact_hashes,
     _result_from_adapter,
     run_phase12_experiments,
@@ -824,6 +829,221 @@ def test_aggregate_hardware_claims_are_derived_from_raw_runs() -> None:
     assert aggregate.hardware_claims.hardware_write_operations == ["brake_release"]
     assert aggregate.hardware_claims.highest_real_hardware_acceptance_level == "LEVEL_0"
     assert aggregate.hardware_claims.real_robot_validation == "LEVEL_0_PASSED"
+
+
+def test_runner_event_hardware_claim_is_derived_from_result_row() -> None:
+    """runner event 里的硬件状态必须来自结果行，不能固定写 false。"""
+
+    manifest = Phase12RunManifest(
+        run_id="event-hardware-claim",
+        experiment_id="F01_PC_SC_BASELINE",
+        research_question="RQ1",
+        profile=Phase12Profile.VALIDATION,
+        backend=Phase12Backend.MOCK,
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        repetition=0,
+        source_commit="commit",
+        source_tree_hash="tree",
+        worktree_clean=True,
+        config_hash="config",
+        environment_hash="env",
+        planner_provider="MOCK",
+        model_name="mock",
+    )
+    adapter_result = Phase12AdapterResult(
+        status=Phase12RunStatus.SUCCESS,
+        task_success=True,
+        metrics={
+            "task_completion_rate": 1.0,
+            "total_completion_time_ms": 100.0,
+            "result_hash": "result",
+            "artifact_hash": "artifact",
+        },
+        events=[],
+        execution_source=ExecutionSource.PHASE8_ACTUAL_RUN,
+        actual_runner_invoked=True,
+        adapter_attempted=True,
+        environment_check_completed=True,
+        runtime_invoked=True,
+        runtime_completed=True,
+        authoritative_for_thesis=True,
+        blocker_stage=BlockerStage.NONE,
+        source_artifact_path="source_evidence/runtime.json",
+        source_artifact_hash="hash",
+        source_verifier="test",
+        environment_status=EnvironmentStatus.READY,
+        hardware_claims=HardwareClaims(
+            hardware_motion_observed=True,
+            hardware_write_operations=["joint_command"],
+        ),
+    )
+    result = _result_from_adapter(manifest, adapter_result, authoritative_for_thesis=True)
+
+    event = _event(result)
+
+    assert event["hardware_motion_observed"] is True
+    assert event["hardware_write_operations"] == ["joint_command"]
+
+
+def test_runner_summary_hardware_claim_is_derived_from_result_rows() -> None:
+    """run summary/provenance 的硬件声明必须从结果行汇总，不能固定默认安全值。"""
+
+    manifest = Phase12RunManifest(
+        run_id="summary-hardware-claim",
+        experiment_id="F01_PC_SC_BASELINE",
+        research_question="RQ1",
+        profile=Phase12Profile.VALIDATION,
+        backend=Phase12Backend.MOCK,
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        repetition=0,
+        source_commit="commit",
+        source_tree_hash="tree",
+        worktree_clean=True,
+        config_hash="config",
+        environment_hash="env",
+        planner_provider="MOCK",
+        model_name="mock",
+    )
+    result = _result_from_adapter(
+        manifest,
+        Phase12AdapterResult(
+            status=Phase12RunStatus.SUCCESS,
+            task_success=True,
+            metrics={
+                "task_completion_rate": 1.0,
+                "total_completion_time_ms": 100.0,
+                "result_hash": "result",
+                "artifact_hash": "artifact",
+            },
+            events=[],
+            execution_source=ExecutionSource.PHASE8_ACTUAL_RUN,
+            actual_runner_invoked=True,
+            adapter_attempted=True,
+            environment_check_completed=True,
+            runtime_invoked=True,
+            runtime_completed=True,
+            authoritative_for_thesis=True,
+            blocker_stage=BlockerStage.NONE,
+            source_artifact_path="source_evidence/runtime.json",
+            source_artifact_hash="hash",
+            source_verifier="test",
+            environment_status=EnvironmentStatus.READY,
+            hardware_claims=HardwareClaims(
+                real_controller_contacted=True,
+                hardware_motion_observed=True,
+                hardware_write_operations=["brake_release", "joint_command"],
+                highest_real_hardware_acceptance_level="LEVEL_1",
+                real_robot_validation="LEVEL_1_FAILED",
+            ),
+        ),
+        authoritative_for_thesis=True,
+    )
+
+    claims = _hardware_claims_from_results([result])
+
+    assert claims.real_controller_contacted is True
+    assert claims.hardware_motion_observed is True
+    assert claims.hardware_write_operations == ["brake_release", "joint_command"]
+    assert claims.highest_real_hardware_acceptance_level == "LEVEL_1"
+    assert claims.real_robot_validation == "LEVEL_1_FAILED"
+
+
+def test_runner_writes_summary_and_provenance_hardware_claims_from_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """runner 写出的 summary/provenance 必须保留结果行硬件 claim。"""
+
+    class HardwareClaimAdapter:
+        runner_kind = "PHASE8_EXPERIMENT_RUNNER"
+
+        def capability(self) -> dict[str, object]:
+            return {}
+
+        def validate_environment(self, context: Phase12RunContext) -> EnvironmentStatus:
+            return EnvironmentStatus.READY
+
+        def run(self, context: Phase12RunContext) -> Phase12AdapterResult:
+            receipt = context.output_root / "source_evidence" / context.run_id / "receipt.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text('{"receipt":"hardware-claim"}\n', encoding="utf-8")
+            return Phase12AdapterResult(
+                status=Phase12RunStatus.SUCCESS,
+                task_success=True,
+                metrics={
+                    "task_completion_rate": 1.0,
+                    "total_completion_time_ms": 100.0,
+                    "result_hash": "result",
+                    "artifact_hash": "artifact",
+                },
+                events=[],
+                execution_source=ExecutionSource.PHASE8_ACTUAL_RUN,
+                actual_runner_invoked=True,
+                adapter_attempted=True,
+                environment_check_completed=True,
+                runtime_invoked=True,
+                runtime_completed=True,
+                authoritative_for_thesis=True,
+                blocker_stage=BlockerStage.NONE,
+                source_artifact_path=receipt.relative_to(context.output_root).as_posix(),
+                source_artifact_hash=sha256_path(receipt),
+                source_verifier="test",
+                environment_status=EnvironmentStatus.READY,
+                hardware_claims=HardwareClaims(
+                    real_controller_contacted=True,
+                    hardware_motion_observed=True,
+                    hardware_write_operations=["trajectory_send"],
+                    highest_real_hardware_acceptance_level="LEVEL_2",
+                    real_robot_validation="LEVEL_2_FAILED",
+                ),
+            )
+
+        def collect_evidence(self, context: Phase12RunContext) -> dict[str, object]:
+            return {}
+
+        def cancel(self, run_id: str) -> None:
+            return None
+
+        def result_source(self) -> ExecutionSource:
+            return ExecutionSource.PHASE8_ACTUAL_RUN
+
+    monkeypatch.setattr(
+        phase12_runner,
+        "build_experiment_plan",
+        lambda profile: SimpleNamespace(
+            experiments=[
+                SimpleNamespace(
+                    experiment_id="F01_PC_SC_BASELINE",
+                    research_question="RQ1",
+                    scenario_ids=["S01_NORMAL_STATIC"],
+                    backends=[Phase12Backend.MOCK],
+                    control_modes=["PCSC"],
+                    runner_kind="PHASE8_EXPERIMENT_RUNNER",
+                    validation_seed_count=1,
+                )
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        phase12_runner,
+        "runner_adapter_registry",
+        lambda: {"PHASE8_EXPERIMENT_RUNNER": HardwareClaimAdapter()},
+    )
+
+    run_phase12_experiments(Phase12Profile.VALIDATION, tmp_path)
+
+    summary = json.loads((tmp_path / "runs/run_summary.json").read_text(encoding="utf-8"))
+    provenance = json.loads((tmp_path / "manifests/provenance.json").read_text(encoding="utf-8"))
+    assert summary["hardware_claims"]["real_controller_contacted"] is True
+    assert summary["hardware_claims"]["hardware_motion_observed"] is True
+    assert summary["hardware_claims"]["hardware_write_operations"] == ["trajectory_send"]
+    assert summary["hardware_claims"]["highest_real_hardware_acceptance_level"] == "LEVEL_2"
+    assert summary["hardware_claims"]["real_robot_validation"] == "LEVEL_2_FAILED"
+    assert provenance["hardware_claims"] == summary["hardware_claims"]
 
 
 def test_group_payload_reports_authoritative_run_count() -> None:

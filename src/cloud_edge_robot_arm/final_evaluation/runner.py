@@ -126,6 +126,7 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
     )
     _write_jsonl(output_root / "runs/raw_runs.jsonl", [r.model_dump(mode="json") for r in rows])
     _write_jsonl(output_root / "runs/events.jsonl", [_event(row) for row in rows])
+    hardware_claims = _hardware_claims_from_results(rows)
     provenance = {
         "profile": profile.value,
         "source_commit": commit,
@@ -134,7 +135,7 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
         "environment_hash": env_hash,
         "started_at": started_at.isoformat(),
         "completed_at": datetime.now(UTC).isoformat(),
-        "hardware_claims": HardwareClaims().model_dump(mode="json"),
+        "hardware_claims": hardware_claims.model_dump(mode="json"),
         "execution_source_counts": _execution_source_counts(rows),
     }
     _write_json(output_root / "manifests/provenance.json", provenance)
@@ -163,7 +164,7 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
         "actual_backend_counts": _actual_backend_counts(rows),
         "runtime_backend_counts": _runtime_backend_counts(rows),
         "unsafe_command_execution_count": sum(row.unsafe_command_execution_count for row in rows),
-        "hardware_claims": HardwareClaims().model_dump(mode="json"),
+        "hardware_claims": hardware_claims.model_dump(mode="json"),
         "artifact_hash": stable_hash([row.result_hash for row in rows]),
     }
     _write_json(output_root / "runs/run_summary.json", summary)
@@ -506,6 +507,7 @@ def _repetitions_for_profile(experiment: object, profile: Phase12Profile) -> int
 
 
 def _event(row: Phase12Result) -> dict[str, object]:
+    hardware_claims = row.hardware_claims
     return {
         "run_id": row.run_id,
         "event_type": "phase12_run_recorded",
@@ -520,8 +522,77 @@ def _event(row: Phase12Result) -> dict[str, object]:
         "blocker_stage": row.blocker_stage.value,
         "authoritative_for_thesis": row.authoritative_for_thesis,
         "timestamp": datetime.now(UTC).isoformat(),
-        "hardware_motion_observed": False,
+        "real_controller_contacted": hardware_claims.real_controller_contacted,
+        "hardware_motion_observed": hardware_claims.hardware_motion_observed,
+        "hardware_write_operations": list(hardware_claims.hardware_write_operations),
+        "highest_real_hardware_acceptance_level": (
+            hardware_claims.highest_real_hardware_acceptance_level
+        ),
+        "real_robot_validation": hardware_claims.real_robot_validation,
     }
+
+
+def _hardware_claims_from_results(rows: list[Phase12Result]) -> HardwareClaims:
+    """从 Phase 12 结果行汇总硬件声明，避免 summary/provenance 掩盖异常 evidence。"""
+
+    return HardwareClaims(
+        real_controller_contacted=any(
+            row.hardware_claims.real_controller_contacted for row in rows
+        ),
+        hardware_motion_observed=any(row.hardware_claims.hardware_motion_observed for row in rows),
+        hardware_write_operations=sorted(
+            {
+                operation
+                for row in rows
+                for operation in row.hardware_claims.hardware_write_operations
+            }
+        ),
+        highest_real_hardware_acceptance_level=_highest_hardware_level_from_results(rows),
+        real_robot_validation=_highest_robot_validation_from_results(rows),
+    )
+
+
+def _highest_hardware_level_from_results(rows: list[Phase12Result]) -> str:
+    order = {
+        "NONE": 0,
+        "LEVEL_0": 1,
+        "LEVEL_1": 2,
+        "LEVEL_2": 3,
+        "LEVEL_3": 4,
+        "LEVEL_4": 5,
+        "LEVEL_5": 6,
+        "LEVEL_6": 7,
+    }
+    return _highest_claim_value(
+        [row.hardware_claims.highest_real_hardware_acceptance_level for row in rows],
+        order,
+        default="NONE",
+    )
+
+
+def _highest_robot_validation_from_results(rows: list[Phase12Result]) -> str:
+    order = {
+        "NOT_STARTED": 0,
+        "LEVEL_0_FAILED": 1,
+        "LEVEL_0_PASSED": 2,
+        "LEVEL_1_FAILED": 3,
+        "LEVEL_1_PASSED": 4,
+        "LEVEL_2_FAILED": 5,
+        "LEVEL_2_PASSED": 6,
+    }
+    return _highest_claim_value(
+        [row.hardware_claims.real_robot_validation for row in rows],
+        order,
+        default="NOT_STARTED",
+    )
+
+
+def _highest_claim_value(values: list[str], order: dict[str, int], *, default: str) -> str:
+    highest = default
+    for value in values:
+        if order.get(value, -1) > order.get(highest, -1):
+            highest = value
+    return highest
 
 
 def _source_fields(adapter_result: Phase12AdapterResult) -> dict[str, object]:

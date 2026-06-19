@@ -1,7 +1,7 @@
 """Phase 12 最终评估模型。
 
-这些模型记录研究问题、实验矩阵、运行结果、聚合统计和安全边界。所有硬件字段都保持
-显式 false/empty，避免把仿真证据误表述为真实机械臂证据。
+这些模型记录研究问题、实验矩阵、运行结果、聚合统计和安全边界。验收通过的硬件声明
+必须保持 false/empty；字段本身仍保留真实值以便审计异常 evidence。
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ class Phase12SamplePolicy(BaseModel):
 
 
 class HardwareClaims(BaseModel):
-    """最终评估的硬件声明，必须始终保持未接触、未运动、无写操作。"""
+    """最终评估硬件声明；验收时必须证明未接触、未运动、无写操作。"""
 
     real_controller_contacted: bool = False
     hardware_motion_observed: bool = False

@@ -73,10 +73,10 @@ def test_phase12_statistics_report_ci_effect_size_and_blocked_counts() -> None:
     """统计汇总必须包含样本量、置信区间、effect size 和 blocked 计数。"""
 
     rows = [
-        {"group": "PCSC", "value": 100.0, "status": "SUCCESS"},
-        {"group": "PCSC", "value": 140.0, "status": "SUCCESS"},
-        {"group": "ETEAC", "value": 80.0, "status": "SUCCESS"},
-        {"group": "ETEAC", "value": 90.0, "status": "BLOCKED_BY_ENV"},
+        _measured_row("PCSC", 100.0, "SUCCESS"),
+        _measured_row("PCSC", 140.0, "SUCCESS"),
+        _measured_row("ETEAC", 80.0, "SUCCESS"),
+        _measured_row("ETEAC", 90.0, "BLOCKED_BY_ENV"),
     ]
 
     summary = compute_group_statistics(rows, group_key="group", metric_key="value")
@@ -97,6 +97,8 @@ def test_phase12_paired_difference_keeps_failed_and_blocked_samples() -> None:
             "right_value": 8.0,
             "left_status": "SUCCESS",
             "right_status": "SUCCESS",
+            "left_authoritative": True,
+            "right_authoritative": True,
         },
         {
             "pairing_key": "b",
@@ -114,6 +116,25 @@ def test_phase12_paired_difference_keeps_failed_and_blocked_samples() -> None:
     assert result["blocked_by_env_count"] == 1
     assert result["failed_pair_count"] == 1
     assert result["mean_delta"] == 2.0
+
+
+def _measured_row(group: str, value: float, status: str) -> dict[str, object]:
+    """构造明确可进入论文统计的 measured 测试样本。"""
+
+    return {
+        "group": group,
+        "value": value,
+        "status": status,
+        "authoritative_for_thesis": True,
+        "metric_provenance": {
+            "value": {
+                "source": "MEASURED",
+                "source_field": "test.value",
+                "source_artifact": "test",
+                "unit": "ms",
+            }
+        },
+    }
 
 
 def test_phase12_smoke_pipeline_generates_thesis_and_verification_artifacts(
