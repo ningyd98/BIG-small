@@ -20,19 +20,26 @@ Smoke 数据必须标记为 `SYNTHETIC_PIPELINE_SAMPLE`、`actual_runner_invoked
 
 ## Validation
 
-Validation profile 至少 3 seeds 和 2 repetitions，并必须调用 actual software runners。Isaac、Ollama、MoveIt 环境可 `BLOCKED_BY_ENV`，但 Mock、Phase 8、MuJoCo、Synthetic Dry-Run 和 Rule-Based 不得用公式替代。当前 Phase 12.2 validation artifact 的 provenance 为 `worktree_clean=false`，因此只能声明：
+Validation profile 至少 3 seeds 和 2 repetitions，并必须调用 actual software runners。Isaac、Ollama、MoveIt 环境可 `BLOCKED_BY_ENV`，但 Mock、Phase 8、MuJoCo、Synthetic Dry-Run 和 Rule-Based 不得用公式替代。`artifacts/phase12_2/validation` 保留为 `worktree_clean=false` 的 gap 证据，不作为当前 accepted validation。当前权威 validation evidence 位于：
 
-`PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS`
+`artifacts/phase12_2_clean/validation`
 
-`THESIS_PACKAGE_INCOMPLETE`
+对应命令：
 
-只有重新生成 clean provenance 的 validation evidence，并且 `scripts/verify_phase12.py --validation` 输出 accepted 后，才可声明：
+```bash
+python scripts/verify_phase12.py \
+  --validation \
+  --artifact-root artifacts/phase12_2_clean/validation \
+  --output artifacts/phase12_2_clean/validation/verification
+```
+
+该 evidence 的 verifier accepted 后，可声明：
 
 `PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED`
 
 `PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED`
 
-Validation 仍不得声明 full final evaluation 或最终论文证据 accepted。
+Validation 仍不得声明 full final evaluation 或最终论文证据 accepted。当前 clean validation 记录 540 行，其中 466 行 runtime completed、74 行 blocked before runtime、0 行 synthetic sample、0 次硬件写入。
 
 ## Full
 

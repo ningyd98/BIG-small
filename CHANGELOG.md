@@ -4,6 +4,7 @@
 
 ## 未发布
 
+- 增加 Phase 12.2 clean validation evidence：在 clean source tree 上重新生成 `artifacts/phase12_2_clean/validation`，保留旧 gap evidence，并将当前 validation 状态提升为 `PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED` 与 `PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED`；full profile 仍未运行。
 - 增加 Phase 12.1：区分 `SYNTHETIC_PIPELINE_SAMPLE` 与 actual software runner evidence，修正 smoke thesis 状态，新增 actual runner adapters、validation source artifact hash 检查和 validation 级状态。
 - 增加 Phase 12 Final Evaluation：RQ1-RQ7、F01-F20、smoke/validation/full profile、统计分析、图表、论文表格、论文素材、答辩包和 `scripts/verify_phase12.py`。
 - 更新当前权威状态入口，明确 Phase 11.2 Model Control Center 和 Simulation AI Console 已接受，local model runtime 和真实机械臂验证尚未接受。

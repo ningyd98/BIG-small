@@ -1,0 +1,7 @@
+# t1_system_capability
+
+| capability | hardware_claim | status |
+| --- | --- | --- |
+| Simulation Workbench | none | ACCEPTED |
+| Model Control Center | none | ACCEPTED |
+| Real Robot | none | NOT_STARTED |
