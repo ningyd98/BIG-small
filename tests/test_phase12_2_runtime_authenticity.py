@@ -353,6 +353,38 @@ def test_verifier_rejects_runtime_gap_when_runtime_receipt_missing(tmp_path: Pat
     assert summary["checks"]["runtime_receipt_hash_valid"] is False
 
 
+def test_verifier_rejects_runtime_receipt_with_invalid_internal_hash(tmp_path: Path) -> None:
+    """F20 runtime receipt must verify its internal stable payload hash, not only file hash."""
+
+    receipt_path = tmp_path / "source_evidence/f20/phase11_runtime_actual_run.json"
+    receipt_path.parent.mkdir(parents=True)
+    receipt = {
+        "runner": "PHASE11_SIMULATION_RUNTIME",
+        "run_id": "f20-runtime",
+        "runtime_receipt_hash": "not-the-canonical-payload-hash",
+        "sqlite_evidence": {
+            "exists": True,
+            "relative_path": "source_evidence/f20/runtime.sqlite3",
+            "sha256": "sqlite-hash",
+            "tables": {"simulation_jobs": 1},
+        },
+        "worker_lease_evidence": {"lease_count": 1},
+        "duplicate_competition_evidence": {
+            "lease_winner": "worker-a",
+            "lease_loser": "worker-b",
+            "runner_invocation_count": 1,
+        },
+    }
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True) + "\n", encoding="utf-8")
+    row = {
+        "experiment_id": "F20_STRESS_AND_RECOVERY",
+        "source_artifact_path": "source_evidence/f20/phase11_runtime_actual_run.json",
+        "source_artifact_hash": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+    }
+
+    assert phase12_validation._runtime_receipt_hash_valid(tmp_path, [row]) is False
+
+
 def test_full_profile_rejects_when_paired_backend_is_not_accepted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1023,7 +1055,7 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
         encoding="utf-8",
     )
     stats_dir.joinpath("phase12_statistics.json").write_text(
-        json.dumps({"group_statistics": {"PCSC": {"sample_count": 1}}}) + "\n",
+        json.dumps({"group_statistics": {"PCSC": _minimal_metric_counts()}}) + "\n",
         encoding="utf-8",
     )
     _write_provenance(root, worktree_clean=True)
@@ -1095,7 +1127,6 @@ def _write_minimal_f20_validation_artifact(root: Path, *, include_sqlite_binary:
     receipt = {
         "runner": "PHASE11_SIMULATION_RUNTIME",
         "run_id": "f20-runtime",
-        "runtime_receipt_hash": "receipt-hash",
         "sqlite_evidence": {
             "exists": True,
             "relative_path": sqlite_rel,
@@ -1110,6 +1141,7 @@ def _write_minimal_f20_validation_artifact(root: Path, *, include_sqlite_binary:
             "runner_invocation_count": 1,
         },
     }
+    receipt["runtime_receipt_hash"] = _stable_payload_hash(receipt)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, sort_keys=True) + "\n", encoding="utf-8")
     if include_sqlite_binary:
@@ -1181,7 +1213,7 @@ def _write_minimal_artifact_common(root: Path) -> None:
     ]:
         path.mkdir(parents=True, exist_ok=True)
     root.joinpath("statistics/phase12_statistics.json").write_text(
-        json.dumps({"group_statistics": {"PCSC": {"sample_count": 1}}}) + "\n",
+        json.dumps({"group_statistics": {"PCSC": _minimal_metric_counts()}}) + "\n",
         encoding="utf-8",
     )
     root.joinpath("manifests/provenance.json").write_text(
@@ -1221,6 +1253,21 @@ def _write_gap_verification_summary(root: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def _stable_payload_hash(payload: Mapping[str, object]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _minimal_metric_counts() -> dict[str, int]:
+    return {
+        "sample_count": 1,
+        "valid_metric_sample_count": 1,
+        "excluded_metric_sample_count": 0,
+    }
 
 
 def _assert_validation_status_matches_provenance(verification: Mapping[str, object]) -> None:

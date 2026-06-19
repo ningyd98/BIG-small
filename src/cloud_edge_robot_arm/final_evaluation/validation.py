@@ -514,7 +514,7 @@ def _runtime_receipt_hash_valid(root: Path, rows: list[dict[str, Any]]) -> bool:
             return False
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             return False
-        if not receipt.get("runtime_receipt_hash"):
+        if not _runtime_receipt_internal_hash_valid(receipt):
             return False
     return True
 
@@ -636,6 +636,18 @@ def _runtime_receipt(root: Path, row: dict[str, Any]) -> dict[str, Any] | None:
         return None
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else None
+
+
+def _runtime_receipt_internal_hash_valid(receipt: dict[str, Any]) -> bool:
+    expected = str(receipt.get("runtime_receipt_hash", ""))
+    if not expected:
+        return False
+    payload = dict(receipt)
+    payload.pop("runtime_receipt_hash", None)
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest() == expected
 
 
 def _sqlite_evidence_hash_valid(root: Path, receipt: dict[str, Any]) -> bool:
