@@ -9,12 +9,17 @@ from pathlib import Path
 
 import yaml
 
+import cloud_edge_robot_arm.final_evaluation.report as phase12_report
 from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile
 from cloud_edge_robot_arm.final_evaluation.registry import (
     ALLOWLISTED_RUNNERS,
     PHASE12_EXPERIMENT_IDS,
     build_experiment_plan,
     final_experiment_registry,
+)
+from cloud_edge_robot_arm.final_evaluation.report import (
+    _demo_bundle_contains_secret,
+    _write_demo_bundle,
 )
 from cloud_edge_robot_arm.final_evaluation.statistics import (
     compute_group_statistics,
@@ -199,3 +204,42 @@ def test_phase12_smoke_pipeline_generates_thesis_and_verification_artifacts(
     assert (output / "tables/latex/t2_mode_baseline.tex").exists()
     assert (output / "reports/phase12_smoke_report.md").exists()
     assert (output / "demo_bundle/defense_demo_script.md").exists()
+
+
+def test_demo_bundle_secret_flag_is_derived_from_bundle_content(tmp_path: Path) -> None:
+    """答辩包 secret 标记必须来自文件内容扫描，不能固定写 false。"""
+
+    demo = tmp_path / "demo_bundle"
+    demo.mkdir()
+    (demo / "safe.md").write_text("公开演示材料\n", encoding="utf-8")
+    (demo / "leak.md").write_text("Authorization: Bearer abcdefgh123456\n", encoding="utf-8")
+
+    assert _demo_bundle_contains_secret(demo) is True
+
+
+def test_demo_bundle_summary_secret_flag_is_not_hardcoded(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """demo_summary.json 的 contains_secret 必须反映生成后的答辩包内容。"""
+
+    original_files = {
+        "safe.md": "公开演示材料\n",
+        "leak.md": "api_key=sk-proj-abcdefghijklmnopqrstuvwxyz\n",
+    }
+    monkeypatch.setattr(
+        phase12_report,
+        "_demo_bundle_files",
+        lambda: original_files,
+    )
+
+    _write_demo_bundle(
+        tmp_path,
+        {"run_count": 1, "hardware_claims": {}},
+        data_authority="VALIDATION_ACCEPTED_DATA",
+        verifier_gated_authoritative_thesis_run_count=1,
+    )
+
+    summary = json.loads((tmp_path / "demo_bundle/demo_summary.json").read_text())
+
+    assert summary["contains_secret"] is True

@@ -6,11 +6,19 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from cloud_edge_robot_arm.final_evaluation.plots import export_plots
 from cloud_edge_robot_arm.final_evaluation.tables import export_tables
+
+_SECRET_PATTERNS = (
+    re.compile(r"(?<![A-Za-z0-9])sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{16,}"),
+    re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{8,}"),
+    re.compile(r"(?i)authorization\s*[:=]"),
+    re.compile(r"(?i)\b(token|password|secret|credential)\s*[:=]\s*[^,\s;]+"),
+)
 
 
 def export_thesis_assets(output_root: Path, *, profile: str) -> dict[str, Any]:
@@ -149,7 +157,42 @@ def _write_demo_bundle(
 ) -> dict[str, Any]:
     demo = output_root / "demo_bundle"
     demo.mkdir(parents=True, exist_ok=True)
-    files = {
+    files = _demo_bundle_files()
+    for name, text in files.items():
+        (demo / name).write_text(text, encoding="utf-8")
+    hardware_claims = _hardware_claims(aggregate)
+    contains_secret = _demo_bundle_contains_secret(demo)
+    (demo / "demo_summary.json").write_text(
+        json.dumps(
+            {
+                "file_count": len(files),
+                "run_count": aggregate.get("run_count", 0),
+                "data_authority": data_authority,
+                "verifier_gated_authoritative_thesis_run_count": (
+                    verifier_gated_authoritative_thesis_run_count
+                ),
+                "contains_secret": contains_secret,
+                "real_controller_contacted": hardware_claims["real_controller_contacted"],
+                "hardware_motion_observed": hardware_claims["hardware_motion_observed"],
+                "hardware_write_operations": hardware_claims["hardware_write_operations"],
+                "highest_real_hardware_acceptance_level": hardware_claims[
+                    "highest_real_hardware_acceptance_level"
+                ],
+                "real_robot_validation": hardware_claims["real_robot_validation"],
+            },
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return {"path": "demo_bundle", "file_count": len(files) + 1}
+
+
+def _demo_bundle_files() -> dict[str, str]:
+    """返回答辩包模板内容，便于测试 summary 是否扫描实际生成文件。"""
+
+    return {
         "architecture_diagram.md": "# 项目架构图\n\n云端规划、边缘安全、仿真运行时和证据闭环。\n",
         "pcsc_eteac_timeline.md": (
             "# PCSC / ETEAC 时间线\n\n展示监督、事件触发、恢复和重规划事件。\n"
@@ -170,34 +213,18 @@ def _write_demo_bundle(
             "# 5-10 分钟答辩演示脚本\n\n1. 架构；2. 工作台；3. 实验；4. 安全边界；5. 局限。\n"
         ),
     }
-    for name, text in files.items():
-        (demo / name).write_text(text, encoding="utf-8")
-    hardware_claims = _hardware_claims(aggregate)
-    (demo / "demo_summary.json").write_text(
-        json.dumps(
-            {
-                "file_count": len(files),
-                "run_count": aggregate.get("run_count", 0),
-                "data_authority": data_authority,
-                "verifier_gated_authoritative_thesis_run_count": (
-                    verifier_gated_authoritative_thesis_run_count
-                ),
-                "contains_secret": False,
-                "real_controller_contacted": hardware_claims["real_controller_contacted"],
-                "hardware_motion_observed": hardware_claims["hardware_motion_observed"],
-                "hardware_write_operations": hardware_claims["hardware_write_operations"],
-                "highest_real_hardware_acceptance_level": hardware_claims[
-                    "highest_real_hardware_acceptance_level"
-                ],
-                "real_robot_validation": hardware_claims["real_robot_validation"],
-            },
-            sort_keys=True,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return {"path": "demo_bundle", "file_count": len(files) + 1}
+
+
+def _demo_bundle_contains_secret(demo_dir: Path) -> bool:
+    """扫描答辩包文本内容，summary 不能固定宣称没有 secret。"""
+
+    for path in demo_dir.rglob("*"):
+        if not path.is_file() or path.name == "demo_summary.json":
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if any(pattern.search(text) for pattern in _SECRET_PATTERNS):
+            return True
+    return False
 
 
 def _hardware_claims(aggregate: dict[str, Any]) -> dict[str, Any]:
