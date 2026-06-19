@@ -27,6 +27,8 @@ DEFAULT_ROOTS = [
     "scripts/check_model_runtime.py",
     "artifacts/phase11_2",
     "artifacts/phase12",
+    "artifacts/phase12_1",
+    "artifacts/phase12_2",
     "artifacts/phase12_2_clean",
 ]
 
@@ -42,7 +44,16 @@ IGNORED_PARTS = {
     "test-results",
 }
 
-IGNORED_SUFFIXES = {".pyc", ".pyo", ".so", ".sqlite", ".db-journal", ".db-wal", ".db-shm"}
+IGNORED_SUFFIXES = {
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".sqlite",
+    ".sqlite3",
+    ".db-journal",
+    ".db-wal",
+    ".db-shm",
+}
 
 
 def main() -> int:

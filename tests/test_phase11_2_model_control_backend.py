@@ -538,9 +538,29 @@ def test_model_control_secret_scanner_ignores_python_bytecode_cache(tmp_path: Pa
     assert scanned == ["service.py"]
 
 
+def test_model_control_secret_scanner_ignores_sqlite3_runtime_databases(
+    tmp_path: Path,
+) -> None:
+    from scripts.check_model_control_secrets import _files
+
+    artifact_root = tmp_path / "artifacts/phase12_2/validation"
+    artifact_root.mkdir(parents=True)
+    binary_secret_like_payload = (
+        b"SQLite format 3\x00binary " + b"Auth" + b"orization" + b": bearer-not-a-text-artifact"
+    )
+    (artifact_root / "runtime.sqlite3").write_bytes(binary_secret_like_payload)
+    (artifact_root / "summary.json").write_text('{"status": "ok"}\n', encoding="utf-8")
+
+    scanned = [path.name for path in _files(artifact_root)]
+
+    assert scanned == ["summary.json"]
+
+
 def test_model_control_secret_scanner_covers_phase12_artifacts() -> None:
     from scripts.check_model_control_secrets import DEFAULT_ROOTS
 
     assert "artifacts/phase11_2" in DEFAULT_ROOTS
     assert "artifacts/phase12" in DEFAULT_ROOTS
+    assert "artifacts/phase12_1" in DEFAULT_ROOTS
+    assert "artifacts/phase12_2" in DEFAULT_ROOTS
     assert "artifacts/phase12_2_clean" in DEFAULT_ROOTS
