@@ -13,6 +13,7 @@ The safe recovery API is `POST /api/v1/simulation/runtime/recover` and requires 
 The standalone command is:
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/recover_phase11_runtime.py \
   --artifact-root artifacts \
   --database data/simulation_runtime.db \

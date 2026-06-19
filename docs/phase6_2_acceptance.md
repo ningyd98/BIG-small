@@ -3,6 +3,7 @@
 只有以下命令全部通过，Phase 6.2 才能接受：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 git diff --check
 .venv/bin/python -m ruff format --check .
 .venv/bin/python -m ruff check .

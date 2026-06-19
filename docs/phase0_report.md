@@ -29,6 +29,7 @@
 已先运行测试并确认缺少实现时失败，随后实现并运行：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python3 -m pytest -q
 ```
 
@@ -46,6 +47,7 @@ python3 -m pytest -q
 ## 7. 本地运行命令
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/validate_contract_examples.py
 pytest tests/test_phase0_contracts.py tests/test_phase0_config_logging.py tests/test_phase0_acceptance.py -q
 ```
@@ -53,6 +55,7 @@ pytest tests/test_phase0_contracts.py tests/test_phase0_config_logging.py tests/
 ## 8. 验收命令
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 ruff check .
 mypy .
 pytest -q

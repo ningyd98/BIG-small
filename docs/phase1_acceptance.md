@@ -24,6 +24,7 @@
 ## 命令
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/run_fixed_pick_place.py --adapter mock
 python scripts/run_fixed_pick_place.py --adapter mock --repeat 20
 python scripts/run_fault_injection_suite.py

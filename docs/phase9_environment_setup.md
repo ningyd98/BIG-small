@@ -11,6 +11,7 @@ Phase 9 和 Phase 9.1 把三类运行环境分开：
 ## 核心 Python
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python -m pip install -e '.[dev,sim-mujoco,sim-analysis]'
 python scripts/verify_phase9_env.py
 python scripts/verify_phase9_mujoco.py
@@ -21,12 +22,14 @@ python scripts/verify_phase9_mujoco.py
 安装脚本默认 dry-run，并且会写审计计划，不会用 `sudo`：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 scripts/phase9/install_ros2_jazzy.sh --artifact-dir artifacts/phase9_1/install
 ```
 
 在 Ubuntu 24.04 上并且明确允许 sudo 时：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 scripts/phase9/install_ros2_jazzy.sh --execute --yes --artifact-dir artifacts/phase9_1/install
 source /opt/ros/jazzy/setup.bash
 scripts/phase9/build_ros2_workspace.sh
@@ -41,6 +44,7 @@ python scripts/verify_phase9_1_moveit_safety.py
 Isaac Sim 兼容性需要可用的 Vulkan 运行时和 `vulkaninfo`：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 scripts/phase9/install_vulkan_runtime.sh --artifact-dir artifacts/phase9_1/install
 scripts/phase9/install_vulkan_runtime.sh --execute --yes --artifact-dir artifacts/phase9_1/install
 ```
@@ -52,6 +56,7 @@ scripts/phase9/install_vulkan_runtime.sh --execute --yes --artifact-dir artifact
 Isaac Sim 必须运行在官方 Python/standalone app 环境中。设置 `ISAAC_SIM_ROOT` 后运行：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 ARTIFACT_DIR=artifacts/phase9_1/install python scripts/phase9/check_isaac_sim.py
 python scripts/verify_phase9_1_isaac_smoke.py
 ```

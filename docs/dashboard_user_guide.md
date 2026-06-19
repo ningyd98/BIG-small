@@ -3,6 +3,7 @@
 ## Start Locally
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 scripts/start_dashboard_dev.sh
 ```
 
@@ -11,18 +12,21 @@ Open the Vite URL printed by the frontend server. By default the backend uses lo
 To enable software experiment writes for local testing:
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 DASHBOARD_EXPERIMENT_WRITES_ENABLED=true scripts/start_dashboard_dev.sh
 ```
 
 ## Build And Test
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 scripts/build_dashboard.sh
 ```
 
 For the Phase 10.2B acceptance verifier:
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/verify_phase10_2b.py
 ```
 

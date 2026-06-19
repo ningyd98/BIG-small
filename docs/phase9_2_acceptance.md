@@ -11,6 +11,7 @@
 ## 普通环境
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python -m ruff format --check .
 python -m ruff check .
 python -m mypy .
@@ -29,6 +30,7 @@ python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
 ## 兼容 Isaac 主机
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/environment
 python scripts/verify_phase9_2_isaac_smoke.py --output artifacts/phase9_2/isaac
 python scripts/run_phase9_2_isaac_benchmark.py --output artifacts/phase9_2/isaac_benchmark
@@ -39,6 +41,7 @@ python scripts/verify_phase9_2.py --output artifacts/phase9_2/final
 兼容主机路径还必须保持 Phase 9.1 验证链完整：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/verify_phase9.py
 source scripts/phase9/activate_ros2_moveit_env.sh
 python scripts/verify_phase9_1_ros2_integration.py --output artifacts/phase9_1/ros2

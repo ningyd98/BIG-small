@@ -12,6 +12,7 @@ Phase 9.2 需要兼容 Isaac 的主机：
 运行：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/environment
 ```
 
@@ -30,6 +31,7 @@ python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/enviro
 ## Standalone 模式
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 export ISAAC_RUNTIME_MODE=standalone
 export ISAAC_SIM_ROOT=/path/to/isaac-sim-6.0
 python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/environment
@@ -40,6 +42,7 @@ python scripts/verify_phase9_2_environment.py --output artifacts/phase9_2/enviro
 ## 容器模式
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 export ISAAC_RUNTIME_MODE=container
 export ISAAC_CONTAINER_IMAGE=nvcr.io/nvidia/isaac-sim:6.0.0
 export ISAAC_CONTAINER_DIGEST=sha256:<resolved-digest>

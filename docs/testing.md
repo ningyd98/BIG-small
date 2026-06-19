@@ -7,6 +7,7 @@
 本地建议跑和 CI 接近的命令：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python -m compileall src scripts tests
 python -m ruff format --check .
 python -m ruff check .

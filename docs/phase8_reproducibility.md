@@ -3,12 +3,14 @@
 运行 smoke 套件：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/run_phase8_experiments.py --suite smoke --output experiments/results/smoke
 ```
 
 运行完整套件：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/run_phase8_experiments.py --suite full --seeds 0:9 --output experiments/results/full
 ```
 

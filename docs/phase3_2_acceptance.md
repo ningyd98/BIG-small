@@ -15,6 +15,7 @@
 ## 验收命令
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 ruff format --check .
 ruff check .
 mypy .

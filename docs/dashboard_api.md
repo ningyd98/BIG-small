@@ -43,6 +43,7 @@ The browser uses the same `/api` path through the Vite proxy; no token is placed
 The frontend schema is generated from the FastAPI app:
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 cd dashboard
 npm run api:generate
 ```
@@ -50,6 +51,7 @@ npm run api:generate
 CI checks generated schema drift with:
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 cd dashboard
 npm run api:check
 ```

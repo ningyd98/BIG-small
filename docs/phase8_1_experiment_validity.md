@@ -24,6 +24,7 @@ Phase 8 证明实验框架具备确定性和可复现性，但还不能保证 ru
 ## 复现实验
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/run_phase8_experiments.py --suite smoke --seeds 0 --networks NORMAL --output experiments/results/phase8_1_smoke
 python scripts/run_phase8_experiments.py --suite full --seeds 0:4 --networks GOOD,DEGRADED,INTERMITTENT --output experiments/results/phase8_1_validation
 python scripts/run_phase8_experiments.py --suite full --seeds 0:9 --networks GOOD,NORMAL,DEGRADED,POOR,SEVERE --output experiments/results/phase8_1_full

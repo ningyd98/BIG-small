@@ -70,6 +70,7 @@ Phase 9.1 artifact 明确区分：
 在具备 ROS 2 Jazzy、MoveIt 2 Jazzy、Isaac Sim、Vulkan，并配置好 `ISAAC_SIM_ROOT` 的主机上，重跑：
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python -m ruff format --check .
 python -m ruff check .
 python -m mypy .

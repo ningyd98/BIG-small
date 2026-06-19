@@ -99,6 +99,7 @@ DEFAULT_AUDIT_PATHS = [
     ".gitignore",
     "configs",
     "contracts/examples",
+    "docs",
     "experiments/baselines",
     "environments",
     "pyproject.toml",

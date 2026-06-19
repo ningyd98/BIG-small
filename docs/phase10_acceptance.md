@@ -17,6 +17,7 @@
 ## 常规验证
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python -m ruff format --check .
 python -m ruff check .
 python -m mypy .
@@ -37,6 +38,7 @@ python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/movei
 真实硬件验证必须人工触发，并且按级别推进：
 
 ```bash
+# 命令说明：仅限真实硬件现场人工触发，按验收级别门禁推进且不得跳级。
 python scripts/run_phase10_acceptance_level.py --level LEVEL_0 --output artifacts/phase10/acceptance
 ```
 

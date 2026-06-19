@@ -67,6 +67,7 @@ the session.
 CI and development machines may run only the framework verifier:
 
 ```bash
+# 命令说明：按本文上下文运行该验证或环境命令，默认不连接真实机械臂。
 python scripts/verify_phase10_2c_level0.py --fake
 ```
 
@@ -77,6 +78,7 @@ Site staff may run the hardware verifier manually after installing the
 site-specific read-only adapter and external configuration:
 
 ```bash
+# 命令说明：仅限现场人员在外部只读配置就绪后运行，会尝试真实控制器只读采样但禁止运动。
 python scripts/verify_phase10_2c_level0.py --hardware --config /external/path/level0.yaml
 ```
 
