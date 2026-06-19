@@ -779,6 +779,9 @@ def test_direct_plot_and_table_export_defaults_to_pending_verification(
     table = tmp_path.joinpath("tables/csv/t2_mode_baseline.csv").read_text()
     table_rows = list(DictReader(table.splitlines()))
     assert plot_index["data_authority"] == "PENDING_VERIFICATION_DATA"
+    assert plot_index["svg_data_source"] == "aggregate_payload"
+    assert plot_index["png_rendering_mode"] == "placeholder_preview"
+    assert plot_index["png_contains_metric_data"] is False
     assert "PENDING_VERIFICATION_DATA" in table
     assert "authoritative_n" in table
     assert table_rows[0]["authoritative_n"] == "3"

@@ -80,6 +80,10 @@ def export_plots(
                 "plots": exported,
                 "plot_count": len(exported),
                 "data_authority": authority,
+                # 中文说明：当前 PNG 是固定 1x1 预览占位，真实聚合数值只写入 SVG。
+                "svg_data_source": "aggregate_payload",
+                "png_rendering_mode": "placeholder_preview",
+                "png_contains_metric_data": False,
                 "synthetic_sample_count": synthetic_count,
                 "authoritative_thesis_run_count": authoritative_count,
                 "verifier_gated_authoritative_thesis_run_count": gated_authoritative_count,
