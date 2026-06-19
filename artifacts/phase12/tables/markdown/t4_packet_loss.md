@@ -1,0 +1,7 @@
+# t4_packet_loss
+
+| blocked | group | mean_time_ms | n | success_rate |
+| --- | --- | --- | --- | --- |
+| 0 | AUTO | 1229.8 | 30 | 0.8 |
+| 0 | ETEAC | 1189.8 | 30 | 0.8 |
+| 3 | PCSC | 1328.2 | 30 | 0.6666666666666666 |
