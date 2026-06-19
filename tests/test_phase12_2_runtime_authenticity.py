@@ -13,6 +13,7 @@ import subprocess
 import sys
 from collections import Counter
 from collections.abc import Mapping
+from csv import DictReader
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -562,7 +563,13 @@ def test_direct_plot_and_table_export_defaults_to_pending_verification(
     aggregate = {
         "authoritative_thesis_run_count": 3,
         "synthetic_sample_count": 0,
-        "authoritative_by_mode": {"PCSC": {"run_count": 3, "success_rate": 1.0}},
+        "authoritative_by_mode": {
+            "PCSC": {
+                "run_count": 5,
+                "authoritative_run_count": 3,
+                "success_rate": 1.0,
+            }
+        },
     }
 
     export_plots(tmp_path, aggregate)
@@ -570,8 +577,12 @@ def test_direct_plot_and_table_export_defaults_to_pending_verification(
 
     plot_index = json.loads(tmp_path.joinpath("plots/plot_index.json").read_text())
     table = tmp_path.joinpath("tables/csv/t2_mode_baseline.csv").read_text()
+    table_rows = list(DictReader(table.splitlines()))
     assert plot_index["data_authority"] == "PENDING_VERIFICATION_DATA"
     assert "PENDING_VERIFICATION_DATA" in table
+    assert "authoritative_n" in table
+    assert table_rows[0]["authoritative_n"] == "3"
+    assert table_rows[0]["n"] == "5"
     assert "AUTHORITATIVE_THESIS_DATA" not in table
 
 

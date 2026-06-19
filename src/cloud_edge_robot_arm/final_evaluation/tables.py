@@ -71,6 +71,10 @@ def _table_rows(
         {
             "group": label,
             "n": values.get("run_count", 0),
+            "authoritative_n": values.get(
+                "authoritative_run_count",
+                values.get("run_count", 0),
+            ),
             "success_rate": values.get("success_rate", 0),
             "mean_time_ms": values.get("mean", ""),
             "blocked": values.get("blocked_by_env_count", 0),
@@ -81,6 +85,7 @@ def _table_rows(
         {
             "group": "NONE",
             "n": 0,
+            "authoritative_n": 0,
             "success_rate": 0,
             "mean_time_ms": "",
             "blocked": 0,
