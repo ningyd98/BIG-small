@@ -63,3 +63,17 @@ def test_testing_docs_describe_current_ci_quality_gates() -> None:
     assert "scripts/check_model_control_secrets.py" in docs
     assert "Phase 12 smoke" in docs
     assert "Phase 3-6 验证脚本" not in docs
+
+
+def test_authoritative_status_preserves_phase12_and_hardware_boundaries() -> None:
+    status = Path("docs/current_authoritative_status.md").read_text(encoding="utf-8")
+
+    assert "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED" in status
+    assert "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED" in status
+    assert "Phase 12 full final evaluation | NOT_ACCEPTED" in status
+    assert "Real robot validation | NOT_STARTED" in status
+    assert "`real_controller_contacted=false`" in status
+    assert "`hardware_motion_observed=false`" in status
+    assert "`hardware_write_operations=[]`" in status
+    assert "BIGSMALL_REAL_ROBOT_PROJECT_ACCEPTED" in status
+    assert "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED" not in status
