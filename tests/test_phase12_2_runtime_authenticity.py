@@ -719,6 +719,37 @@ def test_validation_gap_report_gates_authoritative_thesis_run_count(
     assert "verifier_gated_authoritative_for_thesis=0" in results
 
 
+def test_thesis_export_hardware_claims_are_derived_from_aggregate(tmp_path: Path) -> None:
+    """报告和 demo summary 的硬件声明必须来自 aggregate，不能固定写安全值。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    aggregate_path = root / "aggregates/phase12_aggregate.json"
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    aggregate["hardware_claims"] = {
+        "real_controller_contacted": True,
+        "hardware_motion_observed": True,
+        "hardware_write_operations": ["brake_release"],
+        "highest_real_hardware_acceptance_level": "LEVEL_0",
+        "real_robot_validation": "LEVEL_0_PASSED",
+    }
+    aggregate_path.write_text(json.dumps(aggregate, sort_keys=True) + "\n", encoding="utf-8")
+
+    export_thesis_assets(root, profile="validation")
+
+    report = root.joinpath("reports/phase12_validation_report.md").read_text(encoding="utf-8")
+    demo_summary = json.loads(
+        root.joinpath("demo_bundle/demo_summary.json").read_text(encoding="utf-8")
+    )
+    assert "real_controller_contacted=True" in report
+    assert "hardware_motion_observed=True" in report
+    assert "hardware_write_operations=['brake_release']" in report
+    assert demo_summary["real_controller_contacted"] is True
+    assert demo_summary["hardware_motion_observed"] is True
+    assert demo_summary["hardware_write_operations"] == ["brake_release"]
+    assert demo_summary["highest_real_hardware_acceptance_level"] == "LEVEL_0"
+
+
 def test_direct_plot_and_table_export_defaults_to_pending_verification(
     tmp_path: Path,
 ) -> None:

@@ -73,6 +73,7 @@ def _write_reports(
     )
     profile_note = _profile_note(profile, verification)
     thesis_status = str(verification.get("thesis_status", "")) if verification else ""
+    hardware_claims = _hardware_claims(aggregate)
     report = (
         f"# Phase 12 {profile} 实验报告\n\n"
         f"- 运行总数：{run_count}\n"
@@ -86,7 +87,12 @@ def _write_reports(
         f"- 环境阻塞：{blocked}\n"
         f"- unsafe_command_execution_count：{unsafe}\n"
         f"- 状态语义：{profile_note}\n"
-        "- 硬件声明：未接触真实控制器，未观察到物理运动。\n"
+        "- 硬件声明："
+        f"real_controller_contacted={hardware_claims['real_controller_contacted']}，"
+        f"hardware_motion_observed={hardware_claims['hardware_motion_observed']}，"
+        f"hardware_write_operations={hardware_claims['hardware_write_operations']}，"
+        f"highest_real_hardware_acceptance_level="
+        f"{hardware_claims['highest_real_hardware_acceptance_level']}。\n"
     )
     (reports_dir / f"phase12_{profile}_report.md").write_text(report, encoding="utf-8")
     thesis_files = {
@@ -166,6 +172,7 @@ def _write_demo_bundle(
     }
     for name, text in files.items():
         (demo / name).write_text(text, encoding="utf-8")
+    hardware_claims = _hardware_claims(aggregate)
     (demo / "demo_summary.json").write_text(
         json.dumps(
             {
@@ -176,8 +183,13 @@ def _write_demo_bundle(
                     verifier_gated_authoritative_thesis_run_count
                 ),
                 "contains_secret": False,
-                "real_controller_contacted": False,
-                "hardware_motion_observed": False,
+                "real_controller_contacted": hardware_claims["real_controller_contacted"],
+                "hardware_motion_observed": hardware_claims["hardware_motion_observed"],
+                "hardware_write_operations": hardware_claims["hardware_write_operations"],
+                "highest_real_hardware_acceptance_level": hardware_claims[
+                    "highest_real_hardware_acceptance_level"
+                ],
+                "real_robot_validation": hardware_claims["real_robot_validation"],
             },
             sort_keys=True,
             indent=2,
@@ -186,6 +198,23 @@ def _write_demo_bundle(
         encoding="utf-8",
     )
     return {"path": "demo_bundle", "file_count": len(files) + 1}
+
+
+def _hardware_claims(aggregate: dict[str, Any]) -> dict[str, Any]:
+    """从 aggregate 读取硬件声明，防止导出材料把异常 evidence 写成固定安全值。"""
+
+    claims = aggregate.get("hardware_claims", {})
+    if not isinstance(claims, dict):
+        claims = {}
+    return {
+        "real_controller_contacted": claims.get("real_controller_contacted") is True,
+        "hardware_motion_observed": claims.get("hardware_motion_observed") is True,
+        "hardware_write_operations": list(claims.get("hardware_write_operations") or []),
+        "highest_real_hardware_acceptance_level": str(
+            claims.get("highest_real_hardware_acceptance_level") or "NONE"
+        ),
+        "real_robot_validation": str(claims.get("real_robot_validation") or "NOT_STARTED"),
+    }
 
 
 def _profile_note(profile: str, verification: dict[str, Any] | None = None) -> str:
