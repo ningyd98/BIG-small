@@ -74,7 +74,7 @@ def aggregate_results(profile: Phase12Profile, rows: list[dict[str, Any]]) -> Ph
         authoritative_by_mode=_group_payload(authoritative_rows, "control_mode"),
         authoritative_by_experiment=_group_payload(authoritative_rows, "experiment_id"),
         authoritative_by_backend=_group_payload(authoritative_rows, "backend"),
-        hardware_claims=HardwareClaims(),
+        hardware_claims=_aggregate_hardware_claims(rows),
     )
 
 
@@ -125,6 +125,86 @@ def _group_payload(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, 
             }
         )
     return stats
+
+
+def _aggregate_hardware_claims(rows: list[dict[str, Any]]) -> HardwareClaims:
+    """从 raw runs 聚合硬件声明，避免 aggregate 把异常 evidence 写成默认安全值。"""
+
+    return HardwareClaims(
+        real_controller_contacted=_any_hardware_true(rows, "real_controller_contacted"),
+        hardware_motion_observed=_any_hardware_true(rows, "hardware_motion_observed"),
+        hardware_write_operations=_hardware_write_operations(rows),
+        highest_real_hardware_acceptance_level=_highest_hardware_level(rows),
+        real_robot_validation=_highest_robot_validation(rows),
+    )
+
+
+def _any_hardware_true(rows: list[dict[str, Any]], key: str) -> bool:
+    return any(
+        row.get(key, False) is True or row.get("hardware_claims", {}).get(key, False) is True
+        for row in rows
+    )
+
+
+def _hardware_write_operations(rows: list[dict[str, Any]]) -> list[str]:
+    operations: set[str] = set()
+    for row in rows:
+        for value in (
+            row.get("hardware_write_operations"),
+            row.get("hardware_claims", {}).get("hardware_write_operations"),
+        ):
+            if isinstance(value, list):
+                operations.update(str(item) for item in value)
+    return sorted(operations)
+
+
+def _highest_hardware_level(rows: list[dict[str, Any]]) -> str:
+    order = {
+        "NONE": 0,
+        "LEVEL_0": 1,
+        "LEVEL_1": 2,
+        "LEVEL_2": 3,
+        "LEVEL_3": 4,
+        "LEVEL_4": 5,
+        "LEVEL_5": 6,
+        "LEVEL_6": 7,
+    }
+    return _highest_ordered_value(
+        rows,
+        "highest_real_hardware_acceptance_level",
+        order,
+        default="NONE",
+    )
+
+
+def _highest_robot_validation(rows: list[dict[str, Any]]) -> str:
+    order = {
+        "NOT_STARTED": 0,
+        "LEVEL_0_PASSED": 1,
+        "LEVEL_1_PASSED": 2,
+        "LEVEL_2_PASSED": 3,
+        "LEVEL_3_PASSED": 4,
+        "LEVEL_4_PASSED": 5,
+        "LEVEL_5_PASSED": 6,
+        "LEVEL_6_PASSED": 7,
+    }
+    return _highest_ordered_value(rows, "real_robot_validation", order, default="NOT_STARTED")
+
+
+def _highest_ordered_value(
+    rows: list[dict[str, Any]],
+    key: str,
+    order: dict[str, int],
+    *,
+    default: str,
+) -> str:
+    highest = default
+    for row in rows:
+        for value in (row.get(key), row.get("hardware_claims", {}).get(key)):
+            candidate = str(value or default)
+            if order.get(candidate, -1) > order.get(highest, -1):
+                highest = candidate
+    return highest
 
 
 def _paired_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:

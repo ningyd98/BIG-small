@@ -773,6 +773,28 @@ def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
     assert aggregate.blocked_before_runtime_count == 1
 
 
+def test_aggregate_hardware_claims_are_derived_from_raw_runs() -> None:
+    """aggregate 硬件声明必须来自 raw runs，不能固定写成默认安全值。"""
+
+    row = _row("hardware-claim")
+    row["real_controller_contacted"] = True
+    row["hardware_claims"] = {
+        "real_controller_contacted": False,
+        "hardware_motion_observed": True,
+        "hardware_write_operations": ["brake_release"],
+        "highest_real_hardware_acceptance_level": "LEVEL_0",
+        "real_robot_validation": "LEVEL_0_PASSED",
+    }
+
+    aggregate = aggregate_results(Phase12Profile.VALIDATION, [row])
+
+    assert aggregate.hardware_claims.real_controller_contacted is True
+    assert aggregate.hardware_claims.hardware_motion_observed is True
+    assert aggregate.hardware_claims.hardware_write_operations == ["brake_release"]
+    assert aggregate.hardware_claims.highest_real_hardware_acceptance_level == "LEVEL_0"
+    assert aggregate.hardware_claims.real_robot_validation == "LEVEL_0_PASSED"
+
+
 def test_group_payload_reports_authoritative_run_count() -> None:
     """Group summaries must expose authoritative sample counts separately from audit totals."""
 
