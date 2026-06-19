@@ -184,49 +184,7 @@ def test_full_profile_rejects_when_paired_backend_is_not_accepted(
 
     root = tmp_path / "phase12_full"
     _write_minimal_full_artifact(root, paired_accepted=False)
-    monkeypatch.setattr(
-        phase12_validation,
-        "PHASE12_EXPERIMENT_IDS",
-        ["F15_MUJOCO_ISAAC_PAIRED"],
-    )
-    monkeypatch.setattr(
-        phase12_validation,
-        "final_experiment_registry",
-        lambda: [
-            SimpleNamespace(
-                experiment_id="F15_MUJOCO_ISAAC_PAIRED",
-                runner_kind="PHASE9_2_ISAAC",
-            )
-        ],
-    )
-    monkeypatch.setattr(
-        phase12_validation,
-        "build_experiment_plan",
-        lambda profile: SimpleNamespace(
-            run_count=1,
-            seed_count=1,
-            repetitions=1,
-            experiments=[],
-        ),
-    )
-    monkeypatch.setattr(phase12_validation, "_source_artifact_hash_verified", lambda *_: True)
-    monkeypatch.setattr(phase12_validation, "_sample_policy_satisfied", lambda *_: True)
-    monkeypatch.setattr(phase12_validation, "_paired_run_completeness", lambda *_: True)
-    monkeypatch.setattr(phase12_validation, "_stress_task_count_satisfied", lambda *_: True)
-    monkeypatch.setattr(phase12_validation, "_runtime_receipts_exist", lambda *_: True)
-    monkeypatch.setattr(phase12_validation, "_runtime_receipt_hash_valid", lambda *_: True)
-    monkeypatch.setattr(phase12_validation, "_phase11_sqlite_evidence_exists", lambda *_: True)
-    monkeypatch.setattr(phase12_validation, "_worker_lease_evidence_exists", lambda *_: True)
-    monkeypatch.setattr(
-        phase12_validation,
-        "_duplicate_competition_evidence_exists",
-        lambda *_: True,
-    )
-    monkeypatch.setattr(
-        phase12_validation,
-        "_runner_invocation_count_exactly_one",
-        lambda *_: True,
-    )
+    _patch_minimal_full_verifier(monkeypatch)
 
     summary = phase12_validation.verify_phase12(
         profile=Phase12Profile.FULL,
@@ -239,6 +197,25 @@ def test_full_profile_rejects_when_paired_backend_is_not_accepted(
     assert summary["checks"]["paired_backend_acceptance_status_correct"] is False
     assert summary["status"] == "PHASE12_REJECTED"
     assert summary["project_status"] == "NOT_CLOSED"
+
+
+def test_full_profile_ready_status_matches_full_acceptance(tmp_path: Path, monkeypatch) -> None:
+    """full profile 被最终接受时 readiness 字段也必须保持一致。"""
+
+    root = tmp_path / "phase12_full"
+    _write_minimal_full_artifact(root, paired_accepted=True)
+    _patch_minimal_full_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.FULL,
+        artifact_root=root,
+        output_dir=root / "verification",
+        require_full=True,
+    )
+
+    assert summary["status"] == "PHASE12_FINAL_EVALUATION_ACCEPTED"
+    assert summary["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_READY"
+    assert summary["project_status"] == "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED"
 
 
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
@@ -428,6 +405,52 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
     )
     root.joinpath("thesis/experiment_results.md").write_text("full results")
     root.joinpath("demo_bundle/demo_summary.json").write_text("{}\n")
+
+
+def _patch_minimal_full_verifier(monkeypatch) -> None:
+    monkeypatch.setattr(
+        phase12_validation,
+        "PHASE12_EXPERIMENT_IDS",
+        ["F15_MUJOCO_ISAAC_PAIRED"],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "final_experiment_registry",
+        lambda: [
+            SimpleNamespace(
+                experiment_id="F15_MUJOCO_ISAAC_PAIRED",
+                runner_kind="PHASE9_2_ISAAC",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "build_experiment_plan",
+        lambda profile: SimpleNamespace(
+            run_count=1,
+            seed_count=1,
+            repetitions=1,
+            experiments=[],
+        ),
+    )
+    monkeypatch.setattr(phase12_validation, "_source_artifact_hash_verified", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_sample_policy_satisfied", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_paired_run_completeness", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_stress_task_count_satisfied", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_runtime_receipts_exist", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_runtime_receipt_hash_valid", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_phase11_sqlite_evidence_exists", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_worker_lease_evidence_exists", lambda *_: True)
+    monkeypatch.setattr(
+        phase12_validation,
+        "_duplicate_competition_evidence_exists",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "_runner_invocation_count_exactly_one",
+        lambda *_: True,
+    )
 
 
 def _row(

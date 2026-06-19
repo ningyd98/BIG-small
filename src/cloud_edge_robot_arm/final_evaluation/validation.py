@@ -214,7 +214,7 @@ def verify_phase12(
         ),
         "blocked_pair_count": _paired_payload(artifact_root).get("blocked_pair_count", 0),
         "full_profile_readiness_status": FULL_READY_STATUS
-        if validation_ready
+        if full_ready or validation_ready
         else "PHASE12_FULL_PROFILE_NOT_READY",
         "stress_task_count": sum(
             1 for row in raw_runs if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"
