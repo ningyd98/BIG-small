@@ -41,17 +41,27 @@ def _write_reports(
     run_count = aggregate.get("run_count", 0)
     blocked = aggregate.get("blocked_by_env_count", 0)
     unsafe = aggregate.get("unsafe_command_execution_count", 0)
+    synthetic = aggregate.get("synthetic_sample_count", 0)
+    actual = aggregate.get("actual_run_count", 0)
+    authoritative = aggregate.get("authoritative_thesis_run_count", 0)
+    profile_note = _profile_note(profile)
     report = (
         f"# Phase 12 {profile} 实验报告\n\n"
         f"- 运行总数：{run_count}\n"
+        f"- synthetic pipeline samples：{synthetic}\n"
+        f"- actual runner runs：{actual}\n"
+        f"- authoritative thesis runs：{authoritative}\n"
         f"- 环境阻塞：{blocked}\n"
         f"- unsafe_command_execution_count：{unsafe}\n"
+        f"- 状态语义：{profile_note}\n"
         "- 硬件声明：未接触真实控制器，未观察到物理运动。\n"
     )
     (reports_dir / f"phase12_{profile}_report.md").write_text(report, encoding="utf-8")
     thesis_files = {
         "experiment_design.md": (
-            "# 实验设计\n\nPhase 12 固定 RQ1-RQ7 和 F01-F20，smoke 仅验证管线。\n"
+            "# 实验设计\n\n"
+            "Phase 12 固定 RQ1-RQ7 和 F01-F20。smoke 仅验证管线；validation "
+            "调用 actual software runners；full 才可形成最终论文统计结论。\n"
         ),
         "experiment_environment.md": (
             "# 实验环境\n\n环境摘要和 source tree hash 由 manifest 记录。\n"
@@ -59,7 +69,8 @@ def _write_reports(
         "experiment_results.md": (
             "# 实验结果\n\n"
             f"本次 profile `{profile}` 自动生成 {run_count} 条运行记录，"
-            f"其中 BLOCKED_BY_ENV={blocked}。\n"
+            f"其中 BLOCKED_BY_ENV={blocked}，authoritative_for_thesis={authoritative}。\n\n"
+            f"{profile_note}\n"
         ),
         "discussion.md": (
             "# 讨论\n\n"
@@ -131,6 +142,22 @@ def _write_demo_bundle(output_root: Path, aggregate: dict[str, Any]) -> dict[str
         encoding="utf-8",
     )
     return {"path": "demo_bundle", "file_count": len(files) + 1}
+
+
+def _profile_note(profile: str) -> str:
+    if profile == "smoke":
+        return (
+            "PHASE12_THESIS_ASSET_PIPELINE_READY；数据为 PIPELINE TEST DATA，不得作为论文最终结论。"
+        )
+    if profile == "validation":
+        return (
+            "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED；数据来自 actual software "
+            "runner validation，可用于验收运行链路，不等同 full 论文证据。"
+        )
+    return (
+        "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED 仅在 full profile 样本策略和 "
+        "authoritative evidence 全部满足时成立。"
+    )
 
 
 def _validity_text() -> str:

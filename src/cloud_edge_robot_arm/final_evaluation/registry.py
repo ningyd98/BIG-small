@@ -12,6 +12,7 @@ from cloud_edge_robot_arm.final_evaluation.models import (
     Phase12ExperimentDefinition,
     Phase12ExperimentPlan,
     Phase12Profile,
+    Phase12SamplePolicy,
 )
 
 PHASE12_EXPERIMENT_IDS = [
@@ -301,20 +302,17 @@ def build_experiment_plan(profile: Phase12Profile) -> Phase12ExperimentPlan:
 
     registry = final_experiment_registry()
     seed_count = _profile_seed_count(profile)
-    repetitions = (
-        1 if profile == Phase12Profile.SMOKE else 2 if profile == Phase12Profile.VALIDATION else 3
-    )
+    repetitions = _profile_repetitions(profile)
     run_count = 0
     for experiment in registry:
-        seeds = (
-            experiment.seeds_smoke if profile == Phase12Profile.SMOKE else list(range(seed_count))
-        )
+        seeds = _seeds_for(experiment, profile)
+        experiment_repetitions = _repetitions_for(experiment, profile)
         run_count += (
             len(experiment.scenario_ids)
             * len(experiment.backends)
             * len(experiment.control_modes)
             * len(seeds)
-            * repetitions
+            * experiment_repetitions
         )
     return Phase12ExperimentPlan(
         profile=profile,
@@ -323,6 +321,7 @@ def build_experiment_plan(profile: Phase12Profile) -> Phase12ExperimentPlan:
         seed_count=seed_count,
         baseline_seed_count=30 if profile == Phase12Profile.FULL else seed_count,
         repetitions=repetitions,
+        runner_mapping={runner: runner for runner in sorted(ALLOWLISTED_RUNNERS)},
         hardware_claims=HardwareClaims(),
     )
 
@@ -343,6 +342,8 @@ def _definition(
 ) -> Phase12ExperimentDefinition:
     if runner_kind not in ALLOWLISTED_RUNNERS:
         raise ValueError(f"runner not allowlisted: {runner_kind}")
+    full_seed_count = _full_seed_count(experiment_id)
+    task_count = 100 if experiment_id == "F20_STRESS_AND_RECOVERY" else 1
     return Phase12ExperimentDefinition(
         experiment_id=experiment_id,
         title=title,
@@ -354,9 +355,17 @@ def _definition(
         dependent_metrics=metrics,
         seeds_smoke=[0],
         validation_seed_count=3,
-        full_seed_count=30,
+        full_seed_count=full_seed_count,
         repetitions=1,
         runner_kind=runner_kind,
+        sample_policy=Phase12SamplePolicy(
+            seed_count=full_seed_count,
+            repetitions=3,
+            task_count=task_count,
+            pairing_required=experiment_id == "F15_MUJOCO_ISAAC_PAIRED",
+            required_actual_backend=True,
+            minimum_successful_samples=max(1, full_seed_count // 2),
+        ),
         pairing_key=pairing_key,
         status_if_unavailable=status_if_unavailable,
     )
@@ -368,3 +377,35 @@ def _profile_seed_count(profile: Phase12Profile) -> int:
     if profile == Phase12Profile.VALIDATION:
         return 3
     return 30
+
+
+def _profile_repetitions(profile: Phase12Profile) -> int:
+    if profile == Phase12Profile.SMOKE:
+        return 1
+    if profile == Phase12Profile.VALIDATION:
+        return 2
+    return 3
+
+
+def _seeds_for(experiment: Phase12ExperimentDefinition, profile: Phase12Profile) -> list[int]:
+    if profile == Phase12Profile.SMOKE:
+        return list(experiment.seeds_smoke)
+    if profile == Phase12Profile.VALIDATION:
+        return list(range(experiment.validation_seed_count))
+    return list(range(experiment.sample_policy.seed_count))
+
+
+def _repetitions_for(experiment: Phase12ExperimentDefinition, profile: Phase12Profile) -> int:
+    if profile == Phase12Profile.SMOKE:
+        return 1
+    if profile == Phase12Profile.VALIDATION:
+        return 2
+    return experiment.sample_policy.repetitions
+
+
+def _full_seed_count(experiment_id: str) -> int:
+    if experiment_id in {"F01_PC_SC_BASELINE", "F02_ETEAC_BASELINE", "F03_AUTO_BASELINE"}:
+        return 30
+    if experiment_id == "F20_STRESS_AND_RECOVERY":
+        return 20
+    return 20

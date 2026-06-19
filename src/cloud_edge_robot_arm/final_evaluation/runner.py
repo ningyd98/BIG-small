@@ -1,8 +1,8 @@
 """Phase 12 固定评估 runner。
 
-runner 只执行最终评估的受控软件/仿真路径，并用确定性公式生成 smoke/validation
-评估样本。环境依赖项不可用时记录 BLOCKED_BY_ENV，不回退到 Mock 冒充 Isaac、
-Ollama 或真实后端。
+runner 只执行最终评估的受控软件/仿真路径。smoke profile 生成明确标记的
+SYNTHETIC_PIPELINE_SAMPLE；validation/full profile 调用固定 allowlist adapter，
+环境依赖项不可用时记录 BLOCKED_BY_ENV，不回退到 Mock 冒充 Isaac、Ollama 或真实后端。
 """
 
 from __future__ import annotations
@@ -11,7 +11,14 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cloud_edge_robot_arm.final_evaluation.adapters import runner_adapter_registry
+from cloud_edge_robot_arm.final_evaluation.adapters.base import (
+    Phase12AdapterResult,
+    Phase12RunContext,
+)
 from cloud_edge_robot_arm.final_evaluation.models import (
+    EnvironmentStatus,
+    ExecutionSource,
     HardwareClaims,
     Phase12Backend,
     Phase12Profile,
@@ -44,17 +51,15 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
     env_hash = environment_hash()
     started_at = datetime.now(UTC)
     run_index = 0
+    adapters = runner_adapter_registry()
     for experiment in plan.experiments:
-        seeds = (
-            experiment.seeds_smoke
-            if profile == Phase12Profile.SMOKE
-            else list(range(plan.seed_count))
-        )
+        seeds = _seeds_for_profile(experiment, profile)
+        repetitions = _repetitions_for_profile(experiment, profile)
         for scenario_id in experiment.scenario_ids:
             for backend in experiment.backends:
                 for mode in experiment.control_modes:
                     for seed in seeds:
-                        for repetition in range(plan.repetitions):
+                        for repetition in range(repetitions):
                             run_index += 1
                             manifest = _manifest(
                                 run_index=run_index,
@@ -71,7 +76,28 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
                                 clean=clean,
                                 env_hash=env_hash,
                             )
-                            result = _result_from_manifest(manifest, experiment.title)
+                            if profile == Phase12Profile.SMOKE:
+                                result = _result_from_manifest(manifest, experiment.title)
+                            else:
+                                context = Phase12RunContext(
+                                    run_id=manifest.run_id,
+                                    experiment_id=experiment.experiment_id,
+                                    scenario_id=scenario_id,
+                                    backend=backend,
+                                    control_mode=mode,
+                                    seed=seed,
+                                    repetition=repetition,
+                                    output_root=output_root,
+                                )
+                                adapter = adapters[
+                                    _runner_kind_for(experiment.runner_kind, backend)
+                                ]
+                                adapter_result = adapter.run(context)
+                                manifest = manifest.model_copy(
+                                    update=_source_fields(adapter_result),
+                                    deep=True,
+                                )
+                                result = _result_from_adapter(manifest, adapter_result)
                             manifests.append(manifest)
                             rows.append(result)
     _write_jsonl(
@@ -89,6 +115,7 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
         "started_at": started_at.isoformat(),
         "completed_at": datetime.now(UTC).isoformat(),
         "hardware_claims": HardwareClaims().model_dump(mode="json"),
+        "execution_source_counts": _execution_source_counts(rows),
     }
     _write_json(output_root / "manifests/provenance.json", provenance)
     summary: dict[str, object] = {
@@ -97,6 +124,12 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
         "blocked_by_env_count": sum(
             1 for row in rows if row.status == Phase12RunStatus.BLOCKED_BY_ENV
         ),
+        "synthetic_sample_count": sum(
+            1 for row in rows if row.execution_source == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
+        ),
+        "actual_run_count": sum(1 for row in rows if row.actual_runner_invoked),
+        "authoritative_thesis_run_count": sum(1 for row in rows if row.authoritative_for_thesis),
+        "actual_backend_counts": _actual_backend_counts(rows),
         "unsafe_command_execution_count": sum(row.unsafe_command_execution_count for row in rows),
         "hardware_claims": HardwareClaims().model_dump(mode="json"),
         "artifact_hash": stable_hash([row.result_hash for row in rows]),
@@ -150,6 +183,93 @@ def _manifest(
         else "NONE",
         model_name="rule-based" if experiment_id == "F16_PLANNER_PROVIDER_COMPARISON" else "",
         completed_at=datetime.now(UTC),
+    )
+
+
+def _runner_kind_for(experiment_runner_kind: str, backend: Phase12Backend) -> str:
+    """Select the fixed allowlisted runner matching the row backend."""
+
+    if backend == Phase12Backend.MUJOCO:
+        return "PHASE9_MUJOCO"
+    if backend == Phase12Backend.ISAAC_SIM:
+        return "PHASE9_2_ISAAC"
+    if backend == Phase12Backend.SYNTHETIC_DRY_RUN:
+        return "PHASE10_SYNTHETIC_DRY_RUN"
+    if backend == Phase12Backend.MOVEIT_DRY_RUN:
+        return "PHASE10_MOVEIT_RUNTIME_DRY_RUN"
+    if backend == Phase12Backend.PLANNER_DRY_RUN:
+        return "PHASE11_2_PLANNER_DRY_RUN"
+    return experiment_runner_kind
+
+
+def _result_from_adapter(
+    manifest: Phase12RunManifest, adapter_result: Phase12AdapterResult
+) -> Phase12Result:
+    metrics = adapter_result.metrics
+    result_hash = str(metrics.get("result_hash") or stable_hash(metrics))
+    artifact_hash = str(metrics.get("artifact_hash") or adapter_result.source_artifact_hash)
+    return Phase12Result(
+        run_id=manifest.run_id,
+        experiment_id=manifest.experiment_id,
+        research_question=manifest.research_question,
+        profile=manifest.profile,
+        backend=manifest.backend,
+        scenario_id=manifest.scenario_id,
+        control_mode=manifest.control_mode,
+        seed=manifest.seed,
+        repetition=manifest.repetition,
+        status=adapter_result.status,
+        task_success=adapter_result.task_success,
+        failure_type=adapter_result.failure_type,
+        task_completion_rate=float(metrics.get("task_completion_rate", 0.0)),
+        total_completion_time_ms=float(metrics.get("total_completion_time_ms", 0.0)),
+        cloud_planning_time_ms=float(metrics.get("cloud_planning_time_ms", 0.0)),
+        edge_execution_time_ms=float(metrics.get("edge_execution_time_ms", 0.0)),
+        local_recovery_time_ms=float(metrics.get("local_recovery_time_ms", 0.0)),
+        replanning_time_ms=float(metrics.get("replanning_time_ms", 0.0)),
+        communication_wait_time_ms=float(metrics.get("communication_wait_time_ms", 0.0)),
+        cloud_invocation_count=int(metrics.get("cloud_invocation_count", 0)),
+        communication_count=int(metrics.get("communication_count", 0)),
+        uploaded_bytes=int(metrics.get("uploaded_bytes", 0)),
+        downloaded_bytes=int(metrics.get("downloaded_bytes", 0)),
+        supervision_count=int(metrics.get("supervision_count", 0)),
+        mode_switch_count=int(metrics.get("mode_switch_count", 0)),
+        local_retry_count=int(metrics.get("local_retry_count", 0)),
+        local_recovery_success_count=int(metrics.get("local_recovery_success_count", 0)),
+        replan_count=int(metrics.get("replan_count", 0)),
+        cloud_fallback_count=int(metrics.get("cloud_fallback_count", 0)),
+        completed_without_cloud_after_start=bool(
+            metrics.get("completed_without_cloud_after_start", False)
+        ),
+        safety_intervention_count=int(metrics.get("safety_intervention_count", 0)),
+        rejected_action_count=int(metrics.get("rejected_action_count", 0)),
+        stale_telemetry_rejection=int(metrics.get("stale_telemetry_rejection", 0)),
+        workspace_rejection=int(metrics.get("workspace_rejection", 0)),
+        collision_rejection=int(metrics.get("collision_rejection", 0)),
+        emergency_stop_event=int(metrics.get("emergency_stop_event", 0)),
+        unsafe_command_execution_count=int(metrics.get("unsafe_command_execution_count", 0)),
+        restart_recovery_success=bool(metrics.get("restart_recovery_success", True)),
+        duplicate_execution_count=int(metrics.get("duplicate_execution_count", 0)),
+        lease_recovery_count=int(metrics.get("lease_recovery_count", 0)),
+        artifact_consistency=bool(metrics.get("artifact_consistency", True)),
+        event_loss_count=int(metrics.get("event_loss_count", 0)),
+        paired_success_agreement=_optional_bool(metrics.get("paired_success_agreement")),
+        completion_time_delta=_optional_float(metrics.get("completion_time_delta")),
+        planner_success=bool(metrics.get("planner_success", adapter_result.task_success)),
+        valid_contract_rate=float(metrics.get("valid_contract_rate", 1.0)),
+        repair_count=int(metrics.get("repair_count", 0)),
+        refusal_rate=float(metrics.get("refusal_rate", 0.0)),
+        response_latency_ms=float(metrics.get("response_latency_ms", 0.0)),
+        result_hash=result_hash,
+        artifact_hash=artifact_hash,
+        execution_source=adapter_result.execution_source,
+        actual_runner_invoked=adapter_result.actual_runner_invoked,
+        authoritative_for_thesis=adapter_result.authoritative_for_thesis,
+        source_artifact_path=adapter_result.source_artifact_path,
+        source_artifact_hash=adapter_result.source_artifact_hash,
+        source_verifier=adapter_result.source_verifier,
+        environment_status=adapter_result.environment_status,
+        hardware_claims=adapter_result.hardware_claims,
     )
 
 
@@ -266,6 +386,15 @@ def _result_from_manifest(manifest: Phase12RunManifest, title: str) -> Phase12Re
         artifact_hash=stable_hash(
             {"manifest": manifest.model_dump(mode="json"), "result": result_hash}
         ),
+        execution_source=ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE,
+        actual_runner_invoked=False,
+        authoritative_for_thesis=False,
+        source_artifact_path="",
+        source_artifact_hash="",
+        source_verifier="phase12.synthetic_pipeline",
+        environment_status=EnvironmentStatus.READY
+        if status != Phase12RunStatus.BLOCKED_BY_ENV
+        else EnvironmentStatus.BLOCKED_BY_ENV,
         hardware_claims=HardwareClaims(),
     )
 
@@ -285,15 +414,78 @@ def _status_for(manifest: Phase12RunManifest) -> Phase12RunStatus:
     return Phase12RunStatus.SUCCESS
 
 
+def _seeds_for_profile(experiment: object, profile: Phase12Profile) -> list[int]:
+    if profile == Phase12Profile.SMOKE:
+        return list(experiment.seeds_smoke)  # type: ignore[attr-defined]
+    if profile == Phase12Profile.VALIDATION:
+        return list(range(experiment.validation_seed_count))  # type: ignore[attr-defined]
+    return list(range(experiment.sample_policy.seed_count))  # type: ignore[attr-defined]
+
+
+def _repetitions_for_profile(experiment: object, profile: Phase12Profile) -> int:
+    if profile == Phase12Profile.SMOKE:
+        return 1
+    if profile == Phase12Profile.VALIDATION:
+        return 2
+    return int(experiment.sample_policy.repetitions)  # type: ignore[attr-defined]
+
+
 def _event(row: Phase12Result) -> dict[str, object]:
     return {
         "run_id": row.run_id,
         "event_type": "phase12_run_recorded",
         "status": row.status.value,
         "experiment_id": row.experiment_id,
+        "execution_source": row.execution_source.value,
+        "actual_runner_invoked": row.actual_runner_invoked,
+        "authoritative_for_thesis": row.authoritative_for_thesis,
         "timestamp": datetime.now(UTC).isoformat(),
         "hardware_motion_observed": False,
     }
+
+
+def _source_fields(adapter_result: Phase12AdapterResult) -> dict[str, object]:
+    return {
+        "execution_source": adapter_result.execution_source,
+        "actual_runner_invoked": adapter_result.actual_runner_invoked,
+        "authoritative_for_thesis": adapter_result.authoritative_for_thesis,
+        "source_artifact_path": adapter_result.source_artifact_path,
+        "source_artifact_hash": adapter_result.source_artifact_hash,
+        "source_verifier": adapter_result.source_verifier,
+        "environment_status": adapter_result.environment_status,
+    }
+
+
+def _execution_source_counts(rows: list[Phase12Result]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row.execution_source.value] = counts.get(row.execution_source.value, 0) + 1
+    return counts
+
+
+def _actual_backend_counts(rows: list[Phase12Result]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        if row.actual_runner_invoked:
+            counts[row.backend.value] = counts.get(row.backend.value, 0) + 1
+    return counts
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    try:
+        return float(str(value))
+    except ValueError:
+        return None
+
+
+def _optional_bool(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 def _write_json(path: Path, payload: object) -> None:

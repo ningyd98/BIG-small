@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,8 @@ SMOKE_STATUS = "PHASE12_EXPERIMENT_SUITE_READY"
 VALIDATION_STATUS = "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
 FULL_STATUS = "PHASE12_FINAL_EVALUATION_ACCEPTED"
 THESIS_STATUS = "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED"
+THESIS_PIPELINE_STATUS = "PHASE12_THESIS_ASSET_PIPELINE_READY"
+VALIDATION_THESIS_STATUS = "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
 PROJECT_STATUS = "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED"
 REJECTED_STATUS = "PHASE12_REJECTED"
 
@@ -37,10 +41,27 @@ def verify_phase12(
     output_dir.mkdir(parents=True, exist_ok=True)
     registry = final_experiment_registry()
     plan = build_experiment_plan(profile)
-    raw_runs = _read_jsonl(artifact_root / "runs/raw_runs.jsonl")
+    raw_runs = _normalize_rows_for_profile(
+        profile, _read_jsonl(artifact_root / "runs/raw_runs.jsonl")
+    )
     aggregate = _read_json(artifact_root / "aggregates/phase12_aggregate.json")
     stats = _read_json(artifact_root / "statistics/phase12_statistics.json")
     provenance = _read_json(artifact_root / "manifests/provenance.json")
+    synthetic_sample_count = sum(
+        1 for row in raw_runs if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
+    )
+    actual_run_count = sum(1 for row in raw_runs if row.get("actual_runner_invoked") is True)
+    authoritative_count = sum(1 for row in raw_runs if row.get("authoritative_for_thesis") is True)
+    actual_backend_counts = dict(
+        Counter(str(row.get("backend")) for row in raw_runs if row.get("actual_runner_invoked"))
+    )
+    blocked_breakdown = dict(
+        Counter(
+            str(row.get("execution_source"))
+            for row in raw_runs
+            if row.get("status") == "BLOCKED_BY_ENV"
+        )
+    )
     checks = {
         "registry_complete": [item.experiment_id for item in registry] == PHASE12_EXPERIMENT_IDS,
         "no_hardware_runner": not any(
@@ -62,15 +83,44 @@ def verify_phase12(
         "hardware_write_operations_empty": _all_empty(raw_runs, "hardware_write_operations"),
         "no_sensitive_artifacts": not _contains_sensitive_text(artifact_root),
         "source_tree_provenance_present": bool(provenance.get("source_tree_hash")),
+        "actual_runner_invocation_verified": _actual_runner_invocation_verified(profile, raw_runs),
+        "source_artifact_hash_verified": _source_artifact_hash_verified(artifact_root, raw_runs),
+        "sample_policy_satisfied": _sample_policy_satisfied(profile, raw_runs, plan),
+        "paired_run_completeness": _paired_run_completeness(raw_runs),
+        "stress_task_count_satisfied": _stress_task_count_satisfied(profile, raw_runs),
     }
     full_ready = (
         profile == Phase12Profile.FULL
         and len(raw_runs) >= plan.run_count
         and bool(provenance.get("worktree_clean"))
+        and synthetic_sample_count == 0
+        and authoritative_count > 0
         and all(checks.values())
     )
-    validation_ready = profile == Phase12Profile.VALIDATION and all(checks.values())
-    smoke_ready = profile == Phase12Profile.SMOKE and all(checks.values())
+    validation_ready = (
+        profile == Phase12Profile.VALIDATION
+        and synthetic_sample_count == 0
+        and actual_run_count == len(raw_runs)
+        and authoritative_count > 0
+        and all(checks.values())
+    )
+    smoke_ready = (
+        profile == Phase12Profile.SMOKE
+        and synthetic_sample_count == len(raw_runs)
+        and actual_run_count == 0
+        and checks["registry_complete"]
+        and checks["no_hardware_runner"]
+        and checks["raw_runs_exist"]
+        and checks["aggregate_exists"]
+        and checks["statistics_exists"]
+        and checks["plots_exist"]
+        and checks["tables_exist"]
+        and checks["unsafe_command_execution_zero"]
+        and checks["real_controller_contacted_false"]
+        and checks["hardware_motion_observed_false"]
+        and checks["hardware_write_operations_empty"]
+        and checks["no_sensitive_artifacts"]
+    )
     if require_full:
         status = FULL_STATUS if full_ready else REJECTED_STATUS
     elif validation_ready:
@@ -85,10 +135,19 @@ def verify_phase12(
         and checks["plots_exist"]
         and checks["tables_exist"]
     )
+    thesis_status = (
+        THESIS_STATUS
+        if full_ready and thesis_ready
+        else VALIDATION_THESIS_STATUS
+        if validation_ready and thesis_ready
+        else THESIS_PIPELINE_STATUS
+        if smoke_ready and thesis_ready
+        else "THESIS_PACKAGE_INCOMPLETE"
+    )
     payload: dict[str, Any] = {
         "status": status,
         "project_status": PROJECT_STATUS if full_ready and thesis_ready else "NOT_CLOSED",
-        "thesis_status": THESIS_STATUS if thesis_ready else "THESIS_PACKAGE_INCOMPLETE",
+        "thesis_status": thesis_status,
         "profile": profile.value,
         "checks": checks,
         "run_count": len(raw_runs),
@@ -97,6 +156,18 @@ def verify_phase12(
         "repetitions": plan.repetitions,
         "registry_count": len(registry),
         "full_profile_claimed": status == FULL_STATUS,
+        "synthetic_sample_count": synthetic_sample_count,
+        "actual_run_count": actual_run_count,
+        "authoritative_thesis_run_count": authoritative_count,
+        "actual_backend_counts": actual_backend_counts,
+        "actual_runner_invocation_verified": checks["actual_runner_invocation_verified"],
+        "source_artifact_hash_verified": checks["source_artifact_hash_verified"],
+        "sample_policy_satisfied": checks["sample_policy_satisfied"],
+        "paired_run_completeness": checks["paired_run_completeness"],
+        "stress_task_count": sum(
+            1 for row in raw_runs if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"
+        ),
+        "blocked_environment_breakdown": blocked_breakdown,
         "real_controller_contacted": False,
         "hardware_motion_observed": False,
         "hardware_write_operations": [],
@@ -113,7 +184,13 @@ def verify_phase12(
     )
     _write_json(
         output_dir / "run_integrity_verification.json",
-        {"run_count": len(raw_runs), "checks": checks},
+        {
+            "run_count": len(raw_runs),
+            "synthetic_sample_count": synthetic_sample_count,
+            "actual_run_count": actual_run_count,
+            "authoritative_thesis_run_count": authoritative_count,
+            "checks": checks,
+        },
     )
     _write_json(output_dir / "statistics_verification.json", {"statistics_keys": sorted(stats)})
     _write_json(output_dir / "thesis_assets_verification.json", {"thesis_ready": thesis_ready})
@@ -126,6 +203,19 @@ def verify_phase12(
         },
     )
     _write_json(output_dir / "phase12_summary.json", payload)
+    if profile == Phase12Profile.SMOKE:
+        _write_json(
+            output_dir / "phase12_smoke_status_correction.json",
+            {
+                "supersedes": "7b4c9af artifacts/phase12/verification/phase12_summary.json",
+                "previous_thesis_status": THESIS_STATUS,
+                "corrected_thesis_status": THESIS_PIPELINE_STATUS,
+                "correction_reason": (
+                    "Phase 12 smoke rows are synthetic pipeline samples, not final thesis evidence."
+                ),
+                "original_artifact_retained": True,
+            },
+        )
     return payload
 
 
@@ -142,6 +232,28 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _normalize_rows_for_profile(
+    profile: Phase12Profile, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    if profile != Phase12Profile.SMOKE:
+        return rows
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        if "execution_source" in row:
+            normalized.append(row)
+            continue
+        updated = dict(row)
+        updated["execution_source"] = "SYNTHETIC_PIPELINE_SAMPLE"
+        updated["actual_runner_invoked"] = False
+        updated["authoritative_for_thesis"] = False
+        updated["source_artifact_path"] = ""
+        updated["source_artifact_hash"] = ""
+        updated["source_verifier"] = "phase12.synthetic_pipeline.legacy"
+        updated["environment_status"] = "READY"
+        normalized.append(updated)
+    return normalized
 
 
 def _all_false(rows: list[dict[str, Any]], key: str) -> bool:
@@ -166,6 +278,72 @@ def _contains_sensitive_text(root: Path) -> bool:
         if pattern.search(text):
             return True
     return False
+
+
+def _actual_runner_invocation_verified(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:
+    if profile == Phase12Profile.SMOKE:
+        return all(row.get("actual_runner_invoked") is False for row in rows)
+    return bool(rows) and all(row.get("actual_runner_invoked") is True for row in rows)
+
+
+def _source_artifact_hash_verified(root: Path, rows: list[dict[str, Any]]) -> bool:
+    for row in rows:
+        if row.get("actual_runner_invoked") is not True:
+            continue
+        rel_path = str(row.get("source_artifact_path", ""))
+        expected = str(row.get("source_artifact_hash", ""))
+        if not rel_path or not expected:
+            return False
+        path = root / rel_path
+        if not path.exists():
+            return False
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            return False
+    return True
+
+
+def _sample_policy_satisfied(
+    profile: Phase12Profile, rows: list[dict[str, Any]], plan: Any
+) -> bool:
+    if profile == Phase12Profile.SMOKE:
+        return bool(rows) and all(row.get("seed") == 0 for row in rows)
+    by_experiment: dict[str, set[tuple[int, int]]] = {}
+    for row in rows:
+        by_experiment.setdefault(str(row.get("experiment_id")), set()).add(
+            (int(row.get("seed", -1)), int(row.get("repetition", -1)))
+        )
+    for experiment in plan.experiments:
+        observed = by_experiment.get(experiment.experiment_id, set())
+        seeds = {seed for seed, _ in observed}
+        repetitions = {rep for _, rep in observed}
+        if profile == Phase12Profile.VALIDATION:
+            if len(seeds) < experiment.validation_seed_count or len(repetitions) < 2:
+                return False
+        elif len(seeds) < experiment.sample_policy.seed_count:
+            return False
+    return True
+
+
+def _paired_run_completeness(rows: list[dict[str, Any]]) -> bool:
+    pairs: dict[str, set[str]] = {}
+    for row in rows:
+        if row.get("experiment_id") != "F15_MUJOCO_ISAAC_PAIRED":
+            continue
+        key = (
+            f"{row.get('scenario_id')}|{row.get('seed')}|"
+            f"{row.get('control_mode')}|{row.get('repetition')}"
+        )
+        pairs.setdefault(key, set()).add(str(row.get("backend")))
+    return not pairs or all(
+        {"MUJOCO", "ISAAC_SIM"}.issubset(backends) for backends in pairs.values()
+    )
+
+
+def _stress_task_count_satisfied(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:
+    count = sum(1 for row in rows if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY")
+    if profile == Phase12Profile.FULL:
+        return count >= 100
+    return count > 0 if rows else False
 
 
 def _write_json(path: Path, payload: object) -> None:

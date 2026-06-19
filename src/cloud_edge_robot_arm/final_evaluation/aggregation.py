@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from cloud_edge_robot_arm.final_evaluation.models import (
+    ExecutionSource,
     HardwareClaims,
     Phase12Aggregate,
     Phase12Profile,
@@ -35,6 +36,7 @@ def load_raw_runs(output_root: Path) -> list[dict[str, Any]]:
 def aggregate_results(profile: Phase12Profile, rows: list[dict[str, Any]]) -> Phase12Aggregate:
     """生成聚合模型，硬件声明始终保持软件/仿真边界。"""
 
+    authoritative_rows = [row for row in rows if row.get("authoritative_for_thesis") is True]
     success_count = sum(1 for row in rows if row.get("status") == Phase12RunStatus.SUCCESS.value)
     blocked = sum(1 for row in rows if row.get("status") == Phase12RunStatus.BLOCKED_BY_ENV.value)
     failed = len(rows) - success_count - blocked
@@ -47,9 +49,19 @@ def aggregate_results(profile: Phase12Profile, rows: list[dict[str, Any]]) -> Ph
         unsafe_command_execution_count=sum(
             int(row.get("unsafe_command_execution_count", 0)) for row in rows
         ),
+        synthetic_sample_count=sum(
+            1
+            for row in rows
+            if row.get("execution_source") == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE.value
+        ),
+        actual_run_count=sum(1 for row in rows if row.get("actual_runner_invoked") is True),
+        authoritative_thesis_run_count=len(authoritative_rows),
         by_mode=_group_payload(rows, "control_mode"),
         by_experiment=_group_payload(rows, "experiment_id"),
         by_backend=_group_payload(rows, "backend"),
+        authoritative_by_mode=_group_payload(authoritative_rows, "control_mode"),
+        authoritative_by_experiment=_group_payload(authoritative_rows, "experiment_id"),
+        authoritative_by_backend=_group_payload(authoritative_rows, "backend"),
         hardware_claims=HardwareClaims(),
     )
 

@@ -33,6 +33,7 @@ def main() -> int:
     root = args.output
     aggregate_payload = write_aggregate(root, profile)
     rows = load_raw_runs(root)
+    authoritative_rows = [row for row in rows if row.get("authoritative_for_thesis") is True]
     pairs = [
         {
             "pairing_key": f"{row.get('scenario_id')}|{row.get('seed')}|{row.get('control_mode')}",
@@ -41,16 +42,21 @@ def main() -> int:
             "left_status": row.get("status", ""),
             "right_status": row.get("status", ""),
         }
-        for row in rows
+        for row in authoritative_rows
         if row.get("experiment_id") == "F15_MUJOCO_ISAAC_PAIRED"
     ]
     statistics = {
         "profile": profile.value,
+        "synthetic_sample_count": sum(
+            1 for row in rows if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
+        ),
+        "actual_run_count": sum(1 for row in rows if row.get("actual_runner_invoked") is True),
+        "authoritative_thesis_run_count": len(authoritative_rows),
         "group_statistics": compute_group_statistics(
-            rows, group_key="control_mode", metric_key="total_completion_time_ms"
+            authoritative_rows, group_key="control_mode", metric_key="total_completion_time_ms"
         ),
         "backend_statistics": compute_group_statistics(
-            rows, group_key="backend", metric_key="total_completion_time_ms"
+            authoritative_rows, group_key="backend", metric_key="total_completion_time_ms"
         ),
         "paired_results": paired_difference_summary(pairs),
         "missing_data_reasons": {

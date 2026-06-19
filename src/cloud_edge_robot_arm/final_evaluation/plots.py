@@ -44,10 +44,13 @@ def export_plots(output_root: Path, aggregate: dict[str, Any]) -> list[str]:
     png_dir.mkdir(parents=True, exist_ok=True)
     svg_dir.mkdir(parents=True, exist_ok=True)
     exported: list[str] = []
-    mode_data = aggregate.get("by_mode", {})
+    authoritative_count = int(aggregate.get("authoritative_thesis_run_count", 0))
+    synthetic_count = int(aggregate.get("synthetic_sample_count", 0))
+    mode_data = aggregate.get("authoritative_by_mode") or aggregate.get("by_mode", {})
+    pipeline_only = synthetic_count > 0 and authoritative_count == 0
     for name in PLOT_NAMES:
         title = _title(name)
-        svg = _svg(title, mode_data)
+        svg = _svg(title, mode_data, pipeline_only=pipeline_only)
         svg_path = svg_dir / f"{name}.svg"
         png_path = png_dir / f"{name}.png"
         svg_path.write_text(svg, encoding="utf-8")
@@ -56,7 +59,19 @@ def export_plots(output_root: Path, aggregate: dict[str, Any]) -> list[str]:
             [str(svg_path.relative_to(output_root)), str(png_path.relative_to(output_root))]
         )
     (output_root / "plots/plot_index.json").write_text(
-        json.dumps({"plots": exported, "plot_count": len(exported)}, sort_keys=True, indent=2)
+        json.dumps(
+            {
+                "plots": exported,
+                "plot_count": len(exported),
+                "data_authority": "PIPELINE_TEST_DATA"
+                if pipeline_only
+                else "AUTHORITATIVE_THESIS_DATA",
+                "synthetic_sample_count": synthetic_count,
+                "authoritative_thesis_run_count": authoritative_count,
+            },
+            sort_keys=True,
+            indent=2,
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -86,9 +101,19 @@ def _title(name: str) -> str:
     return mapping[name]
 
 
-def _svg(title: str, mode_data: object) -> str:
+def _svg(title: str, mode_data: object, *, pipeline_only: bool) -> str:
     data = json.dumps(mode_data, ensure_ascii=False, sort_keys=True)[:900]
-    subtitle = "单位：按图题对应指标；包含失败和环境阻塞样本。"
+    subtitle = (
+        "PIPELINE TEST DATA：仅验证图表生成管线，不进入论文统计结论。"
+        if pipeline_only
+        else "单位：按图题对应指标；仅使用 authoritative_for_thesis=true 数据。"
+    )
+    watermark = (
+        '<text x="190" y="320" font-size="48" fill="#dc2626" opacity="0.18">'
+        "PIPELINE TEST DATA</text>"
+        if pipeline_only
+        else ""
+    )
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" role="img">'
         f"<title>{title}</title>"
@@ -96,5 +121,6 @@ def _svg(title: str, mode_data: object) -> str:
         f'<text x="48" y="64" font-size="28" fill="#111827">{title}</text>'
         f'<text x="48" y="108" font-size="16" fill="#374151">{subtitle}</text>'
         f'<text x="48" y="154" font-size="12" fill="#4b5563">{data}</text>'
+        f"{watermark}"
         "</svg>"
     )

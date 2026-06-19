@@ -55,7 +55,14 @@ def export_tables(
 def _table_rows(
     aggregate: dict[str, Any], statistics: dict[str, Any]
 ) -> dict[str, list[dict[str, object]]]:
-    by_mode = aggregate.get("by_mode", {})
+    authoritative_count = int(aggregate.get("authoritative_thesis_run_count", 0))
+    synthetic_count = int(aggregate.get("synthetic_sample_count", 0))
+    by_mode = aggregate.get("authoritative_by_mode") or aggregate.get("by_mode", {})
+    data_authority = (
+        "PIPELINE_TEST_DATA"
+        if synthetic_count > 0 and authoritative_count == 0
+        else "AUTHORITATIVE_THESIS_DATA"
+    )
     mode_rows = [
         {
             "group": label,
@@ -63,9 +70,19 @@ def _table_rows(
             "success_rate": values.get("success_rate", 0),
             "mean_time_ms": values.get("mean", ""),
             "blocked": values.get("blocked_by_env_count", 0),
+            "data_authority": data_authority,
         }
         for label, values in sorted(by_mode.items())
-    ] or [{"group": "NONE", "n": 0, "success_rate": 0, "mean_time_ms": "", "blocked": 0}]
+    ] or [
+        {
+            "group": "NONE",
+            "n": 0,
+            "success_rate": 0,
+            "mean_time_ms": "",
+            "blocked": 0,
+            "data_authority": data_authority,
+        }
+    ]
     capability = [
         {"capability": "Simulation Workbench", "status": "ACCEPTED", "hardware_claim": "none"},
         {"capability": "Model Control Center", "status": "ACCEPTED", "hardware_claim": "none"},

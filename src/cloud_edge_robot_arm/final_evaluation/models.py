@@ -42,6 +42,37 @@ class Phase12RunStatus(StrEnum):
     BLOCKED_BY_ENV = "BLOCKED_BY_ENV"
 
 
+class ExecutionSource(StrEnum):
+    """Phase 12 结果来源，区分管线样本和真实软件/仿真 runner。"""
+
+    SYNTHETIC_PIPELINE_SAMPLE = "SYNTHETIC_PIPELINE_SAMPLE"
+    PHASE8_ACTUAL_RUN = "PHASE8_ACTUAL_RUN"
+    PHASE9_MUJOCO_ACTUAL_RUN = "PHASE9_MUJOCO_ACTUAL_RUN"
+    PHASE9_2_ISAAC_ACTUAL_RUN = "PHASE9_2_ISAAC_ACTUAL_RUN"
+    PHASE10_SYNTHETIC_DRY_RUN_ACTUAL = "PHASE10_SYNTHETIC_DRY_RUN_ACTUAL"
+    PHASE10_MOVEIT_RUNTIME_ACTUAL = "PHASE10_MOVEIT_RUNTIME_ACTUAL"
+    PHASE11_RUNTIME_ACTUAL = "PHASE11_RUNTIME_ACTUAL"
+    PHASE11_2_PLANNER_ACTUAL = "PHASE11_2_PLANNER_ACTUAL"
+
+
+class EnvironmentStatus(StrEnum):
+    """runner 环境状态，BLOCKED_BY_ENV 必须单独统计。"""
+
+    READY = "READY"
+    BLOCKED_BY_ENV = "BLOCKED_BY_ENV"
+
+
+class Phase12SamplePolicy(BaseModel):
+    """分类型样本策略，避免 full profile 误用统一 seed_count。"""
+
+    seed_count: int = Field(ge=1)
+    repetitions: int = Field(ge=1)
+    task_count: int = Field(ge=1)
+    pairing_required: bool = False
+    required_actual_backend: bool = True
+    minimum_successful_samples: int = Field(ge=0)
+
+
 class HardwareClaims(BaseModel):
     """最终评估的硬件声明，必须始终保持未接触、未运动、无写操作。"""
 
@@ -70,6 +101,7 @@ class Phase12ExperimentDefinition(BaseModel):
     full_seed_count: int
     repetitions: int
     runner_kind: str
+    sample_policy: Phase12SamplePolicy
     status_if_unavailable: str = "BLOCKED_BY_ENV"
     pairing_key: str | None = None
     hardware_claim: str = "software_or_simulation_only"
@@ -84,6 +116,7 @@ class Phase12ExperimentPlan(BaseModel):
     seed_count: int
     baseline_seed_count: int
     repetitions: int
+    runner_mapping: dict[str, str] = Field(default_factory=dict)
     hardware_claims: HardwareClaims
 
 
@@ -108,6 +141,13 @@ class Phase12RunManifest(BaseModel):
     model_name: str
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+    execution_source: ExecutionSource = ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
+    actual_runner_invoked: bool = False
+    authoritative_for_thesis: bool = False
+    source_artifact_path: str = ""
+    source_artifact_hash: str = ""
+    source_verifier: str = ""
+    environment_status: EnvironmentStatus = EnvironmentStatus.READY
     hardware_claims: HardwareClaims = Field(default_factory=HardwareClaims)
 
 
@@ -169,6 +209,13 @@ class Phase12Result(BaseModel):
     estimated_cost: float | None = None
     result_hash: str
     artifact_hash: str
+    execution_source: ExecutionSource = ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
+    actual_runner_invoked: bool = False
+    authoritative_for_thesis: bool = False
+    source_artifact_path: str = ""
+    source_artifact_hash: str = ""
+    source_verifier: str = ""
+    environment_status: EnvironmentStatus = EnvironmentStatus.READY
     hardware_claims: HardwareClaims = Field(default_factory=HardwareClaims)
 
 
@@ -181,9 +228,15 @@ class Phase12Aggregate(BaseModel):
     failed_count: int
     blocked_by_env_count: int
     unsafe_command_execution_count: int
+    synthetic_sample_count: int = 0
+    actual_run_count: int = 0
+    authoritative_thesis_run_count: int = 0
     by_mode: dict[str, dict[str, Any]]
     by_experiment: dict[str, dict[str, Any]]
     by_backend: dict[str, dict[str, Any]]
+    authoritative_by_mode: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    authoritative_by_experiment: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    authoritative_by_backend: dict[str, dict[str, Any]] = Field(default_factory=dict)
     hardware_claims: HardwareClaims = Field(default_factory=HardwareClaims)
 
 
