@@ -584,9 +584,16 @@ def _metric_provenance_complete(rows: list[dict[str, Any]]) -> bool:
         provenance = row.get("metric_provenance")
         if not isinstance(provenance, dict) or "total_completion_time_ms" not in provenance:
             return False
-        metric = provenance["total_completion_time_ms"]
-        if not isinstance(metric, dict) or not metric.get("source") or not metric.get("unit"):
-            return False
+        for metric in provenance.values():
+            if not isinstance(metric, dict) or not metric.get("source"):
+                return False
+            source = str(metric.get("source"))
+            if source in {"MEASURED", "EVENT_DERIVED", "ADAPTER_DERIVED"} and (
+                not metric.get("source_field")
+                or not metric.get("source_artifact")
+                or not metric.get("unit")
+            ):
+                return False
     return True
 
 

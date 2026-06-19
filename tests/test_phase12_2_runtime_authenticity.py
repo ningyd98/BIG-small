@@ -222,6 +222,17 @@ def test_verifier_rejects_inconsistent_metric_sample_counts() -> None:
     assert phase12_validation._placeholder_metrics_excluded(stats) is False
 
 
+def test_verifier_rejects_metric_provenance_without_source_artifact_or_field() -> None:
+    """Measured/event-derived metrics must identify their source artifact and source field."""
+
+    row = _row("missing-provenance-source")
+    metric = cast("dict[str, dict[str, str]]", row["metric_provenance"])["total_completion_time_ms"]
+    metric["source_artifact"] = ""
+    metric["source_field"] = ""
+
+    assert phase12_validation._metric_provenance_complete([row]) is False
+
+
 def test_paired_difference_requires_both_sides_authoritative() -> None:
     """Successful paired rows are usable only when both backend evidence sides are authoritative."""
 
