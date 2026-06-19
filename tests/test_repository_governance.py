@@ -53,3 +53,13 @@ def test_verify_project_ci_profile_is_ci_safe() -> None:
     assert "verify_phase10_moveit_dry_run.py" not in joined
     assert "run_phase10_acceptance_level.py" not in joined
     assert "run_phase9_2_cross_backend.py" not in joined
+
+
+def test_testing_docs_describe_current_ci_quality_gates() -> None:
+    docs = Path("docs/testing.md").read_text(encoding="utf-8")
+
+    assert "scripts/verify_project.py --profile ci" in docs
+    assert "scripts/check_chinese_comments.py" in docs
+    assert "scripts/check_model_control_secrets.py" in docs
+    assert "Phase 12 smoke" in docs
+    assert "Phase 3-6 验证脚本" not in docs

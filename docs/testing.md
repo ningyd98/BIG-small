@@ -13,12 +13,10 @@ python -m ruff format --check .
 python -m ruff check .
 python -m mypy src/
 python -m pytest -q
-python scripts/verify_phase3.py
-python scripts/verify_phase3_1.py
-python scripts/verify_phase3_2.py
-python scripts/verify_phase4.py
-python scripts/verify_phase5.py
-python scripts/verify_phase6.py
+python scripts/check_docs.py
+python scripts/check_chinese_comments.py
+python scripts/check_model_control_secrets.py
+python scripts/verify_project.py --profile ci
 python -m pip check
 ```
 
@@ -41,7 +39,11 @@ python -m pip check
 
 ## CI
 
-`.github/workflows/ci.yml` 在推送和 PR 时运行。它安装开发依赖后执行编译、格式、lint、mypy、pytest、Phase 3-6 验证脚本和 `pip check`。
+`.github/workflows/ci.yml` 在推送和 PR 时运行。它安装开发依赖后执行编译、
+格式、lint、mypy、pytest、文档一致性检查、`scripts/verify_project.py --profile ci`
+和 `pip check`。项目级 CI profile 会继续编排 `scripts/check_chinese_comments.py`、
+`scripts/check_model_control_secrets.py`、Phase 10 软件侧检查和 Phase 12 smoke
+管线。Phase 12 smoke 只验证实验资产生成链路，不能声明 full profile 或真实硬件验收。
 
 ## 报告规则
 
