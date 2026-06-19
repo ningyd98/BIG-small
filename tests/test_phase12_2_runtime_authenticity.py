@@ -505,6 +505,36 @@ def test_validation_acceptance_uses_readiness_only_full_profile_status(
     assert summary["full_profile_execution_status"] == "NOT_RUN"
 
 
+def test_summary_hardware_claims_are_derived_from_raw_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """summary 顶层硬件字段必须反映 raw runs，而不是固定写成安全值。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    raw_path = root / "runs/raw_runs.jsonl"
+    rows = _read_jsonl(raw_path)
+    rows[0]["real_controller_contacted"] = True
+    rows[0]["hardware_write_operations"] = ["servo_enable"]
+    raw_path.write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["real_controller_contacted_false"] is False
+    assert summary["checks"]["hardware_write_operations_empty"] is False
+    assert summary["real_controller_contacted"] is True
+    assert summary["hardware_write_operations"] == ["servo_enable"]
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+
+
 def test_validation_accepts_committed_sqlite_receipt_without_ignored_db_binary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1437,6 +1467,16 @@ def _patch_minimal_full_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
         "_runner_invocation_count_exactly_one",
         lambda *_: True,
     )
+    monkeypatch.setattr(
+        phase12_validation,
+        "_terminal_artifact_paths_valid_for_rows",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "_recovery_evidence_valid_for_rows",
+        lambda *_: True,
+    )
 
 
 def _patch_minimal_validation_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1481,6 +1521,16 @@ def _patch_minimal_validation_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         phase12_validation,
         "_runner_invocation_count_exactly_one",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "_terminal_artifact_paths_valid_for_rows",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "_recovery_evidence_valid_for_rows",
         lambda *_: True,
     )
 

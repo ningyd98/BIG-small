@@ -81,6 +81,7 @@ def verify_phase12(
             if row.get("status") == "BLOCKED_BY_ENV"
         )
     )
+    hardware_write_operations = _hardware_write_operations(raw_runs)
     sqlite_binary_present_locally = _phase11_sqlite_binary_present_locally(artifact_root, raw_runs)
     sqlite_local_hash_valid = _phase11_sqlite_local_hash_valid(artifact_root, raw_runs)
     checks = {
@@ -251,10 +252,12 @@ def verify_phase12(
             1 for row in raw_runs if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"
         ),
         "blocked_environment_breakdown": blocked_breakdown,
-        "real_controller_contacted": False,
-        "hardware_motion_observed": False,
-        "hardware_write_operations": [],
-        "highest_real_hardware_acceptance_level": "NONE",
+        # 中文说明：summary 顶层安全字段必须来自 raw runs 聚合，不能固定写安全值。
+        # 这样一旦上游 evidence 出现真实控制器接触或硬件写操作，最终报告会如实暴露。
+        "real_controller_contacted": _any_true(raw_runs, "real_controller_contacted"),
+        "hardware_motion_observed": _any_true(raw_runs, "hardware_motion_observed"),
+        "hardware_write_operations": hardware_write_operations,
+        "highest_real_hardware_acceptance_level": _highest_hardware_level(raw_runs),
         "unsafe_command_execution_count": aggregate.get("unsafe_command_execution_count", 0),
         "blocked_by_env_count": aggregate.get("blocked_by_env_count", 0),
         "environment_blockers": ["ISAAC_SIM", "OLLAMA_RUNTIME"]
@@ -377,6 +380,48 @@ def _all_empty(rows: list[dict[str, Any]], key: str) -> bool:
     return all(
         row.get(key, []) == [] and row.get("hardware_claims", {}).get(key, []) == [] for row in rows
     )
+
+
+def _any_true(rows: list[dict[str, Any]], key: str) -> bool:
+    return any(
+        row.get(key, False) is True or row.get("hardware_claims", {}).get(key, False) is True
+        for row in rows
+    )
+
+
+def _hardware_write_operations(rows: list[dict[str, Any]]) -> list[str]:
+    operations: set[str] = set()
+    for row in rows:
+        for value in (
+            row.get("hardware_write_operations"),
+            row.get("hardware_claims", {}).get("hardware_write_operations"),
+        ):
+            if isinstance(value, list):
+                operations.update(str(item) for item in value)
+    return sorted(operations)
+
+
+def _highest_hardware_level(rows: list[dict[str, Any]]) -> str:
+    order = {
+        "NONE": 0,
+        "LEVEL_0": 1,
+        "LEVEL_1": 2,
+        "LEVEL_2": 3,
+        "LEVEL_3": 4,
+        "LEVEL_4": 5,
+        "LEVEL_5": 6,
+        "LEVEL_6": 7,
+    }
+    highest = "NONE"
+    for row in rows:
+        for value in (
+            row.get("highest_real_hardware_acceptance_level"),
+            row.get("hardware_claims", {}).get("highest_real_hardware_acceptance_level"),
+        ):
+            level = str(value or "NONE")
+            if order.get(level, -1) > order.get(highest, -1):
+                highest = level
+    return highest
 
 
 def _failed_or_blocked_counts_match(rows: list[dict[str, Any]], aggregate: dict[str, Any]) -> bool:
