@@ -490,7 +490,8 @@ def test_default_paths_cover_all_tracked_code_files() -> None:
     expected: list[Path] = []
     for name in tracked:
         path = Path(name)
-        if path.parts and path.parts[0] in {"artifacts", "docs"}:
+        # 覆盖说明：文档中的可执行代码块也要审计，只排除生成的验收 artifacts。
+        if path.parts and path.parts[0] == "artifacts":
             continue
         if (
             path.parts
