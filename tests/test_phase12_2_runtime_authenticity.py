@@ -20,6 +20,7 @@ import pytest
 from cloud_edge_robot_arm.final_evaluation import validation as phase12_validation
 from cloud_edge_robot_arm.final_evaluation.aggregation import aggregate_results
 from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile
+from cloud_edge_robot_arm.final_evaluation.report import export_thesis_assets
 from cloud_edge_robot_arm.final_evaluation.runner import run_phase12_experiments
 from cloud_edge_robot_arm.final_evaluation.statistics import compute_group_statistics
 
@@ -260,6 +261,54 @@ def test_verifier_rejects_validation_evidence_from_dirty_worktree(
 
     assert summary["checks"]["source_tree_provenance_present"] is False
     assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+
+
+def test_validation_report_uses_gap_status_when_verifier_rejected_evidence(tmp_path: Path) -> None:
+    """validation 报告必须复用 verifier 状态，不能在 gaps 上写 accepted。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    verification_dir = root / "verification"
+    verification_dir.mkdir(parents=True, exist_ok=True)
+    verification_dir.joinpath("phase12_summary.json").write_text(
+        json.dumps(
+            {
+                "status": "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS",
+                "thesis_status": "THESIS_PACKAGE_INCOMPLETE",
+                "full_profile_readiness_status": "PHASE12_FULL_PROFILE_NOT_READY",
+                "checks": {"source_tree_provenance_present": False},
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    export_thesis_assets(root, profile="validation")
+
+    report = root.joinpath("reports/phase12_validation_report.md").read_text(encoding="utf-8")
+    results = root.joinpath("thesis/experiment_results.md").read_text(encoding="utf-8")
+    assert "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED" not in report
+    assert "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED" not in results
+    assert "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS" in report
+    assert "THESIS_PACKAGE_INCOMPLETE" in results
+
+
+def test_validation_report_without_verifier_summary_does_not_claim_acceptance(
+    tmp_path: Path,
+) -> None:
+    """导出顺序早于 verifier 时，validation 报告不能预先声明 accepted。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+
+    export_thesis_assets(root, profile="validation")
+
+    report = root.joinpath("reports/phase12_validation_report.md").read_text(encoding="utf-8")
+    results = root.joinpath("thesis/experiment_results.md").read_text(encoding="utf-8")
+    assert "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED" not in report
+    assert "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED" not in results
+    assert "VALIDATION_ANALYSIS_PENDING_VERIFICATION" in report
 
 
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:

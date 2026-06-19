@@ -20,7 +20,13 @@ Smoke 数据必须标记为 `SYNTHETIC_PIPELINE_SAMPLE`、`actual_runner_invoked
 
 ## Validation
 
-Validation profile 至少 3 seeds 和 2 repetitions，并必须调用 actual software runners。Isaac、Ollama、MoveIt 环境可 `BLOCKED_BY_ENV`，但 Mock、Phase 8、MuJoCo、Synthetic Dry-Run 和 Rule-Based 不得用公式替代。通过后可声明：
+Validation profile 至少 3 seeds 和 2 repetitions，并必须调用 actual software runners。Isaac、Ollama、MoveIt 环境可 `BLOCKED_BY_ENV`，但 Mock、Phase 8、MuJoCo、Synthetic Dry-Run 和 Rule-Based 不得用公式替代。当前 Phase 12.2 validation artifact 的 provenance 为 `worktree_clean=false`，因此只能声明：
+
+`PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS`
+
+`THESIS_PACKAGE_INCOMPLETE`
+
+只有重新生成 clean provenance 的 validation evidence，并且 `scripts/verify_phase12.py --validation` 输出 accepted 后，才可声明：
 
 `PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED`
 

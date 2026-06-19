@@ -48,7 +48,9 @@ def _write_reports(
     runtime_completions = aggregate.get("runtime_completion_count", actual)
     blocked_before_runtime = aggregate.get("blocked_before_runtime_count", 0)
     authoritative = aggregate.get("authoritative_thesis_run_count", 0)
-    profile_note = _profile_note(profile)
+    verification = _read_optional_json(output_root / "verification/phase12_summary.json")
+    profile_note = _profile_note(profile, verification)
+    thesis_status = str(verification.get("thesis_status", "")) if verification else ""
     report = (
         f"# Phase 12 {profile} 实验报告\n\n"
         f"- 运行总数：{run_count}\n"
@@ -77,7 +79,7 @@ def _write_reports(
             "# 实验结果\n\n"
             f"本次 profile `{profile}` 自动生成 {run_count} 条运行记录，"
             f"其中 BLOCKED_BY_ENV={blocked}，authoritative_for_thesis={authoritative}。\n\n"
-            f"{profile_note}\n"
+            f"{profile_note}\n" + (f"\n- thesis_status：{thesis_status}\n" if thesis_status else "")
         ),
         "discussion.md": (
             "# 讨论\n\n"
@@ -151,15 +153,33 @@ def _write_demo_bundle(output_root: Path, aggregate: dict[str, Any]) -> dict[str
     return {"path": "demo_bundle", "file_count": len(files) + 1}
 
 
-def _profile_note(profile: str) -> str:
+def _profile_note(profile: str, verification: dict[str, Any] | None = None) -> str:
+    if verification:
+        status = str(verification.get("status", "UNKNOWN"))
+        thesis_status = str(verification.get("thesis_status", "UNKNOWN"))
+        readiness = str(verification.get("full_profile_readiness_status", "UNKNOWN"))
+        if status.endswith("_WITH_RUNTIME_EVIDENCE_GAPS") or thesis_status == (
+            "THESIS_PACKAGE_INCOMPLETE"
+        ):
+            return (
+                f"{status}；thesis_status={thesis_status}；"
+                f"full_profile_readiness_status={readiness}。当前 evidence 仍有 gap，"
+                "不得声明 validation accepted、full ready 或最终论文证据 accepted。"
+            )
+        if status:
+            return (
+                f"{status}；thesis_status={thesis_status}；"
+                f"full_profile_readiness_status={readiness}。"
+            )
     if profile == "smoke":
         return (
             "PHASE12_THESIS_ASSET_PIPELINE_READY；数据为 PIPELINE TEST DATA，不得作为论文最终结论。"
         )
     if profile == "validation":
         return (
-            "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED；数据来自 actual software "
-            "runner validation，可用于验收运行链路，不等同 full 论文证据。"
+            "VALIDATION_ANALYSIS_PENDING_VERIFICATION；数据来自 actual software runner "
+            "validation，但尚未读取 verifier summary。不得在 verifier 通过前声明 validation "
+            "analysis accepted。"
         )
     return (
         "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED 仅在 full profile 样本策略和 "
@@ -195,3 +215,9 @@ def _read_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"expected JSON object: {path}")
     return payload
+
+
+def _read_optional_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    return _read_json(path)
