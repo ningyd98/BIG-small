@@ -399,6 +399,19 @@ def test_verifier_rejects_recovery_receipt_without_required_transitions() -> Non
     assert phase12_validation._recovery_evidence_valid(receipt) is False
 
 
+def test_verifier_rejects_runtime_receipt_without_terminal_artifact_paths() -> None:
+    """F20 runtime receipt must list the terminal artifact set, not only summary booleans."""
+
+    receipt = _minimal_f20_receipt()
+    main_job = cast("dict[str, object]", receipt["main_job"])
+    main_job["artifact_paths"] = {
+        "job": "phase11_1/runtime/f20/job.json",
+        "result": "phase11_1/runtime/f20/result.json",
+    }
+
+    assert phase12_validation._terminal_artifact_paths_valid(receipt) is False
+
+
 def test_full_profile_rejects_when_paired_backend_is_not_accepted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

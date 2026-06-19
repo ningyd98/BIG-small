@@ -119,6 +119,9 @@ def verify_phase12(
         "runtime_receipt_hash_valid": _runtime_receipt_hash_valid(artifact_root, raw_runs),
         "phase11_sqlite_evidence_exists": _phase11_sqlite_evidence_exists(artifact_root, raw_runs),
         "worker_lease_evidence_exists": _worker_lease_evidence_exists(artifact_root, raw_runs),
+        "terminal_artifact_paths_valid": _terminal_artifact_paths_valid_for_rows(
+            artifact_root, raw_runs
+        ),
         "recovery_evidence_valid": _recovery_evidence_valid_for_rows(artifact_root, raw_runs),
         "duplicate_competition_evidence_exists": _duplicate_competition_evidence_exists(
             artifact_root, raw_runs
@@ -556,6 +559,42 @@ def _worker_lease_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> boo
         root,
         rows,
         lambda receipt: int(receipt.get("worker_lease_evidence", {}).get("lease_count", 0)) >= 1,
+    )
+
+
+def _terminal_artifact_paths_valid_for_rows(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(root, rows, _terminal_artifact_paths_valid)
+
+
+def _terminal_artifact_paths_valid(receipt: dict[str, Any]) -> bool:
+    main = receipt.get("main_job", {})
+    if not isinstance(main, dict):
+        return False
+    artifacts = main.get("artifact_paths", {})
+    if not isinstance(artifacts, dict):
+        return False
+    required = {
+        "run_manifest",
+        "job",
+        "runtime_job",
+        "attempts",
+        "leases",
+        "lease_history",
+        "events",
+        "state_transitions",
+        "metrics",
+        "result",
+        "provenance",
+        "resource_usage",
+        "cancellation",
+        "recovery",
+        "evidence_consistency",
+    }
+    return (
+        main.get("terminal_artifacts_present") is True
+        and main.get("evidence_consistency_present") is True
+        and required.issubset(set(artifacts))
+        and all(str(artifacts[key]) for key in required)
     )
 
 
