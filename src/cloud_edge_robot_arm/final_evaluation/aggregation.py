@@ -103,9 +103,12 @@ def write_aggregate(output_root: Path, profile: Phase12Profile) -> dict[str, Any
 def _group_payload(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
     stats = compute_group_statistics(rows, group_key=key, metric_key="total_completion_time_ms")
     counters: dict[str, Counter[str]] = {}
+    authoritative_counters: Counter[str] = Counter()
     for row in rows:
         label = str(row.get(key))
         counters.setdefault(label, Counter())[str(row.get("status"))] += 1
+        if row.get("authoritative_for_thesis") is True:
+            authoritative_counters[label] += 1
     for label, counter in counters.items():
         total = sum(counter.values())
         successes = counter.get(Phase12RunStatus.SUCCESS.value, 0)
@@ -114,6 +117,7 @@ def _group_payload(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, 
         stats[label].update(
             {
                 "run_count": total,
+                "authoritative_run_count": authoritative_counters.get(label, 0),
                 "success_count": successes,
                 "success_rate": successes / total if total else 0.0,
                 "success_rate_ci95": [low, high],

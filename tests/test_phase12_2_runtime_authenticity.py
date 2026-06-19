@@ -598,6 +598,23 @@ def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
     assert aggregate.blocked_before_runtime_count == 1
 
 
+def test_group_payload_reports_authoritative_run_count() -> None:
+    """Group summaries must expose authoritative sample counts separately from audit totals."""
+
+    rows = [
+        _row("authoritative-success", authoritative=True),
+        _row("non-authoritative-success", authoritative=False),
+    ]
+
+    aggregate = aggregate_results(Phase12Profile.VALIDATION, rows)
+
+    assert aggregate.by_mode["PCSC"]["run_count"] == 2
+    assert aggregate.by_mode["PCSC"]["success_count"] == 2
+    assert aggregate.by_mode["PCSC"]["authoritative_run_count"] == 1
+    assert aggregate.authoritative_by_mode["PCSC"]["run_count"] == 1
+    assert aggregate.authoritative_by_mode["PCSC"]["authoritative_run_count"] == 1
+
+
 def test_legacy_actual_runner_flag_cannot_create_fake_runtime_count() -> None:
     """旧兼容字段不能绕过 runtime_invoked 语义制造真实运行数量。"""
 
