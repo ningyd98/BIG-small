@@ -7,6 +7,7 @@ terminal artifact 路径生成证据；不再用 Phase8 runner 投影 restart/le
 from __future__ import annotations
 
 import hashlib
+import shutil
 import sqlite3
 import time
 from pathlib import Path
@@ -47,6 +48,8 @@ class Phase11RuntimeAdapter:
 
     def run(self, context: Phase12RunContext) -> Phase12AdapterResult:
         evidence_root = context.output_root / "source_evidence" / context.run_id / "phase11_runtime"
+        if evidence_root.exists():
+            shutil.rmtree(evidence_root)
         evidence_root.mkdir(parents=True, exist_ok=True)
         database_path = evidence_root / "runtime.sqlite3"
         artifact_root = evidence_root / "artifacts"

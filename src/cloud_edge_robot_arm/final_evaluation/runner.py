@@ -102,11 +102,17 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
                                     _runner_kind_for(experiment.runner_kind, backend)
                                 ]
                                 adapter_result = adapter.run(context)
+                                authoritative = _authoritative_for_thesis(manifest, adapter_result)
                                 manifest = manifest.model_copy(
-                                    update=_source_fields(adapter_result),
+                                    update={
+                                        **_source_fields(adapter_result),
+                                        "authoritative_for_thesis": authoritative,
+                                    },
                                     deep=True,
                                 )
-                                result = _result_from_adapter(manifest, adapter_result)
+                                result = _result_from_adapter(
+                                    manifest, adapter_result, authoritative_for_thesis=authoritative
+                                )
                             manifests.append(manifest)
                             rows.append(result)
     _write_jsonl(
@@ -240,11 +246,19 @@ def _runner_kind_for(experiment_runner_kind: str, backend: Phase12Backend) -> st
 
 
 def _result_from_adapter(
-    manifest: Phase12RunManifest, adapter_result: Phase12AdapterResult
+    manifest: Phase12RunManifest,
+    adapter_result: Phase12AdapterResult,
+    *,
+    authoritative_for_thesis: bool | None = None,
 ) -> Phase12Result:
     metrics = adapter_result.metrics
     result_hash = str(metrics.get("result_hash") or stable_hash(metrics))
     artifact_hash = str(metrics.get("artifact_hash") or adapter_result.source_artifact_hash)
+    row_authoritative = (
+        _authoritative_for_thesis(manifest, adapter_result)
+        if authoritative_for_thesis is None
+        else authoritative_for_thesis
+    )
     return Phase12Result(
         run_id=manifest.run_id,
         experiment_id=manifest.experiment_id,
@@ -305,7 +319,7 @@ def _result_from_adapter(
         environment_check_completed=adapter_result.environment_check_completed,
         runtime_invoked=adapter_result.runtime_invoked,
         runtime_completed=adapter_result.runtime_completed,
-        authoritative_for_thesis=adapter_result.authoritative_for_thesis,
+        authoritative_for_thesis=row_authoritative,
         blocker_stage=adapter_result.blocker_stage,
         source_artifact_path=adapter_result.source_artifact_path,
         source_artifact_hash=adapter_result.source_artifact_hash,
@@ -519,6 +533,22 @@ def _source_fields(adapter_result: Phase12AdapterResult) -> dict[str, object]:
         "source_verifier": adapter_result.source_verifier,
         "environment_status": adapter_result.environment_status,
     }
+
+
+def _authoritative_for_thesis(
+    manifest: Phase12RunManifest, adapter_result: Phase12AdapterResult
+) -> bool:
+    """生成端论文权威 gate，避免 dirty provenance 或半完成 runtime 写成权威样本。"""
+
+    return (
+        manifest.worktree_clean
+        and adapter_result.authoritative_for_thesis
+        and adapter_result.runtime_invoked
+        and adapter_result.runtime_completed
+        and adapter_result.environment_status == EnvironmentStatus.READY
+        and bool(adapter_result.source_artifact_path)
+        and bool(adapter_result.source_artifact_hash)
+    )
 
 
 def _execution_source_counts(rows: list[Phase12Result]) -> dict[str, int]:

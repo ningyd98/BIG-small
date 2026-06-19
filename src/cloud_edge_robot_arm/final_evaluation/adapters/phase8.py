@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import Any
 
 from cloud_edge_robot_arm.experiments.models import (
@@ -41,13 +43,19 @@ class Phase8ExperimentRunnerAdapter:
         return EnvironmentStatus.READY
 
     def run(self, context: Phase12RunContext) -> Phase12AdapterResult:
-        config = _experiment_config(context)
+        runtime_workspace = _runtime_workspace(context)
+        if runtime_workspace.exists():
+            shutil.rmtree(runtime_workspace)
+        runtime_workspace.mkdir(parents=True, exist_ok=True)
+        runtime_workspace_rel = runtime_workspace.relative_to(context.output_root).as_posix()
+        config = _experiment_config(context, runtime_workspace=runtime_workspace)
         execution = ExperimentRunner(config).run()
         result = execution.result
         status = _status(result.result_status)
         events = [event.model_dump(mode="json") for event in execution.events]
         payload = {
             "runner": self.runner_kind,
+            "runtime_workspace": runtime_workspace_rel,
             "config_hash": result.config_hash,
             "event_count": len(execution.events),
             "result": result.model_dump(mode="json"),
@@ -88,7 +96,13 @@ class Phase8ExperimentRunnerAdapter:
         return ExecutionSource.PHASE8_ACTUAL_RUN
 
 
-def _experiment_config(context: Phase12RunContext) -> ExperimentConfig:
+def _runtime_workspace(context: Phase12RunContext) -> Path:
+    """返回 Phase12 run 专用 runtime 工作区，避免重跑复用旧 SQLite 状态。"""
+
+    return context.output_root / "source_evidence" / context.run_id / "runtime_workspace"
+
+
+def _experiment_config(context: Phase12RunContext, *, runtime_workspace: Path) -> ExperimentConfig:
     return ExperimentConfig(
         experiment_id=context.experiment_id,
         scenario_id=context.scenario_id,
@@ -106,7 +120,7 @@ def _experiment_config(context: Phase12RunContext) -> ExperimentConfig:
         risk_policy_version="phase12-validation",
         supervision_period_ms=500,
         timeout_ms=30_000,
-        artifact_dir=context.output_root / "source_evidence" / context.run_id,
+        artifact_dir=runtime_workspace,
     )
 
 

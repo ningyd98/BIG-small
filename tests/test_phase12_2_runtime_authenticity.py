@@ -18,11 +18,30 @@ from typing import cast
 import pytest
 
 from cloud_edge_robot_arm.final_evaluation import validation as phase12_validation
+from cloud_edge_robot_arm.final_evaluation.adapters.base import (
+    Phase12AdapterResult,
+    Phase12RunContext,
+)
+from cloud_edge_robot_arm.final_evaluation.adapters.phase8 import Phase8ExperimentRunnerAdapter
+from cloud_edge_robot_arm.final_evaluation.adapters.simulation_runtime import Phase11RuntimeAdapter
 from cloud_edge_robot_arm.final_evaluation.aggregation import aggregate_results
-from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile
+from cloud_edge_robot_arm.final_evaluation.models import (
+    BlockerStage,
+    EnvironmentStatus,
+    ExecutionSource,
+    MetricProvenance,
+    MetricSource,
+    Phase12Backend,
+    Phase12Profile,
+    Phase12RunManifest,
+    Phase12RunStatus,
+)
 from cloud_edge_robot_arm.final_evaluation.plots import export_plots
 from cloud_edge_robot_arm.final_evaluation.report import export_thesis_assets
-from cloud_edge_robot_arm.final_evaluation.runner import run_phase12_experiments
+from cloud_edge_robot_arm.final_evaluation.runner import (
+    _result_from_adapter,
+    run_phase12_experiments,
+)
 from cloud_edge_robot_arm.final_evaluation.statistics import compute_group_statistics
 from cloud_edge_robot_arm.final_evaluation.tables import export_tables
 
@@ -454,6 +473,64 @@ def test_planner_provider_is_explicit_and_latency_measured(tmp_path: Path) -> No
     )
 
 
+def test_dirty_provenance_cannot_mark_row_authoritative_for_thesis() -> None:
+    """dirty worktree provenance 下，单行也不能写成论文权威样本。"""
+
+    manifest = _manifest_like(worktree_clean=False)
+    result = _result_from_adapter(manifest, _successful_adapter_result())
+
+    assert result.runtime_completed is True
+    assert result.authoritative_for_thesis is False
+
+
+def test_phase8_adapter_rerun_uses_isolated_runtime_workspace(tmp_path: Path) -> None:
+    """Phase8 adapter 重跑同一 run_id 时不得复用旧 SQLite runtime state。"""
+
+    context = Phase12RunContext(
+        run_id="phase12-repeat",
+        experiment_id="F01_PC_SC_BASELINE",
+        scenario_id="S01_NORMAL_STATIC",
+        backend=Phase12Backend.MOCK,
+        control_mode="PCSC",
+        seed=0,
+        repetition=0,
+        output_root=tmp_path,
+    )
+    adapter = Phase8ExperimentRunnerAdapter()
+
+    first = adapter.run(context)
+    second = adapter.run(context)
+
+    assert first.runtime_completed is True
+    assert second.runtime_completed is True
+    receipt = json.loads((tmp_path / second.source_artifact_path).read_text(encoding="utf-8"))
+    assert receipt["runtime_workspace"] == "source_evidence/phase12-repeat/runtime_workspace"
+
+
+def test_phase11_runtime_adapter_rerun_uses_fresh_sqlite_repository(tmp_path: Path) -> None:
+    """Phase11 runtime adapter 重跑同一 run_id 时不得复用旧 runtime.db。"""
+
+    context = Phase12RunContext(
+        run_id="phase12-runtime-repeat",
+        experiment_id="F20_STRESS_AND_RECOVERY",
+        scenario_id="S15_SQLITE_RESTART_DURING_RUN",
+        backend=Phase12Backend.MOCK,
+        control_mode="AUTO",
+        seed=0,
+        repetition=0,
+        output_root=tmp_path,
+    )
+    adapter = Phase11RuntimeAdapter()
+
+    first = adapter.run(context)
+    second = adapter.run(context)
+
+    assert first.runtime_completed is True
+    assert second.runtime_completed is True
+    receipt = json.loads((tmp_path / second.source_artifact_path).read_text(encoding="utf-8"))
+    assert receipt["sqlite_evidence"]["exists"] is True
+
+
 def _run_validation_pipeline(output: Path) -> None:
     commands = [
         [
@@ -503,6 +580,61 @@ def _as_int(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"expected int, got {value!r}")
     return value
+
+
+def _manifest_like(*, worktree_clean: bool) -> Phase12RunManifest:
+    return Phase12RunManifest(
+        run_id="phase12-test",
+        experiment_id="F01_PC_SC_BASELINE",
+        research_question="RQ1",
+        profile=Phase12Profile.VALIDATION,
+        backend=Phase12Backend.MOCK,
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        repetition=0,
+        source_commit="commit",
+        source_tree_hash="tree",
+        worktree_clean=worktree_clean,
+        config_hash="config",
+        environment_hash="environment",
+        planner_provider="NONE",
+        model_name="",
+    )
+
+
+def _successful_adapter_result() -> Phase12AdapterResult:
+    provenance = {
+        "total_completion_time_ms": MetricProvenance(
+            source=MetricSource.MEASURED,
+            source_field="test.duration",
+            source_artifact="source_evidence/test/receipt.json",
+            unit="ms",
+        )
+    }
+    return Phase12AdapterResult(
+        status=Phase12RunStatus.SUCCESS,
+        task_success=True,
+        metrics={
+            "task_completion_rate": 1.0,
+            "total_completion_time_ms": 10.0,
+            "completed_without_cloud_after_start": True,
+        },
+        events=[],
+        execution_source=ExecutionSource.PHASE8_ACTUAL_RUN,
+        actual_runner_invoked=True,
+        adapter_attempted=True,
+        environment_check_completed=True,
+        runtime_invoked=True,
+        runtime_completed=True,
+        authoritative_for_thesis=True,
+        blocker_stage=BlockerStage.NONE,
+        source_artifact_path="source_evidence/test/receipt.json",
+        source_artifact_hash="hash",
+        source_verifier="test",
+        environment_status=EnvironmentStatus.READY,
+        metric_provenance=provenance,
+    )
 
 
 def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:

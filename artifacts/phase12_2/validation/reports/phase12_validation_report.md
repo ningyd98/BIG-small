@@ -6,7 +6,7 @@
 - runtime invocations：466
 - runtime completions：466
 - blocked before runtime：74
-- row-level runtime-complete runs：466
+- row-level runtime-complete runs：0
 - verifier-gated thesis runs：0
 - 环境阻塞：74
 - unsafe_command_execution_count：0
