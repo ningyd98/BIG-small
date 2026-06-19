@@ -72,6 +72,12 @@ def paired_difference_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         if statuses != {"SUCCESS"}:
             continue
+        if (
+            pair.get("left_authoritative") is not True
+            or pair.get("right_authoritative") is not True
+        ):
+            failed += 1
+            continue
         left = _to_float(pair.get("left_value"))
         right = _to_float(pair.get("right_value"))
         if left is None or right is None:

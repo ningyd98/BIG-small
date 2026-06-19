@@ -46,7 +46,10 @@ from cloud_edge_robot_arm.final_evaluation.runner import (
     _result_from_adapter,
     run_phase12_experiments,
 )
-from cloud_edge_robot_arm.final_evaluation.statistics import compute_group_statistics
+from cloud_edge_robot_arm.final_evaluation.statistics import (
+    compute_group_statistics,
+    paired_difference_summary,
+)
 from cloud_edge_robot_arm.final_evaluation.tables import export_tables
 
 
@@ -185,6 +188,28 @@ def test_metric_statistics_require_row_level_authority() -> None:
     assert stats["PCSC"]["sample_count"] == 1
     assert stats["PCSC"]["mean"] == 100.0
     assert stats["PCSC"]["excluded_metric_sample_count"] == 1
+
+
+def test_paired_difference_requires_both_sides_authoritative() -> None:
+    """Successful paired rows are usable only when both backend evidence sides are authoritative."""
+
+    summary = paired_difference_summary(
+        [
+            {
+                "left_status": "SUCCESS",
+                "right_status": "SUCCESS",
+                "left_value": 100.0,
+                "right_value": 120.0,
+                "left_authoritative": True,
+                "right_authoritative": False,
+            }
+        ]
+    )
+
+    assert summary["usable_pair_count"] == 0
+    assert summary["usable_authoritative_pair_count"] == 0
+    assert summary["failed_pair_count"] == 1
+    assert summary["paired_backend_experiment_accepted"] is False
 
 
 def test_f20_uses_real_phase11_runtime_receipts(tmp_path: Path) -> None:
