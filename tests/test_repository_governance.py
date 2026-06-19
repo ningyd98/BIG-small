@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -77,3 +78,32 @@ def test_authoritative_status_preserves_phase12_and_hardware_boundaries() -> Non
     assert "`hardware_write_operations=[]`" in status
     assert "BIGSMALL_REAL_ROBOT_PROJECT_ACCEPTED" in status
     assert "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED" not in status
+
+
+def test_authoritative_status_has_matching_accepted_artifacts() -> None:
+    phase11_2 = json.loads(
+        Path("artifacts/phase11_2/verification/phase11_2_summary.json").read_text(encoding="utf-8")
+    )
+    phase12 = json.loads(
+        Path("artifacts/phase12_2_clean/validation/verification/phase12_summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert phase11_2["phase11_2_model_control_status"] == (
+        "PHASE11_2_MODEL_CONTROL_CENTER_ACCEPTED"
+    )
+    assert phase11_2["status"] == "PHASE11_2_SIMULATION_AI_CONSOLE_ACCEPTED"
+    assert phase11_2["local_model_runtime_accepted"] is False
+    assert phase11_2["installed_model_count"] == 0
+    assert phase11_2["real_controller_contacted"] is False
+    assert phase11_2["hardware_motion_observed"] is False
+    assert phase11_2["hardware_write_operations"] == []
+
+    assert phase12["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+    assert phase12["thesis_status"] == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
+    assert phase12["project_status"] == "NOT_CLOSED"
+    assert phase12["full_profile_execution_status"] == "NOT_RUN"
+    assert phase12["real_controller_contacted"] is False
+    assert phase12["hardware_motion_observed"] is False
+    assert phase12["hardware_write_operations"] == []
