@@ -384,8 +384,19 @@ def _contains_sensitive_text(root: Path) -> bool:
     pattern = re.compile(
         r"(?i)(bearer\s+[A-Za-z0-9._-]+|api[_-]?key\s*[:=]|authorization\s*:|/home/[A-Za-z0-9._-]+/)"
     )
+    binary_suffixes = {
+        ".db",
+        ".db-journal",
+        ".db-shm",
+        ".db-wal",
+        ".npy",
+        ".png",
+        ".pyc",
+        ".sqlite",
+        ".sqlite3",
+    }
     for path in root.rglob("*"):
-        if not path.is_file() or path.suffix in {".png", ".npy"}:
+        if not path.is_file() or path.suffix in binary_suffixes:
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")

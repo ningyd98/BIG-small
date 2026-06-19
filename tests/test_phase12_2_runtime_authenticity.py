@@ -106,6 +106,20 @@ def test_validation_summary_reports_adapter_backend_counts(tmp_path: Path) -> No
     assert verification["adapter_backend_counts"] != verification["runtime_backend_counts"]
 
 
+def test_phase12_sensitive_text_scan_ignores_sqlite3_runtime_databases(tmp_path: Path) -> None:
+    """Phase 12 verifier must not decode SQLite runtime DBs as text artifacts."""
+
+    root = tmp_path / "phase12_artifacts"
+    root.mkdir()
+    binary_secret_like_payload = (
+        b"SQLite format 3\x00binary " + b"Auth" + b"orization" + b": bearer-not-a-text-artifact"
+    )
+    (root / "runtime.sqlite3").write_bytes(binary_secret_like_payload)
+    (root / "summary.json").write_text('{"status": "ok"}\n', encoding="utf-8")
+
+    assert phase12_validation._contains_sensitive_text(root) is False
+
+
 def test_metric_provenance_excludes_placeholder_and_adapter_derived_statistics() -> None:
     """Only measured/event-derived metric values enter thesis statistics by default."""
 
