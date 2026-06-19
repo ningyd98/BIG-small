@@ -98,7 +98,7 @@ def verify_phase12(
         "hardware_write_operations_empty": _all_empty(raw_runs, "hardware_write_operations"),
         "no_sensitive_artifacts": not _contains_sensitive_text(artifact_root),
         "source_tree_provenance_present": bool(provenance.get("source_tree_hash")),
-        "actual_runner_invocation_verified": _actual_runner_invocation_verified(profile, raw_runs),
+        "adapter_attempts_verified": _adapter_attempts_verified(profile, raw_runs),
         "source_artifact_hash_verified": _source_artifact_hash_verified(artifact_root, raw_runs),
         "sample_policy_satisfied": _sample_policy_satisfied(profile, raw_runs, plan),
         "paired_run_completeness": _paired_run_completeness(raw_runs),
@@ -204,7 +204,7 @@ def verify_phase12(
         "authoritative_thesis_run_count": authoritative_count,
         "actual_backend_counts": actual_backend_counts,
         "runtime_backend_counts": runtime_backend_counts,
-        "actual_runner_invocation_verified": checks["actual_runner_invocation_verified"],
+        "adapter_attempts_verified": checks["adapter_attempts_verified"],
         "source_artifact_hash_verified": checks["source_artifact_hash_verified"],
         "sample_policy_satisfied": checks["sample_policy_satisfied"],
         "paired_run_completeness": checks["paired_run_completeness"],
@@ -347,7 +347,9 @@ def _contains_sensitive_text(root: Path) -> bool:
     return False
 
 
-def _actual_runner_invocation_verified(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:
+def _adapter_attempts_verified(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:
+    """验证 adapter 尝试语义；真实 runtime 数量由 runtime_invoked 单独统计。"""
+
     if profile == Phase12Profile.SMOKE:
         return all(
             row.get("runtime_invoked", row.get("actual_runner_invoked")) is False for row in rows
