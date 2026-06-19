@@ -25,6 +25,7 @@ from cloud_edge_robot_arm.final_evaluation.statistics import (
     compute_group_statistics,
     paired_difference_summary,
 )
+from cloud_edge_robot_arm.final_evaluation.tables import _table_rows
 
 
 def test_phase12_registry_defines_f01_to_f20_without_hardware_runners() -> None:
@@ -243,3 +244,33 @@ def test_demo_bundle_summary_secret_flag_is_not_hardcoded(
     summary = json.loads((tmp_path / "demo_bundle/demo_summary.json").read_text())
 
     assert summary["contains_secret"] is True
+
+
+def test_system_capability_table_statuses_are_derived_from_aggregate() -> None:
+    """T1 系统能力状态必须来自 aggregate 输入，不能无条件写 ACCEPTED。"""
+
+    rows = _table_rows(
+        {
+            "run_count": 0,
+            "authoritative_thesis_run_count": 0,
+            "synthetic_sample_count": 0,
+            "capability_statuses": {
+                "Simulation Workbench": {
+                    "status": "REJECTED",
+                    "hardware_claim": "simulation-only",
+                },
+                "Model Control Center": {
+                    "status": "BLOCKED_BY_ENV",
+                    "hardware_claim": "no-hardware",
+                },
+            },
+        },
+        {},
+        data_authority="PENDING_VERIFICATION_DATA",
+    )
+
+    statuses = {row["capability"]: row["status"] for row in rows["t1_system_capability"]}
+
+    assert statuses["Simulation Workbench"] == "REJECTED"
+    assert statuses["Model Control Center"] == "BLOCKED_BY_ENV"
+    assert statuses["Real Robot"] == "NOT_STARTED"

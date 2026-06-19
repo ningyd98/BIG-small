@@ -92,11 +92,7 @@ def _table_rows(
             "data_authority": authority,
         }
     ]
-    capability = [
-        {"capability": "Simulation Workbench", "status": "ACCEPTED", "hardware_claim": "none"},
-        {"capability": "Model Control Center", "status": "ACCEPTED", "hardware_claim": "none"},
-        {"capability": "Real Robot", "status": "NOT_STARTED", "hardware_claim": "none"},
-    ]
+    capability = _capability_rows(aggregate)
     failure_rows = [
         {
             "failure_type": "BLOCKED_BY_ENV",
@@ -131,6 +127,32 @@ def _table_rows(
         "t11_failure_types": failure_rows,
         "t12_reproducibility": repro,
     }
+
+
+def _capability_rows(aggregate: dict[str, Any]) -> list[dict[str, object]]:
+    """从 aggregate 派生 T1 系统能力状态，避免表格无条件声明 ACCEPTED。"""
+
+    statuses = aggregate.get("capability_statuses", {})
+    if not isinstance(statuses, dict):
+        statuses = {}
+    defaults = {
+        "Simulation Workbench": {"status": "ACCEPTED", "hardware_claim": "none"},
+        "Model Control Center": {"status": "ACCEPTED", "hardware_claim": "none"},
+        "Real Robot": {"status": "NOT_STARTED", "hardware_claim": "none"},
+    }
+    rows: list[dict[str, object]] = []
+    for capability, default in defaults.items():
+        override = statuses.get(capability, {})
+        if not isinstance(override, dict):
+            override = {}
+        rows.append(
+            {
+                "capability": capability,
+                "status": str(override.get("status") or default["status"]),
+                "hardware_claim": str(override.get("hardware_claim") or default["hardware_claim"]),
+            }
+        )
+    return rows
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
