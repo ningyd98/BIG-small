@@ -32,7 +32,12 @@ def export_thesis_assets(output_root: Path, *, profile: str) -> dict[str, Any]:
     )
     tables = export_tables(output_root, aggregate, statistics, data_authority=data_authority)
     reports = _write_reports(output_root, profile, aggregate, statistics, verification)
-    demo = _write_demo_bundle(output_root, aggregate)
+    demo = _write_demo_bundle(
+        output_root,
+        aggregate,
+        data_authority=data_authority,
+        verifier_gated_authoritative_thesis_run_count=verifier_gated_authoritative,
+    )
     return {
         "profile": profile,
         "plot_count": len(plots),
@@ -129,7 +134,13 @@ def _write_reports(
     ]
 
 
-def _write_demo_bundle(output_root: Path, aggregate: dict[str, Any]) -> dict[str, Any]:
+def _write_demo_bundle(
+    output_root: Path,
+    aggregate: dict[str, Any],
+    *,
+    data_authority: str,
+    verifier_gated_authoritative_thesis_run_count: int,
+) -> dict[str, Any]:
     demo = output_root / "demo_bundle"
     demo.mkdir(parents=True, exist_ok=True)
     files = {
@@ -160,6 +171,10 @@ def _write_demo_bundle(output_root: Path, aggregate: dict[str, Any]) -> dict[str
             {
                 "file_count": len(files),
                 "run_count": aggregate.get("run_count", 0),
+                "data_authority": data_authority,
+                "verifier_gated_authoritative_thesis_run_count": (
+                    verifier_gated_authoritative_thesis_run_count
+                ),
                 "contains_secret": False,
                 "real_controller_contacted": False,
                 "hardware_motion_observed": False,

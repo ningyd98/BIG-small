@@ -525,9 +525,14 @@ def test_validation_gap_exports_do_not_mark_plots_or_tables_authoritative(
     export_thesis_assets(root, profile="validation")
 
     plot_index = json.loads(root.joinpath("plots/plot_index.json").read_text(encoding="utf-8"))
+    demo_summary = json.loads(
+        root.joinpath("demo_bundle/demo_summary.json").read_text(encoding="utf-8")
+    )
     table = root.joinpath("tables/csv/t2_mode_baseline.csv").read_text(encoding="utf-8")
     assert plot_index["data_authority"] == "VALIDATION_GAP_DATA"
     assert plot_index["verifier_gated_authoritative_thesis_run_count"] == 0
+    assert demo_summary["data_authority"] == "VALIDATION_GAP_DATA"
+    assert demo_summary["verifier_gated_authoritative_thesis_run_count"] == 0
     assert "VALIDATION_GAP_DATA" in table
     assert "AUTHORITATIVE_THESIS_DATA" not in table
 
