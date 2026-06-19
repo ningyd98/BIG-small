@@ -623,13 +623,28 @@ def _recovery_evidence_valid(receipt: dict[str, Any]) -> bool:
 
 
 def _duplicate_competition_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> bool:
-    return _all_f20_receipts(
-        root,
-        rows,
-        lambda receipt: (
-            bool(receipt.get("duplicate_competition_evidence", {}).get("lease_winner"))
-            and bool(receipt.get("duplicate_competition_evidence", {}).get("lease_loser"))
-        ),
+    return _all_f20_receipts(root, rows, _duplicate_competition_evidence_valid)
+
+
+def _duplicate_competition_evidence_valid(receipt: dict[str, Any]) -> bool:
+    duplicate = receipt.get("duplicate_competition_evidence", {})
+    if not isinstance(duplicate, dict):
+        return False
+    winner = str(duplicate.get("lease_winner", ""))
+    loser = str(duplicate.get("lease_loser", ""))
+    workers = duplicate.get("competing_worker_ids", [])
+    if not isinstance(workers, list):
+        return False
+    return (
+        bool(winner)
+        and bool(loser)
+        and winner != loser
+        and winner in workers
+        and loser in workers
+        and duplicate.get("runner_invocation_count") == 1
+        and int(duplicate.get("attempt_count", 0)) == 1
+        and int(duplicate.get("lease_count", 0)) == 1
+        and duplicate.get("final_status") == "SUCCEEDED"
     )
 
 

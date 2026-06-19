@@ -412,6 +412,16 @@ def test_verifier_rejects_runtime_receipt_without_terminal_artifact_paths() -> N
     assert phase12_validation._terminal_artifact_paths_valid(receipt) is False
 
 
+def test_verifier_rejects_duplicate_competition_with_same_winner_and_loser() -> None:
+    """Duplicate worker competition evidence must prove that two distinct workers competed."""
+
+    receipt = _minimal_f20_receipt()
+    duplicate = cast("dict[str, object]", receipt["duplicate_competition_evidence"])
+    duplicate["lease_loser"] = duplicate["lease_winner"]
+
+    assert phase12_validation._duplicate_competition_evidence_valid(receipt) is False
+
+
 def test_full_profile_rejects_when_paired_backend_is_not_accepted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1151,22 +1161,13 @@ def _write_minimal_f20_validation_artifact(root: Path, *, include_sqlite_binary:
     receipt_path = root / "source_evidence/f20/phase11_runtime_actual_run.json"
     sqlite_rel = "source_evidence/f20/phase11_runtime/runtime.sqlite3"
     sqlite_hash = hashlib.sha256(b"sqlite-bytes").hexdigest()
-    receipt = {
-        "runner": "PHASE11_SIMULATION_RUNTIME",
-        "run_id": "f20-runtime",
-        "sqlite_evidence": {
-            "exists": True,
-            "relative_path": sqlite_rel,
-            "relative_name": "runtime.sqlite3",
-            "sha256": sqlite_hash,
-            "tables": {"simulation_jobs": 3, "simulation_job_events": 10},
-        },
-        "worker_lease_evidence": {"lease_count": 1},
-        "duplicate_competition_evidence": {
-            "lease_winner": "worker-a",
-            "lease_loser": "worker-b",
-            "runner_invocation_count": 1,
-        },
+    receipt = _minimal_f20_receipt()
+    receipt["sqlite_evidence"] = {
+        "exists": True,
+        "relative_path": sqlite_rel,
+        "relative_name": "runtime.sqlite3",
+        "sha256": sqlite_hash,
+        "tables": {"simulation_jobs": 3, "simulation_job_events": 10},
     }
     receipt["runtime_receipt_hash"] = _stable_payload_hash(receipt)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1232,6 +1233,7 @@ def _minimal_f20_receipt() -> dict[str, object]:
             "status": "SUCCEEDED",
             "terminal_artifacts_present": True,
             "evidence_consistency_present": True,
+            "artifact_paths": _minimal_terminal_artifact_paths(),
         },
         "recovery_evidence": {
             "lease_expired": True,
@@ -1244,6 +1246,10 @@ def _minimal_f20_receipt() -> dict[str, object]:
             ],
         },
         "duplicate_competition_evidence": {
+            "attempt_count": 1,
+            "competing_worker_ids": ["worker-a", "worker-b"],
+            "final_status": "SUCCEEDED",
+            "lease_count": 1,
             "lease_winner": "worker-a",
             "lease_loser": "worker-b",
             "runner_invocation_count": 1,
@@ -1253,6 +1259,26 @@ def _minimal_f20_receipt() -> dict[str, object]:
             "heartbeat_observed": True,
             "released_lease_count": 1,
         },
+    }
+
+
+def _minimal_terminal_artifact_paths() -> dict[str, str]:
+    return {
+        "run_manifest": "phase11_1/runtime/f20/run_manifest.json",
+        "job": "phase11_1/runtime/f20/job.json",
+        "runtime_job": "phase11_1/runtime/f20/runtime_job.json",
+        "attempts": "phase11_1/runtime/f20/attempts.jsonl",
+        "leases": "phase11_1/runtime/f20/leases.jsonl",
+        "lease_history": "phase11_1/runtime/f20/lease_history.jsonl",
+        "events": "phase11_1/runtime/f20/events.jsonl",
+        "state_transitions": "phase11_1/runtime/f20/state_transitions.jsonl",
+        "metrics": "phase11_1/runtime/f20/metrics.json",
+        "result": "phase11_1/runtime/f20/result.json",
+        "provenance": "phase11_1/runtime/f20/provenance.json",
+        "resource_usage": "phase11_1/runtime/f20/resource_usage.json",
+        "cancellation": "phase11_1/runtime/f20/cancellation.json",
+        "recovery": "phase11_1/runtime/f20/recovery.json",
+        "evidence_consistency": "phase11_1/runtime/f20/evidence_consistency.json",
     }
 
 
