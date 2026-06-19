@@ -218,6 +218,25 @@ def test_full_profile_ready_status_matches_full_acceptance(tmp_path: Path, monke
     assert summary["project_status"] == "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED"
 
 
+def test_verifier_rejects_when_failed_or_blocked_counts_do_not_match_raw_runs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """aggregate 不能把 raw runs 中的失败或阻塞样本静默删掉。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=0, aggregate_failed=0)
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["failed_or_blocked_not_deleted"] is False
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+
+
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
     """Aggregates must separate adapter attempts from actual runtime invocation."""
 
@@ -379,6 +398,7 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
             {
                 "unsafe_command_execution_count": 0,
                 "blocked_by_env_count": 0,
+                "failed_count": 0,
             },
             sort_keys=True,
         )
@@ -407,6 +427,83 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
     root.joinpath("demo_bundle/demo_summary.json").write_text("{}\n")
 
 
+def _write_minimal_validation_artifact(
+    root: Path, *, aggregate_blocked: int, aggregate_failed: int
+) -> None:
+    _write_minimal_artifact_common(root)
+    rows = [
+        _row("runtime-success"),
+        _row(
+            "blocked-env",
+            status="BLOCKED_BY_ENV",
+            source="PHASE9_2_ISAAC_ENVIRONMENT_CHECK",
+            runtime_invoked=False,
+            runtime_completed=False,
+            authoritative=False,
+        ),
+        _row(
+            "runtime-failed",
+            status="FAILED",
+            runtime_invoked=True,
+            runtime_completed=False,
+            authoritative=False,
+        ),
+    ]
+    root.joinpath("runs/raw_runs.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    root.joinpath("aggregates/phase12_aggregate.json").write_text(
+        json.dumps(
+            {
+                "unsafe_command_execution_count": 0,
+                "blocked_by_env_count": aggregate_blocked,
+                "failed_count": aggregate_failed,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    root.joinpath("paired/paired_summary.json").write_text(
+        json.dumps({"paired_backend_experiment_accepted": False}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_minimal_artifact_common(root: Path) -> None:
+    for path in [
+        root / "runs",
+        root / "aggregates",
+        root / "statistics",
+        root / "manifests",
+        root / "paired",
+        root / "plots/png",
+        root / "plots/svg",
+        root / "tables/csv",
+        root / "tables/latex",
+        root / "thesis",
+        root / "demo_bundle",
+    ]:
+        path.mkdir(parents=True, exist_ok=True)
+    root.joinpath("statistics/phase12_statistics.json").write_text(
+        json.dumps({"group_statistics": {"PCSC": {"sample_count": 1}}}) + "\n",
+        encoding="utf-8",
+    )
+    root.joinpath("manifests/provenance.json").write_text(
+        json.dumps({"source_tree_hash": "tree", "worktree_clean": True}) + "\n",
+        encoding="utf-8",
+    )
+    root.joinpath("plots/png/success_rate_comparison.png").write_bytes(b"png")
+    root.joinpath("plots/svg/success_rate_comparison.svg").write_text("<svg />")
+    root.joinpath("tables/csv/t2_mode_baseline.csv").write_text("metric,value\n")
+    root.joinpath("tables/latex/t2_mode_baseline.tex").write_text(
+        "\\begin{tabular}{}\\end{tabular}"
+    )
+    root.joinpath("thesis/experiment_results.md").write_text("results")
+    root.joinpath("demo_bundle/demo_summary.json").write_text("{}\n")
+
+
 def _patch_minimal_full_verifier(monkeypatch) -> None:
     monkeypatch.setattr(
         phase12_validation,
@@ -428,6 +525,52 @@ def _patch_minimal_full_verifier(monkeypatch) -> None:
         "build_experiment_plan",
         lambda profile: SimpleNamespace(
             run_count=1,
+            seed_count=1,
+            repetitions=1,
+            experiments=[],
+        ),
+    )
+    monkeypatch.setattr(phase12_validation, "_source_artifact_hash_verified", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_sample_policy_satisfied", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_paired_run_completeness", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_stress_task_count_satisfied", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_runtime_receipts_exist", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_runtime_receipt_hash_valid", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_phase11_sqlite_evidence_exists", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_worker_lease_evidence_exists", lambda *_: True)
+    monkeypatch.setattr(
+        phase12_validation,
+        "_duplicate_competition_evidence_exists",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "_runner_invocation_count_exactly_one",
+        lambda *_: True,
+    )
+
+
+def _patch_minimal_validation_verifier(monkeypatch) -> None:
+    monkeypatch.setattr(
+        phase12_validation,
+        "PHASE12_EXPERIMENT_IDS",
+        ["F01_PC_SC_BASELINE"],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "final_experiment_registry",
+        lambda: [
+            SimpleNamespace(
+                experiment_id="F01_PC_SC_BASELINE",
+                runner_kind="PHASE8_EXPERIMENT_RUNNER",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "build_experiment_plan",
+        lambda profile: SimpleNamespace(
+            run_count=3,
             seed_count=1,
             repetitions=1,
             experiments=[],

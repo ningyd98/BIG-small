@@ -91,7 +91,7 @@ def verify_phase12(
         and (artifact_root / "tables/latex/t2_mode_baseline.tex").exists(),
         "thesis_docs_exist": (artifact_root / "thesis/experiment_results.md").exists(),
         "demo_bundle_exists": (artifact_root / "demo_bundle/demo_summary.json").exists(),
-        "failed_or_blocked_not_deleted": aggregate.get("blocked_by_env_count", 0) >= 0,
+        "failed_or_blocked_not_deleted": _failed_or_blocked_counts_match(raw_runs, aggregate),
         "unsafe_command_execution_zero": aggregate.get("unsafe_command_execution_count") == 0,
         "real_controller_contacted_false": _all_false(raw_runs, "real_controller_contacted"),
         "hardware_motion_observed_false": _all_false(raw_runs, "hardware_motion_observed"),
@@ -327,6 +327,16 @@ def _all_false(rows: list[dict[str, Any]], key: str) -> bool:
 
 def _all_empty(rows: list[dict[str, Any]], key: str) -> bool:
     return all(row.get("hardware_claims", {}).get(key, []) == [] for row in rows)
+
+
+def _failed_or_blocked_counts_match(rows: list[dict[str, Any]], aggregate: dict[str, Any]) -> bool:
+    """确认 aggregate 没有漏报 raw runs 中的失败、超时、安全停止或环境阻塞样本。"""
+
+    blocked = sum(1 for row in rows if row.get("status") == "BLOCKED_BY_ENV")
+    failed = sum(1 for row in rows if row.get("status") in {"FAILED", "TIMEOUT", "SAFETY_STOPPED"})
+    return (
+        aggregate.get("blocked_by_env_count") == blocked and aggregate.get("failed_count") == failed
+    )
 
 
 def _contains_sensitive_text(root: Path) -> bool:
