@@ -68,6 +68,9 @@ def verify_phase12(
     actual_backend_counts = dict(
         Counter(str(row.get("backend")) for row in raw_runs if row.get("runtime_invoked"))
     )
+    adapter_backend_counts = dict(
+        Counter(str(row.get("backend")) for row in raw_runs if row.get("adapter_attempted"))
+    )
     runtime_backend_counts = dict(
         Counter(str(row.get("backend")) for row in raw_runs if row.get("runtime_invoked"))
     )
@@ -225,6 +228,7 @@ def verify_phase12(
         "authoritative_thesis_run_count": authoritative_count,
         "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
         "actual_backend_counts": actual_backend_counts,
+        "adapter_backend_counts": adapter_backend_counts,
         "runtime_backend_counts": runtime_backend_counts,
         "adapter_attempts_verified": checks["adapter_attempts_verified"],
         "source_artifact_hash_verified": checks["source_artifact_hash_verified"],

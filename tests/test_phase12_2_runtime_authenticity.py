@@ -77,6 +77,35 @@ def test_blocked_environment_rows_are_not_runtime_execution(tmp_path: Path) -> N
     assert run_summary["actual_run_count_semantics"] == summary["actual_run_count_semantics"]
 
 
+def test_validation_summary_reports_adapter_backend_counts(tmp_path: Path) -> None:
+    """Backend breakdown must include blocked adapter attempts, not only runtime invocations."""
+
+    output = tmp_path / "phase12_2"
+    _run_validation_pipeline(output)
+    rows = _read_jsonl(output / "runs/raw_runs.jsonl")
+    verification = json.loads(
+        (output / "verification/phase12_summary.json").read_text(encoding="utf-8")
+    )
+    expected_adapter_counts = dict(
+        Counter(str(row["backend"]) for row in rows if row["adapter_attempted"] is True)
+    )
+    expected_runtime_counts = dict(
+        Counter(str(row["backend"]) for row in rows if row["runtime_invoked"] is True)
+    )
+
+    assert verification["adapter_backend_counts"] == expected_adapter_counts
+    assert verification["runtime_backend_counts"] == expected_runtime_counts
+    assert (
+        sum(verification["adapter_backend_counts"].values())
+        == verification["adapter_attempt_count"]
+    )
+    assert (
+        sum(verification["runtime_backend_counts"].values())
+        == verification["runtime_invocation_count"]
+    )
+    assert verification["adapter_backend_counts"] != verification["runtime_backend_counts"]
+
+
 def test_metric_provenance_excludes_placeholder_and_adapter_derived_statistics() -> None:
     """Only measured/event-derived metric values enter thesis statistics by default."""
 
