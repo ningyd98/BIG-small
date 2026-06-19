@@ -246,10 +246,17 @@ def verify_phase12(
             "synthetic_sample_count": synthetic_sample_count,
             "actual_run_count": actual_run_count,
             "authoritative_thesis_run_count": authoritative_count,
+            "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
             "checks": checks,
         },
     )
-    _write_json(output_dir / "statistics_verification.json", {"statistics_keys": sorted(stats)})
+    _write_json(
+        output_dir / "statistics_verification.json",
+        {
+            "statistics_keys": sorted(stats),
+            "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
+        },
+    )
     _write_json(output_dir / "thesis_assets_verification.json", {"thesis_ready": thesis_ready})
     _write_json(
         output_dir / "security_boundary_verification.json",

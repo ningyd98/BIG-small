@@ -264,6 +264,11 @@ def test_verifier_rejects_validation_evidence_from_dirty_worktree(
     assert summary["checks"]["source_tree_provenance_present"] is False
     assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
     assert summary["verifier_gated_authoritative_thesis_run_count"] == 0
+    integrity = json.loads(
+        root.joinpath("verification/run_integrity_verification.json").read_text(encoding="utf-8")
+    )
+    assert integrity["authoritative_thesis_run_count"] == 1
+    assert integrity["verifier_gated_authoritative_thesis_run_count"] == 0
 
 
 def test_validation_report_uses_gap_status_when_verifier_rejected_evidence(tmp_path: Path) -> None:
