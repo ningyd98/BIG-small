@@ -102,12 +102,10 @@ def verify_phase12(
         "source_artifact_hash_verified": _source_artifact_hash_verified(artifact_root, raw_runs),
         "sample_policy_satisfied": _sample_policy_satisfied(profile, raw_runs, plan),
         "paired_run_completeness": _paired_run_completeness(raw_runs),
-        "paired_backend_acceptance_status_correct": _paired_payload(artifact_root).get(
-            "paired_backend_experiment_accepted", False
-        )
-        is False
-        if profile == Phase12Profile.VALIDATION
-        else True,
+        "paired_backend_acceptance_status_correct": _paired_acceptance_status_correct(
+            profile,
+            _paired_payload(artifact_root),
+        ),
         "stress_task_count_satisfied": _stress_task_count_satisfied(profile, raw_runs),
         "blocked_rows_runtime_invoked_false": _blocked_rows_runtime_invoked_false(raw_runs),
         "runtime_receipt_exists": _runtime_receipts_exist(artifact_root, raw_runs),
@@ -408,6 +406,17 @@ def _paired_run_completeness(rows: list[dict[str, Any]]) -> bool:
     return not pairs or all(
         {"MUJOCO", "ISAAC_SIM"}.issubset(backends) for backends in pairs.values()
     )
+
+
+def _paired_acceptance_status_correct(profile: Phase12Profile, paired: dict[str, Any]) -> bool:
+    """按 profile 校验 paired backend 状态，避免 validation 阻塞被误作 full 通过。"""
+
+    accepted = paired.get("paired_backend_experiment_accepted", False) is True
+    if profile == Phase12Profile.VALIDATION:
+        return not accepted
+    if profile == Phase12Profile.FULL:
+        return accepted
+    return True
 
 
 def _stress_task_count_satisfied(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:

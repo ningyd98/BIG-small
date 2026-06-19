@@ -11,7 +11,9 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
+from cloud_edge_robot_arm.final_evaluation import validation as phase12_validation
 from cloud_edge_robot_arm.final_evaluation.aggregation import aggregate_results
 from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile
 from cloud_edge_robot_arm.final_evaluation.runner import run_phase12_experiments
@@ -175,6 +177,70 @@ def test_verifier_rejects_runtime_gap_when_runtime_receipt_missing(tmp_path: Pat
     assert summary["checks"]["runtime_receipt_hash_valid"] is False
 
 
+def test_full_profile_rejects_when_paired_backend_is_not_accepted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """full profile 不能在 paired backend 未验收时输出最终接受状态。"""
+
+    root = tmp_path / "phase12_full"
+    _write_minimal_full_artifact(root, paired_accepted=False)
+    monkeypatch.setattr(
+        phase12_validation,
+        "PHASE12_EXPERIMENT_IDS",
+        ["F15_MUJOCO_ISAAC_PAIRED"],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "final_experiment_registry",
+        lambda: [
+            SimpleNamespace(
+                experiment_id="F15_MUJOCO_ISAAC_PAIRED",
+                runner_kind="PHASE9_2_ISAAC",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "build_experiment_plan",
+        lambda profile: SimpleNamespace(
+            run_count=1,
+            seed_count=1,
+            repetitions=1,
+            experiments=[],
+        ),
+    )
+    monkeypatch.setattr(phase12_validation, "_source_artifact_hash_verified", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_sample_policy_satisfied", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_paired_run_completeness", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_stress_task_count_satisfied", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_runtime_receipts_exist", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_runtime_receipt_hash_valid", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_phase11_sqlite_evidence_exists", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_worker_lease_evidence_exists", lambda *_: True)
+    monkeypatch.setattr(
+        phase12_validation,
+        "_duplicate_competition_evidence_exists",
+        lambda *_: True,
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "_runner_invocation_count_exactly_one",
+        lambda *_: True,
+    )
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.FULL,
+        artifact_root=root,
+        output_dir=root / "verification",
+        require_full=True,
+    )
+
+    assert summary["paired_backend_experiment_accepted"] is False
+    assert summary["checks"]["paired_backend_acceptance_status_correct"] is False
+    assert summary["status"] == "PHASE12_REJECTED"
+    assert summary["project_status"] == "NOT_CLOSED"
+
+
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
     """Aggregates must separate adapter attempts from actual runtime invocation."""
 
@@ -296,6 +362,72 @@ def _as_int(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"expected int, got {value!r}")
     return value
+
+
+def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
+    rows_dir = root / "runs"
+    aggregate_dir = root / "aggregates"
+    stats_dir = root / "statistics"
+    manifests_dir = root / "manifests"
+    paired_dir = root / "paired"
+    for path in [
+        rows_dir,
+        aggregate_dir,
+        stats_dir,
+        manifests_dir,
+        paired_dir,
+        root / "plots/png",
+        root / "plots/svg",
+        root / "tables/csv",
+        root / "tables/latex",
+        root / "thesis",
+        root / "demo_bundle",
+    ]:
+        path.mkdir(parents=True, exist_ok=True)
+    row = _row(
+        "full-paired-sample",
+        source="PHASE9_MUJOCO_ACTUAL_RUN",
+        runtime_invoked=True,
+        runtime_completed=True,
+        authoritative=True,
+    )
+    row["profile"] = "full"
+    row["experiment_id"] = "F15_MUJOCO_ISAAC_PAIRED"
+    rows_dir.joinpath("raw_runs.jsonl").write_text(
+        json.dumps(row, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    aggregate_dir.joinpath("phase12_aggregate.json").write_text(
+        json.dumps(
+            {
+                "unsafe_command_execution_count": 0,
+                "blocked_by_env_count": 0,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stats_dir.joinpath("phase12_statistics.json").write_text(
+        json.dumps({"group_statistics": {"PCSC": {"sample_count": 1}}}) + "\n",
+        encoding="utf-8",
+    )
+    manifests_dir.joinpath("provenance.json").write_text(
+        json.dumps({"source_tree_hash": "tree", "worktree_clean": True}) + "\n",
+        encoding="utf-8",
+    )
+    paired_dir.joinpath("paired_summary.json").write_text(
+        json.dumps({"paired_backend_experiment_accepted": paired_accepted}) + "\n",
+        encoding="utf-8",
+    )
+    root.joinpath("plots/png/success_rate_comparison.png").write_bytes(b"png")
+    root.joinpath("plots/svg/success_rate_comparison.svg").write_text("<svg />")
+    root.joinpath("tables/csv/t2_mode_baseline.csv").write_text("metric,value\n")
+    root.joinpath("tables/latex/t2_mode_baseline.tex").write_text(
+        "\\begin{tabular}{}\\end{tabular}"
+    )
+    root.joinpath("thesis/experiment_results.md").write_text("full results")
+    root.joinpath("demo_bundle/demo_summary.json").write_text("{}\n")
 
 
 def _row(
