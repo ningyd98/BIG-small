@@ -385,6 +385,20 @@ def test_verifier_rejects_runtime_receipt_with_invalid_internal_hash(tmp_path: P
     assert phase12_validation._runtime_receipt_hash_valid(tmp_path, [row]) is False
 
 
+def test_verifier_rejects_recovery_receipt_without_required_transitions() -> None:
+    """F20 recovery evidence must prove stale lease interruption and requeue transitions."""
+
+    receipt = _minimal_f20_receipt()
+    receipt["recovery_evidence"] = {
+        "lease_expired": True,
+        "final_status": "SUCCEEDED",
+        "attempt_count": 2,
+        "transitions": [["RUNNING", "SUCCEEDED"]],
+    }
+
+    assert phase12_validation._recovery_evidence_valid(receipt) is False
+
+
 def test_full_profile_rejects_when_paired_backend_is_not_accepted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1195,6 +1209,38 @@ def _write_minimal_f20_validation_artifact(root: Path, *, include_sqlite_binary:
         json.dumps({"paired_backend_experiment_accepted": False}) + "\n",
         encoding="utf-8",
     )
+
+
+def _minimal_f20_receipt() -> dict[str, object]:
+    return {
+        "runner": "PHASE11_SIMULATION_RUNTIME",
+        "run_id": "f20-runtime",
+        "main_job": {
+            "status": "SUCCEEDED",
+            "terminal_artifacts_present": True,
+            "evidence_consistency_present": True,
+        },
+        "recovery_evidence": {
+            "lease_expired": True,
+            "final_status": "SUCCEEDED",
+            "attempt_count": 2,
+            "transitions": [
+                ["RUNNING", "INTERRUPTED"],
+                ["INTERRUPTED", "RECOVERY_PENDING"],
+                ["RECOVERY_PENDING", "QUEUED"],
+            ],
+        },
+        "duplicate_competition_evidence": {
+            "lease_winner": "worker-a",
+            "lease_loser": "worker-b",
+            "runner_invocation_count": 1,
+        },
+        "worker_lease_evidence": {
+            "lease_count": 1,
+            "heartbeat_observed": True,
+            "released_lease_count": 1,
+        },
+    }
 
 
 def _write_minimal_artifact_common(root: Path) -> None:

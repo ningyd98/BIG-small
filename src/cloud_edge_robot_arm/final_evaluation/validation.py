@@ -119,6 +119,7 @@ def verify_phase12(
         "runtime_receipt_hash_valid": _runtime_receipt_hash_valid(artifact_root, raw_runs),
         "phase11_sqlite_evidence_exists": _phase11_sqlite_evidence_exists(artifact_root, raw_runs),
         "worker_lease_evidence_exists": _worker_lease_evidence_exists(artifact_root, raw_runs),
+        "recovery_evidence_valid": _recovery_evidence_valid_for_rows(artifact_root, raw_runs),
         "duplicate_competition_evidence_exists": _duplicate_competition_evidence_exists(
             artifact_root, raw_runs
         ),
@@ -555,6 +556,30 @@ def _worker_lease_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> boo
         root,
         rows,
         lambda receipt: int(receipt.get("worker_lease_evidence", {}).get("lease_count", 0)) >= 1,
+    )
+
+
+def _recovery_evidence_valid_for_rows(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(root, rows, _recovery_evidence_valid)
+
+
+def _recovery_evidence_valid(receipt: dict[str, Any]) -> bool:
+    recovery = receipt.get("recovery_evidence", {})
+    if not isinstance(recovery, dict):
+        return False
+    transitions = recovery.get("transitions", [])
+    if not isinstance(transitions, list):
+        return False
+    required = [
+        ["RUNNING", "INTERRUPTED"],
+        ["INTERRUPTED", "RECOVERY_PENDING"],
+        ["RECOVERY_PENDING", "QUEUED"],
+    ]
+    return (
+        recovery.get("lease_expired") is True
+        and int(recovery.get("attempt_count", 0)) >= 2
+        and recovery.get("final_status") == "SUCCEEDED"
+        and all(transition in transitions for transition in required)
     )
 
 
