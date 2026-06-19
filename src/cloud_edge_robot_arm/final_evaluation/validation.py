@@ -52,7 +52,7 @@ def verify_phase12(
     synthetic_sample_count = sum(
         1 for row in raw_runs if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
     )
-    actual_run_count = sum(1 for row in raw_runs if row.get("actual_runner_invoked") is True)
+    actual_run_count = sum(1 for row in raw_runs if row.get("runtime_invoked") is True)
     adapter_attempt_count = sum(1 for row in raw_runs if row.get("adapter_attempted") is True)
     runtime_invocation_count = sum(1 for row in raw_runs if row.get("runtime_invoked") is True)
     runtime_completion_count = sum(1 for row in raw_runs if row.get("runtime_completed") is True)
@@ -65,7 +65,7 @@ def verify_phase12(
     )
     authoritative_count = sum(1 for row in raw_runs if row.get("authoritative_for_thesis") is True)
     actual_backend_counts = dict(
-        Counter(str(row.get("backend")) for row in raw_runs if row.get("actual_runner_invoked"))
+        Counter(str(row.get("backend")) for row in raw_runs if row.get("runtime_invoked"))
     )
     runtime_backend_counts = dict(
         Counter(str(row.get("backend")) for row in raw_runs if row.get("runtime_invoked"))

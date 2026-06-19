@@ -136,7 +136,7 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
         "synthetic_sample_count": sum(
             1 for row in rows if row.execution_source == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
         ),
-        "actual_run_count": sum(1 for row in rows if row.actual_runner_invoked),
+        "actual_run_count": sum(1 for row in rows if row.runtime_invoked),
         "adapter_attempt_count": sum(1 for row in rows if row.adapter_attempted),
         "runtime_invocation_count": sum(1 for row in rows if row.runtime_invoked),
         "runtime_completion_count": sum(1 for row in rows if row.runtime_completed),
@@ -529,9 +529,11 @@ def _execution_source_counts(rows: list[Phase12Result]) -> dict[str, int]:
 
 
 def _actual_backend_counts(rows: list[Phase12Result]) -> dict[str, int]:
+    """兼容旧字段名；实际含义按 runtime_invoked 统计真实 runtime 调用。"""
+
     counts: dict[str, int] = {}
     for row in rows:
-        if row.actual_runner_invoked:
+        if row.runtime_invoked:
             counts[row.backend.value] = counts.get(row.backend.value, 0) + 1
     return counts
 

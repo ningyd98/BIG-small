@@ -38,7 +38,7 @@ def main() -> int:
         "synthetic_sample_count": sum(
             1 for row in rows if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
         ),
-        "actual_run_count": sum(1 for row in rows if row.get("actual_runner_invoked") is True),
+        "actual_run_count": sum(1 for row in rows if row.get("runtime_invoked") is True),
         "adapter_attempt_count": sum(1 for row in rows if row.get("adapter_attempted") is True),
         "runtime_invocation_count": sum(1 for row in rows if row.get("runtime_invoked") is True),
         "runtime_completion_count": sum(1 for row in rows if row.get("runtime_completed") is True),

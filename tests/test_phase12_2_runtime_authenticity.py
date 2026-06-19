@@ -192,6 +192,29 @@ def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
     assert aggregate.blocked_before_runtime_count == 1
 
 
+def test_legacy_actual_runner_flag_cannot_create_fake_runtime_count() -> None:
+    """旧兼容字段不能绕过 runtime_invoked 语义制造真实运行数量。"""
+
+    blocked_environment_check = _row(
+        "legacy-env-check",
+        status="BLOCKED_BY_ENV",
+        source="PHASE9_2_ISAAC_ENVIRONMENT_CHECK",
+        runtime_invoked=False,
+        runtime_completed=False,
+        authoritative=False,
+    )
+    blocked_environment_check["actual_runner_invoked"] = True
+    rows = [blocked_environment_check]
+
+    aggregate = aggregate_results(Phase12Profile.VALIDATION, rows)
+
+    assert aggregate.adapter_attempt_count == 1
+    assert aggregate.actual_run_count == 0
+    assert aggregate.runtime_invocation_count == 0
+    assert aggregate.runtime_completion_count == 0
+    assert aggregate.blocked_before_runtime_count == 1
+
+
 def test_planner_provider_is_explicit_and_latency_measured(tmp_path: Path) -> None:
     """Planner comparison must not infer provider from control mode or use fixed latency."""
 

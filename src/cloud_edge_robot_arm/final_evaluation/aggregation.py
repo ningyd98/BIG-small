@@ -54,7 +54,7 @@ def aggregate_results(profile: Phase12Profile, rows: list[dict[str, Any]]) -> Ph
             for row in rows
             if row.get("execution_source") == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE.value
         ),
-        actual_run_count=sum(1 for row in rows if row.get("actual_runner_invoked") is True),
+        actual_run_count=sum(1 for row in rows if row.get("runtime_invoked") is True),
         adapter_attempt_count=sum(1 for row in rows if row.get("adapter_attempted") is True),
         runtime_invocation_count=sum(1 for row in rows if row.get("runtime_invoked") is True),
         runtime_completion_count=sum(1 for row in rows if row.get("runtime_completed") is True),
