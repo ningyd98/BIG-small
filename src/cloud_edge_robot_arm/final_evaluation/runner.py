@@ -18,6 +18,7 @@ from cloud_edge_robot_arm.final_evaluation.adapters.base import (
     sha256_path,
 )
 from cloud_edge_robot_arm.final_evaluation.models import (
+    ACTUAL_RUN_COUNT_SEMANTICS,
     BlockerStage,
     EnvironmentStatus,
     ExecutionSource,
@@ -146,6 +147,7 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
         "synthetic_sample_count": sum(
             1 for row in rows if row.execution_source == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
         ),
+        "actual_run_count_semantics": ACTUAL_RUN_COUNT_SEMANTICS,
         "actual_run_count": sum(1 for row in rows if row.runtime_invoked),
         "adapter_attempt_count": sum(1 for row in rows if row.adapter_attempted),
         "runtime_invocation_count": sum(1 for row in rows if row.runtime_invoked),

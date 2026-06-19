@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from cloud_edge_robot_arm.final_evaluation.models import (
+    ACTUAL_RUN_COUNT_SEMANTICS,
     ExecutionSource,
     HardwareClaims,
     Phase12Aggregate,
@@ -54,6 +55,7 @@ def aggregate_results(profile: Phase12Profile, rows: list[dict[str, Any]]) -> Ph
             for row in rows
             if row.get("execution_source") == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE.value
         ),
+        actual_run_count_semantics=ACTUAL_RUN_COUNT_SEMANTICS,
         actual_run_count=sum(1 for row in rows if row.get("runtime_invoked") is True),
         adapter_attempt_count=sum(1 for row in rows if row.get("adapter_attempted") is True),
         runtime_invocation_count=sum(1 for row in rows if row.get("runtime_invoked") is True),

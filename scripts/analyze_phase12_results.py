@@ -17,7 +17,10 @@ from cloud_edge_robot_arm.final_evaluation.aggregation import (  # noqa: E402
     load_raw_runs,
     write_aggregate,
 )
-from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile  # noqa: E402
+from cloud_edge_robot_arm.final_evaluation.models import (  # noqa: E402
+    ACTUAL_RUN_COUNT_SEMANTICS,
+    Phase12Profile,
+)
 from cloud_edge_robot_arm.final_evaluation.statistics import (  # noqa: E402
     compute_group_statistics,
 )
@@ -38,6 +41,7 @@ def main() -> int:
         "synthetic_sample_count": sum(
             1 for row in rows if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
         ),
+        "actual_run_count_semantics": ACTUAL_RUN_COUNT_SEMANTICS,
         "actual_run_count": sum(1 for row in rows if row.get("runtime_invoked") is True),
         "adapter_attempt_count": sum(1 for row in rows if row.get("adapter_attempted") is True),
         "runtime_invocation_count": sum(1 for row in rows if row.get("runtime_invoked") is True),

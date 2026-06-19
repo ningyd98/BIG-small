@@ -159,6 +159,8 @@ def test_paired_summary_marks_isaac_blocked_as_not_accepted(tmp_path: Path) -> N
     assert verification["checks"]["adapter_attempts_verified"] is True
     assert "actual_runner_invocation_verified" not in verification["checks"]
     assert verification["adapter_attempt_count"] == verification["run_count"]
+    assert verification["actual_run_count_semantics"] == "runtime_invocation_compatibility_alias"
+    assert verification["actual_run_count"] == verification["runtime_invocation_count"]
     assert verification["runtime_invocation_count"] < verification["adapter_attempt_count"]
     assert verification["checks"]["paired_backend_acceptance_status_correct"] is True
     assert "paired_backend_experiment_accepted" not in verification["checks"]

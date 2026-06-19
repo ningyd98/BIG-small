@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile
+from cloud_edge_robot_arm.final_evaluation.models import ACTUAL_RUN_COUNT_SEMANTICS, Phase12Profile
 from cloud_edge_robot_arm.final_evaluation.registry import (
     PHASE12_EXPERIMENT_IDS,
     build_experiment_plan,
@@ -212,6 +212,7 @@ def verify_phase12(
         "registry_count": len(registry),
         "full_profile_claimed": status == FULL_STATUS,
         "synthetic_sample_count": synthetic_sample_count,
+        "actual_run_count_semantics": ACTUAL_RUN_COUNT_SEMANTICS,
         "actual_run_count": actual_run_count,
         "adapter_attempt_count": adapter_attempt_count,
         "runtime_invocation_count": runtime_invocation_count,
@@ -257,7 +258,12 @@ def verify_phase12(
         {
             "run_count": len(raw_runs),
             "synthetic_sample_count": synthetic_sample_count,
+            "actual_run_count_semantics": ACTUAL_RUN_COUNT_SEMANTICS,
             "actual_run_count": actual_run_count,
+            "adapter_attempt_count": adapter_attempt_count,
+            "runtime_invocation_count": runtime_invocation_count,
+            "runtime_completion_count": runtime_completion_count,
+            "blocked_before_runtime_count": blocked_before_runtime_count,
             "authoritative_thesis_run_count": authoritative_count,
             "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
             "checks": checks,

@@ -12,6 +12,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# 中文说明：actual_run_count 是历史兼容字段，当前语义等同 runtime_invocation_count；
+# runtime_completion_count 才表示真正完成的运行数量。
+ACTUAL_RUN_COUNT_SEMANTICS = "runtime_invocation_compatibility_alias"
+
 
 class Phase12Profile(StrEnum):
     """Phase 12 实验规模 profile；只有 full 可用于最终论文统计结论。"""
@@ -276,6 +280,7 @@ class Phase12Aggregate(BaseModel):
     blocked_by_env_count: int
     unsafe_command_execution_count: int
     synthetic_sample_count: int = 0
+    actual_run_count_semantics: str = ACTUAL_RUN_COUNT_SEMANTICS
     actual_run_count: int = 0
     adapter_attempt_count: int = 0
     runtime_invocation_count: int = 0
