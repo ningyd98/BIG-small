@@ -294,9 +294,17 @@ def _data_authority(
         or thesis_status == "THESIS_PACKAGE_INCOMPLETE"
     ):
         return "VALIDATION_GAP_DATA"
-    if profile == "full" and thesis_status == "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED":
+    if (
+        profile == "full"
+        and status == "PHASE12_FINAL_EVALUATION_ACCEPTED"
+        and thesis_status == "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED"
+    ):
         return "AUTHORITATIVE_THESIS_DATA"
-    if profile == "validation" and thesis_status == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED":
+    if (
+        profile == "validation"
+        and status == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+        and thesis_status == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
+    ):
         return "VALIDATION_ACCEPTED_DATA"
     return "PENDING_VERIFICATION_DATA"
 
@@ -310,10 +318,19 @@ def _verifier_gated_authoritative_count(
 
     if verification is None:
         return 0
+    status = str(verification.get("status", ""))
     thesis_status = str(verification.get("thesis_status", ""))
-    if profile == "full" and thesis_status == "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED":
+    if (
+        profile == "full"
+        and status == "PHASE12_FINAL_EVALUATION_ACCEPTED"
+        and thesis_status == "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED"
+    ):
         return row_level_authoritative
-    if profile == "validation" and thesis_status == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED":
+    if (
+        profile == "validation"
+        and status == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+        and thesis_status == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
+    ):
         return row_level_authoritative
     return 0
 

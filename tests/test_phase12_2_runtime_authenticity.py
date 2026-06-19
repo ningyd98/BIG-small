@@ -750,6 +750,42 @@ def test_validation_gap_exports_do_not_mark_plots_or_tables_authoritative(
     assert "AUTHORITATIVE_THESIS_DATA" not in table
 
 
+def test_inconsistent_verifier_summary_does_not_mark_validation_assets_accepted(
+    tmp_path: Path,
+) -> None:
+    """verifier status 未接受时，单独的 thesis_status 不能把资产标为 accepted。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    verification_dir = root / "verification"
+    verification_dir.mkdir(parents=True, exist_ok=True)
+    verification_dir.joinpath("phase12_summary.json").write_text(
+        json.dumps(
+            {
+                "status": "PHASE12_REJECTED",
+                "thesis_status": "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED",
+                "full_profile_readiness_status": "PHASE12_FULL_PROFILE_NOT_READY",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    export_thesis_assets(root, profile="validation")
+
+    plot_index = json.loads(root.joinpath("plots/plot_index.json").read_text(encoding="utf-8"))
+    demo_summary = json.loads(
+        root.joinpath("demo_bundle/demo_summary.json").read_text(encoding="utf-8")
+    )
+    results = root.joinpath("thesis/experiment_results.md").read_text(encoding="utf-8")
+    assert plot_index["data_authority"] == "PENDING_VERIFICATION_DATA"
+    assert plot_index["verifier_gated_authoritative_thesis_run_count"] == 0
+    assert demo_summary["data_authority"] == "PENDING_VERIFICATION_DATA"
+    assert demo_summary["verifier_gated_authoritative_thesis_run_count"] == 0
+    assert "verifier_gated_authoritative_for_thesis=0" in results
+
+
 def test_validation_gap_report_gates_authoritative_thesis_run_count(
     tmp_path: Path,
 ) -> None:
