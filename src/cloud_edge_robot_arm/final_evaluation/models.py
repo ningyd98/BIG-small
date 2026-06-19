@@ -172,6 +172,8 @@ class Phase12RunManifest(BaseModel):
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     execution_source: ExecutionSource = ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
+    # 中文说明：兼容 Phase 12.1 旧 artifact；真实 runtime 语义以
+    # runtime_invoked/runtime_completed 为准，不能再用本字段单独证明真实运行。
     actual_runner_invoked: bool = False
     adapter_attempted: bool = False
     environment_check_completed: bool = False
@@ -245,6 +247,8 @@ class Phase12Result(BaseModel):
     result_hash: str
     artifact_hash: str
     execution_source: ExecutionSource = ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
+    # 中文说明：兼容 Phase 12.1 旧 artifact；统计和 verifier 必须使用
+    # runtime_invoked/runtime_completed 区分环境检查、运行失败和运行完成。
     actual_runner_invoked: bool = False
     adapter_attempted: bool = False
     environment_check_completed: bool = False

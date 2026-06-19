@@ -48,6 +48,8 @@ class Phase12AdapterResult:
     metrics: dict[str, float | int | bool | str]
     events: list[dict[str, Any]]
     execution_source: ExecutionSource
+    # 中文说明：兼容旧 Phase 12.1 evidence；adapter 是否尝试、runtime 是否进入、
+    # runtime 是否完成分别由下面三个新字段表达，不能只看本字段判断真实运行。
     actual_runner_invoked: bool
     adapter_attempted: bool
     environment_check_completed: bool
