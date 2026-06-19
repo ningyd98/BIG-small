@@ -160,6 +160,33 @@ def test_metric_provenance_excludes_placeholder_and_adapter_derived_statistics()
     assert stats["PCSC"]["mean"] == 110.0
 
 
+def test_metric_statistics_require_row_level_authority() -> None:
+    """Measured metrics from non-authoritative rows must not enter thesis statistics."""
+
+    rows = [
+        _row(
+            "authoritative",
+            metric_value=100.0,
+            provenance_source="MEASURED",
+            authoritative=True,
+        ),
+        _row(
+            "not-authoritative",
+            metric_value=999.0,
+            provenance_source="MEASURED",
+            authoritative=False,
+        ),
+    ]
+
+    stats = compute_group_statistics(
+        rows, group_key="control_mode", metric_key="total_completion_time_ms"
+    )
+
+    assert stats["PCSC"]["sample_count"] == 1
+    assert stats["PCSC"]["mean"] == 100.0
+    assert stats["PCSC"]["excluded_metric_sample_count"] == 1
+
+
 def test_f20_uses_real_phase11_runtime_receipts(tmp_path: Path) -> None:
     """F20 must create SQLite, lease, attempt, duplicate competition and recovery evidence."""
 

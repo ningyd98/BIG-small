@@ -181,6 +181,8 @@ def _metric_eligible_row(row: dict[str, Any], metric_key: str) -> dict[str, Any]
 
 
 def _metric_is_eligible(row: dict[str, Any], metric_key: str) -> bool:
+    if row.get("authoritative_for_thesis") is not True:
+        return False
     provenance = row.get("metric_provenance", {})
     if "metric_provenance" not in row:
         return True
