@@ -78,6 +78,8 @@ def verify_phase12(
             if row.get("status") == "BLOCKED_BY_ENV"
         )
     )
+    sqlite_binary_present_locally = _phase11_sqlite_binary_present_locally(artifact_root, raw_runs)
+    sqlite_local_hash_valid = _phase11_sqlite_local_hash_valid(artifact_root, raw_runs)
     checks = {
         "registry_complete": [item.experiment_id for item in registry] == PHASE12_EXPERIMENT_IDS,
         "no_hardware_runner": not any(
@@ -218,6 +220,8 @@ def verify_phase12(
         "runtime_invocation_count": runtime_invocation_count,
         "runtime_completion_count": runtime_completion_count,
         "blocked_before_runtime_count": blocked_before_runtime_count,
+        "phase11_sqlite_binary_present_locally": sqlite_binary_present_locally,
+        "phase11_sqlite_local_hash_valid": sqlite_local_hash_valid,
         "authoritative_thesis_run_count": authoritative_count,
         "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
         "actual_backend_counts": actual_backend_counts,
@@ -264,6 +268,8 @@ def verify_phase12(
             "runtime_invocation_count": runtime_invocation_count,
             "runtime_completion_count": runtime_completion_count,
             "blocked_before_runtime_count": blocked_before_runtime_count,
+            "phase11_sqlite_binary_present_locally": sqlite_binary_present_locally,
+            "phase11_sqlite_local_hash_valid": sqlite_local_hash_valid,
             "authoritative_thesis_run_count": authoritative_count,
             "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
             "checks": checks,
@@ -502,7 +508,30 @@ def _phase11_sqlite_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> b
     return _all_f20_receipts(
         root,
         rows,
-        lambda receipt: _sqlite_evidence_hash_valid(root, receipt),
+        _sqlite_evidence_metadata_present,
+    )
+
+
+def _phase11_sqlite_binary_present_locally(root: Path, rows: list[dict[str, Any]]) -> bool:
+    """报告本机是否存在被 .gitignore 排除的 Phase 11 SQLite 二进制。"""
+
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: _sqlite_evidence_path(root, receipt).exists(),
+    )
+
+
+def _phase11_sqlite_local_hash_valid(root: Path, rows: list[dict[str, Any]]) -> bool:
+    """若本机 SQLite 二进制存在，则校验 hash；不存在时不影响仓库 evidence 验收。"""
+
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: (
+            not _sqlite_evidence_path(root, receipt).exists()
+            or _sqlite_evidence_hash_valid(root, receipt)
+        ),
     )
 
 
@@ -576,15 +605,29 @@ def _runtime_receipt(root: Path, row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _sqlite_evidence_hash_valid(root: Path, receipt: dict[str, Any]) -> bool:
+    if not _sqlite_evidence_metadata_present(receipt):
+        return False
+    path = _sqlite_evidence_path(root, receipt)
+    if not path.exists():
+        return True
+    expected = str(receipt.get("sqlite_evidence", {}).get("sha256", ""))
+    return hashlib.sha256(path.read_bytes()).hexdigest() == expected
+
+
+def _sqlite_evidence_metadata_present(receipt: dict[str, Any]) -> bool:
     evidence = receipt.get("sqlite_evidence", {})
     if not isinstance(evidence, dict) or evidence.get("exists") is not True:
         return False
     rel_path = str(evidence.get("relative_path", ""))
     expected = str(evidence.get("sha256", ""))
-    if not rel_path or not expected:
-        return False
-    path = root / rel_path
-    return path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == expected
+    tables = evidence.get("tables")
+    return bool(rel_path and expected and isinstance(tables, dict) and tables)
+
+
+def _sqlite_evidence_path(root: Path, receipt: dict[str, Any]) -> Path:
+    evidence = receipt.get("sqlite_evidence", {})
+    rel_path = str(evidence.get("relative_path", "")) if isinstance(evidence, dict) else ""
+    return root / rel_path
 
 
 def _all_f20_receipts(root: Path, rows: list[dict[str, Any]], predicate: Any) -> bool:

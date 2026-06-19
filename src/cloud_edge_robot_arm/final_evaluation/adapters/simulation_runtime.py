@@ -371,6 +371,7 @@ def _draft(context: Phase12RunContext, *, runtime_delay_ms: int = 0) -> dict[str
 def _sqlite_summary(database_path: Path, *, output_root: Path) -> dict[str, Any]:
     counts: dict[str, int] = {}
     with sqlite3.connect(database_path) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         for table in (
             "simulation_jobs",
             "simulation_job_events",
@@ -381,6 +382,10 @@ def _sqlite_summary(database_path: Path, *, output_root: Path) -> dict[str, Any]
         ):
             row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
             counts[table] = int(row[0]) if row else 0
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        # 中文说明：SQLite WAL/元数据页可能在查询后继续落盘；先 VACUUM 再 checkpoint，
+        # 然后关闭连接，确保 receipt 中记录的是最终稳定数据库文件的 hash。
+        conn.execute("VACUUM")
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     return {
         "exists": database_path.exists(),

@@ -70,8 +70,11 @@ def test_blocked_environment_rows_are_not_runtime_execution(tmp_path: Path) -> N
     assert "PHASE10_MOVEIT_ENVIRONMENT_CHECK" in blocked_sources
     assert "PHASE9_2_ISAAC_ACTUAL_RUN" not in blocked_sources
     assert "PHASE10_MOVEIT_RUNTIME_ACTUAL" not in blocked_sources
+    assert summary["actual_run_count_semantics"] == "runtime_invocation_compatibility_alias"
     assert _as_int(summary["actual_run_count"]) == _as_int(summary["runtime_invocation_count"])
     assert _as_int(summary["runtime_invocation_count"]) < _as_int(summary["adapter_attempt_count"])
+    run_summary = json.loads((output / "runs/run_summary.json").read_text(encoding="utf-8"))
+    assert run_summary["actual_run_count_semantics"] == summary["actual_run_count_semantics"]
 
 
 def test_metric_provenance_excludes_placeholder_and_adapter_derived_statistics() -> None:
@@ -132,6 +135,10 @@ def test_f20_uses_real_phase11_runtime_receipts(tmp_path: Path) -> None:
         assert receipt["sqlite_evidence"]["exists"] is True
         sqlite_path = output / receipt["sqlite_evidence"]["relative_path"]
         assert sqlite_path.exists()
+        assert (
+            hashlib.sha256(sqlite_path.read_bytes()).hexdigest()
+            == receipt["sqlite_evidence"]["sha256"]
+        )
         assert receipt["worker_lease_evidence"]["lease_count"] >= 1
         assert receipt["duplicate_competition_evidence"]["runner_invocation_count"] == 1
         assert receipt["duplicate_competition_evidence"]["lease_winner"]
@@ -271,6 +278,50 @@ def test_validation_acceptance_uses_readiness_only_full_profile_status(
     assert summary["full_profile_claimed"] is False
     assert summary["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_PREREQUISITES_READY"
     assert summary["full_profile_execution_status"] == "NOT_RUN"
+
+
+def test_validation_accepts_committed_sqlite_receipt_without_ignored_db_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """仓库 evidence 只要求 SQLite receipt 元数据，不依赖被 gitignore 排除的 DB 文件。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_f20_validation_artifact(root, include_sqlite_binary=False)
+    _patch_minimal_f20_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+    assert summary["checks"]["phase11_sqlite_evidence_exists"] is True
+    assert summary["phase11_sqlite_binary_present_locally"] is False
+    assert summary["phase11_sqlite_local_hash_valid"] is True
+
+
+def test_validation_reports_corrupt_local_ignored_sqlite_without_blocking_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """本机 ignored DB 残留损坏时必须显式报告，但不伪装成仓库 bundle 缺失。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_f20_validation_artifact(root, include_sqlite_binary=True)
+    sqlite_path = root / "source_evidence/f20/phase11_runtime/runtime.sqlite3"
+    sqlite_path.write_bytes(b"corrupt-local-residue")
+    _patch_minimal_f20_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+    assert summary["checks"]["phase11_sqlite_evidence_exists"] is True
+    assert summary["phase11_sqlite_binary_present_locally"] is True
+    assert summary["phase11_sqlite_local_hash_valid"] is False
 
 
 def test_verifier_rejects_when_failed_or_blocked_counts_do_not_match_raw_runs(
@@ -864,6 +915,86 @@ def _write_minimal_validation_artifact(
     )
 
 
+def _write_minimal_f20_validation_artifact(root: Path, *, include_sqlite_binary: bool) -> None:
+    """构造只覆盖 F20 receipt 语义的最小 validation artifact。"""
+
+    _write_minimal_artifact_common(root)
+    receipt_path = root / "source_evidence/f20/phase11_runtime_actual_run.json"
+    sqlite_rel = "source_evidence/f20/phase11_runtime/runtime.sqlite3"
+    sqlite_hash = hashlib.sha256(b"sqlite-bytes").hexdigest()
+    receipt = {
+        "runner": "PHASE11_SIMULATION_RUNTIME",
+        "run_id": "f20-runtime",
+        "runtime_receipt_hash": "receipt-hash",
+        "sqlite_evidence": {
+            "exists": True,
+            "relative_path": sqlite_rel,
+            "relative_name": "runtime.sqlite3",
+            "sha256": sqlite_hash,
+            "tables": {"simulation_jobs": 3, "simulation_job_events": 10},
+        },
+        "worker_lease_evidence": {"lease_count": 1},
+        "duplicate_competition_evidence": {
+            "lease_winner": "worker-a",
+            "lease_loser": "worker-b",
+            "runner_invocation_count": 1,
+        },
+    }
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True) + "\n", encoding="utf-8")
+    if include_sqlite_binary:
+        sqlite_path = root / sqlite_rel
+        sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+        sqlite_path.write_bytes(b"sqlite-bytes")
+    row = _row(
+        "f20-runtime",
+        source="PHASE11_RUNTIME_ACTUAL",
+        runtime_invoked=True,
+        runtime_completed=True,
+        authoritative=True,
+    )
+    row["experiment_id"] = "F20_STRESS_AND_RECOVERY"
+    row["source_artifact_path"] = "source_evidence/f20/phase11_runtime_actual_run.json"
+    row["source_artifact_hash"] = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+    blocked_receipt = root / "source_evidence/f20/blocked_env.json"
+    blocked_receipt.write_text(
+        json.dumps({"status": "BLOCKED_BY_ENV", "stage": "ENVIRONMENT_CHECK"}, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    blocked = _row(
+        "f20-blocked",
+        status="BLOCKED_BY_ENV",
+        source="PHASE9_2_ISAAC_ENVIRONMENT_CHECK",
+        runtime_invoked=False,
+        runtime_completed=False,
+        authoritative=False,
+    )
+    blocked["experiment_id"] = "F15_MUJOCO_ISAAC_PAIRED"
+    blocked["source_artifact_path"] = "source_evidence/f20/blocked_env.json"
+    blocked["source_artifact_hash"] = hashlib.sha256(blocked_receipt.read_bytes()).hexdigest()
+    root.joinpath("runs/raw_runs.jsonl").write_text(
+        json.dumps(row, sort_keys=True) + "\n" + json.dumps(blocked, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    root.joinpath("aggregates/phase12_aggregate.json").write_text(
+        json.dumps(
+            {
+                "unsafe_command_execution_count": 0,
+                "blocked_by_env_count": 1,
+                "failed_count": 0,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    root.joinpath("paired/paired_summary.json").write_text(
+        json.dumps({"paired_backend_experiment_accepted": False}) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_minimal_artifact_common(root: Path) -> None:
     for path in [
         root / "runs",
@@ -1032,6 +1163,37 @@ def _patch_minimal_validation_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
         "_runner_invocation_count_exactly_one",
         lambda *_: True,
     )
+
+
+def _patch_minimal_f20_validation_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        phase12_validation,
+        "PHASE12_EXPERIMENT_IDS",
+        ["F20_STRESS_AND_RECOVERY"],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "final_experiment_registry",
+        lambda: [
+            SimpleNamespace(
+                experiment_id="F20_STRESS_AND_RECOVERY",
+                runner_kind="PHASE11_SIMULATION_RUNTIME",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        phase12_validation,
+        "build_experiment_plan",
+        lambda profile: SimpleNamespace(
+            run_count=1,
+            seed_count=1,
+            repetitions=1,
+            experiments=[],
+        ),
+    )
+    monkeypatch.setattr(phase12_validation, "_sample_policy_satisfied", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_paired_run_completeness", lambda *_: True)
+    monkeypatch.setattr(phase12_validation, "_stress_task_count_satisfied", lambda *_: True)
 
 
 def _row(
