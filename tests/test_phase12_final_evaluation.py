@@ -274,3 +274,45 @@ def test_system_capability_table_statuses_are_derived_from_aggregate() -> None:
     assert statuses["Simulation Workbench"] == "REJECTED"
     assert statuses["Model Control Center"] == "BLOCKED_BY_ENV"
     assert statuses["Real Robot"] == "NOT_STARTED"
+
+
+def test_reproducibility_table_defaults_to_unknown_without_evidence() -> None:
+    """T12 复现表缺少 provenance 输入时必须保守标 UNKNOWN，不能固定宣称 recorded。"""
+
+    rows = _table_rows(
+        {
+            "run_count": 0,
+            "authoritative_thesis_run_count": 0,
+            "synthetic_sample_count": 0,
+        },
+        {},
+        data_authority="PENDING_VERIFICATION_DATA",
+    )
+
+    repro = {row["field"]: row["value"] for row in rows["t12_reproducibility"]}
+
+    assert repro["source_tree_hash"] == "UNKNOWN"
+    assert repro["worktree_clean"] == "UNKNOWN"
+
+
+def test_reproducibility_table_uses_provided_provenance_values() -> None:
+    """T12 复现表有 provenance 时必须写入真实值。"""
+
+    rows = _table_rows(
+        {
+            "run_count": 1,
+            "authoritative_thesis_run_count": 1,
+            "synthetic_sample_count": 0,
+            "reproducibility": {
+                "source_tree_hash": "tree-hash-123",
+                "worktree_clean": True,
+            },
+        },
+        {},
+        data_authority="VALIDATION_ACCEPTED_DATA",
+    )
+
+    repro = {row["field"]: row["value"] for row in rows["t12_reproducibility"]}
+
+    assert repro["source_tree_hash"] == "tree-hash-123"
+    assert repro["worktree_clean"] == "true"

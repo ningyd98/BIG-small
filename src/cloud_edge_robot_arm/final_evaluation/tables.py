@@ -105,14 +105,7 @@ def _table_rows(
             "note": "必须为 0",
         },
     ]
-    repro = [
-        {
-            "field": "source_tree_hash",
-            "value": "recorded",
-            "note": "每次运行 manifest 均记录",
-        },
-        {"field": "worktree_clean", "value": "required", "note": "full 结论要求 clean"},
-    ]
+    repro = _reproducibility_rows(aggregate)
     return {
         "t1_system_capability": capability,
         "t2_mode_baseline": mode_rows,
@@ -153,6 +146,42 @@ def _capability_rows(aggregate: dict[str, Any]) -> list[dict[str, object]]:
             }
         )
     return rows
+
+
+def _reproducibility_rows(aggregate: dict[str, Any]) -> list[dict[str, object]]:
+    """从 aggregate 派生复现表；缺少 evidence 时不能宣称已记录。"""
+
+    provenance = aggregate.get("reproducibility", {})
+    if not isinstance(provenance, dict):
+        provenance = {}
+    source_tree_hash = _known_or_unknown(
+        provenance.get("source_tree_hash") or aggregate.get("source_tree_hash")
+    )
+    worktree_clean = _known_or_unknown(
+        provenance.get("worktree_clean") if "worktree_clean" in provenance else None
+    )
+    if worktree_clean == "UNKNOWN" and "worktree_clean" in aggregate:
+        worktree_clean = _known_or_unknown(aggregate.get("worktree_clean"))
+    return [
+        {
+            "field": "source_tree_hash",
+            "value": source_tree_hash,
+            "note": "来自 manifest/provenance；UNKNOWN 表示当前 aggregate 未提供证据",
+        },
+        {
+            "field": "worktree_clean",
+            "value": worktree_clean,
+            "note": "full 结论要求 clean；UNKNOWN 表示当前 aggregate 未提供证据",
+        },
+    ]
+
+
+def _known_or_unknown(value: object) -> str:
+    if value is None or value == "":
+        return "UNKNOWN"
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
