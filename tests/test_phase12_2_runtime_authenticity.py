@@ -206,6 +206,22 @@ def test_verifier_rejects_statistics_without_metric_exclusion_counts() -> None:
     assert phase12_validation._placeholder_metrics_excluded(stats) is False
 
 
+def test_verifier_rejects_inconsistent_metric_sample_counts() -> None:
+    """Metric sample counts must balance so excluded placeholders cannot be hidden."""
+
+    stats = {
+        "group_statistics": {
+            "PCSC": {
+                "sample_count": 5,
+                "valid_metric_sample_count": 5,
+                "excluded_metric_sample_count": 5,
+            }
+        }
+    }
+
+    assert phase12_validation._placeholder_metrics_excluded(stats) is False
+
+
 def test_paired_difference_requires_both_sides_authoritative() -> None:
     """Successful paired rows are usable only when both backend evidence sides are authoritative."""
 
