@@ -26,11 +26,15 @@ TABLE_IDS = [
 
 
 def export_tables(
-    output_root: Path, aggregate: dict[str, Any], statistics: dict[str, Any]
+    output_root: Path,
+    aggregate: dict[str, Any],
+    statistics: dict[str, Any],
+    *,
+    data_authority: str | None = None,
 ) -> list[str]:
     """导出 12 个论文表格的 CSV、Markdown 和 LaTeX 版本。"""
 
-    rows = _table_rows(aggregate, statistics)
+    rows = _table_rows(aggregate, statistics, data_authority=data_authority)
     exported: list[str] = []
     for subdir in ("csv", "markdown", "latex"):
         (output_root / f"tables/{subdir}").mkdir(parents=True, exist_ok=True)
@@ -53,12 +57,12 @@ def export_tables(
 
 
 def _table_rows(
-    aggregate: dict[str, Any], statistics: dict[str, Any]
+    aggregate: dict[str, Any], statistics: dict[str, Any], *, data_authority: str | None = None
 ) -> dict[str, list[dict[str, object]]]:
     authoritative_count = int(aggregate.get("authoritative_thesis_run_count", 0))
     synthetic_count = int(aggregate.get("synthetic_sample_count", 0))
     by_mode = aggregate.get("authoritative_by_mode") or aggregate.get("by_mode", {})
-    data_authority = (
+    authority = data_authority or (
         "PIPELINE_TEST_DATA"
         if synthetic_count > 0 and authoritative_count == 0
         else "AUTHORITATIVE_THESIS_DATA"
@@ -70,7 +74,7 @@ def _table_rows(
             "success_rate": values.get("success_rate", 0),
             "mean_time_ms": values.get("mean", ""),
             "blocked": values.get("blocked_by_env_count", 0),
-            "data_authority": data_authority,
+            "data_authority": authority,
         }
         for label, values in sorted(by_mode.items())
     ] or [
@@ -80,7 +84,7 @@ def _table_rows(
             "success_rate": 0,
             "mean_time_ms": "",
             "blocked": 0,
-            "data_authority": data_authority,
+            "data_authority": authority,
         }
     ]
     capability = [
@@ -127,7 +131,7 @@ def _table_rows(
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     fields = sorted({key for row in rows for key in row})
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 

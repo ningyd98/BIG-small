@@ -36,7 +36,9 @@ PLOT_NAMES = [
 ]
 
 
-def export_plots(output_root: Path, aggregate: dict[str, Any]) -> list[str]:
+def export_plots(
+    output_root: Path, aggregate: dict[str, Any], *, data_authority: str | None = None
+) -> list[str]:
     """生成 PNG 和 SVG 图表资产，返回相对路径列表。"""
 
     png_dir = output_root / "plots/png"
@@ -48,9 +50,12 @@ def export_plots(output_root: Path, aggregate: dict[str, Any]) -> list[str]:
     synthetic_count = int(aggregate.get("synthetic_sample_count", 0))
     mode_data = aggregate.get("authoritative_by_mode") or aggregate.get("by_mode", {})
     pipeline_only = synthetic_count > 0 and authoritative_count == 0
+    authority = data_authority or (
+        "PIPELINE_TEST_DATA" if pipeline_only else "AUTHORITATIVE_THESIS_DATA"
+    )
     for name in PLOT_NAMES:
         title = _title(name)
-        svg = _svg(title, mode_data, pipeline_only=pipeline_only)
+        svg = _svg(title, mode_data, data_authority=authority)
         svg_path = svg_dir / f"{name}.svg"
         png_path = png_dir / f"{name}.png"
         svg_path.write_text(svg, encoding="utf-8")
@@ -63,9 +68,7 @@ def export_plots(output_root: Path, aggregate: dict[str, Any]) -> list[str]:
             {
                 "plots": exported,
                 "plot_count": len(exported),
-                "data_authority": "PIPELINE_TEST_DATA"
-                if pipeline_only
-                else "AUTHORITATIVE_THESIS_DATA",
+                "data_authority": authority,
                 "synthetic_sample_count": synthetic_count,
                 "authoritative_thesis_run_count": authoritative_count,
             },
@@ -101,17 +104,13 @@ def _title(name: str) -> str:
     return mapping[name]
 
 
-def _svg(title: str, mode_data: object, *, pipeline_only: bool) -> str:
+def _svg(title: str, mode_data: object, *, data_authority: str) -> str:
     data = json.dumps(mode_data, ensure_ascii=False, sort_keys=True)[:900]
-    subtitle = (
-        "PIPELINE TEST DATA：仅验证图表生成管线，不进入论文统计结论。"
-        if pipeline_only
-        else "单位：按图题对应指标；仅使用 authoritative_for_thesis=true 数据。"
-    )
+    subtitle = _authority_subtitle(data_authority)
     watermark = (
         '<text x="190" y="320" font-size="48" fill="#dc2626" opacity="0.18">'
-        "PIPELINE TEST DATA</text>"
-        if pipeline_only
+        f"{data_authority}</text>"
+        if data_authority != "AUTHORITATIVE_THESIS_DATA"
         else ""
     )
     return (
@@ -124,3 +123,13 @@ def _svg(title: str, mode_data: object, *, pipeline_only: bool) -> str:
         f"{watermark}"
         "</svg>"
     )
+
+
+def _authority_subtitle(data_authority: str) -> str:
+    if data_authority == "PIPELINE_TEST_DATA":
+        return "PIPELINE TEST DATA：仅验证图表生成管线，不进入论文统计结论。"
+    if data_authority == "VALIDATION_GAP_DATA":
+        return "VALIDATION GAP DATA：validation evidence 仍有 gap，不进入论文最终结论。"
+    if data_authority == "PENDING_VERIFICATION_DATA":
+        return "PENDING VERIFICATION：等待 verifier summary，暂不可声明论文权威数据。"
+    return "单位：按图题对应指标；仅使用 verifier 接受的 authoritative_for_thesis=true 数据。"

@@ -18,9 +18,11 @@ def export_thesis_assets(output_root: Path, *, profile: str) -> dict[str, Any]:
 
     aggregate = _read_json(output_root / "aggregates/phase12_aggregate.json")
     statistics = _read_json(output_root / "statistics/phase12_statistics.json")
-    plots = export_plots(output_root, aggregate)
-    tables = export_tables(output_root, aggregate, statistics)
-    reports = _write_reports(output_root, profile, aggregate, statistics)
+    verification = _read_optional_json(output_root / "verification/phase12_summary.json")
+    data_authority = _data_authority(profile, aggregate, verification)
+    plots = export_plots(output_root, aggregate, data_authority=data_authority)
+    tables = export_tables(output_root, aggregate, statistics, data_authority=data_authority)
+    reports = _write_reports(output_root, profile, aggregate, statistics, verification)
     demo = _write_demo_bundle(output_root, aggregate)
     return {
         "profile": profile,
@@ -32,7 +34,11 @@ def export_thesis_assets(output_root: Path, *, profile: str) -> dict[str, Any]:
 
 
 def _write_reports(
-    output_root: Path, profile: str, aggregate: dict[str, Any], statistics: dict[str, Any]
+    output_root: Path,
+    profile: str,
+    aggregate: dict[str, Any],
+    statistics: dict[str, Any],
+    verification: dict[str, Any] | None,
 ) -> list[str]:
     reports_dir = output_root / "reports"
     thesis_dir = output_root / "thesis"
@@ -48,7 +54,6 @@ def _write_reports(
     runtime_completions = aggregate.get("runtime_completion_count", actual)
     blocked_before_runtime = aggregate.get("blocked_before_runtime_count", 0)
     authoritative = aggregate.get("authoritative_thesis_run_count", 0)
-    verification = _read_optional_json(output_root / "verification/phase12_summary.json")
     profile_note = _profile_note(profile, verification)
     thesis_status = str(verification.get("thesis_status", "")) if verification else ""
     report = (
@@ -185,6 +190,29 @@ def _profile_note(profile: str, verification: dict[str, Any] | None = None) -> s
         "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED 仅在 full profile 样本策略和 "
         "authoritative evidence 全部满足时成立。"
     )
+
+
+def _data_authority(
+    profile: str, aggregate: dict[str, Any], verification: dict[str, Any] | None
+) -> str:
+    synthetic_count = int(aggregate.get("synthetic_sample_count", 0))
+    authoritative_count = int(aggregate.get("authoritative_thesis_run_count", 0))
+    if synthetic_count > 0 and authoritative_count == 0:
+        return "PIPELINE_TEST_DATA"
+    if verification is None:
+        return "PENDING_VERIFICATION_DATA"
+    status = str(verification.get("status", ""))
+    thesis_status = str(verification.get("thesis_status", ""))
+    if (
+        status.endswith("_WITH_RUNTIME_EVIDENCE_GAPS")
+        or thesis_status == "THESIS_PACKAGE_INCOMPLETE"
+    ):
+        return "VALIDATION_GAP_DATA"
+    if profile == "full" and thesis_status == "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED":
+        return "AUTHORITATIVE_THESIS_DATA"
+    if profile == "validation" and thesis_status == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED":
+        return "VALIDATION_ACCEPTED_DATA"
+    return "PENDING_VERIFICATION_DATA"
 
 
 def _validity_text() -> str:

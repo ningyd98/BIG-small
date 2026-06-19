@@ -311,6 +311,24 @@ def test_validation_report_without_verifier_summary_does_not_claim_acceptance(
     assert "VALIDATION_ANALYSIS_PENDING_VERIFICATION" in report
 
 
+def test_validation_gap_exports_do_not_mark_plots_or_tables_authoritative(
+    tmp_path: Path,
+) -> None:
+    """validation gaps 下图表和表格不能标为论文权威数据。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    _write_gap_verification_summary(root)
+
+    export_thesis_assets(root, profile="validation")
+
+    plot_index = json.loads(root.joinpath("plots/plot_index.json").read_text(encoding="utf-8"))
+    table = root.joinpath("tables/csv/t2_mode_baseline.csv").read_text(encoding="utf-8")
+    assert plot_index["data_authority"] == "VALIDATION_GAP_DATA"
+    assert "VALIDATION_GAP_DATA" in table
+    assert "AUTHORITATIVE_THESIS_DATA" not in table
+
+
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
     """Aggregates must separate adapter attempts from actual runtime invocation."""
 
@@ -578,6 +596,24 @@ def _write_minimal_artifact_common(root: Path) -> None:
 def _write_provenance(root: Path, *, worktree_clean: bool) -> None:
     root.joinpath("manifests/provenance.json").write_text(
         json.dumps({"source_tree_hash": "tree", "worktree_clean": worktree_clean}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_gap_verification_summary(root: Path) -> None:
+    verification_dir = root / "verification"
+    verification_dir.mkdir(parents=True, exist_ok=True)
+    verification_dir.joinpath("phase12_summary.json").write_text(
+        json.dumps(
+            {
+                "status": "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS",
+                "thesis_status": "THESIS_PACKAGE_INCOMPLETE",
+                "full_profile_readiness_status": "PHASE12_FULL_PROFILE_NOT_READY",
+                "checks": {"source_tree_provenance_present": False},
+            },
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
 
