@@ -249,6 +249,28 @@ def test_full_profile_ready_status_matches_full_acceptance(
     assert summary["project_status"] == "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED"
 
 
+def test_validation_acceptance_uses_readiness_only_full_profile_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """validation accepted 只能说明 full 前置就绪，不能伪装成 full profile 已接受。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+    assert summary["project_status"] == "NOT_CLOSED"
+    assert summary["full_profile_claimed"] is False
+    assert summary["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_PREREQUISITES_READY"
+    assert summary["full_profile_execution_status"] == "NOT_RUN"
+
+
 def test_verifier_rejects_when_failed_or_blocked_counts_do_not_match_raw_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -904,13 +926,18 @@ def _assert_validation_status_matches_provenance(verification: Mapping[str, obje
     checks = cast("Mapping[str, object]", verification["checks"])
     if checks["source_tree_provenance_present"]:
         assert verification["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
-        assert verification["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_READY"
+        assert (
+            verification["full_profile_readiness_status"]
+            == "PHASE12_FULL_PROFILE_PREREQUISITES_READY"
+        )
+        assert verification["full_profile_execution_status"] == "NOT_RUN"
     else:
         assert (
             verification["status"]
             == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
         )
         assert verification["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_NOT_READY"
+        assert verification["full_profile_execution_status"] == "NOT_RUN"
 
 
 def _patch_minimal_full_verifier(monkeypatch: pytest.MonkeyPatch) -> None:

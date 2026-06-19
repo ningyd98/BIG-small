@@ -39,7 +39,7 @@ python scripts/verify_phase12.py \
 
 `PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED`
 
-Validation 仍不得声明 full final evaluation 或最终论文证据 accepted。当前 clean validation 记录 540 行，其中 466 行 runtime completed、74 行 blocked before runtime、0 行 synthetic sample、0 次硬件写入。
+Validation 仍不得声明 full final evaluation 或最终论文证据 accepted。当前 clean validation 记录 540 行，其中 466 行 runtime completed、74 行 blocked before runtime、0 行 synthetic sample、0 次硬件写入。它只能声明 `PHASE12_FULL_PROFILE_PREREQUISITES_READY`，不能声明 `PHASE12_FULL_PROFILE_READY`。
 
 ## Full
 

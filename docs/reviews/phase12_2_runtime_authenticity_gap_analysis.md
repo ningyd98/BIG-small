@@ -28,7 +28,7 @@
 
 ## Full Profile Readiness
 
-Validation can declare `PHASE12_FULL_PROFILE_READY` only when:
+Validation can declare `PHASE12_FULL_PROFILE_PREREQUISITES_READY` only when:
 
 - Validation rows have zero synthetic samples.
 - Blocked rows have `runtime_invoked=false`.
@@ -38,4 +38,4 @@ Validation can declare `PHASE12_FULL_PROFILE_READY` only when:
 - Placeholder metrics are excluded from statistics.
 - Paired backend counts distinguish blocked and usable authoritative pairs.
 
-This readiness is not full acceptance. Full profile still requires the larger sample policy and environment coverage.
+This readiness is not full execution or full acceptance. Full profile still requires the larger sample policy and environment coverage. Only a verified full profile may declare `PHASE12_FULL_PROFILE_READY`.

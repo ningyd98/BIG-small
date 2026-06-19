@@ -27,6 +27,7 @@ THESIS_PIPELINE_STATUS = "PHASE12_THESIS_ASSET_PIPELINE_READY"
 VALIDATION_THESIS_STATUS = "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
 VALIDATION_GAP_STATUS = "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
 FULL_READY_STATUS = "PHASE12_FULL_PROFILE_READY"
+FULL_PREREQUISITES_READY_STATUS = "PHASE12_FULL_PROFILE_PREREQUISITES_READY"
 PROJECT_STATUS = "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED"
 REJECTED_STATUS = "PHASE12_REJECTED"
 
@@ -185,6 +186,19 @@ def verify_phase12(
     verifier_gated_authoritative_count = (
         authoritative_count if thesis_status in {THESIS_STATUS, VALIDATION_THESIS_STATUS} else 0
     )
+    # 中文说明：validation accepted 只代表 full profile 的前置证据语义已就绪，
+    # 并不表示 full profile 已执行或最终论文 evidence 已接受。这里拆分
+    # readiness 和 execution 字段，避免把 validation 结果误读成 full 结果。
+    full_profile_readiness_status = (
+        FULL_READY_STATUS
+        if full_ready
+        else FULL_PREREQUISITES_READY_STATUS
+        if validation_ready
+        else "PHASE12_FULL_PROFILE_NOT_READY"
+    )
+    full_profile_execution_status = (
+        "ACCEPTED" if full_ready else "REJECTED" if require_full else "NOT_RUN"
+    )
     payload: dict[str, Any] = {
         "status": status,
         "project_status": PROJECT_STATUS if full_ready and thesis_ready else "NOT_CLOSED",
@@ -218,9 +232,8 @@ def verify_phase12(
             "usable_authoritative_pair_count", 0
         ),
         "blocked_pair_count": _paired_payload(artifact_root).get("blocked_pair_count", 0),
-        "full_profile_readiness_status": FULL_READY_STATUS
-        if full_ready or validation_ready
-        else "PHASE12_FULL_PROFILE_NOT_READY",
+        "full_profile_readiness_status": full_profile_readiness_status,
+        "full_profile_execution_status": full_profile_execution_status,
         "stress_task_count": sum(
             1 for row in raw_runs if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"
         ),
