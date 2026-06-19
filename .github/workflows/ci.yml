@@ -106,6 +106,21 @@ jobs:
       - name: Phase 10.2C Level 0 framework verification
         run: python scripts/verify_phase10_2c_level0.py --fake
 
+      - name: Phase 12 smoke evaluation
+        run: |
+          python scripts/run_phase12_experiments.py --profile smoke --output artifacts/phase12
+          python scripts/analyze_phase12_results.py --profile smoke --output artifacts/phase12
+          python scripts/export_phase12_thesis_assets.py --profile smoke --output artifacts/phase12
+          python scripts/verify_phase12.py --smoke --output artifacts/phase12/verification --artifact-root artifacts/phase12
+
+      - name: Upload Phase 12 smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12-smoke-artifacts
+          path: artifacts/phase12
+          if-no-files-found: ignore
+
       - name: Dependency check
         run: python -m pip check
 

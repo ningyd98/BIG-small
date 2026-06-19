@@ -1,0 +1,27 @@
+# 工作流说明：Phase 12 full 实验只允许手动或自托管环境触发，不连接真实机械臂。
+name: Phase 12 Full Experiment
+
+on:
+  workflow_dispatch:
+
+jobs:
+  phase12-full:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package
+        run: python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
+      - name: Run Phase 12 full
+        run: |
+          python scripts/run_phase12_experiments.py --profile full
+          python scripts/analyze_phase12_results.py --profile full
+          python scripts/export_phase12_thesis_assets.py --profile full
+          python scripts/verify_phase12.py --full --skip-isaac --skip-model-runtime
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12-full-artifacts
+          path: artifacts/phase12

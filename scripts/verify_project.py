@@ -35,6 +35,40 @@ PHASE10_1_PROJECT_ARGV = [
     "--output",
     str(PHASE10_PROJECT_DIR / "phase10_1"),
 ]
+PHASE12_PROJECT_DIR = Path("artifacts/project_verification/phase12")
+PHASE12_SMOKE_RUN_ARGV = [
+    "python",
+    "scripts/run_phase12_experiments.py",
+    "--profile",
+    "smoke",
+    "--output",
+    str(PHASE12_PROJECT_DIR),
+]
+PHASE12_SMOKE_ANALYZE_ARGV = [
+    "python",
+    "scripts/analyze_phase12_results.py",
+    "--profile",
+    "smoke",
+    "--output",
+    str(PHASE12_PROJECT_DIR),
+]
+PHASE12_SMOKE_EXPORT_ARGV = [
+    "python",
+    "scripts/export_phase12_thesis_assets.py",
+    "--profile",
+    "smoke",
+    "--output",
+    str(PHASE12_PROJECT_DIR),
+]
+PHASE12_SMOKE_VERIFY_ARGV = [
+    "python",
+    "scripts/verify_phase12.py",
+    "--smoke",
+    "--output",
+    str(PHASE12_PROJECT_DIR / "verification"),
+    "--artifact-root",
+    str(PHASE12_PROJECT_DIR),
+]
 
 
 @dataclass(frozen=True)
@@ -57,6 +91,10 @@ def profile_commands(profile: str) -> list[ProjectCommand]:
             _cmd("phase10-0", PHASE10_0_PROJECT_ARGV),
             _cmd("phase10-1", PHASE10_1_PROJECT_ARGV),
             _cmd("phase10-2a-framework", PHASE10_2A_FRAMEWORK_ARGV),
+            _cmd("phase12-smoke-run", PHASE12_SMOKE_RUN_ARGV),
+            _cmd("phase12-smoke-analysis", PHASE12_SMOKE_ANALYZE_ARGV),
+            _cmd("phase12-smoke-export", PHASE12_SMOKE_EXPORT_ARGV),
+            _cmd("phase12-smoke-verify", PHASE12_SMOKE_VERIFY_ARGV),
         ],
         "simulation": [
             _cmd("phase9", ["python", "scripts/verify_phase9.py"]),

@@ -4,6 +4,9 @@
 
 ## 未发布
 
+- 增加 Phase 12 Final Evaluation：RQ1-RQ7、F01-F20、smoke/validation/full profile、统计分析、图表、论文表格、论文素材、答辩包和 `scripts/verify_phase12.py`。
+- 更新当前权威状态入口，明确 Phase 11.2 Model Control Center 和 Simulation AI Console 已接受，local model runtime 和真实机械臂验证尚未接受。
+- 增加 Phase 11.2 Model Control Center：OpenAI-compatible profile、secret 安全、endpoint policy、Ollama 管理、planner dry-run 和 Simulation AI Console。
 - 增加 Phase 11.1 Simulation Runtime：SQLite 持久 job repository、状态机、dispatcher、worker lease、cancel、timeout、retry、recovery、持久 WebSocket replay 和 MuJoCo runtime verifier。
 - 新增 `scripts/verify_phase11_1_simulation_runtime.py`、runtime DB 工具、Phase 11.1 Playwright 运行时用例和 `artifacts/phase11_1/verification` 输出。
 - 增加 Phase 11 Simulation Workbench 后端 API、前端工具集、Batch/Sweep、LiveRun、metrics、comparison、export 和 reproduction。

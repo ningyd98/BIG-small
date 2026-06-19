@@ -15,6 +15,11 @@ python scripts/check_docs.py
 python scripts/verify_project.py --profile ci
 python scripts/verify_phase11_simulation_workbench.py --skip-e2e
 python scripts/verify_phase11_1_simulation_runtime.py --ci
+python scripts/verify_phase11_2_model_control.py --ci
+python scripts/run_phase12_experiments.py --profile smoke
+python scripts/analyze_phase12_results.py --profile smoke
+python scripts/export_phase12_thesis_assets.py --profile smoke
+python scripts/verify_phase12.py --smoke
 ```
 
 这些命令不得连接 Isaac runtime、ROS 2 / MoveIt runtime 或真实机器人控制器。Phase 11 的 `--skip-e2e` 模式是 CI 轻量检查，只输出 partial verification，不声明完整验收。
@@ -60,6 +65,27 @@ python scripts/verify_phase11_1_simulation_runtime.py --full
 `--ci` 验证 SQLite repository、状态机、队列、worker、restart recovery、cancel、timeout、retry、持久 WebSocket replay、前端和 Playwright。普通 CI 不运行真实 MuJoCo runtime acceptance。
 
 `--mujoco` 实际运行 M11-01 至 M11-10，必须证明 `actual_backend=MUJOCO` 且 `mock_fallback_used=false`。如果 MuJoCo 不可用，只能记录环境阻塞，不能声明完整 Phase 11.1 accepted。
+
+## Phase 11.2 Model Control Center
+
+```bash
+# 命令说明：运行模型控制中心 CI 验收，使用 fake provider/fake Ollama，不访问收费 API。
+python scripts/verify_phase11_2_model_control.py --ci
+```
+
+真实 Ollama 验收必须显式传入模型名；未安装模型时返回阻塞，不自动下载大型模型。
+
+## Phase 12 Final Evaluation
+
+```bash
+# 命令说明：运行 Phase 12 smoke，只生成软件/仿真论文管线证据。
+python scripts/run_phase12_experiments.py --profile smoke
+python scripts/analyze_phase12_results.py --profile smoke
+python scripts/export_phase12_thesis_assets.py --profile smoke
+python scripts/verify_phase12.py --smoke
+```
+
+`--smoke` 只能输出 `PHASE12_EXPERIMENT_SUITE_READY`。只有 full profile 完整运行、统计、图表、表格、论文素材、demo bundle 和安全边界全部满足后，才能声明 `PHASE12_FINAL_EVALUATION_ACCEPTED`。
 
 ## ROS 2 / MoveIt
 
