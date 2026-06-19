@@ -16,11 +16,14 @@ def compute_group_statistics(
 ) -> dict[str, dict[str, Any]]:
     """按组计算统计量，并保留 blocked/failed 计数和 effect size。"""
 
+    rows_for_metric = [_metric_eligible_row(row, metric_key) for row in rows]
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
+    for row in rows_for_metric:
         grouped.setdefault(str(row[group_key]), []).append(row)
     all_values = [
-        value for value in (_to_float(row.get(metric_key)) for row in rows) if value is not None
+        value
+        for value in (_to_float(row.get(metric_key)) for row in rows_for_metric)
+        if value is not None
     ]
     overall_mean = mean(all_values) if all_values else 0.0
     overall_std = _stddev(all_values)
@@ -35,6 +38,8 @@ def compute_group_statistics(
         failed = sum(
             1 for row in items if row.get("status") in {"FAILED", "TIMEOUT", "SAFETY_STOPPED"}
         )
+        all_group_rows = [row for row in rows if str(row.get(group_key)) == label]
+        excluded = sum(1 for row in all_group_rows if not _metric_is_eligible(row, metric_key))
         summary = _summarize_values(values)
         effect = None
         summary_mean = summary["mean"]
@@ -42,6 +47,8 @@ def compute_group_statistics(
             effect = (float(summary_mean) - overall_mean) / overall_std
         result[label] = {
             **summary,
+            "valid_metric_sample_count": summary["sample_count"],
+            "excluded_metric_sample_count": excluded,
             "blocked_by_env_count": blocked,
             "failed_count": failed,
             "effect_size_vs_overall": effect,
@@ -75,8 +82,16 @@ def paired_difference_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "pair_count": len(pairs),
         "usable_pair_count": len(usable),
+        "usable_authoritative_pair_count": len(usable),
         "blocked_by_env_count": blocked,
+        "blocked_pair_count": blocked,
         "failed_pair_count": failed,
+        "paired_row_structure_complete": all(
+            pair.get("left_status") is not None and pair.get("right_status") is not None
+            for pair in pairs
+        ),
+        "expected_pair_count": len(pairs),
+        "paired_backend_experiment_accepted": bool(pairs) and len(usable) == len(pairs),
         "mean_delta": summary["mean"],
         "median_delta": summary["median"],
         "confidence_interval_95": summary["confidence_interval_95"],
@@ -159,3 +174,19 @@ def _to_float(value: object) -> float | None:
         return float(str(value))
     except ValueError:
         return None
+
+
+def _metric_eligible_row(row: dict[str, Any], metric_key: str) -> dict[str, Any]:
+    return row if _metric_is_eligible(row, metric_key) else {**row, metric_key: None}
+
+
+def _metric_is_eligible(row: dict[str, Any], metric_key: str) -> bool:
+    provenance = row.get("metric_provenance", {})
+    if "metric_provenance" not in row:
+        return True
+    if not isinstance(provenance, dict):
+        return False
+    metric = provenance.get(metric_key)
+    if not isinstance(metric, dict):
+        return False
+    return metric.get("source") in {"MEASURED", "EVENT_DERIVED"}

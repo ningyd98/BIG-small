@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from cloud_edge_robot_arm.final_evaluation.models import (
+    BlockerStage,
     EnvironmentStatus,
     ExecutionSource,
     HardwareClaims,
+    MetricProvenance,
     Phase12Backend,
     Phase12RunStatus,
 )
@@ -33,6 +35,8 @@ class Phase12RunContext:
     seed: int
     repetition: int
     output_root: Path
+    planner_provider: str = ""
+    model_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -45,11 +49,19 @@ class Phase12AdapterResult:
     events: list[dict[str, Any]]
     execution_source: ExecutionSource
     actual_runner_invoked: bool
+    adapter_attempted: bool
+    environment_check_completed: bool
+    runtime_invoked: bool
+    runtime_completed: bool
     authoritative_for_thesis: bool
+    blocker_stage: BlockerStage
     source_artifact_path: str
     source_artifact_hash: str
     source_verifier: str
     environment_status: EnvironmentStatus
+    metric_provenance: dict[str, MetricProvenance] = field(default_factory=dict)
+    planner_provider: str = ""
+    model_name: str = ""
     failure_type: str = ""
     hardware_claims: HardwareClaims = field(default_factory=HardwareClaims)
 

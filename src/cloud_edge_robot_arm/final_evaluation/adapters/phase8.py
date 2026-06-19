@@ -20,8 +20,11 @@ from cloud_edge_robot_arm.final_evaluation.adapters.base import (
     write_source_artifact,
 )
 from cloud_edge_robot_arm.final_evaluation.models import (
+    BlockerStage,
     EnvironmentStatus,
     ExecutionSource,
+    MetricProvenance,
+    MetricSource,
     Phase12RunStatus,
 )
 
@@ -61,11 +64,17 @@ class Phase8ExperimentRunnerAdapter:
             events=events,
             execution_source=ExecutionSource.PHASE8_ACTUAL_RUN,
             actual_runner_invoked=True,
+            adapter_attempted=True,
+            environment_check_completed=True,
+            runtime_invoked=True,
+            runtime_completed=True,
             authoritative_for_thesis=status != Phase12RunStatus.BLOCKED_BY_ENV,
+            blocker_stage=BlockerStage.NONE,
             source_artifact_path=rel,
             source_artifact_hash=digest,
             source_verifier=self.runner_kind,
             environment_status=EnvironmentStatus.READY,
+            metric_provenance=_metric_provenance(rel),
             failure_type="" if result.task_success else status.value,
         )
 
@@ -165,3 +174,56 @@ def _metrics_from_phase8(result: Any) -> dict[str, float | int | bool | str]:
         "result_hash": result.result_hash,
         "artifact_hash": result.result_hash,
     }
+
+
+def _metric_provenance(source_artifact: str) -> dict[str, MetricProvenance]:
+    event_fields = {
+        "total_completion_time_ms": "result.task_completion_time_ms",
+        "cloud_planning_time_ms": "result.cloud_response_latency_ms",
+        "edge_execution_time_ms": "result.task_completion_time_ms - cloud_response_latency_ms",
+        "local_recovery_time_ms": "result.recovery_latency_ms",
+        "replanning_time_ms": "result.replan_count",
+        "communication_wait_time_ms": "result.fault_detection_latency_ms",
+        "cloud_invocation_count": "result.cloud_invocation_count",
+        "communication_count": "result.command_count + result.telemetry_count",
+        "uploaded_bytes": "result.uploaded_bytes",
+        "downloaded_bytes": "result.downloaded_bytes",
+        "supervision_count": "result.supervisory_decision_count",
+        "mode_switch_count": "result.mode_switch_count",
+        "local_retry_count": "result.retry_count",
+        "local_recovery_success_count": "result.recovery_success",
+        "replan_count": "result.replan_count",
+        "cloud_fallback_count": "result.replan_count",
+        "safety_intervention_count": "result.safety_reject_count + emergency_stop_count",
+        "rejected_action_count": "result.safety_reject_count",
+        "stale_telemetry_rejection": "result.stale_command_rejection_count",
+        "collision_rejection": "result.simulated_collision_count",
+        "emergency_stop_event": "result.emergency_stop_count",
+        "response_latency_ms": "result.cloud_response_latency_ms",
+    }
+    provenance: dict[str, MetricProvenance] = {}
+    for metric, field in event_fields.items():
+        provenance[metric] = MetricProvenance(
+            source=MetricSource.EVENT_DERIVED,
+            source_field=field,
+            source_artifact=source_artifact,
+            unit=_unit_for(metric),
+        )
+    for metric in ("workspace_rejection", "unsafe_command_execution_count"):
+        provenance[metric] = MetricProvenance(
+            source=MetricSource.MEASURED,
+            source_field=f"result.{metric}",
+            source_artifact=source_artifact,
+            unit="count",
+        )
+    return provenance
+
+
+def _unit_for(metric: str) -> str:
+    if metric.endswith("_ms"):
+        return "ms"
+    if metric.endswith("_bytes"):
+        return "bytes"
+    if metric.endswith("_rate"):
+        return "ratio"
+    return "count"

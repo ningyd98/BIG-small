@@ -20,7 +20,6 @@ from cloud_edge_robot_arm.final_evaluation.aggregation import (  # noqa: E402
 from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile  # noqa: E402
 from cloud_edge_robot_arm.final_evaluation.statistics import (  # noqa: E402
     compute_group_statistics,
-    paired_difference_summary,
 )
 
 
@@ -34,23 +33,22 @@ def main() -> int:
     aggregate_payload = write_aggregate(root, profile)
     rows = load_raw_runs(root)
     authoritative_rows = [row for row in rows if row.get("authoritative_for_thesis") is True]
-    pairs = [
-        {
-            "pairing_key": f"{row.get('scenario_id')}|{row.get('seed')}|{row.get('control_mode')}",
-            "left_value": row.get("total_completion_time_ms", 0),
-            "right_value": row.get("total_completion_time_ms", 0),
-            "left_status": row.get("status", ""),
-            "right_status": row.get("status", ""),
-        }
-        for row in authoritative_rows
-        if row.get("experiment_id") == "F15_MUJOCO_ISAAC_PAIRED"
-    ]
     statistics = {
         "profile": profile.value,
         "synthetic_sample_count": sum(
             1 for row in rows if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
         ),
         "actual_run_count": sum(1 for row in rows if row.get("actual_runner_invoked") is True),
+        "adapter_attempt_count": sum(1 for row in rows if row.get("adapter_attempted") is True),
+        "runtime_invocation_count": sum(1 for row in rows if row.get("runtime_invoked") is True),
+        "runtime_completion_count": sum(1 for row in rows if row.get("runtime_completed") is True),
+        "blocked_before_runtime_count": sum(
+            1
+            for row in rows
+            if row.get("status") == "BLOCKED_BY_ENV"
+            and row.get("environment_check_completed") is True
+            and row.get("runtime_invoked") is not True
+        ),
         "authoritative_thesis_run_count": len(authoritative_rows),
         "group_statistics": compute_group_statistics(
             authoritative_rows, group_key="control_mode", metric_key="total_completion_time_ms"
@@ -58,7 +56,7 @@ def main() -> int:
         "backend_statistics": compute_group_statistics(
             authoritative_rows, group_key="backend", metric_key="total_completion_time_ms"
         ),
-        "paired_results": paired_difference_summary(pairs),
+        "paired_results": aggregate_payload["paired"],
         "missing_data_reasons": {
             "BLOCKED_BY_ENV": sum(1 for row in rows if row.get("status") == "BLOCKED_BY_ENV")
         },

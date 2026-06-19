@@ -48,8 +48,10 @@ class ExecutionSource(StrEnum):
     SYNTHETIC_PIPELINE_SAMPLE = "SYNTHETIC_PIPELINE_SAMPLE"
     PHASE8_ACTUAL_RUN = "PHASE8_ACTUAL_RUN"
     PHASE9_MUJOCO_ACTUAL_RUN = "PHASE9_MUJOCO_ACTUAL_RUN"
+    PHASE9_2_ISAAC_ENVIRONMENT_CHECK = "PHASE9_2_ISAAC_ENVIRONMENT_CHECK"
     PHASE9_2_ISAAC_ACTUAL_RUN = "PHASE9_2_ISAAC_ACTUAL_RUN"
     PHASE10_SYNTHETIC_DRY_RUN_ACTUAL = "PHASE10_SYNTHETIC_DRY_RUN_ACTUAL"
+    PHASE10_MOVEIT_ENVIRONMENT_CHECK = "PHASE10_MOVEIT_ENVIRONMENT_CHECK"
     PHASE10_MOVEIT_RUNTIME_ACTUAL = "PHASE10_MOVEIT_RUNTIME_ACTUAL"
     PHASE11_RUNTIME_ACTUAL = "PHASE11_RUNTIME_ACTUAL"
     PHASE11_2_PLANNER_ACTUAL = "PHASE11_2_PLANNER_ACTUAL"
@@ -60,6 +62,34 @@ class EnvironmentStatus(StrEnum):
 
     READY = "READY"
     BLOCKED_BY_ENV = "BLOCKED_BY_ENV"
+
+
+class BlockerStage(StrEnum):
+    """运行阻塞发生阶段；环境阻塞不能算 runtime execution。"""
+
+    NONE = ""
+    ENVIRONMENT_CHECK = "ENVIRONMENT_CHECK"
+    RUNTIME = "RUNTIME"
+    FINALIZATION = "FINALIZATION"
+
+
+class MetricSource(StrEnum):
+    """指标来源分级，论文统计默认只使用 measured/event-derived。"""
+
+    MEASURED = "MEASURED"
+    EVENT_DERIVED = "EVENT_DERIVED"
+    ADAPTER_DERIVED = "ADAPTER_DERIVED"
+    CONSTANT_PLACEHOLDER = "CONSTANT_PLACEHOLDER"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
+class MetricProvenance(BaseModel):
+    """单个指标的来源、字段、artifact 和单位。"""
+
+    source: MetricSource
+    source_field: str = ""
+    source_artifact: str = ""
+    unit: str = ""
 
 
 class Phase12SamplePolicy(BaseModel):
@@ -143,7 +173,12 @@ class Phase12RunManifest(BaseModel):
     completed_at: datetime | None = None
     execution_source: ExecutionSource = ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
     actual_runner_invoked: bool = False
+    adapter_attempted: bool = False
+    environment_check_completed: bool = False
+    runtime_invoked: bool = False
+    runtime_completed: bool = False
     authoritative_for_thesis: bool = False
+    blocker_stage: BlockerStage = BlockerStage.NONE
     source_artifact_path: str = ""
     source_artifact_hash: str = ""
     source_verifier: str = ""
@@ -211,11 +246,19 @@ class Phase12Result(BaseModel):
     artifact_hash: str
     execution_source: ExecutionSource = ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
     actual_runner_invoked: bool = False
+    adapter_attempted: bool = False
+    environment_check_completed: bool = False
+    runtime_invoked: bool = False
+    runtime_completed: bool = False
     authoritative_for_thesis: bool = False
+    blocker_stage: BlockerStage = BlockerStage.NONE
     source_artifact_path: str = ""
     source_artifact_hash: str = ""
     source_verifier: str = ""
     environment_status: EnvironmentStatus = EnvironmentStatus.READY
+    metric_provenance: dict[str, MetricProvenance] = Field(default_factory=dict)
+    planner_provider: str = ""
+    model_name: str = ""
     hardware_claims: HardwareClaims = Field(default_factory=HardwareClaims)
 
 
@@ -230,6 +273,10 @@ class Phase12Aggregate(BaseModel):
     unsafe_command_execution_count: int
     synthetic_sample_count: int = 0
     actual_run_count: int = 0
+    adapter_attempt_count: int = 0
+    runtime_invocation_count: int = 0
+    runtime_completion_count: int = 0
+    blocked_before_runtime_count: int = 0
     authoritative_thesis_run_count: int = 0
     by_mode: dict[str, dict[str, Any]]
     by_experiment: dict[str, dict[str, Any]]

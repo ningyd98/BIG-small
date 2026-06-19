@@ -43,13 +43,20 @@ def _write_reports(
     unsafe = aggregate.get("unsafe_command_execution_count", 0)
     synthetic = aggregate.get("synthetic_sample_count", 0)
     actual = aggregate.get("actual_run_count", 0)
+    adapter_attempts = aggregate.get("adapter_attempt_count", actual)
+    runtime_invocations = aggregate.get("runtime_invocation_count", actual)
+    runtime_completions = aggregate.get("runtime_completion_count", actual)
+    blocked_before_runtime = aggregate.get("blocked_before_runtime_count", 0)
     authoritative = aggregate.get("authoritative_thesis_run_count", 0)
     profile_note = _profile_note(profile)
     report = (
         f"# Phase 12 {profile} 实验报告\n\n"
         f"- 运行总数：{run_count}\n"
         f"- synthetic pipeline samples：{synthetic}\n"
-        f"- actual runner runs：{actual}\n"
+        f"- adapter attempts：{adapter_attempts}\n"
+        f"- runtime invocations：{runtime_invocations}\n"
+        f"- runtime completions：{runtime_completions}\n"
+        f"- blocked before runtime：{blocked_before_runtime}\n"
         f"- authoritative thesis runs：{authoritative}\n"
         f"- 环境阻塞：{blocked}\n"
         f"- unsafe_command_execution_count：{unsafe}\n"

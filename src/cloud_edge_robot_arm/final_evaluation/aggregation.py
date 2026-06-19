@@ -55,6 +55,16 @@ def aggregate_results(profile: Phase12Profile, rows: list[dict[str, Any]]) -> Ph
             if row.get("execution_source") == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE.value
         ),
         actual_run_count=sum(1 for row in rows if row.get("actual_runner_invoked") is True),
+        adapter_attempt_count=sum(1 for row in rows if row.get("adapter_attempted") is True),
+        runtime_invocation_count=sum(1 for row in rows if row.get("runtime_invoked") is True),
+        runtime_completion_count=sum(1 for row in rows if row.get("runtime_completed") is True),
+        blocked_before_runtime_count=sum(
+            1
+            for row in rows
+            if row.get("status") == Phase12RunStatus.BLOCKED_BY_ENV.value
+            and row.get("environment_check_completed") is True
+            and row.get("runtime_invoked") is not True
+        ),
         authoritative_thesis_run_count=len(authoritative_rows),
         by_mode=_group_payload(rows, "control_mode"),
         by_experiment=_group_payload(rows, "experiment_id"),
@@ -122,15 +132,19 @@ def _paired_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for key, items in sorted(by_key.items()):
         left = next((item for item in items if item.get("backend") == "MUJOCO"), None)
         right = next((item for item in items if item.get("backend") == "ISAAC_SIM"), None)
-        if left is None or right is None:
-            continue
         pairs.append(
             {
                 "pairing_key": key,
-                "left_value": left["total_completion_time_ms"],
-                "right_value": right["total_completion_time_ms"],
-                "left_status": left["status"],
-                "right_status": right["status"],
+                "left_value": left.get("total_completion_time_ms") if left else None,
+                "right_value": right.get("total_completion_time_ms") if right else None,
+                "left_status": left.get("status") if left else None,
+                "right_status": right.get("status") if right else None,
+                "left_runtime_completed": left.get("runtime_completed") if left else False,
+                "right_runtime_completed": right.get("runtime_completed") if right else False,
+                "left_source_artifact_hash": left.get("source_artifact_hash") if left else "",
+                "right_source_artifact_hash": right.get("source_artifact_hash") if right else "",
+                "left_authoritative": left.get("authoritative_for_thesis") if left else False,
+                "right_authoritative": right.get("authoritative_for_thesis") if right else False,
             }
         )
     return paired_difference_summary(pairs)

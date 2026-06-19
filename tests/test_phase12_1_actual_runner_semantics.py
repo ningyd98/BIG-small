@@ -115,9 +115,12 @@ def test_validation_uses_actual_runners_and_is_authoritative(tmp_path: Path) -> 
     assert summary["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
     assert summary["thesis_status"] == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
     assert summary["synthetic_sample_count"] == 0
-    assert summary["actual_run_count"] == len(rows)
+    assert summary["adapter_attempt_count"] == len(rows)
+    assert summary["runtime_invocation_count"] < summary["adapter_attempt_count"]
+    assert summary["blocked_before_runtime_count"] > 0
     assert summary["authoritative_thesis_run_count"] > 0
-    assert all(row["actual_runner_invoked"] is True for row in rows)
+    assert all(row["adapter_attempted"] is True for row in rows)
+    assert all(row["runtime_invoked"] is False for row in rows if row["status"] == "BLOCKED_BY_ENV")
     assert all(row["execution_source"] != "SYNTHETIC_PIPELINE_SAMPLE" for row in rows)
 
 

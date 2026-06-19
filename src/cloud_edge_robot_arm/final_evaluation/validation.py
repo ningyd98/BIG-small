@@ -25,6 +25,8 @@ FULL_STATUS = "PHASE12_FINAL_EVALUATION_ACCEPTED"
 THESIS_STATUS = "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED"
 THESIS_PIPELINE_STATUS = "PHASE12_THESIS_ASSET_PIPELINE_READY"
 VALIDATION_THESIS_STATUS = "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
+VALIDATION_GAP_STATUS = "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+FULL_READY_STATUS = "PHASE12_FULL_PROFILE_READY"
 PROJECT_STATUS = "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED"
 REJECTED_STATUS = "PHASE12_REJECTED"
 
@@ -51,9 +53,22 @@ def verify_phase12(
         1 for row in raw_runs if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
     )
     actual_run_count = sum(1 for row in raw_runs if row.get("actual_runner_invoked") is True)
+    adapter_attempt_count = sum(1 for row in raw_runs if row.get("adapter_attempted") is True)
+    runtime_invocation_count = sum(1 for row in raw_runs if row.get("runtime_invoked") is True)
+    runtime_completion_count = sum(1 for row in raw_runs if row.get("runtime_completed") is True)
+    blocked_before_runtime_count = sum(
+        1
+        for row in raw_runs
+        if row.get("status") == "BLOCKED_BY_ENV"
+        and row.get("environment_check_completed") is True
+        and row.get("runtime_invoked") is not True
+    )
     authoritative_count = sum(1 for row in raw_runs if row.get("authoritative_for_thesis") is True)
     actual_backend_counts = dict(
         Counter(str(row.get("backend")) for row in raw_runs if row.get("actual_runner_invoked"))
+    )
+    runtime_backend_counts = dict(
+        Counter(str(row.get("backend")) for row in raw_runs if row.get("runtime_invoked"))
     )
     blocked_breakdown = dict(
         Counter(
@@ -87,7 +102,26 @@ def verify_phase12(
         "source_artifact_hash_verified": _source_artifact_hash_verified(artifact_root, raw_runs),
         "sample_policy_satisfied": _sample_policy_satisfied(profile, raw_runs, plan),
         "paired_run_completeness": _paired_run_completeness(raw_runs),
+        "paired_backend_experiment_accepted": _paired_payload(artifact_root).get(
+            "paired_backend_experiment_accepted", False
+        )
+        is False
+        if profile == Phase12Profile.VALIDATION
+        else True,
         "stress_task_count_satisfied": _stress_task_count_satisfied(profile, raw_runs),
+        "blocked_rows_runtime_invoked_false": _blocked_rows_runtime_invoked_false(raw_runs),
+        "runtime_receipt_exists": _runtime_receipts_exist(artifact_root, raw_runs),
+        "runtime_receipt_hash_valid": _runtime_receipt_hash_valid(artifact_root, raw_runs),
+        "phase11_sqlite_evidence_exists": _phase11_sqlite_evidence_exists(artifact_root, raw_runs),
+        "worker_lease_evidence_exists": _worker_lease_evidence_exists(artifact_root, raw_runs),
+        "duplicate_competition_evidence_exists": _duplicate_competition_evidence_exists(
+            artifact_root, raw_runs
+        ),
+        "runner_invocation_count_exactly_one": _runner_invocation_count_exactly_one(
+            artifact_root, raw_runs
+        ),
+        "metric_provenance_complete": _metric_provenance_complete(raw_runs),
+        "placeholder_metrics_excluded": _placeholder_metrics_excluded(stats),
     }
     full_ready = (
         profile == Phase12Profile.FULL
@@ -100,7 +134,10 @@ def verify_phase12(
     validation_ready = (
         profile == Phase12Profile.VALIDATION
         and synthetic_sample_count == 0
-        and actual_run_count == len(raw_runs)
+        and adapter_attempt_count == len(raw_runs)
+        and runtime_invocation_count < adapter_attempt_count
+        and runtime_completion_count > 0
+        and blocked_before_runtime_count > 0
         and authoritative_count > 0
         and all(checks.values())
     )
@@ -125,6 +162,8 @@ def verify_phase12(
         status = FULL_STATUS if full_ready else REJECTED_STATUS
     elif validation_ready:
         status = VALIDATION_STATUS
+    elif profile == Phase12Profile.VALIDATION and synthetic_sample_count == 0:
+        status = VALIDATION_GAP_STATUS
     elif smoke_ready:
         status = SMOKE_STATUS
     else:
@@ -158,12 +197,27 @@ def verify_phase12(
         "full_profile_claimed": status == FULL_STATUS,
         "synthetic_sample_count": synthetic_sample_count,
         "actual_run_count": actual_run_count,
+        "adapter_attempt_count": adapter_attempt_count,
+        "runtime_invocation_count": runtime_invocation_count,
+        "runtime_completion_count": runtime_completion_count,
+        "blocked_before_runtime_count": blocked_before_runtime_count,
         "authoritative_thesis_run_count": authoritative_count,
         "actual_backend_counts": actual_backend_counts,
+        "runtime_backend_counts": runtime_backend_counts,
         "actual_runner_invocation_verified": checks["actual_runner_invocation_verified"],
         "source_artifact_hash_verified": checks["source_artifact_hash_verified"],
         "sample_policy_satisfied": checks["sample_policy_satisfied"],
         "paired_run_completeness": checks["paired_run_completeness"],
+        "paired_backend_experiment_accepted": _paired_payload(artifact_root).get(
+            "paired_backend_experiment_accepted", False
+        ),
+        "usable_authoritative_pair_count": _paired_payload(artifact_root).get(
+            "usable_authoritative_pair_count", 0
+        ),
+        "blocked_pair_count": _paired_payload(artifact_root).get("blocked_pair_count", 0),
+        "full_profile_readiness_status": FULL_READY_STATUS
+        if validation_ready
+        else "PHASE12_FULL_PROFILE_NOT_READY",
         "stress_task_count": sum(
             1 for row in raw_runs if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"
         ),
@@ -247,11 +301,24 @@ def _normalize_rows_for_profile(
         updated = dict(row)
         updated["execution_source"] = "SYNTHETIC_PIPELINE_SAMPLE"
         updated["actual_runner_invoked"] = False
+        updated["adapter_attempted"] = False
+        updated["environment_check_completed"] = False
+        updated["runtime_invoked"] = False
+        updated["runtime_completed"] = False
         updated["authoritative_for_thesis"] = False
+        updated["blocker_stage"] = ""
         updated["source_artifact_path"] = ""
         updated["source_artifact_hash"] = ""
         updated["source_verifier"] = "phase12.synthetic_pipeline.legacy"
         updated["environment_status"] = "READY"
+        updated["metric_provenance"] = {
+            "total_completion_time_ms": {
+                "source": "CONSTANT_PLACEHOLDER",
+                "source_field": "legacy phase12 smoke formula",
+                "source_artifact": "",
+                "unit": "ms",
+            }
+        }
         normalized.append(updated)
     return normalized
 
@@ -282,13 +349,15 @@ def _contains_sensitive_text(root: Path) -> bool:
 
 def _actual_runner_invocation_verified(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:
     if profile == Phase12Profile.SMOKE:
-        return all(row.get("actual_runner_invoked") is False for row in rows)
-    return bool(rows) and all(row.get("actual_runner_invoked") is True for row in rows)
+        return all(
+            row.get("runtime_invoked", row.get("actual_runner_invoked")) is False for row in rows
+        )
+    return bool(rows) and all(row.get("adapter_attempted") is True for row in rows)
 
 
 def _source_artifact_hash_verified(root: Path, rows: list[dict[str, Any]]) -> bool:
     for row in rows:
-        if row.get("actual_runner_invoked") is not True:
+        if row.get("adapter_attempted") is not True:
             continue
         rel_path = str(row.get("source_artifact_path", ""))
         expected = str(row.get("source_artifact_hash", ""))
@@ -344,6 +413,137 @@ def _stress_task_count_satisfied(profile: Phase12Profile, rows: list[dict[str, A
     if profile == Phase12Profile.FULL:
         return count >= 100
     return count > 0 if rows else False
+
+
+def _blocked_rows_runtime_invoked_false(rows: list[dict[str, Any]]) -> bool:
+    return all(
+        row.get("runtime_invoked") is not True and row.get("runtime_completed") is not True
+        for row in rows
+        if row.get("status") == "BLOCKED_BY_ENV"
+    )
+
+
+def _runtime_receipts_exist(root: Path, rows: list[dict[str, Any]]) -> bool:
+    f20_rows = [row for row in rows if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"]
+    return bool(f20_rows) and all(_runtime_receipt(root, row) is not None for row in f20_rows)
+
+
+def _runtime_receipt_hash_valid(root: Path, rows: list[dict[str, Any]]) -> bool:
+    for row in rows:
+        if row.get("experiment_id") != "F20_STRESS_AND_RECOVERY":
+            continue
+        receipt = _runtime_receipt(root, row)
+        if receipt is None:
+            return False
+        expected = str(row.get("source_artifact_hash", ""))
+        path = root / str(row.get("source_artifact_path", ""))
+        if not expected or not path.exists():
+            return False
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            return False
+        if not receipt.get("runtime_receipt_hash"):
+            return False
+    return True
+
+
+def _phase11_sqlite_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: _sqlite_evidence_hash_valid(root, receipt),
+    )
+
+
+def _worker_lease_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: int(receipt.get("worker_lease_evidence", {}).get("lease_count", 0)) >= 1,
+    )
+
+
+def _duplicate_competition_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: (
+            bool(receipt.get("duplicate_competition_evidence", {}).get("lease_winner"))
+            and bool(receipt.get("duplicate_competition_evidence", {}).get("lease_loser"))
+        ),
+    )
+
+
+def _runner_invocation_count_exactly_one(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: (
+            receipt.get("duplicate_competition_evidence", {}).get("runner_invocation_count") == 1
+        ),
+    )
+
+
+def _metric_provenance_complete(rows: list[dict[str, Any]]) -> bool:
+    for row in rows:
+        provenance = row.get("metric_provenance")
+        if not isinstance(provenance, dict) or "total_completion_time_ms" not in provenance:
+            return False
+        metric = provenance["total_completion_time_ms"]
+        if not isinstance(metric, dict) or not metric.get("source") or not metric.get("unit"):
+            return False
+    return True
+
+
+def _placeholder_metrics_excluded(stats: dict[str, Any]) -> bool:
+    for section_name in ("group_statistics", "backend_statistics"):
+        section = stats.get(section_name, {})
+        if not isinstance(section, dict):
+            continue
+        for payload in section.values():
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("excluded_metric_sample_count", 0) < 0:
+                return False
+    return True
+
+
+def _paired_payload(root: Path) -> dict[str, Any]:
+    payload = _read_json(root / "paired/paired_summary.json")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _runtime_receipt(root: Path, row: dict[str, Any]) -> dict[str, Any] | None:
+    rel_path = str(row.get("source_artifact_path", ""))
+    if not rel_path:
+        return None
+    path = root / rel_path
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else None
+
+
+def _sqlite_evidence_hash_valid(root: Path, receipt: dict[str, Any]) -> bool:
+    evidence = receipt.get("sqlite_evidence", {})
+    if not isinstance(evidence, dict) or evidence.get("exists") is not True:
+        return False
+    rel_path = str(evidence.get("relative_path", ""))
+    expected = str(evidence.get("sha256", ""))
+    if not rel_path or not expected:
+        return False
+    path = root / rel_path
+    return path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == expected
+
+
+def _all_f20_receipts(root: Path, rows: list[dict[str, Any]], predicate: Any) -> bool:
+    f20_rows = [row for row in rows if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"]
+    if not f20_rows:
+        return False
+    for row in f20_rows:
+        receipt = _runtime_receipt(root, row)
+        if receipt is None or not predicate(receipt):
+            return False
+    return True
 
 
 def _write_json(path: Path, payload: object) -> None:

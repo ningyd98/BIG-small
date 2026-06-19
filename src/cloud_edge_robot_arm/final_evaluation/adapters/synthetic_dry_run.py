@@ -11,8 +11,11 @@ from cloud_edge_robot_arm.final_evaluation.adapters.base import (
     write_source_artifact,
 )
 from cloud_edge_robot_arm.final_evaluation.models import (
+    BlockerStage,
     EnvironmentStatus,
     ExecutionSource,
+    MetricProvenance,
+    MetricSource,
     Phase12RunStatus,
 )
 from cloud_edge_robot_arm.real_robot.verification import verify_phase10_0
@@ -39,11 +42,17 @@ class Phase10SyntheticDryRunAdapter:
             events=[{"event_type": "safety_gate_verified", "status": payload.get("status", "")}],
             execution_source=ExecutionSource.PHASE10_SYNTHETIC_DRY_RUN_ACTUAL,
             actual_runner_invoked=True,
+            adapter_attempted=True,
+            environment_check_completed=True,
+            runtime_invoked=True,
+            runtime_completed=True,
             authoritative_for_thesis=True,
+            blocker_stage=BlockerStage.NONE,
             source_artifact_path=rel,
             source_artifact_hash=digest,
             source_verifier=self.runner_kind,
             environment_status=EnvironmentStatus.READY,
+            metric_provenance=_metric_provenance(rel),
             failure_type="SAFETY_STOPPED",
         )
 
@@ -97,4 +106,28 @@ def _metrics(payload: dict[str, Any], *, safety: bool) -> dict[str, float | int 
         "response_latency_ms": 0.0,
         "result_hash": digest,
         "artifact_hash": digest,
+    }
+
+
+def _metric_provenance(source_artifact: str) -> dict[str, MetricProvenance]:
+    metrics = [
+        "task_completion_rate",
+        "total_completion_time_ms",
+        "edge_execution_time_ms",
+        "safety_intervention_count",
+        "rejected_action_count",
+        "stale_telemetry_rejection",
+        "workspace_rejection",
+        "collision_rejection",
+        "emergency_stop_event",
+        "unsafe_command_execution_count",
+    ]
+    return {
+        metric: MetricProvenance(
+            source=MetricSource.EVENT_DERIVED,
+            source_field=f"phase10_0.{metric}",
+            source_artifact=source_artifact,
+            unit="ms" if metric.endswith("_ms") else "count",
+        )
+        for metric in metrics
     }

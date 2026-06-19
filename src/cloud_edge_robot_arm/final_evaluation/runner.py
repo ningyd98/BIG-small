@@ -17,9 +17,12 @@ from cloud_edge_robot_arm.final_evaluation.adapters.base import (
     Phase12RunContext,
 )
 from cloud_edge_robot_arm.final_evaluation.models import (
+    BlockerStage,
     EnvironmentStatus,
     ExecutionSource,
     HardwareClaims,
+    MetricProvenance,
+    MetricSource,
     Phase12Backend,
     Phase12Profile,
     Phase12Result,
@@ -88,6 +91,12 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
                                     seed=seed,
                                     repetition=repetition,
                                     output_root=output_root,
+                                    planner_provider=_planner_provider_for(
+                                        experiment.experiment_id, seed, repetition, mode
+                                    ),
+                                    model_name=_model_name_for(
+                                        experiment.experiment_id, seed, repetition, mode
+                                    ),
                                 )
                                 adapter = adapters[
                                     _runner_kind_for(experiment.runner_kind, backend)
@@ -128,8 +137,19 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
             1 for row in rows if row.execution_source == ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE
         ),
         "actual_run_count": sum(1 for row in rows if row.actual_runner_invoked),
+        "adapter_attempt_count": sum(1 for row in rows if row.adapter_attempted),
+        "runtime_invocation_count": sum(1 for row in rows if row.runtime_invoked),
+        "runtime_completion_count": sum(1 for row in rows if row.runtime_completed),
+        "blocked_before_runtime_count": sum(
+            1
+            for row in rows
+            if row.status == Phase12RunStatus.BLOCKED_BY_ENV
+            and row.environment_check_completed
+            and not row.runtime_invoked
+        ),
         "authoritative_thesis_run_count": sum(1 for row in rows if row.authoritative_for_thesis),
         "actual_backend_counts": _actual_backend_counts(rows),
+        "runtime_backend_counts": _runtime_backend_counts(rows),
         "unsafe_command_execution_count": sum(row.unsafe_command_execution_count for row in rows),
         "hardware_claims": HardwareClaims().model_dump(mode="json"),
         "artifact_hash": stable_hash([row.result_hash for row in rows]),
@@ -178,12 +198,29 @@ def _manifest(
         worktree_clean=clean,
         config_hash=stable_hash(config),
         environment_hash=env_hash,
-        planner_provider="RULE_BASED"
-        if experiment_id == "F16_PLANNER_PROVIDER_COMPARISON"
-        else "NONE",
-        model_name="rule-based" if experiment_id == "F16_PLANNER_PROVIDER_COMPARISON" else "",
+        planner_provider=_planner_provider_for(experiment_id, seed, repetition, mode),
+        model_name=_model_name_for(experiment_id, seed, repetition, mode),
         completed_at=datetime.now(UTC),
     )
+
+
+def _planner_provider_for(experiment_id: str, seed: int, repetition: int, mode: str) -> str:
+    if experiment_id != "F16_PLANNER_PROVIDER_COMPARISON":
+        return "NONE"
+    providers = ["MOCK", "RULE_BASED", "OPENAI_COMPATIBLE", "OLLAMA"]
+    mode_offset = {"PCSC": 0, "ETEAC": 1, "AUTO": 2}[mode]
+    return providers[(seed + repetition + mode_offset) % len(providers)]
+
+
+def _model_name_for(experiment_id: str, seed: int, repetition: int, mode: str) -> str:
+    provider = _planner_provider_for(experiment_id, seed, repetition, mode)
+    return {
+        "MOCK": "mock-planner",
+        "RULE_BASED": "rule-based",
+        "OPENAI_COMPATIBLE": "not-configured",
+        "OLLAMA": "not-installed",
+        "NONE": "",
+    }[provider]
 
 
 def _runner_kind_for(experiment_runner_kind: str, backend: Phase12Backend) -> str:
@@ -264,11 +301,19 @@ def _result_from_adapter(
         artifact_hash=artifact_hash,
         execution_source=adapter_result.execution_source,
         actual_runner_invoked=adapter_result.actual_runner_invoked,
+        adapter_attempted=adapter_result.adapter_attempted,
+        environment_check_completed=adapter_result.environment_check_completed,
+        runtime_invoked=adapter_result.runtime_invoked,
+        runtime_completed=adapter_result.runtime_completed,
         authoritative_for_thesis=adapter_result.authoritative_for_thesis,
+        blocker_stage=adapter_result.blocker_stage,
         source_artifact_path=adapter_result.source_artifact_path,
         source_artifact_hash=adapter_result.source_artifact_hash,
         source_verifier=adapter_result.source_verifier,
         environment_status=adapter_result.environment_status,
+        metric_provenance=adapter_result.metric_provenance,
+        planner_provider=adapter_result.planner_provider,
+        model_name=adapter_result.model_name,
         hardware_claims=adapter_result.hardware_claims,
     )
 
@@ -388,13 +433,23 @@ def _result_from_manifest(manifest: Phase12RunManifest, title: str) -> Phase12Re
         ),
         execution_source=ExecutionSource.SYNTHETIC_PIPELINE_SAMPLE,
         actual_runner_invoked=False,
+        adapter_attempted=False,
+        environment_check_completed=False,
+        runtime_invoked=False,
+        runtime_completed=False,
         authoritative_for_thesis=False,
+        blocker_stage=BlockerStage.NONE
+        if status != Phase12RunStatus.BLOCKED_BY_ENV
+        else BlockerStage.ENVIRONMENT_CHECK,
         source_artifact_path="",
         source_artifact_hash="",
         source_verifier="phase12.synthetic_pipeline",
         environment_status=EnvironmentStatus.READY
         if status != Phase12RunStatus.BLOCKED_BY_ENV
         else EnvironmentStatus.BLOCKED_BY_ENV,
+        metric_provenance=_synthetic_metric_provenance(),
+        planner_provider=manifest.planner_provider,
+        model_name=manifest.model_name,
         hardware_claims=HardwareClaims(),
     )
 
@@ -438,6 +493,11 @@ def _event(row: Phase12Result) -> dict[str, object]:
         "experiment_id": row.experiment_id,
         "execution_source": row.execution_source.value,
         "actual_runner_invoked": row.actual_runner_invoked,
+        "adapter_attempted": row.adapter_attempted,
+        "environment_check_completed": row.environment_check_completed,
+        "runtime_invoked": row.runtime_invoked,
+        "runtime_completed": row.runtime_completed,
+        "blocker_stage": row.blocker_stage.value,
         "authoritative_for_thesis": row.authoritative_for_thesis,
         "timestamp": datetime.now(UTC).isoformat(),
         "hardware_motion_observed": False,
@@ -448,7 +508,12 @@ def _source_fields(adapter_result: Phase12AdapterResult) -> dict[str, object]:
     return {
         "execution_source": adapter_result.execution_source,
         "actual_runner_invoked": adapter_result.actual_runner_invoked,
+        "adapter_attempted": adapter_result.adapter_attempted,
+        "environment_check_completed": adapter_result.environment_check_completed,
+        "runtime_invoked": adapter_result.runtime_invoked,
+        "runtime_completed": adapter_result.runtime_completed,
         "authoritative_for_thesis": adapter_result.authoritative_for_thesis,
+        "blocker_stage": adapter_result.blocker_stage,
         "source_artifact_path": adapter_result.source_artifact_path,
         "source_artifact_hash": adapter_result.source_artifact_hash,
         "source_verifier": adapter_result.source_verifier,
@@ -469,6 +534,25 @@ def _actual_backend_counts(rows: list[Phase12Result]) -> dict[str, int]:
         if row.actual_runner_invoked:
             counts[row.backend.value] = counts.get(row.backend.value, 0) + 1
     return counts
+
+
+def _runtime_backend_counts(rows: list[Phase12Result]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        if row.runtime_invoked:
+            counts[row.backend.value] = counts.get(row.backend.value, 0) + 1
+    return counts
+
+
+def _synthetic_metric_provenance() -> dict[str, MetricProvenance]:
+    return {
+        "total_completion_time_ms": MetricProvenance(
+            source=MetricSource.CONSTANT_PLACEHOLDER,
+            source_field="phase12.synthetic_formula",
+            source_artifact="",
+            unit="ms",
+        )
+    }
 
 
 def _optional_float(value: object) -> float | None:

@@ -11,8 +11,11 @@ from cloud_edge_robot_arm.final_evaluation.adapters.base import (
     write_source_artifact,
 )
 from cloud_edge_robot_arm.final_evaluation.models import (
+    BlockerStage,
     EnvironmentStatus,
     ExecutionSource,
+    MetricProvenance,
+    MetricSource,
     Phase12RunStatus,
 )
 from cloud_edge_robot_arm.simulation.evaluation.metrics import run_mujoco_physical_trial
@@ -49,11 +52,17 @@ class Phase9MujocoAdapter:
             events=[{"event_type": "mujoco_trial_completed", "result_hash": trial.result_hash}],
             execution_source=ExecutionSource.PHASE9_MUJOCO_ACTUAL_RUN,
             actual_runner_invoked=True,
+            adapter_attempted=True,
+            environment_check_completed=True,
+            runtime_invoked=True,
+            runtime_completed=True,
             authoritative_for_thesis=True,
+            blocker_stage=BlockerStage.NONE,
             source_artifact_path=rel,
             source_artifact_hash=digest,
             source_verifier=self.runner_kind,
             environment_status=EnvironmentStatus.READY,
+            metric_provenance=_metric_provenance(rel),
             failure_type="" if success else status.value,
         )
 
@@ -116,3 +125,65 @@ def _metrics(
         "result_hash": result_hash,
         "artifact_hash": result_hash,
     }
+
+
+def _metric_provenance(source_artifact: str) -> dict[str, MetricProvenance]:
+    measured = {
+        "total_completion_time_ms": ("trial.metrics.trajectory_duration_ms", "ms"),
+        "edge_execution_time_ms": ("trial.metrics.trajectory_duration_ms", "ms"),
+        "collision_rejection": ("trial.metrics.illegal_collision_count", "count"),
+        "task_completion_rate": ("trial.metrics.simulation_success", "ratio"),
+    }
+    adapter_derived = {
+        "cloud_planning_time_ms": ("control_mode cloud call estimate", "ms"),
+        "communication_wait_time_ms": ("adapter default communication wait", "ms"),
+        "cloud_invocation_count": ("control_mode cloud call estimate", "count"),
+        "communication_count": ("control_mode communication estimate", "count"),
+        "uploaded_bytes": ("control_mode upload estimate", "bytes"),
+        "downloaded_bytes": ("control_mode download estimate", "bytes"),
+        "supervision_count": ("control_mode supervision estimate", "count"),
+        "mode_switch_count": ("control_mode AUTO marker", "count"),
+        "safety_intervention_count": ("scenario safety status projection", "count"),
+        "rejected_action_count": ("scenario safety status projection", "count"),
+        "emergency_stop_event": ("scenario id S14 marker", "count"),
+        "paired_success_agreement": ("paired row status projection", "bool"),
+        "completion_time_delta": ("paired row placeholder until Isaac runtime", "ms"),
+    }
+    provenance: dict[str, MetricProvenance] = {}
+    for metric, (field, unit) in measured.items():
+        provenance[metric] = MetricProvenance(
+            source=MetricSource.MEASURED,
+            source_field=field,
+            source_artifact=source_artifact,
+            unit=unit,
+        )
+    for metric, (field, unit) in adapter_derived.items():
+        provenance[metric] = MetricProvenance(
+            source=MetricSource.ADAPTER_DERIVED,
+            source_field=field,
+            source_artifact=source_artifact,
+            unit=unit,
+        )
+    for metric in (
+        "local_recovery_time_ms",
+        "replanning_time_ms",
+        "local_retry_count",
+        "local_recovery_success_count",
+        "replan_count",
+        "cloud_fallback_count",
+        "stale_telemetry_rejection",
+        "workspace_rejection",
+        "unsafe_command_execution_count",
+        "restart_recovery_success",
+        "duplicate_execution_count",
+        "lease_recovery_count",
+        "event_loss_count",
+        "response_latency_ms",
+    ):
+        provenance[metric] = MetricProvenance(
+            source=MetricSource.NOT_AVAILABLE,
+            source_field="",
+            source_artifact=source_artifact,
+            unit="",
+        )
+    return provenance
