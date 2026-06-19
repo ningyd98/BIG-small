@@ -88,6 +88,8 @@ def profile_commands(profile: str) -> list[ProjectCommand]:
             _cmd("mypy", ["python", "-m", "mypy", "."]),
             _cmd("pytest", ["python", "-m", "pytest", "-q"]),
             _cmd("docs", ["python", "scripts/check_docs.py"]),
+            _cmd("chinese-comments", ["python", "scripts/check_chinese_comments.py"]),
+            _cmd("model-control-secrets", ["python", "scripts/check_model_control_secrets.py"]),
             _cmd("phase10-0", PHASE10_0_PROJECT_ARGV),
             _cmd("phase10-1", PHASE10_1_PROJECT_ARGV),
             _cmd("phase10-2a-framework", PHASE10_2A_FRAMEWORK_ARGV),

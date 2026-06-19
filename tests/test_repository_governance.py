@@ -41,6 +41,8 @@ def test_verify_project_ci_profile_is_ci_safe() -> None:
     joined = "\n".join(" ".join(command.argv) for command in commands)
 
     assert "scripts/check_docs.py" in joined
+    assert "scripts/check_chinese_comments.py" in joined
+    assert "scripts/check_model_control_secrets.py" in joined
     assert "scripts/verify_phase10_0.py" in joined
     assert "scripts/verify_phase10_1.py" in joined
     assert "scripts/verify_phase10_2a.py" in joined
