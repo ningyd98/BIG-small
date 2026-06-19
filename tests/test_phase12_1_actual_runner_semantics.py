@@ -56,6 +56,23 @@ def test_smoke_verifier_uses_pipeline_ready_thesis_status(tmp_path: Path) -> Non
     assert summary["authoritative_thesis_run_count"] == 0
 
 
+def test_smoke_verifier_writes_auditable_status_correction(tmp_path: Path) -> None:
+    """smoke 历史错误状态必须用 correction artifact 审计保留，不得静默覆盖。"""
+
+    output = tmp_path / "phase12"
+    _run_pipeline(output, "smoke", "--smoke")
+
+    correction = json.loads(
+        (output / "verification/phase12_smoke_status_correction.json").read_text()
+    )
+
+    assert correction["supersedes"] == "7b4c9af artifacts/phase12/verification/phase12_summary.json"
+    assert correction["previous_thesis_status"] == "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED"
+    assert correction["corrected_thesis_status"] == "PHASE12_THESIS_ASSET_PIPELINE_READY"
+    assert "synthetic pipeline samples" in correction["correction_reason"]
+    assert correction["original_artifact_retained"] is True
+
+
 def test_legacy_smoke_rows_without_source_fields_are_corrected_as_synthetic(
     tmp_path: Path,
 ) -> None:
