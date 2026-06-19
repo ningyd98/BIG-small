@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -104,6 +105,169 @@ def _artifact_jsonl(
 ) -> list[dict[str, Any]]:
     path = tmp_path / "artifacts" / artifact_paths[key]
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def test_verifier_reads_result_from_runtime_artifacts_for_nested_outputs(tmp_path: Path) -> None:
+    # 当 verifier 输出目录位于 artifacts/phase11_2/verification/phase11_1_runtime
+    # 这类嵌套位置时，运行时实际 evidence 会落在兄弟 runtime_artifacts 目录。
+    # MuJoCo 验收必须能读取该位置，不能误拼成仓库根下的 phase11_1/runtime。
+    from scripts.verify_phase11_1_simulation_runtime import _read_result
+
+    artifact_root = tmp_path / "verification" / "runtime_artifacts"
+    result_path = artifact_root / "phase11_1" / "runtime" / "sim-path" / "result.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(
+        json.dumps({"status": "SUCCEEDED", "backend": "MUJOCO"}) + "\n",
+        encoding="utf-8",
+    )
+
+    result = _read_result(
+        tmp_path / "verification" / "phase11_1_runtime",
+        {"result": "phase11_1/runtime/sim-path/result.json"},
+    )
+
+    assert result == {"status": "SUCCEEDED", "backend": "MUJOCO"}
+
+
+def test_verifier_waits_for_result_artifact_after_terminal_status(tmp_path: Path) -> None:
+    # MuJoCo job 的数据库终态可能比最终 evidence 文件早几个调度 tick 可见；
+    # verifier 必须等待 result.json 原子落盘，不能因一次 FileNotFound 退出并杀掉 daemon worker。
+    from scripts.verify_phase11_1_simulation_runtime import _read_result
+
+    artifact_root = tmp_path / "artifacts"
+    result_path = artifact_root / "phase11_1" / "runtime" / "sim-delayed" / "result.json"
+
+    def write_later() -> None:
+        time.sleep(0.15)
+        result_path.parent.mkdir(parents=True)
+        result_path.write_text(
+            json.dumps({"status": "SUCCEEDED", "runtime_executed": True}) + "\n",
+            encoding="utf-8",
+        )
+
+    writer = threading.Thread(target=write_later)
+    writer.start()
+    try:
+        result = _read_result(
+            artifact_root,
+            {"result": "phase11_1/runtime/sim-delayed/result.json"},
+        )
+    finally:
+        writer.join(timeout=2.0)
+
+    assert result["status"] == "SUCCEEDED"
+    assert result["runtime_executed"] is True
+
+
+def test_verifier_waits_for_terminal_evidence_consistency(tmp_path: Path) -> None:
+    # cancel/timeout 的 DB 终态也可能先于 evidence_consistency.json 可见；
+    # MuJoCo M11-07/M11-08 验收必须等待完整 evidence，而不只看状态字段。
+    from scripts.verify_phase11_1_simulation_runtime import _wait_for_terminal_evidence
+
+    artifact_root = tmp_path / "artifacts"
+    evidence_path = (
+        artifact_root / "phase11_1" / "runtime" / "sim-timeout" / "evidence_consistency.json"
+    )
+
+    def write_later() -> None:
+        time.sleep(0.15)
+        evidence_path.parent.mkdir(parents=True)
+        evidence_path.write_text(
+            json.dumps({"consistent": True, "expected_terminal_status": "TIMED_OUT"}) + "\n",
+            encoding="utf-8",
+        )
+
+    writer = threading.Thread(target=write_later)
+    writer.start()
+    try:
+        evidence = _wait_for_terminal_evidence(
+            artifact_root,
+            {"evidence_consistency": "phase11_1/runtime/sim-timeout/evidence_consistency.json"},
+        )
+    finally:
+        writer.join(timeout=2.0)
+
+    assert evidence["consistent"] is True
+    assert evidence["expected_terminal_status"] == "TIMED_OUT"
+
+
+def test_verifier_waits_for_terminal_status_with_artifact_paths() -> None:
+    # API 可能先暴露 CANCELLED/TIMED_OUT，再由 worker 补齐 artifact_paths；
+    # MuJoCo verifier 需要等待二者同时成立，才能进入 evidence_consistency 校验。
+    from dataclasses import dataclass
+
+    from scripts.verify_phase11_1_simulation_runtime import _wait_for_terminal
+
+    @dataclass
+    class StatusValue:
+        value: str
+
+    @dataclass
+    class RunRecord:
+        status: StatusValue
+        artifact_paths: dict[str, str]
+
+    class DelayedArtifactService:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_run(self, run_id: str) -> RunRecord:
+            self.calls += 1
+            if self.calls < 3:
+                return RunRecord(StatusValue("CANCELLED"), {})
+            return RunRecord(
+                StatusValue("CANCELLED"),
+                {"evidence_consistency": "phase11_1/runtime/sim-cancel/evidence_consistency.json"},
+            )
+
+    service = DelayedArtifactService()
+    terminal = _wait_for_terminal(
+        service,  # type: ignore[arg-type]
+        "sim-cancel",
+        timeout=1.0,
+        require_artifacts=True,
+    )
+
+    assert terminal.status.value == "CANCELLED"
+    assert "evidence_consistency" in terminal.artifact_paths
+    assert service.calls >= 3
+
+
+def test_verifier_waits_for_running_state_before_mujoco_cancel() -> None:
+    # M11-07 要验证运行中 MuJoCo cooperative cancellation；如果刚入队就取消，
+    # repository 会直接把 QUEUED 标成 CANCELLED，且没有 worker attempt/evidence。
+    from dataclasses import dataclass
+
+    from scripts.verify_phase11_1_simulation_runtime import _wait_for_non_queued
+
+    @dataclass
+    class StatusValue:
+        value: str
+
+    @dataclass
+    class RunRecord:
+        status: StatusValue
+        artifact_paths: dict[str, str]
+
+    class DelayedStartService:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_run(self, run_id: str) -> RunRecord:
+            self.calls += 1
+            if self.calls < 3:
+                return RunRecord(StatusValue("QUEUED"), {})
+            return RunRecord(StatusValue("RUNNING"), {})
+
+    service = DelayedStartService()
+    record = _wait_for_non_queued(
+        service,  # type: ignore[arg-type]
+        "sim-cancellable",
+        timeout=1.0,
+    )
+
+    assert record.status.value == "RUNNING"
+    assert service.calls >= 3
 
 
 def test_runtime_state_machine_rejects_illegal_transition() -> None:

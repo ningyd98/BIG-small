@@ -1804,6 +1804,7 @@ export interface components {
     };
     /**
      * AutoModeDecisionType
+     * @description AUTO 模式决策动作，约束保持、切换、暂停、安全停止或请求观察。
      * @enum {string}
      */
     AutoModeDecisionType:
@@ -1813,7 +1814,10 @@ export interface components {
       | "PAUSE_TASK"
       | "SAFE_STOP"
       | "REQUEST_MORE_OBSERVATION";
-    /** AutoModeStatus */
+    /**
+     * AutoModeStatus
+     * @description 任务当前 AUTO 模式状态，记录版本、切换次数和最近决策。
+     */
     AutoModeStatus: {
       current_mode: components["schemas"]["ControlMode"];
       /**
@@ -1845,6 +1849,7 @@ export interface components {
     };
     /**
      * AutoModeTransitionStatus
+     * @description AUTO 模式切换事务状态，用于 prepare/commit/abort 审计。
      * @enum {string}
      */
     AutoModeTransitionStatus:
@@ -1852,7 +1857,10 @@ export interface components {
       | "COMMITTED"
       | "ABORTED"
       | "ROLLED_BACK";
-    /** BackendCapability */
+    /**
+     * BackendCapability
+     * @description 单个后端能力描述，包含 readiness、支持模式、runner 和限制。
+     */
     BackendCapability: {
       backend: components["schemas"]["SimulationBackend"];
       /** Batch Limits */
@@ -1875,6 +1883,7 @@ export interface components {
     };
     /**
      * BackendReadiness
+     * @description 后端可用性状态，区分 READY、降级、环境阻塞和未配置。
      * @enum {string}
      */
     BackendReadiness:
@@ -1882,7 +1891,10 @@ export interface components {
       | "DEGRADED"
       | "BLOCKED_BY_ENV"
       | "NOT_CONFIGURED";
-    /** BatchProgress */
+    /**
+     * BatchProgress
+     * @description 批量任务进度统计，记录各状态计数和整体进度比例。
+     */
     BatchProgress: {
       /** Blocked */
       blocked: number;
@@ -1911,7 +1923,10 @@ export interface components {
       /** Total */
       total: number;
     };
-    /** BatchRecord */
+    /**
+     * BatchRecord
+     * @description 批量实验记录，保存 manifest、进度、run IDs 和安全声明。
+     */
     BatchRecord: {
       /** Artifact Paths */
       artifact_paths?: {
@@ -1954,7 +1969,10 @@ export interface components {
       | "REJECTED_SCHEMA_INVALID"
       | "REJECTED_SEMANTIC_INVALID"
       | "REJECTED_SAFETY_CONFLICT";
-    /** ComparisonRequest */
+    /**
+     * ComparisonRequest
+     * @description 对比请求，指定对比类型、run IDs 和可选 paired key。
+     */
     ComparisonRequest: {
       /** Comparison Type */
       comparison_type: string;
@@ -2042,6 +2060,7 @@ export interface components {
     };
     /**
      * ControlMode
+     * @description 云边协同控制模式枚举，区分周期监督、事件自治和自动选择。
      * @enum {string}
      */
     ControlMode:
@@ -2173,7 +2192,10 @@ export interface components {
       /** Task Id */
       task_id: string;
     };
-    /** DomainRandomizationDraft */
+    /**
+     * DomainRandomizationDraft
+     * @description 域随机化配置草稿，控制仿真扰动是否启用及其等级。
+     */
     DomainRandomizationDraft: {
       /**
        * Enabled
@@ -2493,7 +2515,10 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
-    /** ExperimentDraft */
+    /**
+     * ExperimentDraft
+     * @description 前端提交的高层实验草稿，不包含机器人低层控制命令。
+     */
     ExperimentDraft: {
       backend: components["schemas"]["SimulationBackend"];
       /** Control Modes */
@@ -2604,7 +2629,10 @@ export interface components {
       /** Jobs */
       jobs: components["schemas"]["ExperimentJobRecord"][];
     };
-    /** ExperimentManifest */
+    /**
+     * ExperimentManifest
+     * @description 规范化实验 manifest，记录来源 commit、tree hash 和复现哈希。
+     */
     ExperimentManifest: {
       /**
        * Created At
@@ -2631,7 +2659,10 @@ export interface components {
       /** Source Tree Hash */
       source_tree_hash: string;
     };
-    /** ExportRequest */
+    /**
+     * ExportRequest
+     * @description 导出请求，指定导出类型、runs、batch 或 comparison。
+     */
     ExportRequest: {
       /**
        * Batch Id
@@ -2648,7 +2679,10 @@ export interface components {
       /** Run Ids */
       run_ids?: string[];
     };
-    /** ExportResponse */
+    /**
+     * ExportResponse
+     * @description 导出响应，返回相对路径、格式、脱敏标记和预览文本。
+     */
     ExportResponse: {
       /** Content Preview */
       content_preview: string;
@@ -2761,7 +2795,10 @@ export interface components {
       /** Task Id */
       task_id: string;
     };
-    /** FaultProfileDraft */
+    /**
+     * FaultProfileDraft
+     * @description 故障注入配置草稿，只允许结构化参数，不允许任意执行字段。
+     */
     FaultProfileDraft: {
       /**
        * Name
@@ -3164,7 +3201,10 @@ export interface components {
        */
       updated_at?: string;
     };
-    /** NetworkDraft */
+    /**
+     * NetworkDraft
+     * @description 网络配置草稿，描述延迟、抖动、丢包和带宽上限。
+     */
     NetworkDraft: {
       /**
        * Bandwidth Kbps
@@ -3192,7 +3232,10 @@ export interface components {
        */
       packet_loss: number;
     };
-    /** ParameterSchemaResponse */
+    /**
+     * ParameterSchemaResponse
+     * @description 参数 schema 响应，声明权威模型、枚举、数值边界和禁用字段。
+     */
     ParameterSchemaResponse: {
       /** Authoritative Models */
       authoritative_models: string[];
@@ -3314,7 +3357,10 @@ export interface components {
         [key: string]: unknown;
       }[];
     };
-    /** Pose */
+    /**
+     * Pose
+     * @description 简化 TCP 位姿坐标，只记录有限三维位置。
+     */
     Pose: {
       /** X */
       x: number;
@@ -3498,7 +3544,10 @@ export interface components {
       /** Request Id */
       request_id: string;
     };
-    /** ReproductionResponse */
+    /**
+     * ReproductionResponse
+     * @description 复现实验响应，携带复现草稿、环境匹配状态和 warning。
+     */
     ReproductionResponse: {
       draft: components["schemas"]["ExperimentDraft"];
       /** Environment Match */
@@ -3508,7 +3557,10 @@ export interface components {
       /** Warnings */
       warnings?: string[];
     };
-    /** RiskComponentScores */
+    /**
+     * RiskComponentScores
+     * @description 风险分项分数，分别记录任务、场景、感知、网络、执行和安全风险。
+     */
     RiskComponentScores: {
       /** Execution Risk */
       execution_risk: number;
@@ -3601,6 +3653,7 @@ export interface components {
     };
     /**
      * RiskLevel
+     * @description 风险等级枚举，包含证据不足这一非数值终态。
      * @enum {string}
      */
     RiskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "INSUFFICIENT_EVIDENCE";
@@ -3739,6 +3792,7 @@ export interface components {
     };
     /**
      * SafetyDecision
+     * @description SafetyShield 决策枚举，表示允许、限速、暂停、拒绝或急停。
      * @enum {string}
      */
     SafetyDecision:
@@ -3864,6 +3918,7 @@ export interface components {
     };
     /**
      * ScenarioCategory
+     * @description 场景分类枚举，用于前端筛选故障、网络、安全和恢复场景。
      * @enum {string}
      */
     ScenarioCategory:
@@ -3877,7 +3932,10 @@ export interface components {
       | "MODE"
       | "SAFETY"
       | "RECOVERY";
-    /** ScenarioDefinitionView */
+    /**
+     * ScenarioDefinitionView
+     * @description 面向前端的场景定义视图，暴露故障、预期不变量和后端支持。
+     */
     ScenarioDefinitionView: {
       /** Allowed Result Statuses */
       allowed_result_statuses: string[];
@@ -3907,7 +3965,10 @@ export interface components {
         [key: string]: unknown;
       }[];
     };
-    /** ScenarioListResponse */
+    /**
+     * ScenarioListResponse
+     * @description 场景列表响应，返回 scenario_registry 派生的场景视图。
+     */
     ScenarioListResponse: {
       /** Scenarios */
       scenarios: components["schemas"]["ScenarioDefinitionView"][];
@@ -3991,7 +4052,10 @@ export interface components {
       | "NOT_CONFIGURED"
       | "FAILED"
       | "UNKNOWN";
-    /** SimulationArtifactsResponse */
+    /**
+     * SimulationArtifactsResponse
+     * @description 仿真 artifact 路径响应，只返回相对路径。
+     */
     SimulationArtifactsResponse: {
       /** Artifacts */
       artifacts: {
@@ -4000,10 +4064,14 @@ export interface components {
     };
     /**
      * SimulationBackend
+     * @description 仿真后端枚举，严格区分 Mock、MuJoCo、Isaac 和 MoveIt dry-run。
      * @enum {string}
      */
     SimulationBackend: "MOCK" | "MUJOCO" | "ISAAC_SIM" | "MOVEIT_DRY_RUN";
-    /** SimulationCapabilitiesResponse */
+    /**
+     * SimulationCapabilitiesResponse
+     * @description 仿真工作台能力响应，包含全部后端和硬件安全声明。
+     */
     SimulationCapabilitiesResponse: {
       /** Backends */
       backends: components["schemas"]["BackendCapability"][];
@@ -4035,12 +4103,18 @@ export interface components {
       /** Supported Run Types */
       supported_run_types: components["schemas"]["SimulationRunType"][];
     };
-    /** SimulationEventsResponse */
+    /**
+     * SimulationEventsResponse
+     * @description 仿真事件列表响应。
+     */
     SimulationEventsResponse: {
       /** Events */
       events: components["schemas"]["TimelineEvent"][];
     };
-    /** SimulationMetric */
+    /**
+     * SimulationMetric
+     * @description 仿真指标记录，绑定后端、场景、seed、控制模式和聚合方式。
+     */
     SimulationMetric: {
       /**
        * Aggregation
@@ -4071,17 +4145,26 @@ export interface components {
       /** Value */
       value: number | string | boolean;
     };
-    /** SimulationMetricsResponse */
+    /**
+     * SimulationMetricsResponse
+     * @description 仿真指标列表响应。
+     */
     SimulationMetricsResponse: {
       /** Metrics */
       metrics: components["schemas"]["SimulationMetric"][];
     };
-    /** SimulationRunListResponse */
+    /**
+     * SimulationRunListResponse
+     * @description 仿真运行列表响应。
+     */
     SimulationRunListResponse: {
       /** Runs */
       runs: components["schemas"]["SimulationRunRecord"][];
     };
-    /** SimulationRunRecord */
+    /**
+     * SimulationRunRecord
+     * @description 仿真运行记录，统一运行状态、队列信息、artifact 和硬件声明。
+     */
     SimulationRunRecord: {
       /** Accepted At */
       accepted_at?: string | null;
@@ -4186,6 +4269,7 @@ export interface components {
     };
     /**
      * SimulationRunStatus
+     * @description 仿真任务状态机枚举，包含队列、执行、取消、超时和恢复状态。
      * @enum {string}
      */
     SimulationRunStatus:
@@ -4207,6 +4291,7 @@ export interface components {
       | "RECOVERY_PENDING";
     /**
      * SimulationRunType
+     * @description 仿真运行类型，覆盖单次、批量、扫描、后端配对和模式对比。
      * @enum {string}
      */
     SimulationRunType:
@@ -4217,6 +4302,7 @@ export interface components {
       | "MODE_COMPARISON";
     /**
      * SimulationRunnerKind
+     * @description 安全 runner allowlist，禁止前端提交任意脚本、shell 或可执行文件。
      * @enum {string}
      */
     SimulationRunnerKind:
@@ -4227,7 +4313,10 @@ export interface components {
       | "PHASE9_MUJOCO_BENCHMARK"
       | "ISAAC_BENCHMARK"
       | "CROSS_BACKEND_PAIRED";
-    /** SkillCacheKey */
+    /**
+     * SkillCacheKey
+     * @description 技能缓存匹配键，绑定机器人能力、场景意图和安全策略版本。
+     */
     SkillCacheKey: {
       /** Calibration Version */
       calibration_version: string;
@@ -4292,6 +4381,7 @@ export interface components {
     };
     /**
      * SkillName
+     * @description 高层技能名称 allowlist，不包含任意 shell、轨迹或低层电机命令。
      * @enum {string}
      */
     SkillName:
@@ -4466,6 +4556,7 @@ export interface components {
     };
     /**
      * SkillTemplateStatus
+     * @description 技能模板生命周期状态，区分候选、可信、隔离、失效和过期。
      * @enum {string}
      */
     SkillTemplateStatus:
@@ -4710,7 +4801,10 @@ export interface components {
       /** Version */
       version: string;
     };
-    /** TaskStep */
+    /**
+     * TaskStep
+     * @description 任务步骤契约，描述高层技能、参数模板、时限和成功条件。
+     */
     TaskStep: {
       /** Expected Duration Ms */
       expected_duration_ms: number;
@@ -4730,7 +4824,10 @@ export interface components {
       /** Timeout Ms */
       timeout_ms: number;
     };
-    /** TimelineEvent */
+    /**
+     * TimelineEvent
+     * @description 运行时间线事件，记录序列、来源、严重级别和虚拟时间。
+     */
     TimelineEvent: {
       /** Event Type */
       event_type: string;
@@ -4776,7 +4873,10 @@ export interface components {
       /** Error Type */
       type: string;
     };
-    /** ValidationResponse */
+    /**
+     * ValidationResponse
+     * @description 实验草稿校验结果，返回 manifest、run 数、blocker 和 warning。
+     */
     ValidationResponse: {
       /** Blockers */
       blockers?: string[];
@@ -4854,7 +4954,10 @@ export interface components {
       /** @default unavailable */
       source: components["schemas"]["DataSourceKind"];
     };
-    /** ComparisonResponse */
+    /**
+     * ComparisonResponse
+     * @description 对比响应，返回统计结果、参与指标和 warning。
+     */
     cloud_edge_robot_arm__simulation_workbench__models__ComparisonResponse: {
       /** Comparison Id */
       comparison_id: string;

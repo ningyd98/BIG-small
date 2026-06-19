@@ -435,7 +435,8 @@ def verify_mujoco_runtime(output: Path) -> dict[str, Any]:
         run = service.create_run(
             ExperimentDraft.model_validate(_draft("MUJOCO", scenario, mode, seed, overrides))
         )
-        terminal = _wait_for_terminal(service, run.run_id, timeout=30)
+        terminal = _wait_for_terminal(service, run.run_id, timeout=30, require_artifacts=True)
+        _wait_for_terminal_evidence(artifact_root, terminal.artifact_paths)
         result = _read_result(artifact_root, terminal.artifact_paths)
         results.append(
             {
@@ -454,7 +455,8 @@ def verify_mujoco_runtime(output: Path) -> dict[str, Any]:
         run = service.create_run(
             ExperimentDraft.model_validate(_draft("MUJOCO", "S01_NORMAL_STATIC", "PCSC", seed))
         )
-        terminal = _wait_for_terminal(service, run.run_id, timeout=30)
+        terminal = _wait_for_terminal(service, run.run_id, timeout=30, require_artifacts=True)
+        _wait_for_terminal_evidence(artifact_root, terminal.artifact_paths)
         batch_runs.append({"seed": seed, "status": terminal.status.value, "run_id": run.run_id})
 
     cancel_run = service.create_run(
@@ -462,8 +464,10 @@ def verify_mujoco_runtime(output: Path) -> dict[str, Any]:
             _draft("MUJOCO", "S01_NORMAL_STATIC", "PCSC", 0, {"runtime_delay_ms": 2000})
         )
     )
+    _wait_for_non_queued(service, cancel_run.run_id, timeout=10)
     service.cancel_run(cancel_run.run_id)
-    cancelled = _wait_for_terminal(service, cancel_run.run_id, timeout=10)
+    cancelled = _wait_for_terminal(service, cancel_run.run_id, timeout=10, require_artifacts=True)
+    _wait_for_terminal_evidence(artifact_root, cancelled.artifact_paths)
 
     timeout_run = service.create_run(
         ExperimentDraft.model_validate(
@@ -476,7 +480,8 @@ def verify_mujoco_runtime(output: Path) -> dict[str, Any]:
             )
         )
     )
-    timed_out = _wait_for_terminal(service, timeout_run.run_id, timeout=10)
+    timed_out = _wait_for_terminal(service, timeout_run.run_id, timeout=10, require_artifacts=True)
+    _wait_for_terminal_evidence(artifact_root, timed_out.artifact_paths)
 
     recovery = service.runtime.recover()
     accepted = (
@@ -655,7 +660,11 @@ def _draft(
 
 
 def _wait_for_terminal(
-    service: SimulationWorkbenchService, run_id: str, *, timeout: float = 15.0
+    service: SimulationWorkbenchService,
+    run_id: str,
+    *,
+    timeout: float = 15.0,
+    require_artifacts: bool = False,
 ) -> Any:
     deadline = time.monotonic() + timeout
     terminal = {"SUCCEEDED", "FAILED", "CANCELLED", "TIMED_OUT", "BLOCKED_BY_ENV"}
@@ -663,16 +672,46 @@ def _wait_for_terminal(
     while time.monotonic() < deadline:
         last = service.get_run(run_id)
         if last.status.value in terminal:
+            if require_artifacts and not last.artifact_paths.get("evidence_consistency"):
+                time.sleep(0.05)
+                continue
             return last
         time.sleep(0.05)
     raise RuntimeError(f"run did not finish: {last}")
 
 
+def _wait_for_non_queued(
+    service: SimulationWorkbenchService, run_id: str, *, timeout: float = 10.0
+) -> Any:
+    deadline = time.monotonic() + timeout
+    last = None
+    queued_like = {"CREATED", "QUEUED", "VALIDATING"}
+    while time.monotonic() < deadline:
+        last = service.get_run(run_id)
+        if last.status.value not in queued_like:
+            return last
+        time.sleep(0.05)
+    raise RuntimeError(f"run did not leave queue before cancellation: {last}")
+
+
 def _read_result(artifact_root: Path, artifacts: dict[str, str]) -> dict[str, Any]:
-    result_path = artifact_root / artifacts["result"]
-    if not result_path.exists():
-        result_path = artifact_root.parent / artifacts["result"]
-    return cast(dict[str, Any], json.loads(result_path.read_text(encoding="utf-8")))
+    return _wait_for_artifact_json(
+        artifact_root,
+        artifacts,
+        "result",
+        expected_key="status",
+        expected_value=None,
+    )
+
+
+def _wait_for_terminal_evidence(artifact_root: Path, artifacts: dict[str, str]) -> dict[str, Any]:
+    return _wait_for_artifact_json(
+        artifact_root,
+        artifacts,
+        "evidence_consistency",
+        expected_key="consistent",
+        expected_value=True,
+    )
 
 
 def _read_artifact_json(
@@ -709,6 +748,8 @@ def _wait_for_artifact_json(
         except (FileNotFoundError, json.JSONDecodeError) as exc:
             last_error = exc
         else:
+            if expected_value is None and expected_key in payload:
+                return payload
             if payload.get(expected_key) == expected_value:
                 return payload
             last_error = RuntimeError(f"{key}.{expected_key}={payload.get(expected_key)!r}")
