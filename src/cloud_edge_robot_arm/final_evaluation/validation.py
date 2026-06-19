@@ -598,6 +598,13 @@ def _placeholder_metrics_excluded(stats: dict[str, Any]) -> bool:
         for payload in section.values():
             if not isinstance(payload, dict):
                 continue
+            if (
+                "valid_metric_sample_count" not in payload
+                or "excluded_metric_sample_count" not in payload
+            ):
+                return False
+            if payload.get("valid_metric_sample_count", 0) < 0:
+                return False
             if payload.get("excluded_metric_sample_count", 0) < 0:
                 return False
     return True

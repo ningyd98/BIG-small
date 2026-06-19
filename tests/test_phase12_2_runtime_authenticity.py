@@ -191,6 +191,21 @@ def test_metric_statistics_require_row_level_authority() -> None:
     assert stats["PCSC"]["excluded_metric_sample_count"] == 1
 
 
+def test_verifier_rejects_statistics_without_metric_exclusion_counts() -> None:
+    """Verifier must require explicit valid/excluded metric counts for thesis statistics."""
+
+    stats = {
+        "group_statistics": {
+            "PCSC": {
+                "sample_count": 1,
+                "mean": 100.0,
+            }
+        }
+    }
+
+    assert phase12_validation._placeholder_metrics_excluded(stats) is False
+
+
 def test_paired_difference_requires_both_sides_authoritative() -> None:
     """Successful paired rows are usable only when both backend evidence sides are authoritative."""
 
