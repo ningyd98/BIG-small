@@ -51,7 +51,7 @@ def export_plots(
     mode_data = aggregate.get("authoritative_by_mode") or aggregate.get("by_mode", {})
     pipeline_only = synthetic_count > 0 and authoritative_count == 0
     authority = data_authority or (
-        "PIPELINE_TEST_DATA" if pipeline_only else "AUTHORITATIVE_THESIS_DATA"
+        "PIPELINE_TEST_DATA" if pipeline_only else "PENDING_VERIFICATION_DATA"
     )
     for name in PLOT_NAMES:
         title = _title(name)
@@ -132,4 +132,4 @@ def _authority_subtitle(data_authority: str) -> str:
         return "VALIDATION GAP DATA：validation evidence 仍有 gap，不进入论文最终结论。"
     if data_authority == "PENDING_VERIFICATION_DATA":
         return "PENDING VERIFICATION：等待 verifier summary，暂不可声明论文权威数据。"
-    return "单位：按图题对应指标；仅使用 verifier 接受的 authoritative_for_thesis=true 数据。"
+    return "单位：按图题对应指标；仅使用验证器门控通过的证据。"

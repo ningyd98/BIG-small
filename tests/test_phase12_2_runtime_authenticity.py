@@ -20,9 +20,11 @@ import pytest
 from cloud_edge_robot_arm.final_evaluation import validation as phase12_validation
 from cloud_edge_robot_arm.final_evaluation.aggregation import aggregate_results
 from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile
+from cloud_edge_robot_arm.final_evaluation.plots import export_plots
 from cloud_edge_robot_arm.final_evaluation.report import export_thesis_assets
 from cloud_edge_robot_arm.final_evaluation.runner import run_phase12_experiments
 from cloud_edge_robot_arm.final_evaluation.statistics import compute_group_statistics
+from cloud_edge_robot_arm.final_evaluation.tables import export_tables
 
 
 def test_blocked_environment_rows_are_not_runtime_execution(tmp_path: Path) -> None:
@@ -351,6 +353,27 @@ def test_validation_gap_report_gates_authoritative_thesis_run_count(
     assert "verifier-gated thesis runs：0" in report
     assert "row-level runtime-complete runs：1" in report
     assert "verifier_gated_authoritative_for_thesis=0" in results
+
+
+def test_direct_plot_and_table_export_defaults_to_pending_verification(
+    tmp_path: Path,
+) -> None:
+    """直接导出图表/表格时没有 verifier 结果，不能默认标为论文权威数据。"""
+
+    aggregate = {
+        "authoritative_thesis_run_count": 3,
+        "synthetic_sample_count": 0,
+        "authoritative_by_mode": {"PCSC": {"run_count": 3, "success_rate": 1.0}},
+    }
+
+    export_plots(tmp_path, aggregate)
+    export_tables(tmp_path, aggregate, {"paired_results": {}})
+
+    plot_index = json.loads(tmp_path.joinpath("plots/plot_index.json").read_text())
+    table = tmp_path.joinpath("tables/csv/t2_mode_baseline.csv").read_text()
+    assert plot_index["data_authority"] == "PENDING_VERIFICATION_DATA"
+    assert "PENDING_VERIFICATION_DATA" in table
+    assert "AUTHORITATIVE_THESIS_DATA" not in table
 
 
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:

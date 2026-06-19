@@ -28,7 +28,8 @@ Baseline `7b4c9af2b0d10d44969f5f29ca6f700b55e1b96f` provides a complete Phase 12
 - Add fixed allowlisted runner adapters for Phase 8, MuJoCo, Isaac, synthetic dry-run, MoveIt dry-run, Simulation Runtime, and planner dry-run.
 - Keep smoke as synthetic pipeline data and emit a corrected smoke status artifact instead of overwriting the historical smoke artifact.
 - Run validation through actual software runners for every F01-F20 row, with Isaac and MoveIt dry-run allowed to block by environment.
-- Use only `authoritative_for_thesis=true` rows for statistics, effect size inputs, thesis tables, and thesis plots.
+- Treat `authoritative_for_thesis=true` as a row-level runtime-complete marker only; statistics,
+  effect size inputs, thesis tables, and thesis plots require verifier-gated accepted evidence.
 - Require source artifact paths and hashes for actual-runner rows.
 - Keep hardware claims fixed: `real_controller_contacted=false`, `hardware_motion_observed=false`, and `hardware_write_operations=[]`.
 

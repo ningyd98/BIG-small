@@ -65,7 +65,7 @@ def _table_rows(
     authority = data_authority or (
         "PIPELINE_TEST_DATA"
         if synthetic_count > 0 and authoritative_count == 0
-        else "AUTHORITATIVE_THESIS_DATA"
+        else "PENDING_VERIFICATION_DATA"
     )
     mode_rows = [
         {
