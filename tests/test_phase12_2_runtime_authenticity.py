@@ -10,8 +10,12 @@ import json
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
+
+import pytest
 
 from cloud_edge_robot_arm.final_evaluation import validation as phase12_validation
 from cloud_edge_robot_arm.final_evaluation.aggregation import aggregate_results
@@ -135,8 +139,7 @@ def test_paired_summary_marks_isaac_blocked_as_not_accepted(tmp_path: Path) -> N
     assert verification["paired_backend_experiment_accepted"] is False
     assert verification["usable_authoritative_pair_count"] == 0
     assert verification["blocked_pair_count"] == paired["blocked_pair_count"]
-    assert verification["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
-    assert verification["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_READY"
+    _assert_validation_status_matches_provenance(verification)
 
 
 def test_verifier_rejects_runtime_gap_when_runtime_receipt_missing(tmp_path: Path) -> None:
@@ -178,7 +181,7 @@ def test_verifier_rejects_runtime_gap_when_runtime_receipt_missing(tmp_path: Pat
 
 
 def test_full_profile_rejects_when_paired_backend_is_not_accepted(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """full profile 不能在 paired backend 未验收时输出最终接受状态。"""
 
@@ -199,7 +202,9 @@ def test_full_profile_rejects_when_paired_backend_is_not_accepted(
     assert summary["project_status"] == "NOT_CLOSED"
 
 
-def test_full_profile_ready_status_matches_full_acceptance(tmp_path: Path, monkeypatch) -> None:
+def test_full_profile_ready_status_matches_full_acceptance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """full profile 被最终接受时 readiness 字段也必须保持一致。"""
 
     root = tmp_path / "phase12_full"
@@ -219,7 +224,7 @@ def test_full_profile_ready_status_matches_full_acceptance(tmp_path: Path, monke
 
 
 def test_verifier_rejects_when_failed_or_blocked_counts_do_not_match_raw_runs(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """aggregate 不能把 raw runs 中的失败或阻塞样本静默删掉。"""
 
@@ -234,6 +239,26 @@ def test_verifier_rejects_when_failed_or_blocked_counts_do_not_match_raw_runs(
     )
 
     assert summary["checks"]["failed_or_blocked_not_deleted"] is False
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+
+
+def test_verifier_rejects_validation_evidence_from_dirty_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """validation evidence 的 provenance 必须来自 clean worktree。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    _write_provenance(root, worktree_clean=False)
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["source_tree_provenance_present"] is False
     assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
 
 
@@ -409,10 +434,7 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
         json.dumps({"group_statistics": {"PCSC": {"sample_count": 1}}}) + "\n",
         encoding="utf-8",
     )
-    manifests_dir.joinpath("provenance.json").write_text(
-        json.dumps({"source_tree_hash": "tree", "worktree_clean": True}) + "\n",
-        encoding="utf-8",
-    )
+    _write_provenance(root, worktree_clean=True)
     paired_dir.joinpath("paired_summary.json").write_text(
         json.dumps({"paired_backend_experiment_accepted": paired_accepted}) + "\n",
         encoding="utf-8",
@@ -504,7 +526,29 @@ def _write_minimal_artifact_common(root: Path) -> None:
     root.joinpath("demo_bundle/demo_summary.json").write_text("{}\n")
 
 
-def _patch_minimal_full_verifier(monkeypatch) -> None:
+def _write_provenance(root: Path, *, worktree_clean: bool) -> None:
+    root.joinpath("manifests/provenance.json").write_text(
+        json.dumps({"source_tree_hash": "tree", "worktree_clean": worktree_clean}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _assert_validation_status_matches_provenance(verification: Mapping[str, object]) -> None:
+    """validation 状态必须跟 provenance 是否来自 clean worktree 保持一致。"""
+
+    checks = cast("Mapping[str, object]", verification["checks"])
+    if checks["source_tree_provenance_present"]:
+        assert verification["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+        assert verification["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_READY"
+    else:
+        assert (
+            verification["status"]
+            == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+        )
+        assert verification["full_profile_readiness_status"] == "PHASE12_FULL_PROFILE_NOT_READY"
+
+
+def _patch_minimal_full_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         phase12_validation,
         "PHASE12_EXPERIMENT_IDS",
@@ -550,7 +594,7 @@ def _patch_minimal_full_verifier(monkeypatch) -> None:
     )
 
 
-def _patch_minimal_validation_verifier(monkeypatch) -> None:
+def _patch_minimal_validation_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         phase12_validation,
         "PHASE12_EXPERIMENT_IDS",

@@ -97,7 +97,8 @@ def verify_phase12(
         "hardware_motion_observed_false": _all_false(raw_runs, "hardware_motion_observed"),
         "hardware_write_operations_empty": _all_empty(raw_runs, "hardware_write_operations"),
         "no_sensitive_artifacts": not _contains_sensitive_text(artifact_root),
-        "source_tree_provenance_present": bool(provenance.get("source_tree_hash")),
+        "source_tree_provenance_present": bool(provenance.get("source_tree_hash"))
+        and provenance.get("worktree_clean") is True,
         "adapter_attempts_verified": _adapter_attempts_verified(profile, raw_runs),
         "source_artifact_hash_verified": _source_artifact_hash_verified(artifact_root, raw_runs),
         "sample_policy_satisfied": _sample_policy_satisfied(profile, raw_runs, plan),
