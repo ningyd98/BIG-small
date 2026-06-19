@@ -626,6 +626,32 @@ def test_verifier_rejects_plot_index_without_rendering_source_semantics(
     assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
 
 
+def test_verifier_rejects_capability_table_that_claims_accepted_without_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺少 capability_statuses 时，T1 表格不能用 ACCEPTED 通过验收。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    root.joinpath("tables/csv/t1_system_capability.csv").write_text(
+        "capability,hardware_claim,status\n"
+        "Simulation Workbench,none,ACCEPTED\n"
+        "Model Control Center,none,ACCEPTED\n"
+        "Real Robot,none,NOT_STARTED\n",
+        encoding="utf-8",
+    )
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["capability_table_semantics_valid"] is False
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+
+
 def test_verifier_rejects_validation_evidence_from_dirty_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1481,6 +1507,13 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
     root.joinpath("plots/svg/success_rate_comparison.svg").write_text("<svg />")
     _write_plot_index(root)
     root.joinpath("tables/csv/t2_mode_baseline.csv").write_text("metric,value\n")
+    root.joinpath("tables/csv/t1_system_capability.csv").write_text(
+        "capability,hardware_claim,status\n"
+        "Simulation Workbench,none,UNKNOWN\n"
+        "Model Control Center,none,UNKNOWN\n"
+        "Real Robot,none,NOT_STARTED\n",
+        encoding="utf-8",
+    )
     root.joinpath("tables/latex/t2_mode_baseline.tex").write_text(
         "\\begin{tabular}{}\\end{tabular}"
     )
@@ -1687,6 +1720,13 @@ def _write_minimal_artifact_common(root: Path) -> None:
     root.joinpath("plots/svg/success_rate_comparison.svg").write_text("<svg />")
     _write_plot_index(root)
     root.joinpath("tables/csv/t2_mode_baseline.csv").write_text("metric,value\n")
+    root.joinpath("tables/csv/t1_system_capability.csv").write_text(
+        "capability,hardware_claim,status\n"
+        "Simulation Workbench,none,UNKNOWN\n"
+        "Model Control Center,none,UNKNOWN\n"
+        "Real Robot,none,NOT_STARTED\n",
+        encoding="utf-8",
+    )
     root.joinpath("tables/latex/t2_mode_baseline.tex").write_text(
         "\\begin{tabular}{}\\end{tabular}"
     )

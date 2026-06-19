@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 from collections import Counter
+from csv import DictReader
 from pathlib import Path
 from typing import Any
 
@@ -97,6 +98,10 @@ def verify_phase12(
         "plot_index_semantics_valid": _plot_index_semantics_valid(artifact_root),
         "tables_exist": (artifact_root / "tables/csv/t2_mode_baseline.csv").exists()
         and (artifact_root / "tables/latex/t2_mode_baseline.tex").exists(),
+        "capability_table_semantics_valid": _capability_table_semantics_valid(
+            artifact_root,
+            aggregate,
+        ),
         "thesis_docs_exist": (artifact_root / "thesis/experiment_results.md").exists(),
         "demo_bundle_exists": (artifact_root / "demo_bundle/demo_summary.json").exists(),
         "failed_or_blocked_not_deleted": _failed_or_blocked_counts_match(raw_runs, aggregate),
@@ -164,6 +169,7 @@ def verify_phase12(
         and checks["plots_exist"]
         and checks["plot_index_semantics_valid"]
         and checks["tables_exist"]
+        and checks["capability_table_semantics_valid"]
         and checks["unsafe_command_execution_zero"]
         and checks["real_controller_contacted_false"]
         and checks["hardware_motion_observed_false"]
@@ -186,6 +192,7 @@ def verify_phase12(
         and checks["plots_exist"]
         and checks["plot_index_semantics_valid"]
         and checks["tables_exist"]
+        and checks["capability_table_semantics_valid"]
     )
     thesis_status = (
         THESIS_STATUS
@@ -346,6 +353,41 @@ def _plot_index_semantics_valid(root: Path) -> bool:
         and payload.get("png_rendering_mode") == "placeholder_preview"
         and payload.get("png_contains_metric_data") is False
     )
+
+
+def _capability_table_semantics_valid(root: Path, aggregate: dict[str, Any]) -> bool:
+    """检查 T1 能力表是否与 aggregate 中的能力 evidence 保持一致。"""
+
+    rows = _read_csv_rows(root / "tables/csv/t1_system_capability.csv")
+    if not rows:
+        return False
+    by_capability = {str(row.get("capability", "")): row for row in rows}
+    statuses = aggregate.get("capability_statuses", {})
+    if not isinstance(statuses, dict) or not statuses:
+        return (
+            by_capability.get("Simulation Workbench", {}).get("status") == "UNKNOWN"
+            and by_capability.get("Model Control Center", {}).get("status") == "UNKNOWN"
+            and by_capability.get("Real Robot", {}).get("status") == "NOT_STARTED"
+        )
+    for capability, payload in statuses.items():
+        if not isinstance(payload, dict):
+            return False
+        row = by_capability.get(str(capability))
+        if row is None:
+            return False
+        expected_status = payload.get("status")
+        if expected_status and row.get("status") != str(expected_status):
+            return False
+        expected_hardware_claim = payload.get("hardware_claim")
+        if expected_hardware_claim and row.get("hardware_claim") != str(expected_hardware_claim):
+            return False
+    return True
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    return list(DictReader(path.read_text(encoding="utf-8").splitlines()))
 
 
 def _normalize_rows_for_profile(
