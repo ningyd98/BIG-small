@@ -603,6 +603,29 @@ def test_verifier_rejects_when_failed_or_blocked_counts_do_not_match_raw_runs(
     assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
 
 
+def test_verifier_rejects_plot_index_without_rendering_source_semantics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """plot_index 必须声明 SVG 数据来源和 PNG 占位语义，旧 artifact 不能通过验收。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    root.joinpath("plots/plot_index.json").write_text(
+        json.dumps({"data_authority": "AUTHORITATIVE_THESIS_DATA"}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["plot_index_semantics_valid"] is False
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+
+
 def test_verifier_rejects_validation_evidence_from_dirty_worktree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1426,6 +1449,7 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
     )
     root.joinpath("plots/png/success_rate_comparison.png").write_bytes(b"png")
     root.joinpath("plots/svg/success_rate_comparison.svg").write_text("<svg />")
+    _write_plot_index(root)
     root.joinpath("tables/csv/t2_mode_baseline.csv").write_text("metric,value\n")
     root.joinpath("tables/latex/t2_mode_baseline.tex").write_text(
         "\\begin{tabular}{}\\end{tabular}"
@@ -1631,6 +1655,7 @@ def _write_minimal_artifact_common(root: Path) -> None:
     )
     root.joinpath("plots/png/success_rate_comparison.png").write_bytes(b"png")
     root.joinpath("plots/svg/success_rate_comparison.svg").write_text("<svg />")
+    _write_plot_index(root)
     root.joinpath("tables/csv/t2_mode_baseline.csv").write_text("metric,value\n")
     root.joinpath("tables/latex/t2_mode_baseline.tex").write_text(
         "\\begin{tabular}{}\\end{tabular}"
@@ -1642,6 +1667,22 @@ def _write_minimal_artifact_common(root: Path) -> None:
 def _write_provenance(root: Path, *, worktree_clean: bool) -> None:
     root.joinpath("manifests/provenance.json").write_text(
         json.dumps({"source_tree_hash": "tree", "worktree_clean": worktree_clean}) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_plot_index(root: Path) -> None:
+    root.joinpath("plots/plot_index.json").write_text(
+        json.dumps(
+            {
+                "data_authority": "AUTHORITATIVE_THESIS_DATA",
+                "svg_data_source": "aggregate_payload",
+                "png_rendering_mode": "placeholder_preview",
+                "png_contains_metric_data": False,
+            },
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
 

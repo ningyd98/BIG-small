@@ -94,6 +94,7 @@ def verify_phase12(
         "statistics_exists": bool(stats),
         "plots_exist": (artifact_root / "plots/png/success_rate_comparison.png").exists()
         and (artifact_root / "plots/svg/success_rate_comparison.svg").exists(),
+        "plot_index_semantics_valid": _plot_index_semantics_valid(artifact_root),
         "tables_exist": (artifact_root / "tables/csv/t2_mode_baseline.csv").exists()
         and (artifact_root / "tables/latex/t2_mode_baseline.tex").exists(),
         "thesis_docs_exist": (artifact_root / "thesis/experiment_results.md").exists(),
@@ -161,6 +162,7 @@ def verify_phase12(
         and checks["aggregate_exists"]
         and checks["statistics_exists"]
         and checks["plots_exist"]
+        and checks["plot_index_semantics_valid"]
         and checks["tables_exist"]
         and checks["unsafe_command_execution_zero"]
         and checks["real_controller_contacted_false"]
@@ -182,6 +184,7 @@ def verify_phase12(
         checks["thesis_docs_exist"]
         and checks["demo_bundle_exists"]
         and checks["plots_exist"]
+        and checks["plot_index_semantics_valid"]
         and checks["tables_exist"]
     )
     thesis_status = (
@@ -332,6 +335,17 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _plot_index_semantics_valid(root: Path) -> bool:
+    """检查图表索引是否明确区分真实 SVG 数据和 PNG 占位预览。"""
+
+    payload = _read_json(root / "plots/plot_index.json")
+    return (
+        payload.get("svg_data_source") == "aggregate_payload"
+        and payload.get("png_rendering_mode") == "placeholder_preview"
+        and payload.get("png_contains_metric_data") is False
+    )
 
 
 def _normalize_rows_for_profile(
