@@ -812,6 +812,36 @@ def test_direct_plot_and_table_export_defaults_to_pending_verification(
     assert "AUTHORITATIVE_THESIS_DATA" not in table
 
 
+def test_direct_capability_table_does_not_default_to_accepted_without_evidence(
+    tmp_path: Path,
+) -> None:
+    """缺少 capability_statuses 时，T1 不能默认把系统能力写成 ACCEPTED。"""
+
+    aggregate = {
+        "authoritative_thesis_run_count": 3,
+        "synthetic_sample_count": 0,
+        "authoritative_by_mode": {
+            "PCSC": {
+                "run_count": 5,
+                "authoritative_run_count": 3,
+                "success_rate": 1.0,
+            }
+        },
+    }
+
+    export_tables(tmp_path, aggregate, {"paired_results": {}})
+
+    rows = list(
+        DictReader(
+            tmp_path.joinpath("tables/csv/t1_system_capability.csv").read_text().splitlines()
+        )
+    )
+    statuses = {row["capability"]: row["status"] for row in rows}
+    assert statuses["Simulation Workbench"] == "UNKNOWN"
+    assert statuses["Model Control Center"] == "UNKNOWN"
+    assert statuses["Real Robot"] == "NOT_STARTED"
+
+
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:
     """Aggregates must separate adapter attempts from actual runtime invocation."""
 

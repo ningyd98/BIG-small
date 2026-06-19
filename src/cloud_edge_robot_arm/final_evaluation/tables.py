@@ -129,8 +129,8 @@ def _capability_rows(aggregate: dict[str, Any]) -> list[dict[str, object]]:
     if not isinstance(statuses, dict):
         statuses = {}
     defaults = {
-        "Simulation Workbench": {"status": "ACCEPTED", "hardware_claim": "none"},
-        "Model Control Center": {"status": "ACCEPTED", "hardware_claim": "none"},
+        "Simulation Workbench": {"status": "UNKNOWN", "hardware_claim": "none"},
+        "Model Control Center": {"status": "UNKNOWN", "hardware_claim": "none"},
         "Real Robot": {"status": "NOT_STARTED", "hardware_claim": "none"},
     }
     rows: list[dict[str, object]] = []
