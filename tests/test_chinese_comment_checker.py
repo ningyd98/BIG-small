@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import scripts.check_chinese_comments as chinese_comments
 from scripts.check_chinese_comments import DEFAULT_AUDIT_PATHS, _audit_file, _collect_files
 
 
@@ -369,6 +370,17 @@ def test_collects_markdown_only_when_it_contains_supported_code_fence(tmp_path: 
     assert "fenced.md" in collected
 
 
+def test_markdown_empty_language_fence_is_ignored_without_crashing(tmp_path: Path) -> None:
+    path = tmp_path / "notes.md"
+    path.write_text("# Notes\n\n```\nplain text\n```\n", encoding="utf-8")
+
+    collected = _collect_files([tmp_path])
+    result = _audit_file(path)
+
+    assert collected == []
+    assert not result.has_chinese
+
+
 def test_collects_dockerfile_for_chinese_explanation(tmp_path: Path) -> None:
     path = tmp_path / "Dockerfile"
     path.write_text("FROM python:3.12-slim\n", encoding="utf-8")
@@ -471,3 +483,26 @@ def test_default_paths_collect_dashboard_root_configs() -> None:
     assert "simulation/README.md" in collected
     assert "experiments/baselines/phase8_1/run_manifest.json" in collected
     assert "experiments/baselines/phase9/phase9_smoke_mujoco/config.json" in collected
+
+
+def test_default_paths_cover_all_tracked_code_files() -> None:
+    tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+    expected: list[Path] = []
+    for name in tracked:
+        path = Path(name)
+        if path.parts and path.parts[0] in {"artifacts", "docs"}:
+            continue
+        if (
+            path.parts
+            and path.parts[0] == "dashboard"
+            and len(path.parts) > 1
+            and path.parts[1] in {"node_modules", "dist"}
+        ):
+            continue
+        if chinese_comments._is_audited_file(path):
+            expected.append(path)
+
+    collected = set(_collect_files([Path(value) for value in DEFAULT_AUDIT_PATHS]))
+    missing = [path for path in expected if path not in collected]
+
+    assert missing == []

@@ -78,6 +78,7 @@ flowchart LR
 ## 5. 快速开始
 
 ```bash
+# 快速开始：安装仿真和分析依赖，仅运行软件侧验证。
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
@@ -88,6 +89,7 @@ python scripts/verify_project.py --profile ci
 常用入口：
 
 ```bash
+# 常用入口：只运行 Mock、仿真和只读验证，不连接真实控制器。
 python scripts/run_fixed_pick_place.py --adapter mock
 python scripts/verify_phase9.py
 python scripts/verify_phase10_0.py
@@ -100,6 +102,7 @@ python scripts/verify_phase11_1_simulation_runtime.py --ci
 MoveIt Runtime Dry-Run 需要 ROS 2 / MoveIt 环境：
 
 ```bash
+# MoveIt dry-run 只做规划安全验证，不调用 execute。
 source scripts/phase9/activate_ros2_moveit_env.sh
 python scripts/verify_phase10_moveit_dry_run.py --output artifacts/phase10/moveit_dry_run
 ```

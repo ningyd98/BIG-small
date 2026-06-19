@@ -3,6 +3,7 @@
 ## 开发环境
 
 ```bash
+# 开发环境：安装仿真开发依赖，不下载模型或连接真实硬件。
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
@@ -17,6 +18,7 @@ python -m pip install -e ".[dev,sim-mujoco,sim-analysis]"
 ## 必跑检查
 
 ```bash
+# 必跑检查：覆盖格式、类型、单测和文档一致性。
 python -m ruff format --check .
 python -m ruff check .
 python -m mypy .

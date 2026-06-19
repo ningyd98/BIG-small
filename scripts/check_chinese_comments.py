@@ -78,7 +78,10 @@ PLACEHOLDER_EXPLANATION_MARKERS = (
     "测试说明：覆盖该阶段关键业务约束",
 )
 DEFAULT_AUDIT_PATHS = [
+    "README.md",
+    "CONTRIBUTING.md",
     "src",
+    "assets",
     "dashboard/src",
     "dashboard/tests",
     "dashboard/index.html",
@@ -97,6 +100,7 @@ DEFAULT_AUDIT_PATHS = [
     "configs",
     "contracts/examples",
     "experiments/baselines",
+    "environments",
     "pyproject.toml",
     "scripts",
     "simulation",
@@ -359,7 +363,7 @@ def _extract_markdown_fence_explanation_text(text: str) -> str:
         if not stripped.startswith("```"):
             index += 1
             continue
-        language = stripped[3:].strip().split(maxsplit=1)[0].lower()
+        language = _markdown_fence_language(stripped)
         code_lines: list[str] = []
         index += 1
         while index < len(lines) and not lines[index].strip().startswith("```"):
@@ -440,10 +444,18 @@ def _has_supported_markdown_fence(path: Path) -> bool:
         stripped = line.strip()
         if not stripped.startswith("```"):
             continue
-        language = stripped[3:].strip().split(maxsplit=1)[0].lower()
+        language = _markdown_fence_language(stripped)
         if language in MARKDOWN_FENCE_SUFFIXES:
             return True
     return False
+
+
+def _markdown_fence_language(stripped_fence: str) -> str:
+    # 裸代码围栏没有源码语言，不能作为源码注释审计对象。
+    info = stripped_fence[3:].strip()
+    if not info:
+        return ""
+    return info.split(maxsplit=1)[0].lower()
 
 
 if __name__ == "__main__":
