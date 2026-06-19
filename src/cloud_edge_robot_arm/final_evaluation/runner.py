@@ -15,6 +15,7 @@ from cloud_edge_robot_arm.final_evaluation.adapters import runner_adapter_regist
 from cloud_edge_robot_arm.final_evaluation.adapters.base import (
     Phase12AdapterResult,
     Phase12RunContext,
+    sha256_path,
 )
 from cloud_edge_robot_arm.final_evaluation.models import (
     BlockerStage,
@@ -102,7 +103,9 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
                                     _runner_kind_for(experiment.runner_kind, backend)
                                 ]
                                 adapter_result = adapter.run(context)
-                                authoritative = _authoritative_for_thesis(manifest, adapter_result)
+                                authoritative = _authoritative_for_thesis(
+                                    manifest, adapter_result, output_root=output_root
+                                )
                                 manifest = manifest.model_copy(
                                     update={
                                         **_source_fields(adapter_result),
@@ -115,6 +118,7 @@ def run_phase12_experiments(profile: Phase12Profile, output_root: Path) -> dict[
                                 )
                             manifests.append(manifest)
                             rows.append(result)
+    manifests, rows = _normalize_source_artifact_hashes(output_root, manifests, rows)
     _write_jsonl(
         output_root / "manifests/run_manifests.jsonl",
         [m.model_dump(mode="json") for m in manifests],
@@ -536,11 +540,14 @@ def _source_fields(adapter_result: Phase12AdapterResult) -> dict[str, object]:
 
 
 def _authoritative_for_thesis(
-    manifest: Phase12RunManifest, adapter_result: Phase12AdapterResult
+    manifest: Phase12RunManifest,
+    adapter_result: Phase12AdapterResult,
+    *,
+    output_root: Path | None = None,
 ) -> bool:
     """生成端论文权威 gate，避免 dirty provenance 或半完成 runtime 写成权威样本。"""
 
-    return (
+    base_gate = (
         manifest.worktree_clean
         and adapter_result.authoritative_for_thesis
         and adapter_result.runtime_invoked
@@ -549,6 +556,72 @@ def _authoritative_for_thesis(
         and bool(adapter_result.source_artifact_path)
         and bool(adapter_result.source_artifact_hash)
     )
+    if not base_gate:
+        return False
+    if output_root is None:
+        return True
+    return _source_artifact_hash_verified(output_root, adapter_result)
+
+
+def _source_artifact_hash_verified(output_root: Path, adapter_result: Phase12AdapterResult) -> bool:
+    """校验 adapter 声称的 source evidence 在输出根内且 hash 匹配。"""
+
+    rel_path = Path(adapter_result.source_artifact_path)
+    if rel_path.is_absolute():
+        return False
+    root = output_root.resolve()
+    candidate = (root / rel_path).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return False
+    return sha256_path(candidate) == adapter_result.source_artifact_hash
+
+
+def _normalize_source_artifact_hashes(
+    output_root: Path,
+    manifests: list[Phase12RunManifest],
+    rows: list[Phase12Result],
+) -> tuple[list[Phase12RunManifest], list[Phase12Result]]:
+    """写出最终行前按磁盘 source evidence 重新绑定 hash。
+
+    Adapter 返回 hash 后，部分 runner 仍可能完成 artifact 清理或重写终态 evidence。
+    这里以最终落盘文件为准更新 manifest/result，确保 verifier 的 source hash
+    检查代表真实文件内容，而不是中间态 digest。
+    """
+
+    normalized_manifests = [
+        _normalize_manifest_source_hash(output_root, manifest) for manifest in manifests
+    ]
+    normalized_rows = [_normalize_result_source_hash(output_root, row) for row in rows]
+    return normalized_manifests, normalized_rows
+
+
+def _normalize_manifest_source_hash(
+    output_root: Path, manifest: Phase12RunManifest
+) -> Phase12RunManifest:
+    digest = _final_source_artifact_hash(output_root, manifest.source_artifact_path)
+    if not digest:
+        return manifest
+    return manifest.model_copy(update={"source_artifact_hash": digest}, deep=True)
+
+
+def _normalize_result_source_hash(output_root: Path, row: Phase12Result) -> Phase12Result:
+    digest = _final_source_artifact_hash(output_root, row.source_artifact_path)
+    if not digest:
+        return row
+    return row.model_copy(update={"source_artifact_hash": digest}, deep=True)
+
+
+def _final_source_artifact_hash(output_root: Path, source_artifact_path: str) -> str:
+    if not source_artifact_path:
+        return ""
+    rel_path = Path(source_artifact_path)
+    if rel_path.is_absolute():
+        return ""
+    root = output_root.resolve()
+    candidate = (root / rel_path).resolve()
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return ""
+    return sha256_path(candidate)
 
 
 def _execution_source_counts(rows: list[Phase12Result]) -> dict[str, int]:

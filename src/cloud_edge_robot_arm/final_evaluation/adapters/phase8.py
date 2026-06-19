@@ -49,7 +49,14 @@ class Phase8ExperimentRunnerAdapter:
         runtime_workspace.mkdir(parents=True, exist_ok=True)
         runtime_workspace_rel = runtime_workspace.relative_to(context.output_root).as_posix()
         config = _experiment_config(context, runtime_workspace=runtime_workspace)
-        execution = ExperimentRunner(config).run()
+        runner = ExperimentRunner(config)
+        try:
+            execution = runner.run()
+        finally:
+            # ExperimentRunner 持有 RuntimeExperimentHarness，里面有多组 SQLite
+            # repository；Phase12 validation 会批量运行数百次，必须在每次 run
+            # 后显式关闭，否则后续 artifact 重写会被残留 fd 拖住。
+            runner.harness.close()
         result = execution.result
         status = _status(result.result_status)
         events = [event.model_dump(mode="json") for event in execution.events]

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -808,12 +810,21 @@ class SQLiteSimulationJobRepository:
             ).fetchone()
         return int(row["count"]) if row else 0
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.database_path, isolation_level=None, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
-        return conn
+        try:
+            yield conn
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            # sqlite3.Connection 的 context manager 不会关闭连接；repository 方法必须
+            # 主动 close，避免长 validation 运行后堆积大量 DB/WAL/SHM fd。
+            conn.close()
 
     def _fetch_one(self, query: str, params: tuple[object, ...]) -> sqlite3.Row | None:
         self._initialize()

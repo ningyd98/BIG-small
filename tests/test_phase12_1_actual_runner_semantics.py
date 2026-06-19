@@ -104,21 +104,24 @@ def test_legacy_smoke_rows_without_source_fields_are_corrected_as_synthetic(
     assert summary["thesis_status"] == "PHASE12_THESIS_ASSET_PIPELINE_READY"
 
 
-def test_validation_uses_actual_runners_and_is_authoritative(tmp_path: Path) -> None:
-    """validation profile 必须调用 actual software runner，不能再用公式样本。"""
+def test_validation_uses_actual_runners_but_gates_authority_on_provenance(
+    tmp_path: Path,
+) -> None:
+    """validation 必须调用 actual runner，但 dirty provenance 不能升级为论文权威。"""
 
     output = tmp_path / "phase12"
     _run_pipeline(output, "validation", "--validation")
     rows = _read_jsonl(output / "runs/raw_runs.jsonl")
     summary = json.loads((output / "verification/phase12_summary.json").read_text())
 
-    assert summary["status"] == "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
-    assert summary["thesis_status"] == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+    assert summary["thesis_status"] == "THESIS_PACKAGE_INCOMPLETE"
     assert summary["synthetic_sample_count"] == 0
     assert summary["adapter_attempt_count"] == len(rows)
     assert summary["runtime_invocation_count"] < summary["adapter_attempt_count"]
     assert summary["blocked_before_runtime_count"] > 0
-    assert summary["authoritative_thesis_run_count"] > 0
+    assert summary["verifier_gated_authoritative_thesis_run_count"] == 0
+    assert summary["checks"]["source_tree_provenance_present"] is False
     assert all(row["adapter_attempted"] is True for row in rows)
     assert all(row["runtime_invoked"] is False for row in rows if row["status"] == "BLOCKED_BY_ENV")
     assert all(row["execution_source"] != "SYNTHETIC_PIPELINE_SAMPLE" for row in rows)

@@ -263,7 +263,14 @@ class SimulationWorker:
     ) -> tuple[ExperimentResult, list[TimelineEvent], list[SimulationMetric]]:
         run_dir = self.artifact_root / job.artifact_root
         config = _experiment_config(draft, job, run_dir)
-        execution = ExperimentRunner(config).run()
+        runner = ExperimentRunner(config)
+        try:
+            execution = runner.run()
+        finally:
+            # ExperimentRunner 持有 RuntimeExperimentHarness，harness 内部使用多个
+            # SQLite 仓库；worker 必须显式关闭，避免 terminal artifact 清理后留下
+            # 指向 deleted sqlite 文件的 fd。
+            runner.harness.close()
         events = _timeline_events_from_runner(execution.events)
         for event in events:
             self.repository.append_event(

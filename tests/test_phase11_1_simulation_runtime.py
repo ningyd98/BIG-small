@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -341,6 +342,68 @@ def test_sqlite_repository_uses_cas_sequences_and_unique_leases(tmp_path: Path) 
     assert lease is not None
     duplicate = repo.acquire_lease(worker_id="worker-b", backend="MOCK", lease_ttl_seconds=30)
     assert duplicate is None
+
+
+def test_sqlite_repository_closes_connections_between_calls(tmp_path: Path) -> None:
+    """SQLite repository 方法返回后不得泄漏 DB fd，避免 validation 退出阶段卡住。"""
+
+    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+        SQLiteSimulationJobRepository,
+    )
+
+    database_path = tmp_path / "runtime.db"
+    repo = SQLiteSimulationJobRepository(database_path)
+    for _ in range(30):
+        repo.list_jobs()
+
+    assert _sqlite_fd_targets(database_path) == []
+
+
+def test_simulation_worker_closes_experiment_runtime_sqlite_handles(tmp_path: Path) -> None:
+    """Worker 运行 Mock experiment 后必须关闭 harness 内部 SQLite 仓库。"""
+
+    from cloud_edge_robot_arm.simulation_runtime.models import RuntimeJobStatus
+    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+        SQLiteSimulationJobRepository,
+    )
+    from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+
+    artifact_root = tmp_path / "artifacts"
+    repo = SQLiteSimulationJobRepository(tmp_path / "runtime.db")
+    job = repo.create_job(
+        run_id="sim-runtime-fd-clean",
+        batch_id="",
+        backend="MOCK",
+        scenario_id="S01_NORMAL_STATIC",
+        control_mode="PCSC",
+        seed=0,
+        manifest_id="manifest-runtime-fd-clean",
+        reproducibility_hash="hash-runtime-fd-clean",
+        draft=_draft(),
+        timeout_seconds=30,
+        max_attempts=1,
+        artifact_root="phase11_1/runtime/sim-runtime-fd-clean",
+        source_commit="commit",
+        source_tree_hash="tree",
+    )
+    repo.update_status_cas(
+        job.job_id,
+        expected=RuntimeJobStatus.CREATED,
+        next_status=RuntimeJobStatus.QUEUED,
+        reason_code="queued_by_test",
+        worker_id="",
+        lease_id="",
+    )
+
+    consumed = SimulationWorker(
+        worker_id="worker-fd-clean",
+        backend="MOCK",
+        repository=repo,
+        artifact_root=artifact_root,
+    ).poll_once()
+
+    assert consumed is True
+    assert _sqlite_fd_targets(artifact_root / "phase11_1/runtime/sim-runtime-fd-clean") == []
 
 
 def test_post_run_returns_queued_immediately_then_worker_succeeds(
@@ -900,3 +963,16 @@ def test_recovery_verifier_does_not_leave_sqlite_databases_in_artifacts(tmp_path
 
     assert result["status"] == "PASSED"
     assert not list(output.rglob("*.db"))
+
+
+def _sqlite_fd_targets(database_path: Path) -> list[str]:
+    targets: list[str] = []
+    database_text = str(database_path)
+    for fd in Path("/proc/self/fd").iterdir():
+        try:
+            target = os.readlink(fd)
+        except OSError:
+            continue
+        if database_text in target:
+            targets.append(target)
+    return targets

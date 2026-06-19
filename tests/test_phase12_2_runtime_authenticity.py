@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import subprocess
 import sys
 from collections import Counter
@@ -39,6 +41,8 @@ from cloud_edge_robot_arm.final_evaluation.models import (
 from cloud_edge_robot_arm.final_evaluation.plots import export_plots
 from cloud_edge_robot_arm.final_evaluation.report import export_thesis_assets
 from cloud_edge_robot_arm.final_evaluation.runner import (
+    _authoritative_for_thesis,
+    _normalize_source_artifact_hashes,
     _result_from_adapter,
     run_phase12_experiments,
 )
@@ -483,6 +487,62 @@ def test_dirty_provenance_cannot_mark_row_authoritative_for_thesis() -> None:
     assert result.authoritative_for_thesis is False
 
 
+def test_authority_requires_verified_source_artifact_hash(tmp_path: Path) -> None:
+    """行级论文 authority 必须绑定实际 source evidence 文件和匹配 hash。"""
+
+    manifest = _manifest_like(worktree_clean=True)
+    adapter_result = _successful_adapter_result()
+
+    assert _authoritative_for_thesis(manifest, adapter_result, output_root=tmp_path) is False
+
+    receipt = tmp_path / adapter_result.source_artifact_path
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text('{"status":"ok"}\n', encoding="utf-8")
+
+    assert _authoritative_for_thesis(manifest, adapter_result, output_root=tmp_path) is False
+
+    matching_result = Phase12AdapterResult(
+        **{
+            **adapter_result.__dict__,
+            "source_artifact_hash": hashlib.sha256(receipt.read_bytes()).hexdigest(),
+        }
+    )
+
+    assert _authoritative_for_thesis(manifest, matching_result, output_root=tmp_path) is True
+
+
+def test_runner_normalizes_source_artifact_hashes_before_writing_rows(tmp_path: Path) -> None:
+    """raw row 写出前必须以磁盘最终 source evidence hash 为准。"""
+
+    manifest = _manifest_like(worktree_clean=True).model_copy(
+        update={
+            "source_artifact_path": "source_evidence/test/receipt.json",
+            "source_artifact_hash": "stale-hash",
+        },
+        deep=True,
+    )
+    result = _result_from_adapter(
+        manifest,
+        _successful_adapter_result(),
+        authoritative_for_thesis=False,
+    ).model_copy(
+        update={
+            "source_artifact_path": "source_evidence/test/receipt.json",
+            "source_artifact_hash": "stale-hash",
+        },
+        deep=True,
+    )
+    receipt = tmp_path / "source_evidence/test/receipt.json"
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text('{"final":"content"}\n', encoding="utf-8")
+
+    manifests, results = _normalize_source_artifact_hashes(tmp_path, [manifest], [result])
+
+    expected = hashlib.sha256(receipt.read_bytes()).hexdigest()
+    assert manifests[0].source_artifact_hash == expected
+    assert results[0].source_artifact_hash == expected
+
+
 def test_phase8_adapter_rerun_uses_isolated_runtime_workspace(tmp_path: Path) -> None:
     """Phase8 adapter 重跑同一 run_id 时不得复用旧 SQLite runtime state。"""
 
@@ -505,6 +565,26 @@ def test_phase8_adapter_rerun_uses_isolated_runtime_workspace(tmp_path: Path) ->
     assert second.runtime_completed is True
     receipt = json.loads((tmp_path / second.source_artifact_path).read_text(encoding="utf-8"))
     assert receipt["runtime_workspace"] == "source_evidence/phase12-repeat/runtime_workspace"
+
+
+def test_phase8_adapter_closes_runtime_workspace_sqlite_handles(tmp_path: Path) -> None:
+    """Phase8 adapter 运行后不得在当前进程留下 runtime workspace SQLite fd。"""
+
+    context = Phase12RunContext(
+        run_id="phase12-fd-clean",
+        experiment_id="F01_PC_SC_BASELINE",
+        scenario_id="S01_NORMAL_STATIC",
+        backend=Phase12Backend.MOCK,
+        control_mode="PCSC",
+        seed=0,
+        repetition=0,
+        output_root=tmp_path,
+    )
+
+    result = Phase8ExperimentRunnerAdapter().run(context)
+
+    assert result.runtime_completed is True
+    assert _sqlite_fd_targets(tmp_path / "source_evidence/phase12-fd-clean") == []
 
 
 def test_phase11_runtime_adapter_rerun_uses_fresh_sqlite_repository(tmp_path: Path) -> None:
@@ -574,6 +654,21 @@ def _run_validation_pipeline(output: Path) -> None:
 
 def _read_jsonl(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+
+def _sqlite_fd_targets(root: Path) -> list[str]:
+    if not Path("/proc/self/fd").exists():
+        return []
+    targets: list[str] = []
+    root_text = str(root)
+    for fd in Path("/proc/self/fd").iterdir():
+        try:
+            target = os.readlink(fd)
+        except OSError:
+            continue
+        if root_text in target and ".sqlite3" in target:
+            targets.append(target)
+    return sorted(targets)
 
 
 def _as_int(value: object) -> int:
