@@ -102,7 +102,7 @@ def verify_phase12(
         "source_artifact_hash_verified": _source_artifact_hash_verified(artifact_root, raw_runs),
         "sample_policy_satisfied": _sample_policy_satisfied(profile, raw_runs, plan),
         "paired_run_completeness": _paired_run_completeness(raw_runs),
-        "paired_backend_experiment_accepted": _paired_payload(artifact_root).get(
+        "paired_backend_acceptance_status_correct": _paired_payload(artifact_root).get(
             "paired_backend_experiment_accepted", False
         )
         is False
