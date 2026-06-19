@@ -536,3 +536,11 @@ def test_model_control_secret_scanner_ignores_python_bytecode_cache(tmp_path: Pa
     scanned = [path.name for path in _files(source)]
 
     assert scanned == ["service.py"]
+
+
+def test_model_control_secret_scanner_covers_phase12_artifacts() -> None:
+    from scripts.check_model_control_secrets import DEFAULT_ROOTS
+
+    assert "artifacts/phase11_2" in DEFAULT_ROOTS
+    assert "artifacts/phase12" in DEFAULT_ROOTS
+    assert "artifacts/phase12_2_clean" in DEFAULT_ROOTS

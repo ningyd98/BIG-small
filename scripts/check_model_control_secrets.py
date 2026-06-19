@@ -26,6 +26,8 @@ DEFAULT_ROOTS = [
     "scripts/start_bigsmall_console.py",
     "scripts/check_model_runtime.py",
     "artifacts/phase11_2",
+    "artifacts/phase12",
+    "artifacts/phase12_2_clean",
 ]
 
 IGNORED_PARTS = {
