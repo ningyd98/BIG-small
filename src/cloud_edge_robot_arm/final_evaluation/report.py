@@ -53,7 +53,10 @@ def _write_reports(
     runtime_invocations = aggregate.get("runtime_invocation_count", actual)
     runtime_completions = aggregate.get("runtime_completion_count", actual)
     blocked_before_runtime = aggregate.get("blocked_before_runtime_count", 0)
-    authoritative = aggregate.get("authoritative_thesis_run_count", 0)
+    row_level_authoritative = int(aggregate.get("authoritative_thesis_run_count", 0) or 0)
+    verifier_gated_authoritative = _verifier_gated_authoritative_count(
+        profile, row_level_authoritative, verification
+    )
     profile_note = _profile_note(profile, verification)
     thesis_status = str(verification.get("thesis_status", "")) if verification else ""
     report = (
@@ -64,7 +67,8 @@ def _write_reports(
         f"- runtime invocations：{runtime_invocations}\n"
         f"- runtime completions：{runtime_completions}\n"
         f"- blocked before runtime：{blocked_before_runtime}\n"
-        f"- authoritative thesis runs：{authoritative}\n"
+        f"- row-level runtime-complete runs：{row_level_authoritative}\n"
+        f"- verifier-gated thesis runs：{verifier_gated_authoritative}\n"
         f"- 环境阻塞：{blocked}\n"
         f"- unsafe_command_execution_count：{unsafe}\n"
         f"- 状态语义：{profile_note}\n"
@@ -83,7 +87,9 @@ def _write_reports(
         "experiment_results.md": (
             "# 实验结果\n\n"
             f"本次 profile `{profile}` 自动生成 {run_count} 条运行记录，"
-            f"其中 BLOCKED_BY_ENV={blocked}，authoritative_for_thesis={authoritative}。\n\n"
+            f"其中 BLOCKED_BY_ENV={blocked}，row_level_runtime_complete="
+            f"{row_level_authoritative}，verifier_gated_authoritative_for_thesis="
+            f"{verifier_gated_authoritative}。\n\n"
             f"{profile_note}\n" + (f"\n- thesis_status：{thesis_status}\n" if thesis_status else "")
         ),
         "discussion.md": (
@@ -213,6 +219,23 @@ def _data_authority(
     if profile == "validation" and thesis_status == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED":
         return "VALIDATION_ACCEPTED_DATA"
     return "PENDING_VERIFICATION_DATA"
+
+
+def _verifier_gated_authoritative_count(
+    profile: str,
+    row_level_authoritative: int,
+    verification: dict[str, Any] | None,
+) -> int:
+    """把行级 runtime 完成样本转换为 verifier 认可的论文样本数。"""
+
+    if verification is None:
+        return 0
+    thesis_status = str(verification.get("thesis_status", ""))
+    if profile == "full" and thesis_status == "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED":
+        return row_level_authoritative
+    if profile == "validation" and thesis_status == "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED":
+        return row_level_authoritative
+    return 0
 
 
 def _validity_text() -> str:

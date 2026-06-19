@@ -261,6 +261,7 @@ def test_verifier_rejects_validation_evidence_from_dirty_worktree(
 
     assert summary["checks"]["source_tree_provenance_present"] is False
     assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+    assert summary["verifier_gated_authoritative_thesis_run_count"] == 0
 
 
 def test_validation_report_uses_gap_status_when_verifier_rejected_evidence(tmp_path: Path) -> None:
@@ -327,6 +328,29 @@ def test_validation_gap_exports_do_not_mark_plots_or_tables_authoritative(
     assert plot_index["data_authority"] == "VALIDATION_GAP_DATA"
     assert "VALIDATION_GAP_DATA" in table
     assert "AUTHORITATIVE_THESIS_DATA" not in table
+
+
+def test_validation_gap_report_gates_authoritative_thesis_run_count(
+    tmp_path: Path,
+) -> None:
+    """整体验证未通过时，报告不能把行级 authoritative 标记当作论文可用样本。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    _write_gap_verification_summary(root)
+    aggregate_path = root / "aggregates/phase12_aggregate.json"
+    aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+    aggregate["authoritative_thesis_run_count"] = 1
+    aggregate_path.write_text(json.dumps(aggregate, sort_keys=True) + "\n", encoding="utf-8")
+
+    export_thesis_assets(root, profile="validation")
+
+    report = root.joinpath("reports/phase12_validation_report.md").read_text(encoding="utf-8")
+    results = root.joinpath("thesis/experiment_results.md").read_text(encoding="utf-8")
+    assert "authoritative thesis runs：1" not in report
+    assert "verifier-gated thesis runs：0" in report
+    assert "row-level runtime-complete runs：1" in report
+    assert "verifier_gated_authoritative_for_thesis=0" in results
 
 
 def test_aggregate_counts_runtime_semantics_not_adapter_attempts() -> None:

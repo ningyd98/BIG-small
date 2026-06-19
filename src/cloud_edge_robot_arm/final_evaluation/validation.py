@@ -182,6 +182,9 @@ def verify_phase12(
         if smoke_ready and thesis_ready
         else "THESIS_PACKAGE_INCOMPLETE"
     )
+    verifier_gated_authoritative_count = (
+        authoritative_count if thesis_status in {THESIS_STATUS, VALIDATION_THESIS_STATUS} else 0
+    )
     payload: dict[str, Any] = {
         "status": status,
         "project_status": PROJECT_STATUS if full_ready and thesis_ready else "NOT_CLOSED",
@@ -201,6 +204,7 @@ def verify_phase12(
         "runtime_completion_count": runtime_completion_count,
         "blocked_before_runtime_count": blocked_before_runtime_count,
         "authoritative_thesis_run_count": authoritative_count,
+        "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
         "actual_backend_counts": actual_backend_counts,
         "runtime_backend_counts": runtime_backend_counts,
         "adapter_attempts_verified": checks["adapter_attempts_verified"],
