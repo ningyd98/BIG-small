@@ -104,6 +104,12 @@ def verify_phase12(
         ),
         "thesis_docs_exist": (artifact_root / "thesis/experiment_results.md").exists(),
         "demo_bundle_exists": (artifact_root / "demo_bundle/demo_summary.json").exists(),
+        "demo_summary_semantics_valid": _demo_summary_semantics_valid(
+            artifact_root,
+            profile,
+            aggregate,
+            authoritative_count,
+        ),
         "failed_or_blocked_not_deleted": _failed_or_blocked_counts_match(raw_runs, aggregate),
         "unsafe_command_execution_zero": aggregate.get("unsafe_command_execution_count") == 0,
         "real_controller_contacted_false": _all_false(raw_runs, "real_controller_contacted"),
@@ -170,6 +176,7 @@ def verify_phase12(
         and checks["plot_index_semantics_valid"]
         and checks["tables_exist"]
         and checks["capability_table_semantics_valid"]
+        and checks["demo_summary_semantics_valid"]
         and checks["unsafe_command_execution_zero"]
         and checks["real_controller_contacted_false"]
         and checks["hardware_motion_observed_false"]
@@ -189,6 +196,7 @@ def verify_phase12(
     thesis_ready = (
         checks["thesis_docs_exist"]
         and checks["demo_bundle_exists"]
+        and checks["demo_summary_semantics_valid"]
         and checks["plots_exist"]
         and checks["plot_index_semantics_valid"]
         and checks["tables_exist"]
@@ -388,6 +396,98 @@ def _read_csv_rows(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
     return list(DictReader(path.read_text(encoding="utf-8").splitlines()))
+
+
+def _demo_summary_semantics_valid(
+    root: Path,
+    profile: Phase12Profile,
+    aggregate: dict[str, Any],
+    authoritative_count: int,
+) -> bool:
+    """检查答辩包 summary 没有夸大数据权威、样本数或硬件安全状态。"""
+
+    summary = _read_json(root / "demo_bundle/demo_summary.json")
+    if not summary:
+        return False
+    authority = str(summary.get("data_authority", ""))
+    allowed = _allowed_demo_authorities(profile)
+    if authority not in allowed:
+        return False
+    gated_count = _nonnegative_int(summary.get("verifier_gated_authoritative_thesis_run_count"))
+    if gated_count is None or gated_count > authoritative_count:
+        return False
+    if (
+        authority
+        in {
+            "PIPELINE_TEST_DATA",
+            "PENDING_VERIFICATION_DATA",
+            "VALIDATION_GAP_DATA",
+        }
+        and gated_count != 0
+    ):
+        return False
+    if summary.get("contains_secret") is not False:
+        return False
+    return _demo_hardware_claims_match(summary, _aggregate_hardware_claims(aggregate))
+
+
+def _allowed_demo_authorities(profile: Phase12Profile) -> set[str]:
+    if profile == Phase12Profile.FULL:
+        return {
+            "AUTHORITATIVE_THESIS_DATA",
+            "PENDING_VERIFICATION_DATA",
+            "VALIDATION_GAP_DATA",
+        }
+    if profile == Phase12Profile.VALIDATION:
+        return {
+            "VALIDATION_ACCEPTED_DATA",
+            "PENDING_VERIFICATION_DATA",
+            "VALIDATION_GAP_DATA",
+        }
+    return {"PIPELINE_TEST_DATA", "PENDING_VERIFICATION_DATA"}
+
+
+def _nonnegative_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _aggregate_hardware_claims(aggregate: dict[str, Any]) -> dict[str, Any]:
+    claims = aggregate.get("hardware_claims", {})
+    if not isinstance(claims, dict):
+        claims = {}
+    return {
+        "real_controller_contacted": claims.get("real_controller_contacted") is True,
+        "hardware_motion_observed": claims.get("hardware_motion_observed") is True,
+        "hardware_write_operations": sorted(
+            str(item) for item in (claims.get("hardware_write_operations") or [])
+        ),
+        "highest_real_hardware_acceptance_level": str(
+            claims.get("highest_real_hardware_acceptance_level") or "NONE"
+        ),
+        "real_robot_validation": str(claims.get("real_robot_validation") or "NOT_STARTED"),
+    }
+
+
+def _demo_hardware_claims_match(
+    summary: dict[str, Any],
+    expected: dict[str, Any],
+) -> bool:
+    return (
+        summary.get("real_controller_contacted") is expected["real_controller_contacted"]
+        and summary.get("hardware_motion_observed") is expected["hardware_motion_observed"]
+        and sorted(str(item) for item in (summary.get("hardware_write_operations") or []))
+        == expected["hardware_write_operations"]
+        and str(summary.get("highest_real_hardware_acceptance_level") or "NONE")
+        == expected["highest_real_hardware_acceptance_level"]
+        and str(summary.get("real_robot_validation") or "NOT_STARTED")
+        == expected["real_robot_validation"]
+    )
 
 
 def _normalize_rows_for_profile(

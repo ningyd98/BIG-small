@@ -786,6 +786,42 @@ def test_inconsistent_verifier_summary_does_not_mark_validation_assets_accepted(
     assert "verifier_gated_authoritative_for_thesis=0" in results
 
 
+def test_verifier_rejects_demo_summary_with_exaggerated_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """demo summary 不能单独宣称 full authority 或虚增 verifier-gated 样本数。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    root.joinpath("demo_bundle/demo_summary.json").write_text(
+        json.dumps(
+            {
+                "data_authority": "AUTHORITATIVE_THESIS_DATA",
+                "verifier_gated_authoritative_thesis_run_count": 999,
+                "contains_secret": False,
+                "real_controller_contacted": False,
+                "hardware_motion_observed": False,
+                "hardware_write_operations": [],
+                "highest_real_hardware_acceptance_level": "NONE",
+                "real_robot_validation": "NOT_STARTED",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["demo_summary_semantics_valid"] is False
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+
+
 def test_validation_gap_report_gates_authoritative_thesis_run_count(
     tmp_path: Path,
 ) -> None:
@@ -1554,7 +1590,7 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
         "\\begin{tabular}{}\\end{tabular}"
     )
     root.joinpath("thesis/experiment_results.md").write_text("full results")
-    root.joinpath("demo_bundle/demo_summary.json").write_text("{}\n")
+    _write_demo_summary(root)
 
 
 def _write_minimal_validation_artifact(
@@ -1767,7 +1803,7 @@ def _write_minimal_artifact_common(root: Path) -> None:
         "\\begin{tabular}{}\\end{tabular}"
     )
     root.joinpath("thesis/experiment_results.md").write_text("results")
-    root.joinpath("demo_bundle/demo_summary.json").write_text("{}\n")
+    _write_demo_summary(root)
 
 
 def _write_provenance(root: Path, *, worktree_clean: bool) -> None:
@@ -1785,6 +1821,26 @@ def _write_plot_index(root: Path) -> None:
                 "svg_data_source": "aggregate_payload",
                 "png_rendering_mode": "placeholder_preview",
                 "png_contains_metric_data": False,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_demo_summary(root: Path) -> None:
+    root.joinpath("demo_bundle/demo_summary.json").write_text(
+        json.dumps(
+            {
+                "data_authority": "VALIDATION_ACCEPTED_DATA",
+                "verifier_gated_authoritative_thesis_run_count": 1,
+                "contains_secret": False,
+                "real_controller_contacted": False,
+                "hardware_motion_observed": False,
+                "hardware_write_operations": [],
+                "highest_real_hardware_acceptance_level": "NONE",
+                "real_robot_validation": "NOT_STARTED",
             },
             sort_keys=True,
         )
