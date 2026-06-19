@@ -16,7 +16,9 @@
 | Simulation AI Console | `PHASE11_2_SIMULATION_AI_CONSOLE_ACCEPTED` | `scripts/verify_phase11_2_model_control.py --ci` | `artifacts/phase11_2/verification` | `dispatch=false` 的 planner dry-run |
 | Local model runtime | NOT_ACCEPTED | `scripts/verify_phase11_2_model_control.py --ollama` | 无真实本地模型 accepted evidence | installed_model_count=0 |
 | Ollama runtime | NOT_ACCEPTED | `scripts/verify_phase11_2_model_control.py --ollama` | `ollama_runtime_status=SKIPPED` | 不涉及真实硬件 |
-| Phase 12 smoke suite | READY after smoke verifier | `scripts/verify_phase12.py --smoke` | `artifacts/phase12/verification` | 不涉及真实硬件 |
+| Phase 12 smoke suite | `PHASE12_EXPERIMENT_SUITE_READY` + `PHASE12_THESIS_ASSET_PIPELINE_READY` | `scripts/verify_phase12.py --smoke` | `artifacts/phase12` smoke artifacts and corrected status artifact | 90 rows at `7b4c9af` are `SYNTHETIC_PIPELINE_SAMPLE`; 不涉及真实硬件 |
+| Phase 12 validation suite | `PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED` when validation verifier passes | `scripts/verify_phase12.py --validation` | `artifacts/phase12_1/validation` | actual software runner evidence only; 不涉及真实硬件 |
+| Phase 12 full final evaluation | NOT_ACCEPTED | `scripts/verify_phase12.py --full` | 无 full accepted artifact | full profile required before final thesis conclusions |
 | Real robot validation | NOT_STARTED | 无 | 无 | `highest_real_hardware_acceptance_level=NONE` |
 
 硬件边界：

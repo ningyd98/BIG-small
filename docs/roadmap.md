@@ -35,7 +35,7 @@ Phase 12 是 Final Experimental Evaluation, Thesis Evidence Consolidation and Pr
 
 - RQ1-RQ7 研究问题冻结。
 - F01-F20 最终实验注册表。
-- smoke/validation/full 实验 profile。
+- smoke/validation/full 实验 profile；smoke 是 synthetic pipeline sample，validation 调用 actual software runners，full 才形成论文最终结论。
 - 统计分析、图表、CSV/Markdown/LaTeX 表格。
 - 论文实验材料和答辩演示包。
 - 软件与仿真项目封板。
@@ -46,6 +46,7 @@ Phase 11 之后不继续开发真实机械臂 adapter、Level 0 hardware verifie
 
 ## 后续阶段
 
+- Phase 12.1 validation：完成 actual software runner validation evidence，不声明 full final accepted。
 - Phase 12 full：资源允许时运行完整多 seed 实验并发布 artifact bundle。
 - Post-Phase 12：真实硬件路线单独立项。
 
