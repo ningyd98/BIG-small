@@ -37,7 +37,11 @@ PLOT_NAMES = [
 
 
 def export_plots(
-    output_root: Path, aggregate: dict[str, Any], *, data_authority: str | None = None
+    output_root: Path,
+    aggregate: dict[str, Any],
+    *,
+    data_authority: str | None = None,
+    verifier_gated_authoritative_thesis_run_count: int | None = None,
 ) -> list[str]:
     """生成 PNG 和 SVG 图表资产，返回相对路径列表。"""
 
@@ -52,6 +56,13 @@ def export_plots(
     pipeline_only = synthetic_count > 0 and authoritative_count == 0
     authority = data_authority or (
         "PIPELINE_TEST_DATA" if pipeline_only else "PENDING_VERIFICATION_DATA"
+    )
+    gated_authoritative_count = (
+        int(verifier_gated_authoritative_thesis_run_count)
+        if verifier_gated_authoritative_thesis_run_count is not None
+        else authoritative_count
+        if authority == "AUTHORITATIVE_THESIS_DATA"
+        else 0
     )
     for name in PLOT_NAMES:
         title = _title(name)
@@ -71,6 +82,7 @@ def export_plots(
                 "data_authority": authority,
                 "synthetic_sample_count": synthetic_count,
                 "authoritative_thesis_run_count": authoritative_count,
+                "verifier_gated_authoritative_thesis_run_count": gated_authoritative_count,
             },
             sort_keys=True,
             indent=2,

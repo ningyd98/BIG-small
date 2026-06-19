@@ -20,7 +20,16 @@ def export_thesis_assets(output_root: Path, *, profile: str) -> dict[str, Any]:
     statistics = _read_json(output_root / "statistics/phase12_statistics.json")
     verification = _read_optional_json(output_root / "verification/phase12_summary.json")
     data_authority = _data_authority(profile, aggregate, verification)
-    plots = export_plots(output_root, aggregate, data_authority=data_authority)
+    row_level_authoritative = int(aggregate.get("authoritative_thesis_run_count", 0) or 0)
+    verifier_gated_authoritative = _verifier_gated_authoritative_count(
+        profile, row_level_authoritative, verification
+    )
+    plots = export_plots(
+        output_root,
+        aggregate,
+        data_authority=data_authority,
+        verifier_gated_authoritative_thesis_run_count=verifier_gated_authoritative,
+    )
     tables = export_tables(output_root, aggregate, statistics, data_authority=data_authority)
     reports = _write_reports(output_root, profile, aggregate, statistics, verification)
     demo = _write_demo_bundle(output_root, aggregate)
