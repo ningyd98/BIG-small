@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -19,12 +20,24 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=Path("thesis/figures"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    copied: list[dict[str, str]] = []
+    copied: list[dict[str, object]] = []
     for name, title, body in _diagram_specs():
         path = args.output / "svg" / f"{name}.svg"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_diagram_svg(title, body), encoding="utf-8")
-        copied.append({"path": str(path), "type": "svg", "data_source": "design_diagram"})
+        copied.append(
+            {
+                "figure_no": f"图{len(copied) + 1}",
+                "name": name,
+                "path": str(path),
+                "type": "svg",
+                "data_source": "design_diagram",
+                "authority_level": "L1",
+                "source_hash": _sha256(path),
+                "formal_allowed": True,
+                "generator": "scripts/build_thesis_figures.py",
+            }
+        )
     for subdir in ("svg", "png"):
         source = args.validation_root / "plots" / subdir
         target = args.output / subdir
@@ -32,14 +45,22 @@ def main() -> int:
         if source.exists():
             for item in sorted(source.glob("*")):
                 if item.is_file():
-                    shutil.copy2(item, target / item.name)
+                    target_path = target / item.name
+                    shutil.copy2(item, target_path)
+                    is_svg = subdir == "svg"
                     copied.append(
                         {
-                            "path": str(target / item.name),
+                            "figure_no": f"图{len(copied) + 1}",
+                            "name": item.stem,
+                            "path": str(target_path),
                             "type": subdir,
                             "data_source": (
-                                "aggregate_payload" if subdir == "svg" else "placeholder_preview"
+                                "aggregate_payload" if is_svg else "placeholder_preview"
                             ),
+                            "authority_level": ("L4" if is_svg else "L0"),
+                            "source_hash": _sha256(target_path),
+                            "formal_allowed": is_svg,
+                            "generator": "scripts/build_thesis_figures.py",
                         }
                     )
     index = {"figure_file_count": len(copied), "figures": copied}
@@ -155,6 +176,14 @@ def _diagram_svg(title: str, body: list[str]) -> str:
             lines.append(f'<text x="250" y="{y + 64}" font-size="22" fill="#374151">↓</text>')
     lines.append("</svg>")
     return "\n".join(lines)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 if __name__ == "__main__":

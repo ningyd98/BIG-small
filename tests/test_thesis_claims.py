@@ -8,9 +8,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from pytest import MonkeyPatch
-from scripts.build_thesis import _load_figure_index
+from scripts.build_thesis import _load_figure_index, _load_manuscript_sources
 from scripts.check_model_control_secrets import DEFAULT_ROOTS
+from scripts.check_thesis_build import _validate_docx
 from scripts.check_thesis_claims import check_claims
+from scripts.check_thesis_figures import check_thesis_figures
+from scripts.verify_thesis_references import verify_references
 
 
 def test_claim_checker_rejects_full_and_real_robot_claims_without_evidence(
@@ -51,6 +54,30 @@ def test_claim_checker_allows_explicit_llm_only_design_boundary(tmp_path: Path) 
     assert result.passed is True
 
 
+def test_claim_checker_rejects_runtime_count_overstatement(tmp_path: Path) -> None:
+    """540 是 validation row 总数，不得写成 runtime completed。"""
+
+    manuscript = tmp_path / "论文报告_完整版.md"
+    manuscript.write_text("本文 runtime completed 为 540。", encoding="utf-8")
+
+    result = check_claims(paths=[manuscript], evidence_root=tmp_path)
+
+    assert result.passed is False
+    assert any("runtime count semantics" in item.message for item in result.failures)
+
+
+def test_claim_checker_rejects_fake_provider_performance_claim(tmp_path: Path) -> None:
+    """fake provider 不得生成优劣、提升或降低类性能结论。"""
+
+    manuscript = tmp_path / "大模型对比.md"
+    manuscript.write_text("fake provider 结果显示大模型方案显著提升成功率。", encoding="utf-8")
+
+    result = check_claims(paths=[manuscript], evidence_root=tmp_path)
+
+    assert result.passed is False
+    assert any("fake provider performance" in item.message for item in result.failures)
+
+
 def test_secret_scanner_includes_thesis_outputs() -> None:
     """论文正文、构建产物和 LLM-only artifact 必须进入默认 secret 扫描范围。"""
 
@@ -78,11 +105,74 @@ def test_thesis_figure_index_loader_normalizes_design_diagrams(
     monkeypatch.chdir(tmp_path)
     figures = _load_figure_index(generated)
 
-    assert figures == [
-        {
-            "name": "system_architecture",
-            "path": "thesis/figures/svg/system_architecture.svg",
-            "type": "svg",
-            "data_source": "design_diagram",
-        }
-    ]
+    assert figures[0]["name"] == "system_architecture"
+    assert figures[0]["path"] == "thesis/figures/svg/system_architecture.svg"
+    assert figures[0]["data_source"] == "design_diagram"
+    assert figures[0]["formal_allowed"] == "true"
+
+
+def test_thesis_build_uses_ordered_manuscript_sources(tmp_path: Path) -> None:
+    """论文正文事实源应来自章节文件和 manifest，而不是 Python 长字符串。"""
+
+    source = tmp_path / "manuscript"
+    source.mkdir()
+    (source / "manifest.json").write_text(
+        '{"chapters":[{"id":"01","title":"第一章","path":"01.md"},'
+        '{"id":"02","title":"第二章","path":"02.md"}]}',
+        encoding="utf-8",
+    )
+    (source / "01.md").write_text("# 第一章\n\n{{ run_count }}\n", encoding="utf-8")
+    (source / "02.md").write_text("# 第二章\n\n{{ status }}\n", encoding="utf-8")
+
+    loaded = _load_manuscript_sources(source)
+
+    assert [chapter["id"] for chapter in loaded] == ["01", "02"]
+    assert loaded[0]["content"].startswith("# 第一章")
+
+
+def test_placeholder_figures_are_rejected_when_formally_referenced(tmp_path: Path) -> None:
+    """正式正文不得引用 placeholder preview 图。"""
+
+    figures = tmp_path / "thesis/figures"
+    figures.mkdir(parents=True)
+    (figures / "figure_index.json").write_text(
+        '{"figures":[{"figure_no":"图9-1","path":"thesis/figures/png/a.png",'
+        '"data_source":"placeholder_preview","formal_allowed":false}]}',
+        encoding="utf-8",
+    )
+    manuscript = tmp_path / "docs/thesis/论文报告_完整版.md"
+    manuscript.parent.mkdir(parents=True)
+    manuscript.write_text("正文引用 thesis/figures/png/a.png 作为实验结果图。", encoding="utf-8")
+
+    result = check_thesis_figures(root=tmp_path)
+
+    assert result.passed is False
+    assert any("placeholder" in failure.message for failure in result.failures)
+
+
+def test_reference_verifier_requires_nonempty_verified_bibliography(tmp_path: Path) -> None:
+    """正式参考文献必须非空并包含可核验标识。"""
+
+    bib = tmp_path / "thesis/references.bib"
+    bib.parent.mkdir(parents=True)
+    bib.write_text(
+        "@article{missingId,title={No Identifier},author={A},year={2024}}\n",
+        encoding="utf-8",
+    )
+
+    result = verify_references(bib_path=bib, manuscript_root=tmp_path)
+
+    assert result.passed is False
+    assert result.entry_count == 0
+    assert result.failures
+
+
+def test_docx_validator_requires_title_abstract_and_conclusion(tmp_path: Path) -> None:
+    """DOCX 构建门禁应拒绝缺少正文关键标记的压缩包。"""
+
+    docx = tmp_path / "bad.docx"
+    docx.write_bytes(b"not-a-zip")
+
+    failures = _validate_docx(docx)
+
+    assert failures

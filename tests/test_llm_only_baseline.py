@@ -11,6 +11,7 @@ from pathlib import Path
 from cloud_edge_robot_arm.experiments.llm_only.runner import (
     LLMOnlyProfile,
     LLMOnlyProvider,
+    authoritative_model_performance_rows,
     run_llm_only_baseline,
 )
 
@@ -57,3 +58,23 @@ def test_fake_provider_validation_is_not_model_performance_evidence(tmp_path: Pa
     assert summary["status"] == "LLM_ONLY_BASELINE_PIPELINE_READY"
     assert summary["model_runtime_accepted"] is False
     assert summary["authoritative_for_model_performance"] is False
+
+
+def test_fake_provider_rows_are_excluded_from_authoritative_model_performance(
+    tmp_path: Path,
+) -> None:
+    """fake、PIPELINE_ONLY 和未 accepted 的模型数据必须全部排除出性能数据集。"""
+
+    output = tmp_path / "llm_only"
+    run_llm_only_baseline(
+        profile=LLMOnlyProfile.SMOKE,
+        provider=LLMOnlyProvider.FAKE,
+        output_root=output,
+    )
+    rows = [
+        json.loads(line)
+        for line in (output / "runs/llm_only_runs.jsonl").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+
+    assert authoritative_model_performance_rows(rows) == []

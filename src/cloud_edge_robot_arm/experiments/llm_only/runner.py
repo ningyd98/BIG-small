@@ -29,7 +29,7 @@ BLOCKED_BY_MODEL_ENV = "LLM_ONLY_BASELINE_BLOCKED_BY_MODEL_ENV"
 
 B01 = "B01_LLM_ONLY_ONESHOT"
 B02 = "B02_LLM_ONLY_REACTIVE"
-B03 = "B03_PROPOSED_ARCHITECTURE_PAIRED_COMPARISON"
+B03 = "B03_PIPELINE_ONLY_PAIRED_DESIGN"
 
 SCENARIOS = [
     "S01_NORMAL_STATIC",
@@ -194,3 +194,27 @@ def _verify_row_hashes(output_root: Path, rows: list[dict[str, object]]) -> bool
         if not path.exists() or file_hash(path) != expected:
             return False
     return True
+
+
+def authoritative_model_performance_rows(
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """过滤可进入真实模型性能统计的数据。
+
+    fake provider、PIPELINE_ONLY 和未 accepted 的模型运行只能用于管线验证。
+    """
+
+    allowed: list[dict[str, object]] = []
+    for row in rows:
+        if str(row.get("provider")).lower() == "fake":
+            continue
+        if row.get("model_runtime_accepted") is not True:
+            continue
+        if row.get("authoritative_for_model_performance") is not True:
+            continue
+        if row.get("model_runtime_type") == ModelRuntimeType.FAKE_PROVIDER_PIPELINE_TEST.value:
+            continue
+        if row.get("runtime_status") == "PIPELINE_ONLY":
+            continue
+        allowed.append(row)
+    return allowed
