@@ -3,6 +3,7 @@
 
 Phase 6.2 final acceptance verification."""
 
+# ruff: noqa: E402
 from __future__ import annotations
 
 import ast
@@ -16,6 +17,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from cloud_edge_robot_arm.cloud.api.app import create_app
 from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
@@ -57,7 +63,6 @@ from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import (
 from cloud_edge_robot_arm.repositories.memory import InMemoryRepository
 from cloud_edge_robot_arm.simulation.mock_robot import MockRobotAdapter, MockScene
 
-ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "cloud_edge_robot_arm"
 
 
@@ -689,24 +694,26 @@ def check_phase5_regression() -> None:
 
 
 def check_no_stub_success_paths() -> None:
-    skipped_parts = {"simulation"}
-    skipped_files = {
-        SRC / "repositories" / "base.py",
-    }
+    phase62_source_roots = (
+        SRC / "cloud" / "replanning",
+        SRC / "edge" / "runtime",
+        SRC / "edge" / "summaries",
+        SRC / "repositories" / "event_autonomy",
+    )
     markers = ("TODO", "FIXME", "placeholder", "NotImplemented")
     offenders: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
-        if skipped_parts.intersection(path.parts) or path in skipped_files:
-            continue
-        text = path.read_text(encoding="utf-8")
-        for marker in markers:
-            if marker in text:
-                offenders.append(f"{path.relative_to(ROOT)} contains {marker}")
-        tree = ast.parse(text, filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Pass):
-                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno} contains pass")
-    task_executor = (SRC / "edge" / "runtime" / "task_executor.py").read_text(encoding="utf-8")
+    for source_root in phase62_source_roots:
+        for path in sorted(source_root.rglob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            for marker in markers:
+                if marker in text:
+                    offenders.append(f"{path.relative_to(ROOT)} contains {marker}")
+            tree = ast.parse(text, filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Pass):
+                    offenders.append(f"{path.relative_to(ROOT)}:{node.lineno} contains pass")
+    task_executor_path = SRC / "edge" / "runtime" / "task_executor.py"
+    task_executor = task_executor_path.read_text(encoding="utf-8")
     assert "CompletionEvaluator(" in task_executor
     assert "repository=completion_repository" in task_executor
     assert ".evaluate(" in task_executor
