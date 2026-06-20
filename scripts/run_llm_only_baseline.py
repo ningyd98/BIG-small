@@ -32,6 +32,11 @@ def main() -> int:
         required=True,
     )
     parser.add_argument("--model", default="")
+    parser.add_argument(
+        "--allow-paid-model-call",
+        action="store_true",
+        help="Allow OpenAI-compatible provider to issue a paid inference request.",
+    )
     parser.add_argument("--output", type=Path, default=Path("artifacts/thesis_baselines/llm_only"))
     args = parser.parse_args()
     payload = run_llm_only_baseline(
@@ -39,6 +44,7 @@ def main() -> int:
         provider=LLMOnlyProvider(args.provider),
         output_root=args.output,
         model_name=args.model,
+        allow_paid_model_call=args.allow_paid_model_call,
     )
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
     return 0

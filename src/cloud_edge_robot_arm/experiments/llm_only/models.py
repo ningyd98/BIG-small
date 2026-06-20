@@ -46,6 +46,7 @@ class LLMOnlyRunRecord(BaseModel):
     baseline_id: str
     profile: LLMOnlyProfile
     provider: LLMOnlyProvider
+    model_name: str = ""
     model_runtime_type: ModelRuntimeType
     scenario_id: str
     seed: int
@@ -72,7 +73,11 @@ class LLMOnlyRunRecord(BaseModel):
     response_hash: str
     source_artifact_path: str
     source_artifact_hash: str
-    token_usage: str | int = "NOT_AVAILABLE"
+    latency_ms: float | str = "NOT_AVAILABLE"
+    model_runtime_accepted: bool = False
+    authoritative_for_model_performance: bool = False
+    runtime_status: str = "PIPELINE_ONLY"
+    token_usage: str | int | dict[str, int] = "NOT_AVAILABLE"
     estimated_cost: str | float = "NOT_AVAILABLE"
     notes: str = ""
 
