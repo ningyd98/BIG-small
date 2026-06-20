@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Check LLM provider environment without issuing paid inference or downloads."""
+"""检查 LLM provider 环境，不触发付费推理或本地大模型下载。"""
 
 from __future__ import annotations
 

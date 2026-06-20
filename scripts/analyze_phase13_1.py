@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Analyze Phase 13.1 LLM baseline artifacts."""
+"""汇总 Phase 13.1 LLM-only 基线产物，且不把阻塞样本写成性能结果。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""LLM-only provider adapters."""
+"""LLM-only provider 适配器入口，统一导出 fake、Ollama 和 OpenAI-compatible。"""
 
 from cloud_edge_robot_arm.experiments.llm_only.providers.base import (
     LLMProvider,

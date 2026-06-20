@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Update thesis generated Phase 13.1 summary without adding unsupported claims."""
+"""更新论文 Phase 13.1 摘要文件，但不加入未经证据支持的性能结论。"""
 
 from __future__ import annotations
 

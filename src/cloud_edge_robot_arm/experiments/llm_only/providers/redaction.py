@@ -1,4 +1,4 @@
-"""Redaction and stable hashing helpers for LLM-only provider evidence."""
+"""LLM-only provider 证据脱敏和稳定哈希工具，避免 endpoint 与密钥外泄。"""
 
 from __future__ import annotations
 

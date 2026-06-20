@@ -1,4 +1,4 @@
-"""OpenAI-compatible provider adapter for real LLM-only experiments."""
+"""OpenAI-compatible provider 适配器；付费推理必须显式授权并脱敏保存证据。"""
 
 from __future__ import annotations
 
