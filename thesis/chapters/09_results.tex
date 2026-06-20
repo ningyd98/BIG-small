@@ -1,3 +1,21 @@
-\chapter{实验结果与分析}
+\chapter{第九章 实验结果与分析}
 
-本章内容见 Markdown 完整稿。关键 validation 记录数为 540，runtime completed 为 466。
+\section{9.1 总体结果}
+
+clean validation 计划记录数为 540，实际记录数为 540。runtime completed 为 466，blocked before runtime 为 74，synthetic sample 为 0。状态分布为 \{'BLOCKED\_BY\_ENV': 74, 'FAILED': 48, 'SAFETY\_STOPPED': 60, 'SUCCESS': 358\}。后端分布为 \{'ISAAC\_SIM': 18, 'MOCK': 324, 'MOVEIT\_DRY\_RUN': 36, 'MUJOCO': 90, 'PLANNER\_DRY\_RUN': 36, 'SYNTHETIC\_DRY\_RUN': 36\}；runtime 后端分布为 \{'MOCK': 324, 'MUJOCO': 90, 'PLANNER\_DRY\_RUN': 16, 'SYNTHETIC\_DRY\_RUN': 36\}；结果来源分布为 \{'PHASE10\_MOVEIT\_ENVIRONMENT\_CHECK': 36, 'PHASE10\_SYNTHETIC\_DRY\_RUN\_ACTUAL': 36, 'PHASE11\_2\_PLANNER\_ACTUAL': 36, 'PHASE11\_RUNTIME\_ACTUAL': 90, 'PHASE8\_ACTUAL\_RUN': 198, 'PHASE9\_2\_ISAAC\_ENVIRONMENT\_CHECK': 18, 'PHASE9\_MUJOCO\_ACTUAL\_RUN': 126\}。\par
+
+\section{9.2 PCSC、ETEAC 与 AUTO}
+
+按 control mode 聚合的 validation 数据为：\{'AUTO': \{'blocked\_by\_env\_count': 0, 'confidence\_interval\_95': [736.8856112832491, 1059.490932037587], 'effect\_size\_vs\_overall': 0.0025369859457222725, 'excluded\_metric\_sample\_count': 0, 'failed\_count': 36, 'maximum': 5800.0, 'mean': 898.1882716604181, 'median': 800.0, 'minimum': 0.010119983926415443, 'p25': 147.0, 'p75': 1100.0, 'p95': 1200.0, 'run\_count': 162, 'sample\_count': 162, 'standard\_deviation': 1047.4733110052462, 'status\_counts': \{'FAILED': 18, 'SAFETY\_STOPPED': 18, 'SUCCESS': 126\}, 'success\_count': 126, 'success\_rate': 0.7777777777777778, 'success\_rate\_ci95': [0.7077421220280039, 0.8349443932974633], 'valid\_metric\_sample\_count': 162\}, 'ETEAC': \{'blocked\_by\_env\_count': 0, 'confidence\_interval\_95': [740.0784758311717, 1065.624928906264], 'effect\_size\_vs\_overall': 0.006910784191144947, 'excluded\_metric\_sample\_count': 0, 'failed\_count': 36, 'maximum': 5800.0, 'mean': 902.8517023687178, 'median': 775.0, 'minimum': 0.01121999230235815, 'p25': 142.0, 'p75': 1100.0, 'p95': 1200.0, 'run\_count': 160, 'sample\_count': 160, 'standard\_deviation': 1050.4778325575694, 'status\_counts': \{'FAILED': 18, 'SAFETY\_STOPPED': 18, 'SUCCESS': 124\}, 'success\_count': 124, 'success\_rate': 0.775, 'success\_rate\_ci95': [0.7042857994110268, 0.8328183304314551], 'valid\_metric\_sample\_count': 160\}, 'PCSC': \{'blocked\_by\_env\_count': 0, 'confidence\_interval\_95': [702.7993362840792, 1065.706764369103], 'effect\_size\_vs\_overall': -0.010532758290209675, 'excluded\_metric\_sample\_count': 0, 'failed\_count': 36, 'maximum': 5800.0, 'mean': 884.2530503265912, 'median': 825.0, 'minimum': 0.010079995263367891, 'p25': 151.0, 'p75': 951.0, 'p95': 1251.0, 'run\_count': 144, 'sample\_count': 144, 'standard\_deviation': 1110.941106382726, 'status\_counts': \{'FAILED': 12, 'SAFETY\_STOPPED': 24, 'SUCCESS': 108\}, 'success\_count': 108, 'success\_rate': 0.75, 'success\_rate\_ci95': [0.6734017453693497, 0.8136059709973562], 'valid\_metric\_sample\_count': 144\}\}。这些数据可作为 validation 级软件/仿真观察事实，但不能替代 full profile 的最终统计结论。当前 verifier-gated authoritative rows 为 466。\par
+
+\section{9.3 安全、恢复和 F20}
+
+unsafe\_command\_execution\_count=0。F20 覆盖运行时压力、lease expiration、restart recovery 和 duplicate worker competition；对应 evidence 来自 Phase 11 runtime actual run source evidence。该结论属于 validation 级软件运行证据。\par
+
+\section{9.4 MuJoCo、Isaac 和 MoveIt 边界}
+
+MuJoCo runtime 在 validation 中有实际运行记录；Isaac 和 MoveIt 部分样本为环境检查阻塞，不计入 runtime completed。F15 paired summary 显示 expected\_pair\_count=9，usable\_authoritative\_pair\_count=0，blocked\_pair\_count=9，paired\_backend\_experiment\_accepted=False。因此当前不能声明 MuJoCo 与 Isaac 的性能趋势一致。\par
+
+\section{9.5 本文方案与仅大模型方案对比}
+
+LLM-only 当前状态为 LLM\_ONLY\_BASELINE\_PIPELINE\_READY，model\_runtime\_type=FAKE\_PROVIDER\_PIPELINE\_TEST，runtime\_status=PIPELINE\_ONLY。仓库当前已经完成仅大模型决策基线的接口设计、实验管线和 fake-provider 流程验证，但尚未形成可用于性能比较的真实大模型运行证据。因此，本文当前版本不报告仅大模型方案与云边协同方案之间的最终数值差异，相关结果将在获得经验证的 OpenAI-compatible 或本地 Ollama 运行环境后补充。\par

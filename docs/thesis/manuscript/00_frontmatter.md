@@ -16,7 +16,7 @@
 
 系统提出 PCSC、ETEAC 和 AUTO 三类协同模式。PCSC 通过周期状态上传和轻量云端监督保持全局可观测性；ETEAC 在初始契约下发后由边缘事件驱动执行和恢复；AUTO 根据风险、网络质量、场景动态性和技能缓存状态选择 PCSC 或 ETEAC。本文还实现 Simulation Workbench、Simulation Runtime、Model Control Center 和 Simulation AI Console，形成从实验配置、运行编排、指标统计到论文证据审计的闭环。
 
-当前 clean validation evidence 显示：Phase 12 validation profile 共 540 条 validation row，其中 runtime completed 为 466，blocked before runtime 为 74，synthetic sample 为 0，unsafe command execution count 为 0。验证范围为软件、仿真、dry-run 和 validation 级证据；full profile 尚未执行完成，真实机械臂验证尚未开始，真实本地模型 runtime 和 Ollama runtime 也尚未形成 accepted evidence。本文进一步给出 LLM-Only Decision Baseline 的 B01-B03 对照实验设计和 fake-provider 管线实现，但在没有真实或本地大模型 runtime accepted evidence 前，不报告仅大模型方案的性能数值差异。
+当前 clean validation evidence 显示：Phase 12 validation profile 共 {{ run_count }} 条 validation row，其中 runtime completed 为 {{ runtime_completion_count }}，blocked before runtime 为 {{ blocked_before_runtime_count }}，synthetic sample 为 {{ synthetic_sample_count }}，unsafe command execution count 为 {{ unsafe_command_execution_count }}。验证范围为软件、仿真、dry-run 和 validation 级证据；full profile 尚未执行完成，真实机械臂验证尚未开始，真实本地模型 runtime 和 Ollama runtime 也尚未形成 accepted evidence。本文进一步给出 LLM-Only Decision Baseline 的 B01-B03 对照实验设计和 fake-provider 管线实现，但在没有真实或本地大模型 runtime accepted evidence 前，不报告仅大模型方案的性能数值差异。
 
 关键词：边缘智能；云边协同；小型机械臂；快慢双系统；任务契约；安全盾；局部重规划；大模型；Sim2Real
 
@@ -29,4 +29,3 @@ The system implements three collaboration modes: PCSC, ETEAC, and AUTO. PCSC kee
 The current clean validation evidence contains 540 validation rows, including 466 runtime-completed rows, 74 rows blocked before runtime, and 0 synthetic samples. The evidence is limited to software, simulation, dry-run, and validation-level results. The full profile, real robot validation, accepted local model runtime, and Ollama runtime remain future work. This thesis also defines and implements a pipeline-level LLM-Only Decision Baseline, but no real LLM performance conclusion is reported without accepted real or local model runtime evidence.
 
 Keywords: edge intelligence; cloud-edge collaboration; small robotic arm; task contract; SafetyShield; local replanning; large language model; Sim2Real
-

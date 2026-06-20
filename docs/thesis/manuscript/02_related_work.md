@@ -1,0 +1,25 @@
+# 第二章 相关技术与研究现状
+
+## 2.1 云边协同与边缘智能
+
+云边协同机器人系统通常把计算密集型规划、全局知识检索和复杂模型推理放在云端，把时延敏感的状态裁决、执行约束和安全停机放在边缘端。Cloud robotics 的早期综述指出，机器人可通过云端共享计算、数据和技能资源，但必须处理通信延迟、可用性和安全责任边界 [@kehoe2015cloud]。边缘计算和边缘智能研究进一步强调，把 AI 能力下沉到靠近设备的一侧，可以降低通信等待并提升隐私和实时性，但也带来资源受限、模型部署和协同调度问题 [@shi2016edge; @zhou2019edge; @li2018edge]。本文的 PCSC、ETEAC 和 AUTO 并不把云端模型当作实时控制器，而是把它限制在高层任务规划和监督角色；边缘端保留最终执行权、拒绝权和恢复权。
+
+## 2.2 机械臂任务规划与执行框架
+
+机械臂系统通常需要同时处理离散任务步骤、连续轨迹规划和执行状态监控。采样规划方法如 RRT、RRT-Connect 和 RRT* 为高维运动规划提供了基础 [@lavalle1998rapidly; @kuffner2000rrtconnect; @karaman2011sampling]；OMPL 则把多类采样规划器工程化为通用库 [@sucan2012ompl]。任务级规划方面，Fast Downward 等规划系统体现了符号规划在动作序列搜索中的价值 [@helmert2006fast]。工程软件栈方面，ROS 2 提供通信、节点和中间件基础，MoveIt 2 提供运动规划、碰撞检测和执行接口 [@ros2docs; @moveit2docs]。本文的 TaskContract 设计位于任务级规划和底层执行之间，用结构化契约连接云端规划与边缘状态机。
+
+## 2.3 安全控制、状态机和技能执行
+
+机器人安全研究强调控制屏障函数、碰撞避免、功能安全标准和协作机器人安全边界。控制屏障函数相关工作为安全约束和控制优化之间的连接提供了理论基础 [@ames2017cbf; @wang2017safety]。工业机器人和协作机器人安全标准为停机、协作、控制系统和安全完整性提供了工程语义 [@iso10218; @isots15066; @iec61508; @iso13849]。行为树在机器人和 AI 系统中常用于组织技能、恢复和层级任务逻辑 [@colledanchise2018bt]。本文的 SafetyShield 并不等价于完整功能安全认证，而是面向软件验证阶段的 fail-closed 安全裁决层：它在 TaskContract、Telemetry、工作空间、障碍物、TTL、急停和 acceptance level 等维度进行独立校验，并且不允许大模型绕过。
+
+## 2.4 仿真、Sim2Real 与跨后端验证
+
+仿真平台为软件和算法验证提供可重复环境。MuJoCo 在模型控制和机器人仿真中被广泛使用 [@todorov2012mujoco]，Isaac Sim 提供 NVIDIA 生态中的物理仿真和合成数据能力 [@nvidiaisaacsimdocs]，MuJoCo 官方文档也为可复现实验和模型配置提供了工程入口 [@mujocodocs]。Sim2Real 研究表明，domain randomization、动力学随机化和大规模合成数据可缓解仿真到现实的差距，但并不能替代真实硬件验证 [@tobin2017domain; @peng2017dynamics; @akkaya2019dexterous; @kalashnikov2018qtopt]。因此，本文在结论中严格区分 Mock、MuJoCo、Isaac、MoveIt dry-run、软件 runtime 和真实机械臂证据。
+
+## 2.5 大模型机器人规划与 LLM-only 控制
+
+Transformer 架构推动了大模型在语言和多模态推理中的应用 [@vaswani2017attention]。近年来，语言模型和视觉语言模型被用于机器人任务规划、可供性选择、程序生成、视觉-语言-动作映射和多模态提示操作 [@ahn2022saycan; @liang2022code; @driess2023palme; @brohan2023rt2; @brohan2022rt1; @huang2022inner; @huang2022zeroshot; @jiang2022vima]。这些研究说明大模型具备生成任务步骤和解释场景的潜力，但也暴露出输出不稳定、时延、环境依赖、语义错误和安全约束不足等问题。本文的 LLM-Only Decision Baseline 借鉴这些问题设定，但为了安全和可比性，仍把大模型输出转换为统一 TaskContract，并继续经过 SafetyShield 和 HardwareExecutionGate；对照变量是决策机制与云边协同方式，而不是是否保留基本安全保护。
+
+## 2.6 本地模型管理与工程证据链
+
+本地模型运行时为低成本和离线验证提供可能，但必须处理模型安装、下载、密钥、端点安全和运行状态隔离。Ollama 的 OpenAI-compatible API 可与统一 PlannerAdapter 集成 [@ollamaopenai]。不过，仓库当前没有真实 Ollama runtime accepted evidence，因此论文只把 Model Control Center 和 fake-provider smoke 写作工程管线事实，不把 fake-provider 输出写成真实大模型性能结论。综合现有研究，本文的切入点是：在大模型高层规划能力和边缘确定性执行之间建立结构化契约、状态机、安全盾、局部恢复和证据链，从而在 validation 级软件/仿真证据中验证系统边界，而不是宣称已经完成 full profile 或真实机械臂实验。
