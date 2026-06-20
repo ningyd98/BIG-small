@@ -822,6 +822,37 @@ def test_verifier_rejects_demo_summary_with_exaggerated_authority(
     assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
 
 
+def test_verifier_rejects_validation_thesis_docs_with_final_acceptance_claims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """validation 级 thesis 文档不能越级声明 full/project accepted。"""
+
+    root = tmp_path / "phase12_validation"
+    _write_minimal_validation_artifact(root, aggregate_blocked=1, aggregate_failed=1)
+    root.joinpath("thesis/experiment_results.md").write_text(
+        "\n".join(
+            [
+                "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED",
+                "PHASE12_FINAL_EVALUATION_ACCEPTED",
+                "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED",
+                "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _patch_minimal_validation_verifier(monkeypatch)
+
+    summary = phase12_validation.verify_phase12(
+        profile=Phase12Profile.VALIDATION,
+        artifact_root=root,
+        output_dir=root / "verification",
+    )
+
+    assert summary["checks"]["thesis_docs_semantics_valid"] is False
+    assert summary["status"] == "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+    assert summary["thesis_status"] == "THESIS_PACKAGE_INCOMPLETE"
+
+
 def test_validation_gap_report_gates_authoritative_thesis_run_count(
     tmp_path: Path,
 ) -> None:

@@ -110,6 +110,7 @@ def verify_phase12(
             aggregate,
             authoritative_count,
         ),
+        "thesis_docs_semantics_valid": _thesis_docs_semantics_valid(artifact_root, profile),
         "failed_or_blocked_not_deleted": _failed_or_blocked_counts_match(raw_runs, aggregate),
         "unsafe_command_execution_zero": aggregate.get("unsafe_command_execution_count") == 0,
         "real_controller_contacted_false": _all_false(raw_runs, "real_controller_contacted"),
@@ -177,6 +178,7 @@ def verify_phase12(
         and checks["tables_exist"]
         and checks["capability_table_semantics_valid"]
         and checks["demo_summary_semantics_valid"]
+        and checks["thesis_docs_semantics_valid"]
         and checks["unsafe_command_execution_zero"]
         and checks["real_controller_contacted_false"]
         and checks["hardware_motion_observed_false"]
@@ -195,6 +197,7 @@ def verify_phase12(
         status = REJECTED_STATUS
     thesis_ready = (
         checks["thesis_docs_exist"]
+        and checks["thesis_docs_semantics_valid"]
         and checks["demo_bundle_exists"]
         and checks["demo_summary_semantics_valid"]
         and checks["plots_exist"]
@@ -311,7 +314,13 @@ def verify_phase12(
             "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
         },
     )
-    _write_json(output_dir / "thesis_assets_verification.json", {"thesis_ready": thesis_ready})
+    _write_json(
+        output_dir / "thesis_assets_verification.json",
+        {
+            "thesis_ready": thesis_ready,
+            "thesis_docs_semantics_valid": checks["thesis_docs_semantics_valid"],
+        },
+    )
     _write_json(
         output_dir / "security_boundary_verification.json",
         {
@@ -488,6 +497,41 @@ def _demo_hardware_claims_match(
         and str(summary.get("real_robot_validation") or "NOT_STARTED")
         == expected["real_robot_validation"]
     )
+
+
+def _thesis_docs_semantics_valid(root: Path, profile: Phase12Profile) -> bool:
+    """检查 thesis markdown 没有越过当前 profile 的验收层级。"""
+
+    thesis_dir = root / "thesis"
+    docs = sorted(thesis_dir.glob("*.md"))
+    if not docs:
+        return False
+    content = "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in docs)
+    forbidden = {
+        "BIGSMALL_REAL_ROBOT_PROJECT_ACCEPTED",
+    }
+    if profile == Phase12Profile.SMOKE:
+        forbidden.update(
+            {
+                VALIDATION_STATUS,
+                VALIDATION_THESIS_STATUS,
+                FULL_STATUS,
+                THESIS_STATUS,
+                PROJECT_STATUS,
+                "AUTHORITATIVE_THESIS_DATA",
+            }
+        )
+    elif profile == Phase12Profile.VALIDATION:
+        forbidden.update(
+            {
+                FULL_STATUS,
+                THESIS_STATUS,
+                PROJECT_STATUS,
+                "AUTHORITATIVE_THESIS_DATA",
+                "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED",
+            }
+        )
+    return not any(term in content for term in forbidden)
 
 
 def _normalize_rows_for_profile(
