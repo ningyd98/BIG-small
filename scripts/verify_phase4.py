@@ -7,9 +7,13 @@ Runs all Phase 4 acceptance scenarios and reports pass/fail for each."""
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = ROOT / "src"
 
 SCRIPTS = [
     "run_phase4_api_smoke.py",
@@ -22,10 +26,19 @@ SCRIPTS = [
 ]
 
 
+def script_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH")
+    src_value = str(SRC_ROOT)
+    env["PYTHONPATH"] = src_value if not existing else f"{src_value}{os.pathsep}{existing}"
+    return env
+
+
 def main() -> None:
     script_dir = Path(__file__).resolve().parent
     results: dict[str, bool] = {}
     overall = True
+    env = script_environment()
 
     for name in SCRIPTS:
         path = script_dir / name
@@ -39,7 +52,8 @@ def main() -> None:
             [sys.executable, str(path)],
             capture_output=True,
             text=True,
-            cwd=str(script_dir.parent),
+            cwd=str(ROOT),
+            env=env,
         )
         passed = proc.returncode == 0 and "success=true" in proc.stdout
         results[name] = passed

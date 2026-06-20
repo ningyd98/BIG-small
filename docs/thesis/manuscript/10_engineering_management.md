@@ -1,0 +1,4 @@
+# 第十章 工程管理分析
+
+项目采用 Phase 0-12 分阶段路线，逐步完成契约、边缘运行时、安全盾、云端规划、监督、恢复、仿真、运行编排、模型控制和论文证据治理。工程管理重点包括需求冻结、质量门禁、风险台账、环境阻塞管理、CI、自检脚本、证据分级和变更管理。Phase 12.2 特别强化了 adapter attempted、environment check、runtime invoked、runtime completed 和 authoritative thesis run 的语义，避免把环境检查或 placeholder 指标写成真实运行。
+

@@ -46,11 +46,74 @@ jobs:
       - name: Type check
         run: python -m mypy .
 
-      - name: Unit tests
-        run: python -m pytest -q
+      - name: Unit tests - core
+        run: |
+          python -m pytest -q \
+            tests/test_chinese_comment_checker.py \
+            tests/test_llm_only_baseline.py \
+            tests/test_phase0_acceptance.py \
+            tests/test_phase0_config_logging.py \
+            tests/test_phase0_contracts.py \
+            tests/test_phase1_1_safety_closure.py \
+            tests/test_phase1_acceptance.py \
+            tests/test_phase1_mock_robot.py \
+            tests/test_phase1_skill_executor.py \
+            tests/test_phase2_repository_replay_recovery.py \
+            tests/test_phase2_state_machine.py \
+            tests/test_phase2_task_runtime.py \
+            tests/test_phase3_1_integration.py \
+            tests/test_phase3_2_integration.py \
+            tests/test_phase3_safety_repository.py \
+            tests/test_phase3_safety_shield.py \
+            tests/test_phase3_stop_controller.py \
+            tests/test_phase4_cloud_planning.py \
+            tests/test_phase4_step0_safety_hardening.py \
+            tests/test_phase5_retrospective_hardening.py \
+            tests/test_phase5_supervision.py \
+            tests/test_phase6_2_replan_resume.py \
+            tests/test_phase6_e2e_executor.py \
+            tests/test_phase6_event_detection.py \
+            tests/test_phase6_integration.py \
+            tests/test_phase6_recovery_replanning.py \
+            tests/test_phase7_api_config.py \
+            tests/test_phase7_auto_mode.py \
+            tests/test_phase7_auto_mode_repository.py \
+            tests/test_phase7_risk.py \
+            tests/test_phase7_skill_cache.py \
+            tests/test_repository_governance.py
+
+      - name: Unit tests - phase8 and phase9
+        run: |
+          python -m pytest -q \
+            tests/test_phase8_*.py \
+            tests/test_phase9_*.py
+
+      - name: Unit tests - phase10 through thesis
+        run: |
+          python -m pytest -q \
+            tests/test_phase10_*.py \
+            tests/test_phase11_*.py \
+            tests/test_phase12_*.py \
+            tests/test_thesis_claims.py
 
       - name: Documentation consistency
         run: python scripts/check_docs.py
+
+      - name: Thesis and LLM-only merge gates
+        run: |
+          python scripts/check_model_control_secrets.py
+          python scripts/check_chinese_comments.py
+          python scripts/run_llm_only_baseline.py --profile smoke --provider fake
+          python scripts/analyze_llm_only_baseline.py
+          python scripts/verify_llm_only_baseline.py
+          python scripts/export_llm_comparison_tables.py
+          python scripts/build_thesis_evidence.py
+          python scripts/build_thesis_tables.py
+          python scripts/build_thesis_figures.py
+          python scripts/verify_thesis_references.py
+          python scripts/build_thesis.py
+          python scripts/check_thesis_figures.py
+          python scripts/check_thesis_claims.py
 
       - name: Phase 3 verification
         run: |

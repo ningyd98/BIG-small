@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from pytest import MonkeyPatch
 
 import cloud_edge_robot_arm.final_evaluation.report as phase12_report
 from cloud_edge_robot_arm.final_evaluation.models import Phase12Profile
@@ -220,7 +221,7 @@ def test_demo_bundle_secret_flag_is_derived_from_bundle_content(tmp_path: Path) 
 
 def test_demo_bundle_summary_secret_flag_is_not_hardcoded(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     """demo_summary.json 的 contains_secret 必须反映生成后的答辩包内容。"""
 

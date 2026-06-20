@@ -124,10 +124,16 @@ def test_legacy_smoke_rows_without_source_fields_are_corrected_as_synthetic(
 def test_validation_uses_actual_runners_but_gates_authority_on_provenance(
     tmp_path: Path,
 ) -> None:
-    """validation 必须调用 actual runner，但 dirty provenance 不能升级为论文权威。"""
+    """validation 必须调用 actual runner，但 provenance 缺口不能升级为论文权威。"""
 
     output = tmp_path / "phase12"
-    _run_pipeline(output, "validation", "--validation")
+    _run_generation_pipeline(output, "validation")
+    provenance_path = output / "manifests/provenance.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    provenance["worktree_clean"] = False
+    provenance["source_tree_hash"] = ""
+    provenance_path.write_text(json.dumps(provenance, sort_keys=True) + "\n", encoding="utf-8")
+    _run_verifier(output, "--validation")
     rows = _read_jsonl(output / "runs/raw_runs.jsonl")
     summary = json.loads((output / "verification/phase12_summary.json").read_text())
 
@@ -186,6 +192,11 @@ def test_registry_has_sample_policy_and_adapter_mapping_for_all_experiments() ->
 
 
 def _run_pipeline(output: Path, profile: str, verify_flag: str) -> None:
+    _run_generation_pipeline(output, profile)
+    _run_verifier(output, verify_flag)
+
+
+def _run_generation_pipeline(output: Path, profile: str) -> None:
     commands = [
         [
             sys.executable,
@@ -211,19 +222,24 @@ def _run_pipeline(output: Path, profile: str, verify_flag: str) -> None:
             "--output",
             str(output),
         ],
-        [
-            sys.executable,
-            "scripts/verify_phase12.py",
-            verify_flag,
-            "--output",
-            str(output / "verification"),
-            "--artifact-root",
-            str(output),
-        ],
     ]
     for command in commands:
         completed = subprocess.run(command, check=False, capture_output=True, text=True)
         assert completed.returncode == 0, completed.stderr + completed.stdout
+
+
+def _run_verifier(output: Path, verify_flag: str) -> None:
+    command = [
+        sys.executable,
+        "scripts/verify_phase12.py",
+        verify_flag,
+        "--output",
+        str(output / "verification"),
+        "--artifact-root",
+        str(output),
+    ]
+    completed = subprocess.run(command, check=False, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr + completed.stdout
 
 
 def _read_jsonl(path: Path) -> list[dict[str, object]]:
