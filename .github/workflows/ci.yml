@@ -52,6 +52,22 @@ jobs:
       - name: Documentation consistency
         run: python scripts/check_docs.py
 
+      - name: Thesis and LLM-only merge gates
+        run: |
+          python scripts/check_model_control_secrets.py
+          python scripts/check_chinese_comments.py
+          python scripts/run_llm_only_baseline.py --profile smoke --provider fake
+          python scripts/analyze_llm_only_baseline.py
+          python scripts/verify_llm_only_baseline.py
+          python scripts/export_llm_comparison_tables.py
+          python scripts/build_thesis_evidence.py
+          python scripts/build_thesis_tables.py
+          python scripts/build_thesis_figures.py
+          python scripts/verify_thesis_references.py
+          python scripts/build_thesis.py
+          python scripts/check_thesis_figures.py
+          python scripts/check_thesis_claims.py
+
       - name: Phase 3 verification
         run: |
           python scripts/verify_phase3.py
