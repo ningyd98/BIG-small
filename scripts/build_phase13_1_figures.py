@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Build Phase 13.1 figure index without fabricating missing model results."""
+"""生成 Phase 13.1 图索引；真实模型缺失时只记录 NOT_AVAILABLE。"""
 
 from __future__ import annotations
 

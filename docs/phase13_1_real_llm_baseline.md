@@ -17,9 +17,11 @@ Ollama provider 的实验入口。当前分支依赖尚未合并的 `codex/thesi
 ## 命令
 
 ```bash
+# 检查本机 Ollama 和 OpenAI-compatible 配置，不触发真实推理。
 python scripts/check_llm_provider_environment.py --provider ollama
 python scripts/check_llm_provider_environment.py --provider openai-compatible
 
+# 运行 fake pipeline smoke，只验证管线和证据隔离。
 python scripts/run_phase13_1_experiments.py --provider fake --profile smoke
 python scripts/analyze_phase13_1.py
 python scripts/build_phase13_1_figures.py
@@ -29,6 +31,7 @@ python scripts/verify_phase13_1.py
 真实 OpenAI-compatible 调用必须显式授权：
 
 ```bash
+# 显式授权后才允许 OpenAI-compatible 真实推理请求。
 python scripts/run_phase13_1_experiments.py \
   --provider openai-compatible \
   --profile smoke \
@@ -38,6 +41,7 @@ python scripts/run_phase13_1_experiments.py \
 Ollama 必须已有本地模型：
 
 ```bash
+# Ollama 只使用已安装模型，不自动下载大型模型。
 python scripts/run_phase13_1_experiments.py \
   --provider ollama \
   --profile smoke \

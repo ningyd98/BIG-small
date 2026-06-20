@@ -1,4 +1,4 @@
-"""Provider protocol and shared response models for LLM-only experiments."""
+"""LLM-only provider 协议和脱敏响应模型，供真实与 fake provider 共用。"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Ollama provider adapter for local LLM-only experiments."""
+"""Ollama provider 适配器，仅访问本机 HTTP API 且不会自动下载模型。"""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Verify Phase 13.1 LLM baseline evidence."""
+"""核验 Phase 13.1 LLM 基线证据，防止 fake 或阻塞样本进入权威结论。"""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run Phase 13.1 LLM-only baseline experiments."""
+"""运行 Phase 13.1 LLM-only 基线实验，并强制区分 fake 与真实模型。"""
 
 from __future__ import annotations
 

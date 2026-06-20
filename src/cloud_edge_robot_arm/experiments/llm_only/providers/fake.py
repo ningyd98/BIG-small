@@ -1,4 +1,4 @@
-"""Deterministic fake provider for pipeline-only LLM baseline checks."""
+"""确定性 fake provider，只用于 pipeline 检查，绝不能作为真实模型证据。"""
 
 from __future__ import annotations
 
