@@ -1,0 +1,6 @@
+# t12_reproducibility
+
+| field | note | value |
+| --- | --- | --- |
+| source_tree_hash | 来自 manifest/provenance；UNKNOWN 表示当前 aggregate 未提供证据 | UNKNOWN |
+| worktree_clean | full 结论要求 clean；UNKNOWN 表示当前 aggregate 未提供证据 | UNKNOWN |
