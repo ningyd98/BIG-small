@@ -91,11 +91,33 @@ jobs:
 
       - name: Run remediation regressions
         run: |
-          python -m pytest -q \
+          mkdir -p artifacts/phase12_4_diagnostics
+          set +e
+          status=0
+          for test_file in \
             tests/test_phase12_4_security_remediation.py \
             tests/test_phase2_task_runtime.py \
             tests/test_phase11_simulation_workbench_backend.py \
             tests/test_phase11_2_model_control_backend.py
+          do
+            log="artifacts/phase12_4_diagnostics/$(basename "$test_file").log"
+            python -m pytest -q --tb=short "$test_file" >"$log" 2>&1
+            code=$?
+            cat "$log"
+            if [ "$code" -ne 0 ]; then
+              status=1
+            fi
+          done
+          echo "$status" > artifacts/phase12_4_diagnostics/status.txt
+          exit "$status"
+
+      - name: Upload remediation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12-4-remediation-diagnostics
+          path: artifacts/phase12_4_diagnostics
+          if-no-files-found: error
 
       - name: Run project CI profile
         run: python scripts/verify_project.py --profile ci
