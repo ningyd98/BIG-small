@@ -32,6 +32,50 @@ jobs:
       - name: Apply remediation
         run: python scripts/apply_phase12_4_remediation.py
 
+      - name: Preserve explicit local-only developer mode
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/cloud_edge_robot_arm/cloud/api/model_control.py")
+          text = path.read_text(encoding="utf-8")
+          old_import = '''from cloud_edge_robot_arm.dashboard.security import (
+              enforce_dashboard_access,
+              enforce_dashboard_role,
+              enforce_dashboard_websocket_access,
+          )'''
+          new_import = '''from cloud_edge_robot_arm.dashboard.security import (
+              DashboardAuthMode,
+              enforce_dashboard_access,
+              enforce_dashboard_role,
+              enforce_dashboard_websocket_access,
+          )'''
+          old_function = '''def enforce_model_control_access(request: Request) -> None:
+              """Allow reads to authenticated viewers and require operator role for writes."""
+
+              if request.method in {"GET", "HEAD", "OPTIONS"}:
+                  enforce_dashboard_access(request)
+                  return
+              enforce_dashboard_role(request, {UserRole.EXPERIMENT_OPERATOR})'''
+          new_function = '''def enforce_model_control_access(request: Request) -> None:
+              """Keep loopback developer mode usable; authorize network writes server-side."""
+
+              mode = DashboardAuthMode(os.environ.get("DASHBOARD_AUTH_MODE", "LOCAL_ONLY"))
+              if mode == DashboardAuthMode.LOCAL_ONLY:
+                  enforce_dashboard_access(request)
+                  return
+              if request.method in {"GET", "HEAD", "OPTIONS"}:
+                  enforce_dashboard_access(request)
+                  return
+              enforce_dashboard_role(request, {UserRole.EXPERIMENT_OPERATOR})'''
+          if text.count(old_import) != 1 or text.count(old_function) != 1:
+              raise RuntimeError("model-control compatibility patch did not match exactly once")
+          path.write_text(
+              text.replace(old_import, new_import, 1).replace(old_function, new_function, 1),
+              encoding="utf-8",
+          )
+          PY
+
       - name: Format patched files
         run: |
           python -m ruff check --fix \
