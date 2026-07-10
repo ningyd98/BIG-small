@@ -32,7 +32,7 @@ jobs:
       - name: Apply remediation
         run: python scripts/apply_phase12_4_remediation.py
 
-      - name: Preserve local mode and support HTTP plus WebSocket dependencies
+      - name: Complete compatibility and type remediation
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -50,9 +50,9 @@ jobs:
               raise RuntimeError("security connection type migration incomplete")
           security_path.write_text(security, encoding="utf-8")
 
-          path = Path("src/cloud_edge_robot_arm/cloud/api/model_control.py")
-          text = path.read_text(encoding="utf-8")
-          text = text.replace(
+          model_path = Path("src/cloud_edge_robot_arm/cloud/api/model_control.py")
+          model = model_path.read_text(encoding="utf-8")
+          model = model.replace(
               "from pydantic import BaseModel, Field\n",
               "from pydantic import BaseModel, Field\nfrom starlette.requests import HTTPConnection\n",
               1,
@@ -90,21 +90,51 @@ jobs:
                   enforce_dashboard_access(connection)
                   return
               enforce_dashboard_role(connection, {UserRole.EXPERIMENT_OPERATOR})'''
-          if text.count(old_import) != 1 or text.count(old_function) != 1:
+          if model.count(old_import) != 1 or model.count(old_function) != 1:
               raise RuntimeError("model-control compatibility patch did not match exactly once")
-          path.write_text(
-              text.replace(old_import, new_import, 1).replace(old_function, new_function, 1),
+          model_path.write_text(
+              model.replace(old_import, new_import, 1).replace(old_function, new_function, 1),
               encoding="utf-8",
           )
 
           test_path = Path("tests/test_phase12_4_security_remediation.py")
           tests = test_path.read_text(encoding="utf-8")
           tests = tests.replace(
+              "from datetime import UTC, datetime, timedelta\n\nfrom fastapi",
+              "from datetime import UTC, datetime, timedelta\nfrom pathlib import Path\n\nimport pytest\nfrom fastapi",
+              1,
+          )
+          tests = tests.replace(
+              "def test_token_viewer_cannot_self_escalate_with_role_header(monkeypatch) -> None:",
+              "def test_token_viewer_cannot_self_escalate_with_role_header(\n    monkeypatch: pytest.MonkeyPatch,\n) -> None:",
+              1,
+          )
+          tests = tests.replace(
+              "def test_model_control_http_routes_require_server_authorized_role(monkeypatch, tmp_path) -> None:",
+              "def test_model_control_http_routes_require_server_authorized_role(\n    monkeypatch: pytest.MonkeyPatch, tmp_path: Path\n) -> None:",
+              1,
+          )
+          tests = tests.replace(
+              "def test_model_control_operator_token_can_write(monkeypatch, tmp_path) -> None:",
+              "def test_model_control_operator_token_can_write(\n    monkeypatch: pytest.MonkeyPatch, tmp_path: Path\n) -> None:",
+              1,
+          )
+          tests = tests.replace(
               '    assert write_response.status_code == 403\n    assert write_response.json()["detail"] == "dashboard_role_forbidden"\n',
               '    assert write_response.status_code == 403\n',
               1,
           )
           test_path.write_text(tests, encoding="utf-8")
+
+          dashboard_test_path = Path("tests/test_phase10_2b_dashboard_backend.py")
+          dashboard_tests = dashboard_test_path.read_text(encoding="utf-8")
+          old_statuses = "    observed_statuses = {job.status}\n"
+          new_statuses = "    observed_statuses: set[ExperimentJobStatus] = {job.status}\n"
+          if dashboard_tests.count(old_statuses) != 1:
+              raise RuntimeError("phase10 status annotation patch did not match exactly once")
+          dashboard_test_path.write_text(
+              dashboard_tests.replace(old_statuses, new_statuses, 1), encoding="utf-8"
+          )
           PY
 
       - name: Format patched files
@@ -113,12 +143,14 @@ jobs:
             src/cloud_edge_robot_arm/edge/runtime/task_executor.py \
             src/cloud_edge_robot_arm/dashboard/security.py \
             src/cloud_edge_robot_arm/cloud/api/model_control.py \
-            tests/test_phase12_4_security_remediation.py
+            tests/test_phase12_4_security_remediation.py \
+            tests/test_phase10_2b_dashboard_backend.py
           python -m ruff format \
             src/cloud_edge_robot_arm/edge/runtime/task_executor.py \
             src/cloud_edge_robot_arm/dashboard/security.py \
             src/cloud_edge_robot_arm/cloud/api/model_control.py \
-            tests/test_phase12_4_security_remediation.py
+            tests/test_phase12_4_security_remediation.py \
+            tests/test_phase10_2b_dashboard_backend.py
 
       - name: Run remediation regressions
         run: |
@@ -128,6 +160,7 @@ jobs:
           for test_file in \
             tests/test_phase12_4_security_remediation.py \
             tests/test_phase2_task_runtime.py \
+            tests/test_phase10_2b_dashboard_backend.py \
             tests/test_phase11_simulation_workbench_backend.py \
             tests/test_phase11_2_model_control_backend.py
           do
