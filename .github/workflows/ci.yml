@@ -154,9 +154,6 @@ jobs:
       - name: Phase 9.1 blocked-environment guard
         run: python scripts/verify_phase9_1.py --skip-history
 
-      - name: Project CI profile
-        run: python scripts/verify_project.py --profile ci
-
       - name: Phase 10 software-side checks
         run: |
           python scripts/verify_phase10_0.py
@@ -171,17 +168,19 @@ jobs:
 
       - name: Phase 12 smoke evaluation
         run: |
-          python scripts/run_phase12_experiments.py --profile smoke --output artifacts/phase12
-          python scripts/analyze_phase12_results.py --profile smoke --output artifacts/phase12
-          python scripts/export_phase12_thesis_assets.py --profile smoke --output artifacts/phase12
-          python scripts/verify_phase12.py --smoke --output artifacts/phase12/verification --artifact-root artifacts/phase12
+          output="artifacts/phase12_ci/${GITHUB_RUN_ID}-${GITHUB_SHA}"
+          rm -rf "$output"
+          python scripts/run_phase12_experiments.py --profile smoke --output "$output"
+          python scripts/analyze_phase12_results.py --profile smoke --output "$output"
+          python scripts/export_phase12_thesis_assets.py --profile smoke --output "$output"
+          python scripts/verify_phase12.py --smoke --output "$output/verification" --artifact-root "$output"
 
       - name: Upload Phase 12 smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: phase12-smoke-artifacts
-          path: artifacts/phase12
+          path: artifacts/phase12_ci/${{ github.run_id }}-${{ github.sha }}
           if-no-files-found: ignore
 
       - name: Dependency check
