@@ -223,16 +223,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,sim-mujoco]"
 
-      - name: Dashboard frontend checks
+      - name: Install dashboard dependencies
         working-directory: dashboard
-        run: |
-          npm ci
-          npm run api:check
-          npm run format:check
-          npm run lint
-          npm run typecheck
-          npm run test
-          npm run build
+        run: npm ci
+
+      - name: Dashboard OpenAPI drift check
+        working-directory: dashboard
+        run: npm run api:check
+
+      - name: Dashboard format check
+        working-directory: dashboard
+        run: npm run format:check
+
+      - name: Dashboard lint
+        working-directory: dashboard
+        run: npm run lint
+
+      - name: Dashboard typecheck
+        working-directory: dashboard
+        run: npm run typecheck
+
+      - name: Dashboard unit tests
+        working-directory: dashboard
+        run: npm run test
+
+      - name: Dashboard production build
+        working-directory: dashboard
+        run: npm run build
 
       - name: Phase 11 simulation workbench partial verification
         run: python scripts/verify_phase11_simulation_workbench.py --skip-e2e
