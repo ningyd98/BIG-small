@@ -1,6 +1,7 @@
 // 在运行 Playwright 前修正异步状态断言：API 返回 QUEUED 后，Mock worker 可能在页面加载前完成。
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
