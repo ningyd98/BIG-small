@@ -154,11 +154,24 @@ jobs:
       - name: Phase 9.1 blocked-environment guard
         run: python scripts/verify_phase9_1.py --skip-history
 
-      - name: Phase 10 software-side checks
+      - name: Restore clean tree for provenance-gated checks
         run: |
-          python scripts/verify_phase10_0.py
-          python scripts/verify_phase10_1.py
-          python scripts/verify_phase10_2a.py --skip-runtime
+          git restore --worktree -- .
+          git clean -fd
+          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+            git status --porcelain --untracked-files=all
+            echo "Repository is not clean before Phase 10 provenance checks" >&2
+            exit 1
+          fi
+
+      - name: Phase 10.0 software gate
+        run: python scripts/verify_phase10_0.py
+
+      - name: Phase 10.1 framework dry-run
+        run: python scripts/verify_phase10_1.py
+
+      - name: Phase 10.2A evidence-chain verification
+        run: python scripts/verify_phase10_2a.py --skip-runtime
 
       - name: Phase 10.2B backend-only dashboard verification
         run: python scripts/verify_phase10_2b.py --backend-only
@@ -181,7 +194,7 @@ jobs:
         with:
           name: phase12-smoke-artifacts
           path: artifacts/phase12_ci/${{ github.run_id }}-${{ github.sha }}
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       - name: Dependency check
         run: python -m pip check
