@@ -1,0 +1,28 @@
+\chapter{第一章 绪论}
+
+\section{1.1 研究背景}
+
+具身智能系统正在从离线规划和固定脚本执行转向云端智能与边缘自治协同。小型机械臂常部署在教育、轻量装配、实验室自动化和边缘智能演示场景中，其硬件成本低、工作空间有限、算力和传感条件受限。随着大模型在自然语言理解和任务规划方面表现出较强能力，云端模型可以承担高层语义理解和任务分解；但机械臂执行需要毫秒级状态反馈、确定性安全裁决和可审计控制边界，不能把底层执行权交给非确定性模型。\par
+
+\section{1.2 问题定义}
+
+本文关注的问题是：在网络延迟、丢包、云端不可用、场景变化和安全事件出现时，如何让云端智能参与任务规划，同时保证边缘端拥有最终执行权和拒绝权。系统必须支持故障注入、运行恢复、证据追踪和验证报告，不能把仿真结论写成真实机械臂结论。\par
+
+\section{1.3 研究问题}
+
+\noindent $\bullet$ RQ1：与 PCSC 相比，ETEAC 是否能在保证成功率和安全性的前提下降低云端调用和通信开销？\par
+\noindent $\bullet$ RQ2：AUTO 是否能在不同网络和故障条件下获得更优综合性能？\par
+\noindent $\bullet$ RQ3：边缘本地恢复和局部重规划是否能降低任务失败率和云端完整重规划次数？\par
+\noindent $\bullet$ RQ4：SafetyShield 和 HardwareExecutionGate 是否能保持 fail-closed？\par
+\noindent $\bullet$ RQ5：MuJoCo 和 Isaac Sim 的实验趋势是否一致，gap 来自哪些指标？\par
+\noindent $\bullet$ RQ6：不同 planner/provider 是否影响规划成功率、延迟、修复次数和契约有效率？\par
+\noindent $\bullet$ RQ7：技能缓存、风险评估、AUTO 选择器和局部恢复分别贡献什么？\par
+\noindent $\bullet$ RQ8：与 LLM-Only Decision Baseline 相比，云边协同架构能否在成功率、时延、鲁棒性、通信、安全、恢复和复现性方面取得更好的综合表现？当前 RQ8 是待真实模型运行补充的假设。\par
+
+\section{1.4 技术路线}
+
+自然语言任务与场景信息首先由云端规划器转化为结构化 TaskContract；随后根据 PCSC、ETEAC 或 AUTO 模式进入边缘运行时。边缘端执行契约校验、状态机推进、SafetyShield 安全裁决、技能执行和事件检测。出现 STEP\_TIMEOUT、GRASP\_FAILED、TARGET\_MOVED、PATH\_BLOCKED 或 SAFETY\_REJECTED 时，系统先尝试本地恢复；必要时生成 FailureSummary 并请求云端局部重规划。所有过程写入 artifact、hash、provenance 和 verifier summary。\par
+
+\section{1.5 论文结构}
+
+全文共十二章。第二章综述相关技术；第三章给出需求和总体架构；第四章介绍 PCSC、ETEAC 和 AUTO；第五章说明任务契约与安全执行；第六章讨论边缘自治和局部重规划；第七章介绍系统实现和仿真平台；第八章给出实验设计；第九章分析 validation 级结果与 LLM-only 对照设计；第十章从工程管理角度总结阶段路线和质量门禁；第十一章讨论创新点、局限性和后续工作；第十二章给出结论。\par

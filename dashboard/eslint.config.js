@@ -24,7 +24,11 @@ export default tseslint.config(
       'react-refresh': reactRefresh
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // eslint-plugin-react-hooks 7.x expands its umbrella recommended preset
+      // with React Compiler diagnostics. Keep the dashboard gate pinned to the
+      // two stable runtime-safety rules that this repository previously enforced.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }]
     }
   }

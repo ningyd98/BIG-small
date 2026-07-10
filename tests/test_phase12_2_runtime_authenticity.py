@@ -1621,7 +1621,7 @@ def _write_minimal_full_artifact(root: Path, *, paired_accepted: bool) -> None:
         "\\begin{tabular}{}\\end{tabular}"
     )
     root.joinpath("thesis/experiment_results.md").write_text("full results")
-    _write_demo_summary(root)
+    _write_demo_summary(root, data_authority="AUTHORITATIVE_THESIS_DATA")
 
 
 def _write_minimal_validation_artifact(
@@ -1860,11 +1860,11 @@ def _write_plot_index(root: Path) -> None:
     )
 
 
-def _write_demo_summary(root: Path) -> None:
+def _write_demo_summary(root: Path, *, data_authority: str = "VALIDATION_ACCEPTED_DATA") -> None:
     root.joinpath("demo_bundle/demo_summary.json").write_text(
         json.dumps(
             {
-                "data_authority": "VALIDATION_ACCEPTED_DATA",
+                "data_authority": data_authority,
                 "verifier_gated_authoritative_thesis_run_count": 1,
                 "contains_secret": False,
                 "real_controller_contacted": False,

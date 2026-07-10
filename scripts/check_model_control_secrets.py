@@ -30,6 +30,10 @@ DEFAULT_ROOTS = [
     "artifacts/phase12_1",
     "artifacts/phase12_2",
     "artifacts/phase12_2_clean",
+    "docs/thesis",
+    "thesis",
+    "artifacts/thesis_report",
+    "artifacts/thesis_baselines",
 ]
 
 IGNORED_PARTS = {

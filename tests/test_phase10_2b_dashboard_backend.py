@@ -113,7 +113,7 @@ def test_experiment_job_manager_uses_async_state_machine_and_runs_mock(
     assert job.hardware_claim == "SIMULATION_ONLY"
 
     deadline = time.monotonic() + 10.0
-    observed_statuses = {job.status}
+    observed_statuses: set[ExperimentJobStatus] = {job.status}
     terminal = job
     while time.monotonic() < deadline:
         latest = manager.get(job.experiment_id)

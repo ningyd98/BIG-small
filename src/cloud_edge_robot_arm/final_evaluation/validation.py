@@ -459,8 +459,10 @@ def _allowed_demo_authorities(profile: Phase12Profile) -> set[str]:
 def _nonnegative_int(value: object) -> int | None:
     if isinstance(value, bool):
         return None
+    if not isinstance(value, (str, bytes, bytearray, int, float)):
+        return None
     try:
-        parsed = int(value)  # type: ignore[arg-type]
+        parsed = int(value)
     except (TypeError, ValueError):
         return None
     return parsed if parsed >= 0 else None

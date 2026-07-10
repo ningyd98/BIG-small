@@ -13,10 +13,17 @@ Verifies:
 7. Acceleration rule real evaluation
 8. All Phase 3/3.1/3.2/4 scripts continue to pass"""
 
+# ruff: noqa: E402
 from __future__ import annotations
 
 import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
 from cloud_edge_robot_arm.cloud.supervision.core import FakeClock

@@ -1,0 +1,14 @@
+# 第十一章 创新点、局限性和后续工作
+
+## 11.1 创新点
+
+本文的工程创新体现在：PCSC 与 ETEAC 双模式协同、AUTO 风险感知选择、结构化 TaskContract、不可绕过的边缘 SafetyShield、FailureSummary 驱动局部重规划、已完成步骤保护、技能缓存、软件/仿真/dry-run/真机分级验收、provenance/hash/lease/artifact 证据链，以及面向论文证据的验收语义治理。
+
+## 11.2 局限性
+
+当前 full profile 尚未运行完成；validation 样本量低于 full 设计；Isaac 部分样本环境阻塞；MoveIt 部分样本环境阻塞；真实本地模型 runtime 和 LLM-only 真实模型对比尚未 accepted；真实机械臂验证尚未开始；当前不能支持真实 Sim2Real 成功率结论。
+
+## 11.3 后续工作
+
+后续需要运行 Phase 12 full profile、补充 Isaac runtime、补充 MoveIt 环境、配置真实 OpenAI-compatible 或 Ollama 模型并运行 LLM-only validation，最后在现场安全条件满足后按真实机械臂 Level 0-6 分级验收推进。
+

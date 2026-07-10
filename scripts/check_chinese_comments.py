@@ -105,6 +105,7 @@ DEFAULT_AUDIT_PATHS = [
     "pyproject.toml",
     "scripts",
     "simulation",
+    "thesis",
     "tests",
     "ros2_ws/src",
 ]

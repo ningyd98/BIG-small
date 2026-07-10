@@ -7,6 +7,7 @@ The script exercises production code paths for Skill Cache, RiskEvaluator,
 AUTO selection, mode transitions, persistence, production configuration gates,
 and Phase 5/6 regressions. Any failed check exits non-zero."""
 
+# ruff: noqa: E402
 from __future__ import annotations
 
 import ast
@@ -17,6 +18,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from cloud_edge_robot_arm.auto_mode.models import (
     AutoModePolicy,
@@ -58,7 +64,6 @@ from cloud_edge_robot_arm.skill_cache.models import (
 )
 from cloud_edge_robot_arm.skill_cache.repository import SQLiteSkillCacheRepository
 
-ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "cloud_edge_robot_arm"
 NOW = datetime(2026, 6, 14, 14, 0, 0, tzinfo=UTC)
 
