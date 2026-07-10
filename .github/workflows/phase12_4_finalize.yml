@@ -32,6 +32,28 @@ jobs:
       - name: Apply audited remediation
         run: python scripts/apply_phase12_4_remediation.py
 
+      - name: Add Chinese module responsibility descriptions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path("src/cloud_edge_robot_arm/dashboard/security.py"): (
+                  '"""Dashboard transport authentication and server-side role authorization."""',
+                  '"""Dashboard 传输鉴权与服务端角色授权，禁止客户端自行声明网络权限。"""',
+              ),
+              Path("tests/test_phase12_4_security_remediation.py"): (
+                  '"""Phase 12.4 regressions for trusted time and console authorization."""',
+                  '"""Phase 12.4 安全回归测试，覆盖可信时钟与控制台服务端授权。"""',
+              ),
+          }
+          for path, (old, new) in replacements.items():
+              text = path.read_text(encoding="utf-8")
+              if text.count(old) != 1:
+                  raise RuntimeError(f"module docstring patch mismatch: {path}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
       - name: Format patched files
         run: |
           python -m ruff check --fix \
@@ -64,15 +86,26 @@ jobs:
             .github/workflows/phase12_4_finalize.yml \
             scripts/apply_phase12_4_remediation.py
 
-      - name: Run final quality gates
-        run: |
-          python -m compileall src scripts tests
-          python -m ruff format --check .
-          python -m ruff check .
-          python -m mypy .
-          python scripts/check_docs.py
-          python scripts/check_chinese_comments.py
-          python scripts/check_model_control_secrets.py
+      - name: Compile check
+        run: python -m compileall src scripts tests
+
+      - name: Format check
+        run: python -m ruff format --check .
+
+      - name: Lint check
+        run: python -m ruff check .
+
+      - name: Type check
+        run: python -m mypy .
+
+      - name: Documentation consistency
+        run: python scripts/check_docs.py
+
+      - name: Chinese responsibility descriptions
+        run: python scripts/check_chinese_comments.py
+
+      - name: Secret safety check
+        run: python scripts/check_model_control_secrets.py
 
       - name: Commit verified remediation
         run: |
