@@ -1,7 +1,8 @@
 """真实硬件证据 provenance。
 
 Provenance 记录 commit、source tree hash、命令和环境摘要，用于证明验收证据来自
-干净源码树；输出必须脱敏。
+干净源码树；输出必须脱敏。文档、论文和实验产物不属于真实机器人运行时源码，
+不会因为报告重建而使硬件验证证据失效。
 """
 
 from __future__ import annotations
@@ -97,7 +98,15 @@ def _source_diff_text() -> str:
     source_status = "\n".join(
         line for line in status.splitlines() if _is_source_path(line[3:] if len(line) > 3 else "")
     )
-    tracked_diff = _git(["diff", "--", ":!artifacts/**"])
+    tracked_diff = _git(
+        [
+            "diff",
+            "--",
+            ":!artifacts/**",
+            ":!docs/**",
+            ":!thesis/**",
+        ]
+    )
     return "\n".join(part for part in (tracked_diff, source_status) if part.strip())
 
 
@@ -105,7 +114,7 @@ def _is_source_path(path_text: str) -> bool:
     if not path_text:
         return False
     path = Path(path_text)
-    if path_text.startswith("artifacts/"):
+    if path.parts and path.parts[0] in {"artifacts", "docs", "thesis"}:
         return False
     if path.name.endswith(".pyc"):
         return False
