@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from cloud_edge_robot_arm.cloud.supervision.core import Clock, WallClock
@@ -147,7 +146,7 @@ class TaskExecutor:
         validation = EdgeContractValidator(
             supported_skills=self._registry.skills(),
             min_plan_version=self._min_plan_version,
-        ).accept_payload(payload, now=self._validation_now(payload))
+        ).accept_payload(payload, now=self._clock.now())
         if self._observer is not None:
             self._observer.on_contract_validation(
                 task_id,
@@ -1086,17 +1085,3 @@ class TaskExecutor:
         if isinstance(raw_task_id, str) and raw_task_id:
             return raw_task_id
         return "UNKNOWN_TASK"
-
-    def _validation_now(self, payload: dict[str, Any]) -> datetime:
-        raw_timestamp = payload.get("timestamp")
-        if isinstance(raw_timestamp, datetime):
-            return raw_timestamp
-        if isinstance(raw_timestamp, str):
-            try:
-                parsed = datetime.fromisoformat(raw_timestamp)
-            except ValueError:
-                return datetime.now(UTC)
-            if parsed.tzinfo is None:
-                return parsed.replace(tzinfo=UTC)
-            return parsed
-        return datetime.now(UTC)

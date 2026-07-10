@@ -10,9 +10,17 @@ import os
 from pathlib import Path
 from typing import cast
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, status
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, status
 from pydantic import BaseModel, Field
+from starlette.requests import HTTPConnection
 
+from cloud_edge_robot_arm.dashboard.models import UserRole
+from cloud_edge_robot_arm.dashboard.security import (
+    DashboardAuthMode,
+    enforce_dashboard_access,
+    enforce_dashboard_role,
+    enforce_dashboard_websocket_access,
+)
 from cloud_edge_robot_arm.model_control.downloads import ModelDownloadJob
 from cloud_edge_robot_arm.model_control.endpoint_security import EndpointSecurityError
 from cloud_edge_robot_arm.model_control.models import (
@@ -26,7 +34,29 @@ from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
 from cloud_edge_robot_arm.model_control.service import ModelControlService
 from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
 
-router = APIRouter(prefix="/api/v1/model-control", tags=["model-control"])
+
+def enforce_model_control_access(connection: HTTPConnection) -> None:
+    """Keep local mode usable and authorize network requests server-side."""
+
+    mode = DashboardAuthMode(os.environ.get("DASHBOARD_AUTH_MODE", "LOCAL_ONLY"))
+    if mode == DashboardAuthMode.LOCAL_ONLY:
+        enforce_dashboard_access(connection)
+        return
+    if connection.scope.get("type") == "websocket":
+        enforce_dashboard_access(connection)
+        return
+    method = str(connection.scope.get("method", "GET"))
+    if method in {"GET", "HEAD", "OPTIONS"}:
+        enforce_dashboard_access(connection)
+        return
+    enforce_dashboard_role(connection, {UserRole.EXPERIMENT_OPERATOR})
+
+
+router = APIRouter(
+    prefix="/api/v1/model-control",
+    tags=["model-control"],
+    dependencies=[Depends(enforce_model_control_access)],
+)
 
 
 class ModelCapabilitiesResponse(BaseModel):
@@ -255,6 +285,7 @@ async def planner_dry_run(request: Request, body: PlannerDryRunRequest) -> dict[
 
 @router.websocket("/stream")
 async def model_control_stream(websocket: WebSocket, last_sequence: int = 0) -> None:
+    enforce_dashboard_websocket_access(websocket)
     await websocket.accept()
     await websocket.send_json(
         {
