@@ -150,6 +150,13 @@ jobs:
           path: artifacts/phase12_4_diagnostics
           if-no-files-found: error
 
+      - name: Remove temporary remediation machinery
+        run: |
+          git rm \
+            .github/workflows/phase12_4_remediation.yml \
+            .github/workflows/phase12_4_pr_remediation.yml \
+            scripts/apply_phase12_4_remediation.py
+
       - name: Run project CI profile
         run: python scripts/verify_project.py --profile ci
 
@@ -163,17 +170,8 @@ jobs:
 
       - name: Commit verified remediation
         run: |
-          git rm \
-            .github/workflows/phase12_4_remediation.yml \
-            .github/workflows/phase12_4_pr_remediation.yml \
-            scripts/apply_phase12_4_remediation.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            .github/workflows/ci.yml \
-            src/cloud_edge_robot_arm/edge/runtime/task_executor.py \
-            src/cloud_edge_robot_arm/dashboard/security.py \
-            src/cloud_edge_robot_arm/cloud/api/model_control.py \
-            tests/test_phase12_4_security_remediation.py
+          git add -A
           git commit -m "fix: harden trusted time and console authorization"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
