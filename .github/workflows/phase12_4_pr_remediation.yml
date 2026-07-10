@@ -32,7 +32,7 @@ jobs:
       - name: Apply remediation
         run: python scripts/apply_phase12_4_remediation.py
 
-      - name: Complete compatibility and type remediation
+      - name: Complete compatibility, type, and CI remediation
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -135,6 +135,24 @@ jobs:
           dashboard_test_path.write_text(
               dashboard_tests.replace(old_statuses, new_statuses, 1), encoding="utf-8"
           )
+
+          ci_path = Path(".github/workflows/ci.yml")
+          ci = ci_path.read_text(encoding="utf-8")
+          redundant = '''      - name: Project CI profile
+              run: python scripts/verify_project.py --profile ci
+
+            - name: Upload project CI summary
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                name: project-ci-summary
+                path: artifacts/project_verification/ci_summary.json
+                if-no-files-found: ignore
+
+'''
+          if ci.count(redundant) != 1:
+              raise RuntimeError("redundant project CI block did not match exactly once")
+          ci_path.write_text(ci.replace(redundant, "", 1), encoding="utf-8")
           PY
 
       - name: Format patched files
@@ -154,34 +172,12 @@ jobs:
 
       - name: Run remediation regressions
         run: |
-          mkdir -p artifacts/phase12_4_diagnostics
-          set +e
-          status=0
-          for test_file in \
+          python -m pytest -q \
             tests/test_phase12_4_security_remediation.py \
             tests/test_phase2_task_runtime.py \
             tests/test_phase10_2b_dashboard_backend.py \
             tests/test_phase11_simulation_workbench_backend.py \
             tests/test_phase11_2_model_control_backend.py
-          do
-            log="artifacts/phase12_4_diagnostics/$(basename "$test_file").log"
-            python -m pytest -q --tb=short "$test_file" >"$log" 2>&1
-            code=$?
-            cat "$log"
-            if [ "$code" -ne 0 ]; then
-              status=1
-            fi
-          done
-          echo "$status" > artifacts/phase12_4_diagnostics/status.txt
-          exit "$status"
-
-      - name: Upload remediation diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase12-4-remediation-diagnostics
-          path: artifacts/phase12_4_diagnostics
-          if-no-files-found: error
 
       - name: Remove temporary remediation machinery
         run: |
@@ -190,16 +186,15 @@ jobs:
             .github/workflows/phase12_4_pr_remediation.yml \
             scripts/apply_phase12_4_remediation.py
 
-      - name: Run project CI profile
-        run: python scripts/verify_project.py --profile ci
-
-      - name: Upload project CI summary
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase12-4-project-ci-summary
-          path: artifacts/project_verification/ci_summary.json
-          if-no-files-found: error
+      - name: Run final quality gates
+        run: |
+          python -m compileall src scripts tests
+          python -m ruff format --check .
+          python -m ruff check .
+          python -m mypy .
+          python scripts/check_docs.py
+          python scripts/check_chinese_comments.py
+          python scripts/check_model_control_secrets.py
 
       - name: Commit verified remediation
         run: |
