@@ -37,6 +37,10 @@ const after = `test("E2E-11 LiveRun status flow is visible", async ({ page }) =>
   ).toBeVisible({ timeout: 15_000 });
 });`;
 
+if (source.includes(after)) {
+  // 同一个 CI job 可能多次运行 npm e2e；已修正时保持幂等，不重复改写。
+  process.exit(0);
+}
 if (!source.includes(before)) {
   throw new Error("E2E-11 source block changed; update the committed test directly");
 }
