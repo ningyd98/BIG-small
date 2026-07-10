@@ -1,8 +1,11 @@
 // 在运行 Playwright 前修正异步状态断言：API 返回 QUEUED 后，Mock worker 可能在页面加载前完成。
 import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const path = new URL("../tests/e2e/console.spec.ts", import.meta.url);
-const source = readFileSync(path, "utf8");
+const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+const testPath = path.resolve(scriptDirectory, "../tests/e2e/console.spec.ts");
+const source = readFileSync(testPath, "utf8");
 const before = `test("E2E-11 LiveRun status flow is visible", async ({ page }) => {
   const created = await page.request.post("/api/v1/simulation/runs", {
     headers: operatorHeaders,
@@ -37,4 +40,4 @@ const after = `test("E2E-11 LiveRun status flow is visible", async ({ page }) =>
 if (!source.includes(before)) {
   throw new Error("E2E-11 source block changed; update the committed test directly");
 }
-writeFileSync(path, source.replace(before, after), "utf8");
+writeFileSync(testPath, source.replace(before, after), "utf8");
