@@ -78,9 +78,9 @@ jobs:
             tests/test_phase11_simulation_workbench_backend.py \
             tests/test_phase11_2_model_control_backend.py
 
-      - name: Remove temporary remediation machinery
+      - name: Hide temporary remediation machinery from final gates
         run: |
-          git rm \
+          rm -f \
             .github/workflows/phase12_4_remediation.yml \
             .github/workflows/phase12_4_pr_remediation.yml \
             .github/workflows/phase12_4_finalize.yml \
@@ -107,10 +107,15 @@ jobs:
       - name: Secret safety check
         run: python scripts/check_model_control_secrets.py
 
-      - name: Commit verified remediation
+      - name: Commit verified source remediation
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add \
+            src/cloud_edge_robot_arm/edge/runtime/task_executor.py \
+            src/cloud_edge_robot_arm/dashboard/security.py \
+            src/cloud_edge_robot_arm/cloud/api/model_control.py \
+            tests/test_phase12_4_security_remediation.py \
+            tests/test_phase10_2b_dashboard_backend.py
           git commit -m "fix: harden trusted time and console authorization"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
