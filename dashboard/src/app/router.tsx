@@ -60,6 +60,11 @@ const CrossBackendComparisonPage = lazy(() =>
     default: module.CrossBackendComparisonPage,
   })),
 );
+const Sim2RealWorkbenchPage = lazy(() =>
+  import("../simulation/pages/Sim2RealWorkbenchPage").then((module) => ({
+    default: module.Sim2RealWorkbenchPage,
+  })),
+);
 const ModelControlCenterPage = lazy(() =>
   import("../modelControl/pages/ModelControlCenterPage").then((module) => ({
     default: module.ModelControlCenterPage,
@@ -106,6 +111,7 @@ export function DashboardRoutes() {
           path="/simulation/backends"
           element={<CrossBackendComparisonPage />}
         />
+        <Route path="/simulation/sim2real" element={<Sim2RealWorkbenchPage />} />
         <Route path="/models" element={<ModelControlCenterPage />} />
         <Route path="/models/providers" element={<ProviderProfilesPage />} />
         <Route path="/models/local" element={<LocalModelsPage />} />
