@@ -104,6 +104,7 @@ Phase 11 期间真机相关开发冻结，只保留回归测试和安全边界�
 
 ## 验证与部署
 
+- [macOS 本地开发](macos_local_development.md): Apple Silicon 一键安装、启动、环境诊断和平台边界。
 - [验证说明](verification.md): CI-safe、environment-specific 和 real-hardware-only 命令。
 - [脚本索引](../scripts/README.md): 脚本用途和风险分类。
 - [贡献说明](../CONTRIBUTING.md): 开发、提交和 artifact 规则。

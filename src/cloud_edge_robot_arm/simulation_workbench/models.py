@@ -124,7 +124,7 @@ RANDOMIZATION_PARAMETER_ALLOWLIST = frozenset(
 
 
 class RandomizationParameterDraft(BaseModel):
-    """One independently editable, bounded physical randomization parameter."""
+    """单个可独立编辑且受上下界约束的物理随机化参数。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -139,6 +139,8 @@ class RandomizationParameterDraft(BaseModel):
 
     @model_validator(mode="after")
     def validate_range(self) -> RandomizationParameterDraft:
+        """校验随机化范围、标称值和正态分布参数的一致性。"""
+
         if self.min > self.max:
             raise ValueError("randomization parameter min must be <= max")
         if not self.min <= self.nominal <= self.max:
@@ -162,6 +164,8 @@ class DomainRandomizationDraft(BaseModel):
 
     @model_validator(mode="after")
     def validate_parameter_allowlist(self) -> DomainRandomizationDraft:
+        """限制随机化等级和参数名只能取安全白名单内的值。"""
+
         if self.level not in {"NONE", "MILD", "MODERATE", "SEVERE"}:
             raise ValueError(f"unsupported randomization level: {self.level}")
         unknown = sorted(set(self.parameters).difference(RANDOMIZATION_PARAMETER_ALLOWLIST))

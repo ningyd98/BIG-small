@@ -82,6 +82,17 @@ flowchart LR
 
 ## 5. 快速开始
 
+Apple Silicon macOS 本地开发：
+
+```bash
+# 首次运行自动安装依赖，随后同时启动 FastAPI、MuJoCo 工作台和 Vite。
+./scripts/macos/dev.sh
+```
+
+详细的平台边界、分步命令和端口配置见 [docs/macos_local_development.md](docs/macos_local_development.md)。
+
+通用 Python 环境：
+
 ```bash
 # 快速开始：安装仿真和分析依赖，仅运行软件侧验证。
 python3 -m venv .venv

@@ -11,6 +11,17 @@
 | `verify_project.py` | 按 profile 编排 verifier | 取决于 profile | Summary JSON | 默认不含硬件 profile |
 | `validate_contract_examples.py` | 校验 contract 示例 | 是 | 否 | 否 |
 
+## macOS 本地开发
+
+| 脚本 | 用途 | 系统改动 | 硬件 |
+| --- | --- | --- | --- |
+| `macos/dev.sh` | 首次自动安装后启动 FastAPI + Vite | 首次运行安装本地开发依赖 | 否 |
+| `macos/install.sh` | 安装 Python/MuJoCo/Rerun/Node 依赖并验证 | `.venv`、`node_modules`；缺包时 Homebrew | 否 |
+| `macos/start.sh` | 启动 loopback MuJoCo 工作台 | 本地 DB 与 artifact | 否 |
+| `macos/doctor.sh` | 只读检查架构、依赖和 MuJoCo 模型加载 | 否 | 否 |
+
+完整说明见 [macOS 本地开发](../docs/macos_local_development.md)。这些入口不安装 Isaac Sim、ROS 2/MoveIt 或真实机械臂 SDK。
+
 ## 边缘运行时示例
 
 | 脚本 | 用途 | CI 安全 | Artifact | 硬件 |
