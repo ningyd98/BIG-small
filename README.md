@@ -25,6 +25,7 @@ BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制�
 | MoveIt Runtime Dry-Run | 已验收 | 否 |
 | Simulation Workbench | Phase 11 已实现 | 否 |
 | Simulation Runtime | Phase 11.1 已实现 | 否 |
+| Sim2Real 随机化、对齐与 Gap Report | 已实现 | 否（Real trace 为离线导入） |
 | Model Control Center | Phase 11.2 已接受 | 否 |
 | Simulation AI Console | Phase 11.2 已接受 | 否 |
 | Phase 12 Final Evaluation | smoke/validation/full 分层；Phase 12.2 clean validation accepted，full 未运行 | 否 |
@@ -46,6 +47,7 @@ BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制�
 - **ROS 2 / MoveIt 集成**：ROS 2 运行时和 MoveIt 安全验证已完成；MoveIt Runtime Dry-Run 只规划，不调用 execute。
 - **仿真工作台**：Phase 11 提供 S01-S15 场景浏览、配置编辑、Batch、Sweep、多 seed、模式比较、跨后端比较、实时监控、指标分析、复现和导出。
 - **仿真运行时**：Phase 11.1 提供异步队列、SQLite 持久化、worker lease、cancel、timeout、retry、恢复、持久 WebSocket replay 和 MuJoCo runtime acceptance。
+- **Sim2Real 工具链**：支持 per-parameter domain randomization、MuJoCo `MjSpec` 动态模型参数、Isaac Lab 对等随机化计划、Rerun 轨迹/传感器对齐 Viewer，以及自动生成 Sim/Real gap report；同一份 run manifest、seed 和参数样本贯穿两套仿真后端与分析产物。
 - **模型控制中心**：Phase 11.2 提供 Planner profile、secret 安全、endpoint policy、Ollama 管理和 planner dry-run；本地模型 runtime 尚未接受。
 - **最终评估**：Phase 12 提供 RQ1-RQ7、F01-F20、统计分析、图表、表格、论文素材和答辩包导出。Phase 12.2 clean validation 将 validation profile 接入 actual software runners，并把 synthetic smoke 数据排除出论文统计；full profile 尚未运行。
 - **真机安全准备**：Phase 10 提供配置门禁、HardwareExecutionGate、OperatorConfirmation 和分级验收。
@@ -82,16 +84,64 @@ flowchart LR
 
 ## 5. 快速开始
 
-Apple Silicon macOS 本地开发：
+### 5.1 Apple Silicon macOS 本地开发
+
+macOS 分支用于日常开发、MuJoCo 仿真和 Sim2Real 数据分析。首次克隆：
 
 ```bash
-# 首次运行自动安装依赖，随后同时启动 FastAPI、MuJoCo 工作台和 Vite。
+git clone -b codex/macos-local-dev https://github.com/ningyd98/BIG-small.git
+cd BIG-small
 ./scripts/macos/dev.sh
 ```
 
-详细的平台边界、分步命令和端口配置见 [docs/macos_local_development.md](docs/macos_local_development.md)。
+已有仓库时：
 
-通用 Python 环境：
+```bash
+git fetch origin
+git switch codex/macos-local-dev
+git pull --ff-only
+./scripts/macos/dev.sh
+```
+
+`dev.sh` 是一键入口：首次运行会准备 Python 3.12+、Node 22.12+、仓库 `.venv`、MuJoCo、Rerun、分析依赖和 Dashboard；后续运行会直接启动 FastAPI 与 Vite。默认只绑定本机回环地址：
+
+- Sim2Real Workbench：<http://127.0.0.1:5173/simulation/workbench>
+- FastAPI 文档：<http://127.0.0.1:8000/docs>
+- 停止服务：在启动终端按 `Ctrl-C`，脚本会同时回收前后端进程。
+
+Mac 不连接 Linux 服务器时，可以完成：
+
+| 能力 | Mac 单机状态 |
+| --- | --- |
+| Python/FastAPI 与 React Dashboard 开发 | 完整支持 |
+| Mock、MuJoCo 仿真与 `MjSpec` 动态模型参数 | 完整支持 |
+| 自定义 per-parameter domain randomization 与多 seed 批量实验 | 完整支持 |
+| 轨迹、关节状态、控制量和传感器数据生成 | 完整支持 |
+| Rerun trajectory/sensor 对齐 Viewer | 完整支持 |
+| 导入已有 Real trace 并生成 Sim/Real gap report | 完整支持 |
+| 生成 Isaac Lab 对等随机化配置 | 支持生成，不在 Mac 执行 |
+| Isaac Sim / Isaac Lab 实际运行与 CUDA 并行训练 | 不支持，需 Linux/Windows + NVIDIA RTX |
+| ROS 2 Jazzy / MoveIt 2 权威验证 | 不支持，需 Ubuntu 24.04 环境 |
+| 真实机械臂在线控制 | 默认关闭，必须遵循独立硬件验收流程 |
+
+常用维护命令：
+
+```bash
+# 预览安装计划，不修改系统
+./scripts/macos/install.sh --dry-run
+
+# 只读检查 Python、MuJoCo、Rerun、Node 和 Dashboard 环境
+./scripts/macos/doctor.sh
+
+# 不自动打开浏览器，并使用自定义端口启动
+./scripts/macos/start.sh --no-open --backend-port 8010 --frontend-port 5180
+```
+
+安装要求为原生 Apple Silicon Terminal 和 Homebrew；推荐安装 Xcode Command Line Tools。脚本不会安装 Isaac Sim、ROS 2 Jazzy、MoveIt 2 或真实机械臂 SDK。详细的平台边界、配置文件和分步命令见 [docs/macos_local_development.md](docs/macos_local_development.md)。
+
+推荐的开发分工是：Mac 负责代码、MuJoCo、Workbench、Rerun 和 gap report；Ubuntu + RTX 4070 Ti SUPER 仅在阶段性验收时执行 Isaac Lab、ROS 2 / MoveIt 2 和跨引擎对照实验。
+
+### 5.2 通用 Python 环境
 
 ```bash
 # 快速开始：安装仿真和分析依赖，仅运行软件侧验证。
