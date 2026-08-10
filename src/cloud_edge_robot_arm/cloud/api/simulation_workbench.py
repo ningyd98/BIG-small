@@ -19,6 +19,11 @@ from cloud_edge_robot_arm.dashboard.security import (
     enforce_dashboard_role,
     enforce_dashboard_websocket_access,
 )
+from cloud_edge_robot_arm.simulation.sim2real import (
+    GapReportRequest,
+    GapReportResponse,
+    generate_gap_report,
+)
 from cloud_edge_robot_arm.simulation_runtime.models import (
     AttemptListResponse,
     QueueStatusResponse,
@@ -97,6 +102,14 @@ async def scenario(request: Request, scenario_id: str) -> ScenarioDefinitionView
 async def parameter_schema(request: Request) -> ParameterSchemaResponse:
     enforce_dashboard_access(request)
     return _service(request).parameter_schema()
+
+
+@router.post("/sim2real/gap-report", response_model=GapReportResponse)
+async def sim2real_gap_report(request: Request, body: GapReportRequest) -> GapReportResponse:
+    """Compare uploaded read-only traces without performing external I/O."""
+
+    enforce_dashboard_access(request)
+    return generate_gap_report(body)
 
 
 @router.post("/validate", response_model=ValidationResponse)

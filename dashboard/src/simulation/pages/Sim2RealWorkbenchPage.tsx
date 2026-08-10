@@ -17,10 +17,12 @@ import {
 } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { components } from "../../api/generated/schema";
 import { StatusBadge } from "../../components/StatusBadge";
 import { ExperimentConfigBuilder } from "../builders/ExperimentConfigBuilder";
 import {
   useSimulationCapabilities,
+  useGenerateSim2RealGapReport,
   useSimulationScenarios,
   useSubmitSimulationBatch,
 } from "../api/simulationQueries";
@@ -29,12 +31,18 @@ import {
   buildSim2RealPlan,
   computeSim2RealGap,
   initialSim2RealMeasurements,
+  initialSim2RealParameters,
   SIM2REAL_AXES,
   SIM2REAL_RANDOMIZATION_SCALE,
   type Sim2RealGapRow,
+  type Sim2RealAxis,
   type Sim2RealMeasurementMap,
+  type Sim2RealParameterConfig,
+  type Sim2RealParameterMap,
   type Sim2RealRandomizationLevel,
 } from "../domain/sim2real";
+
+type GapReportRequest = components["schemas"]["GapReportRequest"];
 
 const RANDOMIZATION_LEVELS: Sim2RealRandomizationLevel[] = [
   "NONE",
@@ -85,7 +93,9 @@ function Sim2RealGapChart({
           {
             name: "实测偏差",
             type: "bar",
-            data: rows.map((row) => Number((row.normalizedGap * 100).toFixed(1))),
+            data: rows.map((row) =>
+              Number((row.normalizedGap * 100).toFixed(1)),
+            ),
           },
           {
             name: `${level} 覆盖半径`,
@@ -117,22 +127,36 @@ function downloadPlan(plan: unknown) {
   URL.revokeObjectURL(href);
 }
 
+function downloadText(filename: string, value: string, type: string) {
+  const href = URL.createObjectURL(new Blob([value], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
 export function Sim2RealWorkbenchPage() {
   const capabilities = useSimulationCapabilities();
   const scenarios = useSimulationScenarios();
   const submitBatch = useSubmitSimulationBatch();
+  const generateGapReport = useGenerateSim2RealGapReport();
 
   const [scenario, setScenario] = useState("S01_NORMAL_STATIC");
   const [controlMode, setControlMode] = useState<"PCSC" | "ETEAC" | "AUTO">(
     "AUTO",
   );
-  const [level, setLevel] =
-    useState<Sim2RealRandomizationLevel>("MODERATE");
+  const [level, setLevel] = useState<Sim2RealRandomizationLevel>("MODERATE");
   const [seedCount, setSeedCount] = useState(5);
   const [repetitions, setRepetitions] = useState(2);
   const [measurements, setMeasurements] = useState<Sim2RealMeasurementMap>(
     initialSim2RealMeasurements,
   );
+  const [parameterConfigs, setParameterConfigs] =
+    useState<Sim2RealParameterMap>(initialSim2RealParameters);
+  const [simulationTrace, setSimulationTrace] = useState<unknown>();
+  const [realTrace, setRealTrace] = useState<unknown>();
+  const [traceError, setTraceError] = useState("");
   const [calibrationConfirmed, setCalibrationConfirmed] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [lastBatchId, setLastBatchId] = useState("");
@@ -143,10 +167,13 @@ export function Sim2RealWorkbenchPage() {
   );
   const seeds = useMemo(() => buildSeedSequence(seedCount), [seedCount]);
   const gapRows = useMemo(
-    () => computeSim2RealGap(measurements, level),
-    [level, measurements],
+    () => computeSim2RealGap(measurements, level, parameterConfigs),
+    [level, measurements, parameterConfigs],
   );
-  const coveredCount = gapRows.filter((row) => row.covered).length;
+  const enabledCount = gapRows.filter((row) => row.enabled).length;
+  const coveredCount = gapRows.filter(
+    (row) => row.enabled && row.covered,
+  ).length;
   const plan = useMemo(
     () =>
       buildSim2RealPlan({
@@ -156,8 +183,17 @@ export function Sim2RealWorkbenchPage() {
         seedCount,
         repetitions,
         measurements,
+        parameters: parameterConfigs,
       }),
-    [controlMode, level, measurements, repetitions, scenario, seedCount],
+    [
+      controlMode,
+      level,
+      measurements,
+      parameterConfigs,
+      repetitions,
+      scenario,
+      seedCount,
+    ],
   );
 
   const mujocoReadiness = capabilities.data?.backends.find(
@@ -183,9 +219,22 @@ export function Sim2RealWorkbenchPage() {
     [controlMode, level, repetitions, scenario, seeds],
   );
 
-  const handleMeasurement = (key: keyof Sim2RealMeasurementMap, value: number) => {
+  const handleMeasurement = (
+    key: keyof Sim2RealMeasurementMap,
+    value: number,
+  ) => {
     setMeasurements((current) => ({ ...current, [key]: value }));
     setCalibrationConfirmed(false);
+  };
+
+  const handleParameter = (
+    key: keyof Sim2RealParameterMap,
+    update: Partial<Sim2RealParameterConfig>,
+  ) => {
+    setParameterConfigs((current) => ({
+      ...current,
+      [key]: { ...current[key], ...update },
+    }));
   };
 
   const applyPreset = (preset: "NOMINAL" | "EDGE_CASE") => {
@@ -197,6 +246,9 @@ export function Sim2RealWorkbenchPage() {
         friction_coefficient: 0.42,
         actuator_delay_ms: 55,
         camera_depth_noise_m: 0.012,
+        joint_damping_scale: 1.2,
+        actuator_gain_scale: 0.92,
+        gravity_z_m_s2: -9.80665,
       });
     }
     setCalibrationConfirmed(false);
@@ -213,7 +265,7 @@ export function Sim2RealWorkbenchPage() {
         .seeds(seeds)
         .repetitions(repetitions)
         .runType("BATCH")
-        .domainRandomization(level !== "NONE", level)
+        .domainRandomization(level !== "NONE", level, parameterConfigs)
         .build();
       const response = await submitBatch.mutateAsync({
         ...draft,
@@ -223,7 +275,40 @@ export function Sim2RealWorkbenchPage() {
       setLastBatchId(response.batch_id);
     } catch (caught) {
       setSubmitError(
-        caught instanceof Error ? caught.message : "Sim2Real batch submit rejected",
+        caught instanceof Error
+          ? caught.message
+          : "Sim2Real batch submit rejected",
+      );
+    }
+  };
+
+  const loadTrace = async (
+    file: File | undefined,
+    setter: (value: unknown) => void,
+  ) => {
+    if (!file) return;
+    setTraceError("");
+    try {
+      setter(JSON.parse(await file.text()) as unknown);
+    } catch (caught) {
+      setTraceError(
+        caught instanceof Error ? caught.message : "Trace JSON 解析失败",
+      );
+    }
+  };
+
+  const handleGapReport = async () => {
+    if (!simulationTrace || !realTrace) return;
+    setTraceError("");
+    try {
+      await generateGapReport.mutateAsync({
+        simulation: simulationTrace,
+        real: realTrace,
+        alignment_tolerance_ms: 50,
+      } as GapReportRequest);
+    } catch (caught) {
+      setTraceError(
+        caught instanceof Error ? caught.message : "Gap report 生成失败",
       );
     }
   };
@@ -235,7 +320,8 @@ export function Sim2RealWorkbenchPage() {
           Sim2Real Workbench
         </Typography.Title>
         <Typography.Text type="secondary">
-          系统辨识 → 域随机化 → 配对复现 → promotion gate。当前页面只会提交仿真实验，不开放真实机械臂写操作。
+          系统辨识 → 域随机化 → 配对复现 → promotion
+          gate。当前页面只会提交仿真实验，不开放真实机械臂写操作。
         </Typography.Text>
       </div>
 
@@ -262,7 +348,10 @@ export function Sim2RealWorkbenchPage() {
         }}
       >
         <Card size="small">
-          <Statistic title="随机化覆盖参数" value={`${coveredCount}/4`} />
+          <Statistic
+            title="随机化覆盖参数"
+            value={`${coveredCount}/${enabledCount}`}
+          />
           <Typography.Text type="secondary">
             仅表示当前手工输入标定值是否落在选定随机化范围内
           </Typography.Text>
@@ -278,7 +367,9 @@ export function Sim2RealWorkbenchPage() {
             title="MuJoCo runtime"
             value={mujocoReadiness?.readiness ?? "UNKNOWN"}
           />
-          <Typography.Text type="secondary">Phase 11 runtime 后端</Typography.Text>
+          <Typography.Text type="secondary">
+            Phase 11 runtime 后端
+          </Typography.Text>
         </Card>
         <Card size="small">
           <Statistic
@@ -317,7 +408,7 @@ export function Sim2RealWorkbenchPage() {
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   <InputNumber
                     value={measurements[axis.key]}
-                    min={0}
+                    min={axis.key === "gravity_z_m_s2" ? undefined : 0}
                     step={axis.key === "camera_depth_noise_m" ? 0.001 : 0.01}
                     style={{ width: "100%" }}
                     addonAfter={axis.unit}
@@ -326,7 +417,8 @@ export function Sim2RealWorkbenchPage() {
                     }
                   />
                   <Typography.Text type="secondary">
-                    nominal={axis.nominal}；full envelope=[{axis.min}, {axis.max}]
+                    nominal={axis.nominal}；full envelope=[{axis.min},{" "}
+                    {axis.max}]
                   </Typography.Text>
                 </Space>
               </Card>
@@ -410,6 +502,193 @@ export function Sim2RealWorkbenchPage() {
             />
           </div>
         </div>
+
+        <Divider />
+        <Typography.Title level={5}>Per-parameter 随机化规格</Typography.Title>
+        <Alert
+          type="info"
+          showIcon
+          title="同一 seed 先生成一份共享 sample，再分别映射到 MuJoCo MjSpec 与 Isaac Lab EventManager。参数 seed 按参数名派生，因此增删其他参数不会改变已有参数的采样值。"
+          style={{ marginBottom: 12 }}
+        />
+        <Table
+          size="small"
+          pagination={false}
+          scroll={{ x: 1660 }}
+          rowKey="key"
+          dataSource={SIM2REAL_AXES}
+          columns={[
+            {
+              title: "启用",
+              width: 70,
+              fixed: "left",
+              render: (_, axis: Sim2RealAxis) => (
+                <Checkbox
+                  checked={parameterConfigs[axis.key].enabled}
+                  onChange={(event) =>
+                    handleParameter(axis.key, {
+                      enabled: event.target.checked,
+                    })
+                  }
+                />
+              ),
+            },
+            {
+              title: "参数",
+              width: 150,
+              fixed: "left",
+              render: (_, axis: Sim2RealAxis) => (
+                <Space orientation="vertical" size={0}>
+                  <Typography.Text strong>{axis.label}</Typography.Text>
+                  <Typography.Text type="secondary">{axis.key}</Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: "分布",
+              width: 125,
+              render: (_, axis: Sim2RealAxis) => (
+                <Select
+                  value={parameterConfigs[axis.key].distribution}
+                  style={{ width: 112 }}
+                  options={["UNIFORM", "NORMAL", "FIXED"].map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(distribution) =>
+                    handleParameter(axis.key, {
+                      distribution,
+                      ...(distribution === "NORMAL" &&
+                      !parameterConfigs[axis.key].std
+                        ? {
+                            mean: parameterConfigs[axis.key].nominal,
+                            std: Math.max(
+                              (parameterConfigs[axis.key].max -
+                                parameterConfigs[axis.key].min) /
+                                6,
+                              0.000001,
+                            ),
+                          }
+                        : {}),
+                    })
+                  }
+                />
+              ),
+            },
+            {
+              title: "范围模式",
+              width: 145,
+              render: (_, axis: Sim2RealAxis) => (
+                <Select
+                  value={parameterConfigs[axis.key].range_mode}
+                  style={{ width: 132 }}
+                  options={["LEVEL_SCALED", "ABSOLUTE"].map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(range_mode) =>
+                    handleParameter(axis.key, { range_mode })
+                  }
+                />
+              ),
+            },
+            {
+              title: "Nominal",
+              width: 120,
+              render: (_, axis: Sim2RealAxis) => (
+                <InputNumber
+                  value={parameterConfigs[axis.key].nominal}
+                  style={{ width: 108 }}
+                  onChange={(value) =>
+                    handleParameter(axis.key, {
+                      nominal: Number(value ?? axis.nominal),
+                    })
+                  }
+                />
+              ),
+            },
+            {
+              title: "Min",
+              width: 120,
+              render: (_, axis: Sim2RealAxis) => (
+                <InputNumber
+                  value={parameterConfigs[axis.key].min}
+                  style={{ width: 108 }}
+                  onChange={(value) =>
+                    handleParameter(axis.key, {
+                      min: Number(value ?? axis.min),
+                    })
+                  }
+                />
+              ),
+            },
+            {
+              title: "Max",
+              width: 120,
+              render: (_, axis: Sim2RealAxis) => (
+                <InputNumber
+                  value={parameterConfigs[axis.key].max}
+                  style={{ width: 108 }}
+                  onChange={(value) =>
+                    handleParameter(axis.key, {
+                      max: Number(value ?? axis.max),
+                    })
+                  }
+                />
+              ),
+            },
+            {
+              title: "Mean",
+              width: 120,
+              render: (_, axis: Sim2RealAxis) => {
+                const config = parameterConfigs[axis.key];
+                return (
+                  <InputNumber
+                    value={config.mean}
+                    disabled={config.distribution !== "NORMAL"}
+                    placeholder={String(config.nominal)}
+                    style={{ width: 108 }}
+                    onChange={(value) =>
+                      handleParameter(axis.key, {
+                        mean: value == null ? null : Number(value),
+                      })
+                    }
+                  />
+                );
+              },
+            },
+            {
+              title: "Std",
+              width: 120,
+              render: (_, axis: Sim2RealAxis) => {
+                const config = parameterConfigs[axis.key];
+                return (
+                  <InputNumber
+                    value={config.std}
+                    min={0.000001}
+                    disabled={config.distribution !== "NORMAL"}
+                    style={{ width: 108 }}
+                    onChange={(value) =>
+                      handleParameter(axis.key, {
+                        std: value == null ? null : Number(value),
+                      })
+                    }
+                  />
+                );
+              },
+            },
+            {
+              title: "MuJoCo",
+              width: 190,
+              dataIndex: "mujocoAdapter",
+            },
+            {
+              title: "Isaac Lab",
+              width: 220,
+              dataIndex: "isaacLabAdapter",
+            },
+          ]}
+        />
 
         <Divider />
         <Space wrap>
@@ -500,16 +779,19 @@ export function Sim2RealWorkbenchPage() {
               },
               {
                 title: "S2 跨后端复核",
-                description: "MuJoCo ↔ Isaac paired evidence，识别 simulator-specific bias",
+                description:
+                  "MuJoCo ↔ Isaac paired evidence，识别 simulator-specific bias",
               },
               {
                 title: "S3 真机只读 shadow",
-                description: "LOCKED：仅在独立 Level 0 安全审批后允许 joint/camera state 只读采集",
+                description:
+                  "LOCKED：仅在独立 Level 0 安全审批后允许 joint/camera state 只读采集",
                 status: "wait",
               },
               {
                 title: "S4 受限真机运动",
-                description: "LOCKED：本分支不提供运动 dispatch；必须重新立项和现场验收",
+                description:
+                  "LOCKED：本分支不提供运动 dispatch；必须重新立项和现场验收",
                 status: "wait",
               },
             ]}
@@ -532,19 +814,151 @@ export function Sim2RealWorkbenchPage() {
         </Card>
       </div>
 
+      <Card
+        title="5. Rerun trajectory/sensor 对齐与自动 Gap Report"
+        size="small"
+      >
+        <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+          <Alert
+            type="info"
+            showIcon
+            title="MuJoCo run artifact 会自动生成 sim_trace.json。这里加载该文件和采用同一 schema 的只读真实 trace，后端将按 elapsed_s 最近邻对齐并输出门限化报告。Rerun .rrd 可由同一请求通过脚本生成。"
+          />
+          {traceError && <Alert type="error" showIcon title={traceError} />}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 16,
+            }}
+          >
+            <Card size="small" title="Simulation trace">
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) =>
+                  void loadTrace(event.target.files?.[0], setSimulationTrace)
+                }
+              />
+              <div style={{ marginTop: 8 }}>
+                <Tag color={simulationTrace ? "success" : "default"}>
+                  {simulationTrace ? "LOADED" : "WAITING"}
+                </Tag>
+              </div>
+            </Card>
+            <Card size="small" title="Read-only real trace">
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) =>
+                  void loadTrace(event.target.files?.[0], setRealTrace)
+                }
+              />
+              <div style={{ marginTop: 8 }}>
+                <Tag color={realTrace ? "success" : "default"}>
+                  {realTrace ? "LOADED" : "WAITING"}
+                </Tag>
+              </div>
+            </Card>
+          </div>
+          <Space wrap>
+            <Button
+              type="primary"
+              loading={generateGapReport.isPending}
+              disabled={!simulationTrace || !realTrace}
+              onClick={() => void handleGapReport()}
+            >
+              对齐并生成 Gap Report
+            </Button>
+            {generateGapReport.data && (
+              <Button
+                onClick={() =>
+                  downloadText(
+                    "sim_real_gap_report.md",
+                    generateGapReport.data.markdown,
+                    "text/markdown;charset=utf-8",
+                  )
+                }
+              >
+                下载 Markdown Report
+              </Button>
+            )}
+            <Tag>Rerun timeline: elapsed_s</Tag>
+            <Tag>frame: world</Tag>
+          </Space>
+          {generateGapReport.data && (
+            <>
+              <Descriptions bordered size="small" column={3}>
+                <Descriptions.Item label="Gate">
+                  <Tag
+                    color={
+                      generateGapReport.data.status === "PASS"
+                        ? "success"
+                        : generateGapReport.data.status === "FAIL"
+                          ? "error"
+                          : "warning"
+                    }
+                  >
+                    {generateGapReport.data.status}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Aligned">
+                  {generateGapReport.data.aligned_sample_count}/
+                  {generateGapReport.data.real_sample_count}
+                </Descriptions.Item>
+                <Descriptions.Item label="Alignment ratio">
+                  {(generateGapReport.data.alignment_ratio * 100).toFixed(1)}%
+                </Descriptions.Item>
+              </Descriptions>
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="name"
+                dataSource={generateGapReport.data.metrics}
+                columns={[
+                  { title: "Metric", dataIndex: "name" },
+                  {
+                    title: "Value",
+                    render: (_, row) => `${row.value} ${row.unit}`,
+                  },
+                  {
+                    title: "Threshold",
+                    render: (_, row) =>
+                      row.threshold == null
+                        ? "—"
+                        : `${row.threshold} ${row.unit}`,
+                  },
+                  {
+                    title: "Status",
+                    render: (_, row) => (
+                      <Tag color={row.status === "PASS" ? "success" : "error"}>
+                        {row.status}
+                      </Tag>
+                    ),
+                  },
+                ]}
+              />
+            </>
+          )}
+        </Space>
+      </Card>
+
       <Card title="开源工具协同路线" size="small">
         <Descriptions column={1} size="small">
           <Descriptions.Item label="MuJoCo">
-            <Tag color="success">当前主执行后端</Tag>
-            继续使用现有 domain randomization 与 deterministic seed evidence；后续可用 MjSpec 做结构化参数注入。
+            <Tag color="success">MjSpec 已接入</Tag>
+            每次 run 先修改 mass / friction / joint damping / actuator gain /
+            gravity，再编译独立 MjModel，并记录 spec hash。
           </Descriptions.Item>
           <Descriptions.Item label="Isaac Lab">
-            <Tag>可选增强</Tag>
-            用 EventManager 做 mass / friction / sensor / disturbance randomization，作为第二仿真后端交叉验证。
+            <Tag color="success">Event plan 已生成</Tag>与 MuJoCo 使用同一
+            parameter sample，映射为 EventTermCfg；Isaac runtime 不可用时只保留
+            BLOCKED_BY_ENV，不伪造结果。
           </Descriptions.Item>
           <Descriptions.Item label="Rerun">
-            <Tag>可选增强</Tag>
-            用于轨迹、相机、深度、关节状态和 sim/real 对齐播放；不承担控制职责。
+            <Tag color="success">Viewer pipeline 已接入</Tag>在 elapsed_s
+            时间轴上对齐 TCP、关节、传感器延迟和深度摘要，可导出
+            .rrd；不承担控制职责。
           </Descriptions.Item>
           <Descriptions.Item label="ECharts">
             <Tag color="success">已复用</Tag>

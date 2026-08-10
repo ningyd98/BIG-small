@@ -306,6 +306,13 @@ class SimulationWorker:
             job.scenario_id,
             seed=job.seed,
             randomization_level=randomization_level,
+            randomization_parameters={
+                name: {
+                    **parameter.model_dump(mode="json", exclude_none=True),
+                    "enabled": parameter.enabled and draft.domain_randomization.enabled,
+                }
+                for name, parameter in draft.domain_randomization.parameters.items()
+            },
         )
         self.repository.append_event(
             job.job_id,
@@ -362,6 +369,13 @@ class SimulationWorker:
             "cancellation": run_dir / "cancellation.json",
             "recovery": run_dir / "recovery.json",
             "evidence_consistency": run_dir / "evidence_consistency.json",
+            "trajectory": run_dir / "trajectory.json",
+            "sensor_stream": run_dir / "sensor_stream.json",
+            "randomization_sample": run_dir / "randomization_sample.json",
+            "backend_parameter_mapping": run_dir / "backend_parameter_mapping.json",
+            "sim_trace": run_dir / "sim_trace.json",
+            "rerun_viewer_manifest": run_dir / "rerun_viewer_manifest.json",
+            "sim_real_gap_report": run_dir / "sim_real_gap_report.json",
         }
         _atomic_write_json(paths["run_manifest"], redact(job.manifest))
         job_events = self.repository.list_events(job.run_id)
@@ -397,6 +411,43 @@ class SimulationWorker:
                 "hardware_motion_observed": False,
                 "hardware_write_operations": [],
             }
+        )
+        trial_payload = result_payload.get("trial", {})
+        if not isinstance(trial_payload, dict):
+            trial_payload = {}
+        trajectory = trial_payload.get("trajectory", [])
+        sensor_stream = trial_payload.get("sensor_stream", [])
+        randomization_sample = trial_payload.get("randomization_sample", {})
+        backend_mapping = trial_payload.get("backend_parameter_evidence", {})
+        _atomic_write_json(paths["trajectory"], trajectory)
+        _atomic_write_json(paths["sensor_stream"], sensor_stream)
+        _atomic_write_json(paths["randomization_sample"], randomization_sample)
+        _atomic_write_json(paths["backend_parameter_mapping"], backend_mapping)
+        sim_trace = _sim_trace_payload(job, trial_payload)
+        _atomic_write_json(paths["sim_trace"], sim_trace)
+        _atomic_write_json(
+            paths["rerun_viewer_manifest"],
+            {
+                "schema_version": "sim2real.rerun-viewer.v1",
+                "timeline": "elapsed_s",
+                "frame": "world",
+                "simulation_trace": "sim_trace.json",
+                "real_trace_required": True,
+                "viewer": "Rerun",
+                "generator": "scripts/generate_sim2real_gap_report.py --rerun",
+            },
+        )
+        _atomic_write_json(
+            paths["sim_real_gap_report"],
+            {
+                "schema_version": "sim2real.gap-report.v1",
+                "status": "WAITING_FOR_REAL_TRACE",
+                "simulation_trace_id": sim_trace.get("trace_id", ""),
+                "report_endpoint": "/api/v1/simulation/sim2real/gap-report",
+                "real_trace_is_read_only_evidence": True,
+                "real_controller_contacted_by_reporter": False,
+                "hardware_write_operations": [],
+            },
         )
         _atomic_write_json(paths["result"], redact(result_payload))
         _atomic_write_json(paths["provenance"], redact(job.provenance))
@@ -518,6 +569,13 @@ class SimulationWorker:
             "cancellation": "cancellation.json",
             "recovery": "recovery.json",
             "evidence_consistency": "evidence_consistency.json",
+            "trajectory": "trajectory.json",
+            "sensor_stream": "sensor_stream.json",
+            "randomization_sample": "randomization_sample.json",
+            "backend_parameter_mapping": "backend_parameter_mapping.json",
+            "sim_trace": "sim_trace.json",
+            "rerun_viewer_manifest": "rerun_viewer_manifest.json",
+            "sim_real_gap_report": "sim_real_gap_report.json",
         }
         return {
             key: (run_dir / name).relative_to(self.artifact_root).as_posix()
@@ -831,6 +889,53 @@ def _job_artifact(job: SimulationJobRecord) -> dict[str, Any]:
         "real_controller_contacted": False,
         "hardware_motion_observed": False,
         "hardware_write_operations": [],
+    }
+
+
+def _sim_trace_payload(job: SimulationJobRecord, trial: dict[str, Any]) -> dict[str, object]:
+    raw_trajectory = trial.get("trajectory", [])
+    raw_sensors = trial.get("sensor_stream", [])
+    trajectory = raw_trajectory if isinstance(raw_trajectory, list) else []
+    sensors = raw_sensors if isinstance(raw_sensors, list) else []
+    samples: list[dict[str, object]] = []
+    for index, raw in enumerate(trajectory):
+        if not isinstance(raw, dict):
+            continue
+        sensor = sensors[min(index, len(sensors) - 1)] if sensors else {}
+        if not isinstance(sensor, dict):
+            sensor = {}
+        samples.append(
+            {
+                "elapsed_s": raw.get("elapsed_s", 0.0),
+                "joint_positions_rad": raw.get("joint_positions_rad", []),
+                "tcp_position_m": raw.get("tcp_position_m"),
+                "sensor_latency_ms": sensor.get("latency_ms"),
+                "depth_mean_m": sensor.get("depth_mean_m"),
+                "frame_id": sensor.get("frame_id", "world"),
+            }
+        )
+    randomization = trial.get("randomization_sample", {})
+    parameters: dict[str, float] = {}
+    if isinstance(randomization, dict):
+        raw_parameters = randomization.get("parameters", {})
+        if isinstance(raw_parameters, dict):
+            for name, item in raw_parameters.items():
+                if isinstance(item, dict) and isinstance(item.get("value"), int | float):
+                    parameters[str(name)] = float(item["value"])
+    source = "ISAAC_SIM" if job.backend == "ISAAC_SIM" else "SIM"
+    return {
+        "trace_id": f"{job.run_id}-{job.backend.lower()}",
+        "source": source,
+        "clock": "simulation_time",
+        "frame": "world",
+        "samples": samples,
+        "parameters": parameters,
+        "provenance": {
+            "run_id": job.run_id,
+            "job_id": job.job_id,
+            "backend": job.backend,
+            "reproducibility_hash": job.reproducibility_hash,
+        },
     }
 
 

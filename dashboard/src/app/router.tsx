@@ -111,7 +111,10 @@ export function DashboardRoutes() {
           path="/simulation/backends"
           element={<CrossBackendComparisonPage />}
         />
-        <Route path="/simulation/sim2real" element={<Sim2RealWorkbenchPage />} />
+        <Route
+          path="/simulation/sim2real"
+          element={<Sim2RealWorkbenchPage />}
+        />
         <Route path="/models" element={<ModelControlCenterPage />} />
         <Route path="/models/providers" element={<ProviderProfilesPage />} />
         <Route path="/models/local" element={<LocalModelsPage />} />

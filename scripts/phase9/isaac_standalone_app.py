@@ -46,10 +46,12 @@ class IsaacScene:
     robot: Any
     camera: Any
     contact_sensor: Any
+    target: Any
     simulation_context: Any
     physics_steps: int = 0
     sim_time_s: float = 0.0
     emergency_stopped: bool = False
+    randomization_plan: dict[str, object] | None = None
 
 
 def main() -> int:
@@ -201,8 +203,6 @@ def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> Isaac
         scale=(0.05, 0.05, 0.05),
         mass=0.2,
     )
-    del target
-
     _trace("robot_create_start")
     robot = SingleArticulation(
         prim_path="/bigsmall_phase9_franka_like_scene/Geometry/panda_link0",
@@ -243,6 +243,7 @@ def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> Isaac
         robot=robot,
         camera=camera,
         contact_sensor=contact_sensor,
+        target=target,
         simulation_context=simulation_context,
     )
 
@@ -361,7 +362,16 @@ def _handshake(scene: IsaacScene) -> dict[str, object]:
     return {
         **telemetry,
         "backend": "isaac_sim",
-        "capabilities": sorted(REQUIRED_CAPABILITIES | {"reset", "emergency_stop", "shutdown"}),
+        "capabilities": sorted(
+            REQUIRED_CAPABILITIES
+            | {
+                "reset",
+                "emergency_stop",
+                "shutdown",
+                "domain_randomization_v2",
+                "isaac_lab_event_plan",
+            }
+        ),
         "message": "phase9.2-real-isaac-process",
         "message_type": "handshake_ack",
         "protocol_version": ISAAC_PROTOCOL_VERSION,
@@ -396,6 +406,9 @@ def _execute_command(
         }
     if command_type == "reset_world":
         result = _reset_scene(runtime=runtime, scene=scene)
+    elif command_type == "configure_domain_randomization":
+        plan = command.get("payload", {}).get("event_plan", {})
+        result = _configure_domain_randomization(scene=scene, plan=plan)
     elif command_type == "step":
         result = _step_physics(
             runtime=runtime, scene=scene, steps=int(command.get("payload", {}).get("steps", 1))
@@ -440,6 +453,41 @@ def _reset_scene(*, runtime: IsaacRuntime, scene: IsaacScene) -> dict[str, objec
     _set_robot_positions(scene_robot=scene.robot, positions=DEFAULT_JOINT_POSITIONS)
     _step_physics(runtime=runtime, scene=scene, steps=2)
     return {"success": True, "joint_positions": DEFAULT_JOINT_POSITIONS}
+
+
+def _configure_domain_randomization(*, scene: IsaacScene, plan: object) -> dict[str, object]:
+    if not isinstance(plan, dict):
+        raise ValueError("Isaac Lab event plan must be an object")
+    if plan.get("schema_version") != "sim2real.isaac_lab.events.v1":
+        raise ValueError("unsupported Isaac Lab event plan schema")
+    raw_events = plan.get("events", [])
+    if not isinstance(raw_events, list):
+        raise ValueError("Isaac Lab event plan events must be a list")
+    allowed = {
+        "randomize_rigid_body_mass",
+        "randomize_rigid_body_material",
+        "randomize_actuator_gains",
+        "randomize_physics_scene_gravity",
+        "bigsmall.configure_delayed_pd_actuator",
+        "bigsmall.configure_depth_observation_noise",
+    }
+    for event in raw_events:
+        if not isinstance(event, dict) or event.get("function") not in allowed:
+            raise ValueError("Isaac Lab event plan contains a non-allowlisted function")
+    scene.randomization_plan = cast(dict[str, object], _jsonable(plan))
+    parity = plan.get("parity_values", {})
+    if isinstance(parity, dict) and "object_mass_kg" in parity:
+        set_mass = getattr(scene.target, "set_mass", None)
+        if callable(set_mass):
+            set_mass(float(cast(float | int | str, parity["object_mass_kg"])))
+    return {
+        "success": True,
+        "event_count": len(raw_events),
+        "schema_version": plan["schema_version"],
+        "parity_values": parity,
+        "event_manager": "Isaac Lab EventManager",
+        "validation_claimed": False,
+    }
 
 
 def _move_joint_targets(
@@ -491,6 +539,21 @@ def _sample_telemetry(scene: IsaacScene) -> dict[str, object]:
     rgba = scene.camera.get_rgba()
     depth = scene.camera.get_depth()
     contacts = _contact_sample(scene.contact_sensor)
+    parity = (
+        scene.randomization_plan.get("parity_values", {})
+        if scene.randomization_plan is not None
+        else {}
+    )
+    depth_noise = (
+        _numeric_value(cast(dict[str, object], parity).get("camera_depth_noise_m", 0.0))
+        if isinstance(parity, dict)
+        else 0.0
+    )
+    actuator_delay = (
+        _numeric_value(cast(dict[str, object], parity).get("actuator_delay_ms", 0.0))
+        if isinstance(parity, dict)
+        else 0.0
+    )
     return {
         "joint_state": {
             "names": JOINT_NAMES,
@@ -504,12 +567,23 @@ def _sample_telemetry(scene: IsaacScene) -> dict[str, object]:
             "frame_id": "phase9_2_camera",
             "width": int(getattr(rgba, "shape", [240, 320])[1]),
             "height": int(getattr(rgba, "shape", [240])[0]),
-            "latency_ms": 16.0,
-            "object_detections": [{"object_id": "phase9_2_target", "confidence": 1.0}],
+            "latency_ms": 16.0 + actuator_delay,
+            "object_detections": [
+                {
+                    "object_id": "phase9_2_target",
+                    "confidence": max(0.0, 1.0 - depth_noise * 8.0),
+                }
+            ],
         },
         "raw_rgb": rgba,
         "raw_depth": depth,
     }
+
+
+def _numeric_value(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"expected numeric randomization value, got {value!r}")
+    return float(value)
 
 
 def _tcp_pose(robot: Any) -> dict[str, float]:

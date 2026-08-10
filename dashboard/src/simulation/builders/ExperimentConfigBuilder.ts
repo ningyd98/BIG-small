@@ -1,5 +1,9 @@
 // 实验配置构建器，禁止任意脚本、路径、环境变量和 runner 名称。
-import type { ExperimentDraft, NetworkDraft } from "../domain/ExperimentDraft";
+import type {
+  DomainRandomizationDraft,
+  ExperimentDraft,
+  NetworkDraft,
+} from "../domain/ExperimentDraft";
 import type { SimulationBackend } from "../domain/SimulationBackend";
 
 const forbiddenKeys = new Set([
@@ -113,8 +117,11 @@ export class ExperimentConfigBuilder {
   domainRandomization(
     enabled: boolean,
     level = "NONE",
+    parameters: DomainRandomizationDraft["parameters"] = {},
   ): ExperimentConfigBuilder {
-    return this.next({ domain_randomization: { enabled, level } });
+    return this.next({
+      domain_randomization: { enabled, level, parameters },
+    });
   }
 
   runType(runType: ExperimentDraft["run_type"]): ExperimentConfigBuilder {

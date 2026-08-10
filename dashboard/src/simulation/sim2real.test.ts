@@ -5,6 +5,7 @@ import {
   buildSim2RealPlan,
   computeSim2RealGap,
   initialSim2RealMeasurements,
+  initialSim2RealParameters,
   randomizationBounds,
   SIM2REAL_AXES,
 } from "./domain/sim2real";
@@ -20,7 +21,7 @@ describe("sim2real experiment design helpers", () => {
 
   it("marks nominal calibration values as covered", () => {
     const rows = computeSim2RealGap(initialSim2RealMeasurements(), "MILD");
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(SIM2REAL_AXES.length);
     expect(rows.every((row) => row.covered)).toBe(true);
     expect(rows.every((row) => row.normalizedGap === 0)).toBe(true);
   });
@@ -39,6 +40,25 @@ describe("sim2real experiment design helpers", () => {
     expect(buildSeedSequence(99)).toHaveLength(20);
   });
 
+  it("supports an independent absolute range per parameter", () => {
+    const parameters = initialSim2RealParameters();
+    parameters.object_mass_kg = {
+      ...parameters.object_mass_kg,
+      range_mode: "ABSOLUTE",
+      min: 0.15,
+      nominal: 0.2,
+      max: 0.25,
+    };
+    const measurements = initialSim2RealMeasurements();
+    measurements.object_mass_kg = 0.16;
+
+    const rows = computeSim2RealGap(measurements, "MILD", parameters);
+    const mass = rows.find((row) => row.key === "object_mass_kg");
+    expect(mass?.selectedMin).toBe(0.15);
+    expect(mass?.selectedMax).toBe(0.25);
+    expect(mass?.covered).toBe(true);
+  });
+
   it("builds a simulation-only plan with explicit hardware boundary", () => {
     const plan = buildSim2RealPlan({
       scenario: "S01_NORMAL_STATIC",
@@ -49,6 +69,8 @@ describe("sim2real experiment design helpers", () => {
       measurements: initialSim2RealMeasurements(),
     });
     expect(plan.planned_run_count).toBe(6);
+    expect(plan.schema_version).toBe("sim2real.workbench.v2");
+    expect(plan.paired_backend_contract.mujoco_adapter).toBe("MjSpec");
     expect(plan.safety_boundary.real_controller_contacted).toBe(false);
     expect(plan.safety_boundary.hardware_motion_observed).toBe(false);
     expect(plan.safety_boundary.hardware_write_operations).toEqual([]);

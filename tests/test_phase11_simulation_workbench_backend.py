@@ -76,6 +76,51 @@ def _wait_for_terminal(client: TestClient, run_id: str) -> dict[str, Any]:
     raise AssertionError(f"run did not finish: {last}")
 
 
+def test_sim2real_gap_report_endpoint_is_read_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    client = _client(monkeypatch, tmp_path)
+    samples = [
+        {
+            "elapsed_s": 0.0,
+            "joint_positions_rad": [0.0, 0.1],
+            "tcp_position_m": [0.4, 0.0, 0.3],
+            "sensor_latency_ms": 5.0,
+        },
+        {
+            "elapsed_s": 0.1,
+            "joint_positions_rad": [0.1, 0.2],
+            "tcp_position_m": [0.41, 0.0, 0.3],
+            "sensor_latency_ms": 6.0,
+        },
+    ]
+    response = client.post(
+        "/api/v1/simulation/sim2real/gap-report",
+        json={
+            "simulation": {
+                "trace_id": "sim-endpoint",
+                "source": "SIM",
+                "clock": "simulation_time",
+                "samples": samples,
+                "parameters": {"object_mass_kg": 0.08},
+            },
+            "real": {
+                "trace_id": "real-endpoint",
+                "source": "REAL",
+                "clock": "monotonic_time",
+                "samples": samples,
+                "parameters": {"object_mass_kg": 0.08},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "PASS"
+    assert payload["safety_boundary"]["hardware_write_operations"] == []
+    assert payload["safety_boundary"]["real_motion_dispatch_enabled"] is False
+
+
 def test_simulation_capabilities_and_scenarios_are_dynamic(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

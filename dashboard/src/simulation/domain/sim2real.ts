@@ -1,15 +1,21 @@
-// Sim2Real 实验域模型：只描述实验设计、标定值和覆盖度，不产生低层机器人控制命令。
+// Sim2Real experiment model. It never contains low-level robot control commands.
 export type Sim2RealRandomizationLevel =
   | "NONE"
   | "MILD"
   | "MODERATE"
   | "SEVERE";
 
+export type Sim2RealDistribution = "UNIFORM" | "NORMAL" | "FIXED";
+export type Sim2RealRangeMode = "LEVEL_SCALED" | "ABSOLUTE";
+
 export type Sim2RealAxisKey =
   | "object_mass_kg"
   | "friction_coefficient"
   | "actuator_delay_ms"
-  | "camera_depth_noise_m";
+  | "camera_depth_noise_m"
+  | "joint_damping_scale"
+  | "actuator_gain_scale"
+  | "gravity_z_m_s2";
 
 export type Sim2RealAxis = {
   key: Sim2RealAxisKey;
@@ -18,8 +24,25 @@ export type Sim2RealAxis = {
   nominal: number;
   min: number;
   max: number;
+  mujocoAdapter: string;
+  isaacLabAdapter: string;
 };
 
+export type Sim2RealParameterConfig = {
+  enabled: boolean;
+  distribution: Sim2RealDistribution;
+  range_mode: Sim2RealRangeMode;
+  nominal: number;
+  min: number;
+  max: number;
+  mean?: number | null;
+  std?: number | null;
+};
+
+export type Sim2RealParameterMap = Record<
+  Sim2RealAxisKey,
+  Sim2RealParameterConfig
+>;
 export type Sim2RealMeasurementMap = Record<Sim2RealAxisKey, number>;
 
 export type Sim2RealGapRow = Sim2RealAxis & {
@@ -28,6 +51,9 @@ export type Sim2RealGapRow = Sim2RealAxis & {
   selectedMax: number;
   normalizedGap: number;
   covered: boolean;
+  enabled: boolean;
+  distribution: Sim2RealDistribution;
+  rangeMode: Sim2RealRangeMode;
 };
 
 export const SIM2REAL_RANDOMIZATION_SCALE: Record<
@@ -40,7 +66,6 @@ export const SIM2REAL_RANDOMIZATION_SCALE: Record<
   SEVERE: 1,
 };
 
-// 与 configs/phase9/domain_randomization.yaml 保持同源语义；页面明确展示配置来源，避免当成实测结果。
 export const SIM2REAL_AXES: Sim2RealAxis[] = [
   {
     key: "object_mass_kg",
@@ -49,6 +74,8 @@ export const SIM2REAL_AXES: Sim2RealAxis[] = [
     nominal: 0.08,
     min: 0.04,
     max: 0.28,
+    mujocoAdapter: "MjSpec geom.mass",
+    isaacLabAdapter: "randomize_rigid_body_mass",
   },
   {
     key: "friction_coefficient",
@@ -57,6 +84,8 @@ export const SIM2REAL_AXES: Sim2RealAxis[] = [
     nominal: 0.8,
     min: 0.08,
     max: 1.2,
+    mujocoAdapter: "MjSpec geom.friction[0]",
+    isaacLabAdapter: "randomize_rigid_body_material",
   },
   {
     key: "actuator_delay_ms",
@@ -65,6 +94,8 @@ export const SIM2REAL_AXES: Sim2RealAxis[] = [
     nominal: 0,
     min: 0,
     max: 120,
+    mujocoAdapter: "deterministic control queue",
+    isaacLabAdapter: "DelayedPDActuator",
   },
   {
     key: "camera_depth_noise_m",
@@ -73,6 +104,38 @@ export const SIM2REAL_AXES: Sim2RealAxis[] = [
     nominal: 0.002,
     min: 0,
     max: 0.035,
+    mujocoAdapter: "sensor noise std",
+    isaacLabAdapter: "observation noise model",
+  },
+  {
+    key: "joint_damping_scale",
+    label: "关节阻尼比例",
+    unit: "scale",
+    nominal: 1,
+    min: 0.6,
+    max: 1.6,
+    mujocoAdapter: "MjSpec joint.damping",
+    isaacLabAdapter: "randomize_actuator_gains",
+  },
+  {
+    key: "actuator_gain_scale",
+    label: "执行器增益比例",
+    unit: "scale",
+    nominal: 1,
+    min: 0.7,
+    max: 1.4,
+    mujocoAdapter: "MjSpec gainprm/biasprm",
+    isaacLabAdapter: "randomize_actuator_gains",
+  },
+  {
+    key: "gravity_z_m_s2",
+    label: "重力 Z 分量",
+    unit: "m/s²",
+    nominal: -9.81,
+    min: -10.1,
+    max: -9.5,
+    mujocoAdapter: "MjSpec option.gravity[2]",
+    isaacLabAdapter: "randomize_physics_scene_gravity",
   },
 ];
 
@@ -82,27 +145,58 @@ export function initialSim2RealMeasurements(): Sim2RealMeasurementMap {
   ) as Sim2RealMeasurementMap;
 }
 
+export function initialSim2RealParameters(): Sim2RealParameterMap {
+  return Object.fromEntries(
+    SIM2REAL_AXES.map((axis) => [
+      axis.key,
+      {
+        enabled: true,
+        distribution: "UNIFORM",
+        range_mode: "LEVEL_SCALED",
+        nominal: axis.nominal,
+        min: axis.min,
+        max: axis.max,
+      },
+    ]),
+  ) as Sim2RealParameterMap;
+}
+
 export function randomizationBounds(
   axis: Sim2RealAxis,
   level: Sim2RealRandomizationLevel,
+  config?: Sim2RealParameterConfig,
 ): [number, number] {
+  const source = config ?? {
+    enabled: true,
+    distribution: "UNIFORM" as const,
+    range_mode: "LEVEL_SCALED" as const,
+    nominal: axis.nominal,
+    min: axis.min,
+    max: axis.max,
+  };
+  if (!source.enabled || source.distribution === "FIXED") {
+    return [source.nominal, source.nominal];
+  }
+  if (source.range_mode === "ABSOLUTE") return [source.min, source.max];
   const scale = SIM2REAL_RANDOMIZATION_SCALE[level];
   return [
-    axis.nominal + (axis.min - axis.nominal) * scale,
-    axis.nominal + (axis.max - axis.nominal) * scale,
+    source.nominal + (source.min - source.nominal) * scale,
+    source.nominal + (source.max - source.nominal) * scale,
   ];
 }
 
 export function computeSim2RealGap(
   measurements: Sim2RealMeasurementMap,
   level: Sim2RealRandomizationLevel,
+  parameters: Sim2RealParameterMap = initialSim2RealParameters(),
 ): Sim2RealGapRow[] {
   return SIM2REAL_AXES.map((axis) => {
+    const config = parameters[axis.key];
     const measured = measurements[axis.key];
-    const [selectedMin, selectedMax] = randomizationBounds(axis, level);
+    const [selectedMin, selectedMax] = randomizationBounds(axis, level, config);
     const scale = Math.max(
-      Math.abs(axis.min - axis.nominal),
-      Math.abs(axis.max - axis.nominal),
+      Math.abs(config.min - config.nominal),
+      Math.abs(config.max - config.nominal),
       Number.EPSILON,
     );
     return {
@@ -110,8 +204,12 @@ export function computeSim2RealGap(
       measured,
       selectedMin,
       selectedMax,
-      normalizedGap: Math.abs(measured - axis.nominal) / scale,
-      covered: measured >= selectedMin && measured <= selectedMax,
+      normalizedGap: Math.abs(measured - config.nominal) / scale,
+      covered:
+        !config.enabled || (measured >= selectedMin && measured <= selectedMax),
+      enabled: config.enabled,
+      distribution: config.distribution,
+      rangeMode: config.range_mode,
     };
   });
 }
@@ -128,16 +226,19 @@ export function buildSim2RealPlan(input: {
   seedCount: number;
   repetitions: number;
   measurements: Sim2RealMeasurementMap;
+  parameters?: Sim2RealParameterMap;
 }) {
-  const gaps = computeSim2RealGap(input.measurements, input.level);
+  const parameters = input.parameters ?? initialSim2RealParameters();
+  const gaps = computeSim2RealGap(input.measurements, input.level, parameters);
   const seeds = buildSeedSequence(input.seedCount);
   return {
-    schema_version: "sim2real.workbench.v1",
+    schema_version: "sim2real.workbench.v2",
     source_randomization_config: "configs/phase9/domain_randomization.yaml",
     stage: "SIMULATION_ROBUSTNESS_BEFORE_REAL_PROMOTION",
     scenario: input.scenario,
     control_mode: input.controlMode,
     randomization_level: input.level,
+    parameter_randomization: parameters,
     seeds,
     repetitions: input.repetitions,
     planned_run_count: seeds.length * input.repetitions,
@@ -150,6 +251,16 @@ export function buildSim2RealPlan(input: {
       covered: gap.covered,
       normalized_gap: gap.normalizedGap,
     })),
+    paired_backend_contract: {
+      shared_sample: true,
+      mujoco_adapter: "MjSpec",
+      isaac_adapter: "Isaac Lab EventManager",
+    },
+    observability: {
+      timeline: "elapsed_s",
+      viewer: "Rerun",
+      gap_report_schema: "sim2real.gap-report.v1",
+    },
     safety_boundary: {
       real_controller_contacted: false,
       hardware_motion_observed: false,

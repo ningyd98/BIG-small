@@ -61,6 +61,11 @@ class IsaacSimBackend:
             },
         )
 
+    def configure_domain_randomization(self, event_plan: dict[str, object]) -> None:
+        """Send an allowlisted Isaac Lab-compatible event plan to the simulator process."""
+
+        self._send("configure_domain_randomization", {"event_plan": event_plan})
+
     def step(self, steps: int = 1) -> SimulationStepResult:
         if steps < 1:
             raise ValueError("steps must be positive")
