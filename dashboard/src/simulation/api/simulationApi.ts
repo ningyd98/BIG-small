@@ -127,6 +127,13 @@ export const simulationApi = {
       {},
       { role: "EXPERIMENT_OPERATOR" },
     ),
+  generateSim2RealGapReport: (
+    body: components["schemas"]["GapReportRequest"],
+  ) =>
+    writeJson<components["schemas"]["GapReportResponse"]>(
+      "/sim2real/gap-report",
+      body,
+    ),
   runtimeHealth: () =>
     readJson<components["schemas"]["RuntimeHealthResponse"]>("/runtime/health"),
   runtimeWorkers: () =>

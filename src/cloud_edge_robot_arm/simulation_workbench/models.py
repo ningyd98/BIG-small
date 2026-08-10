@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -110,13 +110,64 @@ class FaultProfileDraft(BaseModel):
     parameters: dict[str, int | float | str | bool] = Field(default_factory=dict)
 
 
+RANDOMIZATION_PARAMETER_ALLOWLIST = frozenset(
+    {
+        "object_mass_kg",
+        "friction_coefficient",
+        "actuator_delay_ms",
+        "camera_depth_noise_m",
+        "joint_damping_scale",
+        "actuator_gain_scale",
+        "gravity_z_m_s2",
+    }
+)
+
+
+class RandomizationParameterDraft(BaseModel):
+    """One independently editable, bounded physical randomization parameter."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    distribution: Literal["UNIFORM", "NORMAL", "FIXED"] = "UNIFORM"
+    range_mode: Literal["LEVEL_SCALED", "ABSOLUTE"] = "LEVEL_SCALED"
+    nominal: float
+    min: float
+    max: float
+    mean: float | None = None
+    std: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> RandomizationParameterDraft:
+        if self.min > self.max:
+            raise ValueError("randomization parameter min must be <= max")
+        if not self.min <= self.nominal <= self.max:
+            raise ValueError("randomization parameter nominal must be within [min, max]")
+        if self.distribution == "NORMAL":
+            if self.std is None:
+                raise ValueError("NORMAL randomization requires std")
+            if self.mean is not None and not self.min <= self.mean <= self.max:
+                raise ValueError("randomization parameter mean must be within [min, max]")
+        return self
+
+
 class DomainRandomizationDraft(BaseModel):
-    """域随机化配置草稿，控制仿真扰动是否启用及其等级。"""
+    """域随机化配置草稿，支持每个物理参数独立配置。"""
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
     level: str = "NONE"
+    parameters: dict[str, RandomizationParameterDraft] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_parameter_allowlist(self) -> DomainRandomizationDraft:
+        if self.level not in {"NONE", "MILD", "MODERATE", "SEVERE"}:
+            raise ValueError(f"unsupported randomization level: {self.level}")
+        unknown = sorted(set(self.parameters).difference(RANDOMIZATION_PARAMETER_ALLOWLIST))
+        if unknown:
+            raise ValueError(f"unsupported randomization parameter: {unknown[0]}")
+        return self
 
 
 class ExperimentDraft(BaseModel):

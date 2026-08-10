@@ -81,6 +81,14 @@ export function useSubmitSimulationBatch() {
   });
 }
 
+export function useGenerateSim2RealGapReport() {
+  return useMutation({
+    mutationFn: (
+      body: import("../../api/generated/schema").components["schemas"]["GapReportRequest"],
+    ) => simulationApi.generateSim2RealGapReport(body),
+  });
+}
+
 export function useCancelSimulationRun() {
   const queryClient = useQueryClient();
   return useMutation({

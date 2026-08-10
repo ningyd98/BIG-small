@@ -43,6 +43,11 @@ const navItems = [
     label: <Link to="/simulation/analysis">结果分析</Link>,
   },
   {
+    key: "/simulation/sim2real",
+    icon: <RobotOutlined />,
+    label: <Link to="/simulation/sim2real">Sim2Real</Link>,
+  },
+  {
     key: "/models",
     icon: <RobotOutlined />,
     label: <Link to="/models">AI 模型</Link>,

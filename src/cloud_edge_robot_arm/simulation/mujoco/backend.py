@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,9 @@ from cloud_edge_robot_arm.simulation.models import (
     PhysicalScenarioConfig,
     SensorFrame,
     SimulationStepResult,
+)
+from cloud_edge_robot_arm.simulation.mujoco.spec_randomization import (
+    compile_randomized_mjspec_model,
 )
 
 
@@ -42,6 +46,12 @@ class MuJoCoPhysicsBackend:
         self._sensor_frame = SensorFrame(frame_id="camera", sim_time_s=0.0, width=0, height=0)
         self._rng = np.random.default_rng(0)
         self._command_records: list[dict[str, object]] = []
+        self._model_parameters: dict[str, float] = {}
+        self._model_parameter_evidence: list[dict[str, object]] = []
+        self._mjspec_xml_sha256 = ""
+        self._sensor_noise_std_m = 0.001
+        self._actuator_delay_steps = 0
+        self._pending_joint_targets: list[tuple[int, np.ndarray[Any, Any]]] = []
 
     @property
     def total_physics_steps(self) -> int:
@@ -55,7 +65,27 @@ class MuJoCoPhysicsBackend:
     def command_records(self) -> list[dict[str, object]]:
         return [dict(record) for record in self._command_records]
 
-    def initialize(self, config: SimulatorConfig) -> None:
+    @property
+    def model_parameter_evidence(self) -> dict[str, object]:
+        physics_dt_s = self._config.physics_dt_s if self._config is not None else 0.0
+        return {
+            "compiler": "MuJoCo.MjSpec" if self._mjspec_xml_sha256 else "MjModel.from_xml_path",
+            "spec_xml_sha256": self._mjspec_xml_sha256,
+            "parameters": [dict(item) for item in self._model_parameter_evidence],
+            "runtime": {
+                "sensor_noise_std_m": self._sensor_noise_std_m,
+                "actuator_delay_requested_ms": self._model_parameters.get("actuator_delay_ms", 0.0),
+                "actuator_delay_steps": self._actuator_delay_steps,
+                "actuator_delay_applied_ms": self._actuator_delay_steps * physics_dt_s * 1_000.0,
+            },
+        }
+
+    def initialize(
+        self,
+        config: SimulatorConfig,
+        *,
+        model_parameters: Mapping[str, float] | None = None,
+    ) -> None:
         if find_spec("mujoco") is None:
             raise RuntimeError(
                 "MuJoCo is not installed. Install with python -m pip install -e '.[sim-mujoco]'"
@@ -66,10 +96,30 @@ class MuJoCoPhysicsBackend:
         if not model_path.exists():
             raise FileNotFoundError(model_path)
         self._mujoco = mujoco
-        self._model = mujoco.MjModel.from_xml_path(str(model_path))
+        self._model_parameters = {
+            str(name): float(value) for name, value in (model_parameters or {}).items()
+        }
+        if self._model_parameters:
+            build = compile_randomized_mjspec_model(
+                mujoco,
+                model_path=model_path,
+                parameters=self._model_parameters,
+            )
+            self._model = build.model
+            self._mjspec_xml_sha256 = build.spec_xml_sha256
+            self._model_parameter_evidence = [item.to_jsonable() for item in build.evidence]
+        else:
+            self._model = mujoco.MjModel.from_xml_path(str(model_path))
+            self._mjspec_xml_sha256 = ""
+            self._model_parameter_evidence = []
         self._model.opt.timestep = config.physics_dt_s
         self._data = mujoco.MjData(self._model)
         self._config = config
+        self._sensor_noise_std_m = max(
+            0.0, self._model_parameters.get("camera_depth_noise_m", 0.001)
+        )
+        delay_ms = max(0.0, self._model_parameters.get("actuator_delay_ms", 0.0))
+        self._actuator_delay_steps = int(round(delay_ms / 1000.0 / config.physics_dt_s))
 
     def reset(self, scenario: PhysicalScenarioConfig) -> None:
         self._require_loaded()
@@ -83,6 +133,7 @@ class MuJoCoPhysicsBackend:
         self._total_physics_steps = 0
         self._last_contacts = []
         self._command_records = []
+        self._pending_joint_targets = []
         self._set_free_body_pose("object", scenario.object_pose)
         self._set_body_mass("object", scenario.object_mass_kg)
         self._set_geom_friction("object_geom", scenario.friction_coefficient)
@@ -156,8 +207,17 @@ class MuJoCoPhysicsBackend:
         if len(targets.positions) != 7:
             raise ValueError("Franka Panda profile requires exactly 7 joint targets")
         clipped = np.clip(np.array(targets.positions, dtype=float), -2.8, 2.8)
-        self._target_positions = clipped
-        self._record_command("joint_target", accepted=True, reason="")
+        if self._actuator_delay_steps:
+            available_step = self._total_physics_steps + self._actuator_delay_steps
+            self._pending_joint_targets.append((available_step, clipped))
+            self._record_command(
+                "joint_target",
+                accepted=True,
+                reason=f"queued_until_physics_step={available_step}",
+            )
+        else:
+            self._target_positions = clipped
+            self._record_command("joint_target", accepted=True, reason="")
 
     def apply_gripper_command(self, command: GripperCommand) -> None:
         if self._estop_engaged:
@@ -195,6 +255,11 @@ class MuJoCoPhysicsBackend:
 
     def _apply_control(self) -> None:
         assert self._data is not None
+        while (
+            self._pending_joint_targets
+            and self._pending_joint_targets[0][0] <= self._total_physics_steps
+        ):
+            _, self._target_positions = self._pending_joint_targets.pop(0)
         current = np.array(self._data.qpos[:7], dtype=float)
         error = self._target_positions - current
         control = current + np.clip(error, -0.035, 0.035)
@@ -252,7 +317,7 @@ class MuJoCoPhysicsBackend:
 
     def _update_sensor_frame(self) -> None:
         tcp = self.get_tcp_pose()
-        noise = float(self._rng.normal(0.0, 0.001))
+        noise = float(self._rng.normal(0.0, self._sensor_noise_std_m))
         self._sensor_frame = SensorFrame(
             frame_id="camera",
             sim_time_s=self.get_sim_time(),

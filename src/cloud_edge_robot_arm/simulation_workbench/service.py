@@ -516,6 +516,13 @@ class SimulationWorkbenchService:
             record.scenario_id,
             seed=record.seed,
             randomization_level=randomization_level,
+            randomization_parameters={
+                name: {
+                    **parameter.model_dump(mode="json", exclude_none=True),
+                    "enabled": parameter.enabled and draft.domain_randomization.enabled,
+                }
+                for name, parameter in draft.domain_randomization.parameters.items()
+            },
         )
         self._results[run_id] = {"trial": asdict(trial), "status": "SUCCEEDED"}
         self._append_event(
@@ -556,6 +563,13 @@ class SimulationWorkbenchService:
             "logs": run_dir / "logs.json",
             "result": run_dir / "result.json",
             "provenance": run_dir / "provenance.json",
+            "trajectory": run_dir / "trajectory.json",
+            "sensor_stream": run_dir / "sensor_stream.json",
+            "randomization_sample": run_dir / "randomization_sample.json",
+            "backend_parameter_mapping": run_dir / "backend_parameter_mapping.json",
+            "sim_trace": run_dir / "sim_trace.json",
+            "rerun_viewer_manifest": run_dir / "rerun_viewer_manifest.json",
+            "sim_real_gap_report": run_dir / "sim_real_gap_report.json",
         }
         paths["run_manifest"].write_text(
             json.dumps(record.manifest.model_dump(mode="json"), sort_keys=True, indent=2) + "\n",
@@ -589,6 +603,41 @@ class SimulationWorkbenchService:
                 "hardware_write_operations": [],
             }
         )
+        trial_payload = result_payload.get("trial", {})
+        if not isinstance(trial_payload, dict):
+            trial_payload = {}
+        trajectory = trial_payload.get("trajectory", [])
+        sensors = trial_payload.get("sensor_stream", [])
+        randomization = trial_payload.get("randomization_sample", {})
+        backend_mapping = trial_payload.get("backend_parameter_evidence", {})
+        sim_trace = _legacy_sim_trace_payload(record, trial_payload)
+        for key, payload in {
+            "trajectory": trajectory,
+            "sensor_stream": sensors,
+            "randomization_sample": randomization,
+            "backend_parameter_mapping": backend_mapping,
+            "sim_trace": sim_trace,
+            "rerun_viewer_manifest": {
+                "schema_version": "sim2real.rerun-viewer.v1",
+                "timeline": "elapsed_s",
+                "frame": "world",
+                "simulation_trace": "sim_trace.json",
+                "real_trace_required": True,
+                "viewer": "Rerun",
+            },
+            "sim_real_gap_report": {
+                "schema_version": "sim2real.gap-report.v1",
+                "status": "WAITING_FOR_REAL_TRACE",
+                "simulation_trace_id": sim_trace.get("trace_id", ""),
+                "report_endpoint": "/api/v1/simulation/sim2real/gap-report",
+                "real_controller_contacted_by_reporter": False,
+                "hardware_write_operations": [],
+            },
+        }.items():
+            paths[key].write_text(
+                json.dumps(redact(payload), sort_keys=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
         paths["result"].write_text(
             json.dumps(redact(result_payload), sort_keys=True, indent=2) + "\n",
             encoding="utf-8",
@@ -913,6 +962,50 @@ def _metric(
         seed=seed,
         control_mode=control_mode,
     )
+
+
+def _legacy_sim_trace_payload(
+    record: SimulationRunRecord, trial: dict[str, Any]
+) -> dict[str, object]:
+    trajectory = trial.get("trajectory", [])
+    sensors = trial.get("sensor_stream", [])
+    trajectory = trajectory if isinstance(trajectory, list) else []
+    sensors = sensors if isinstance(sensors, list) else []
+    samples: list[dict[str, object]] = []
+    for index, raw in enumerate(trajectory):
+        if not isinstance(raw, dict):
+            continue
+        sensor = sensors[min(index, len(sensors) - 1)] if sensors else {}
+        sensor = sensor if isinstance(sensor, dict) else {}
+        samples.append(
+            {
+                "elapsed_s": raw.get("elapsed_s", 0.0),
+                "joint_positions_rad": raw.get("joint_positions_rad", []),
+                "tcp_position_m": raw.get("tcp_position_m"),
+                "sensor_latency_ms": sensor.get("latency_ms"),
+                "depth_mean_m": sensor.get("depth_mean_m"),
+                "frame_id": sensor.get("frame_id", "world"),
+            }
+        )
+    randomization = trial.get("randomization_sample", {})
+    parameters: dict[str, float] = {}
+    if isinstance(randomization, dict) and isinstance(randomization.get("parameters"), dict):
+        for name, item in randomization["parameters"].items():
+            if isinstance(item, dict) and isinstance(item.get("value"), int | float):
+                parameters[str(name)] = float(item["value"])
+    return {
+        "trace_id": f"{record.run_id}-{record.backend.value.lower()}",
+        "source": "ISAAC_SIM" if record.backend == SimulationBackend.ISAAC_SIM else "SIM",
+        "clock": "simulation_time",
+        "frame": "world",
+        "samples": samples,
+        "parameters": parameters,
+        "provenance": {
+            "run_id": record.run_id,
+            "backend": record.backend.value,
+            "reproducibility_hash": record.manifest.reproducibility_hash,
+        },
+    }
 
 
 def _normalized_config(draft: ExperimentDraft) -> dict[str, Any]:

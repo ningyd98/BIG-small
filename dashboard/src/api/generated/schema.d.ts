@@ -1319,6 +1319,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/simulation/sim2real/gap-report": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sim2Real Gap Report
+     * @description Compare uploaded read-only traces without performing external I/O.
+     */
+    post: operations["sim2real_gap_report_api_v1_simulation_sim2real_gap_report_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/simulation/validate": {
     parameters: {
       query?: never;
@@ -2194,7 +2214,7 @@ export interface components {
     };
     /**
      * DomainRandomizationDraft
-     * @description 域随机化配置草稿，控制仿真扰动是否启用及其等级。
+     * @description 域随机化配置草稿，支持每个物理参数独立配置。
      */
     DomainRandomizationDraft: {
       /**
@@ -2207,6 +2227,10 @@ export interface components {
        * @default NONE
        */
       level: string;
+      /** Parameters */
+      parameters?: {
+        [key: string]: components["schemas"]["RandomizationParameterDraft"];
+      };
     };
     /** DownloadCreateRequest */
     DownloadCreateRequest: {
@@ -2815,6 +2839,98 @@ export interface components {
      * @enum {string}
      */
     FreshnessStatus: "FRESH" | "STALE" | "MISSING" | "UNKNOWN";
+    /**
+     * GapGateStatus
+     * @enum {string}
+     */
+    GapGateStatus: "PASS" | "WARN" | "FAIL";
+    /** GapMetric */
+    GapMetric: {
+      /** Name */
+      name: string;
+      status: components["schemas"]["GapGateStatus"];
+      /** Threshold */
+      threshold?: number | null;
+      /** Unit */
+      unit: string;
+      /** Value */
+      value: number;
+    };
+    /** GapReportRequest */
+    GapReportRequest: {
+      /**
+       * Alignment Tolerance Ms
+       * @default 50
+       */
+      alignment_tolerance_ms: number;
+      real: components["schemas"]["Sim2RealTrace"];
+      simulation: components["schemas"]["Sim2RealTrace"];
+      thresholds?: components["schemas"]["GapThresholds"];
+    };
+    /** GapReportResponse */
+    GapReportResponse: {
+      /** Aligned Sample Count */
+      aligned_sample_count: number;
+      /** Alignment Ratio */
+      alignment_ratio: number;
+      /**
+       * Markdown
+       * @default
+       */
+      markdown: string;
+      /** Metrics */
+      metrics: components["schemas"]["GapMetric"][];
+      /** Parameter Gaps */
+      parameter_gaps: components["schemas"]["ParameterGap"][];
+      /** Real Sample Count */
+      real_sample_count: number;
+      /** Real Trace Id */
+      real_trace_id: string;
+      /** Safety Boundary */
+      safety_boundary?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Schema Version
+       * @default sim2real.gap-report.v1
+       */
+      schema_version: string;
+      /** Simulation Sample Count */
+      simulation_sample_count: number;
+      /** Simulation Trace Id */
+      simulation_trace_id: string;
+      status: components["schemas"]["GapGateStatus"];
+      /** Warnings */
+      warnings?: string[];
+    };
+    /** GapThresholds */
+    GapThresholds: {
+      /**
+       * Joint Rmse Rad
+       * @default 0.08
+       */
+      joint_rmse_rad: number;
+      /**
+       * Minimum Alignment Ratio
+       * @default 0.8
+       */
+      minimum_alignment_ratio: number;
+      /**
+       * Sensor Latency Rmse Ms
+       * @default 25
+       */
+      sensor_latency_rmse_ms: number;
+      /**
+       * Tcp Rmse M
+       * @default 0.03
+       */
+      tcp_rmse_m: number;
+      /**
+       * Timestamp Skew P95 Ms
+       * @default 25
+       */
+      timestamp_skew_p95_ms: number;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -3232,6 +3348,22 @@ export interface components {
        */
       packet_loss: number;
     };
+    /** ParameterGap */
+    ParameterGap: {
+      /** Absolute Delta */
+      absolute_delta?: number | null;
+      /** Parameter */
+      parameter: string;
+      /** Real Value */
+      real_value?: number | null;
+      /** Simulation Value */
+      simulation_value?: number | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ALIGNED" | "MISSING_SIM" | "MISSING_REAL";
+    };
     /**
      * ParameterSchemaResponse
      * @description 参数 schema 响应，声明权威模型、枚举、数值边界和禁用字段。
@@ -3439,6 +3571,39 @@ export interface components {
       queued: number;
       /** Running */
       running: number;
+    };
+    /**
+     * RandomizationParameterDraft
+     * @description One independently editable, bounded physical randomization parameter.
+     */
+    RandomizationParameterDraft: {
+      /**
+       * Distribution
+       * @default UNIFORM
+       * @enum {string}
+       */
+      distribution: "UNIFORM" | "NORMAL" | "FIXED";
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled: boolean;
+      /** Max */
+      max: number;
+      /** Mean */
+      mean?: number | null;
+      /** Min */
+      min: number;
+      /** Nominal */
+      nominal: number;
+      /**
+       * Range Mode
+       * @default LEVEL_SCALED
+       * @enum {string}
+       */
+      range_mode: "LEVEL_SCALED" | "ABSOLUTE";
+      /** Std */
+      std?: number | null;
     };
     /** RecoveryResponse */
     RecoveryResponse: {
@@ -4052,6 +4217,36 @@ export interface components {
       | "NOT_CONFIGURED"
       | "FAILED"
       | "UNKNOWN";
+    /** Sim2RealTrace */
+    Sim2RealTrace: {
+      /**
+       * Clock
+       * @enum {string}
+       */
+      clock: "simulation_time" | "monotonic_time" | "ros_time";
+      /**
+       * Frame
+       * @default world
+       */
+      frame: string;
+      /** Parameters */
+      parameters?: {
+        [key: string]: number;
+      };
+      /** Provenance */
+      provenance?: {
+        [key: string]: string | number | boolean;
+      };
+      /** Samples */
+      samples: components["schemas"]["TraceSample"][];
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "SIM" | "REAL" | "ISAAC_SIM";
+      /** Trace Id */
+      trace_id: string;
+    };
     /**
      * SimulationArtifactsResponse
      * @description 仿真 artifact 路径响应，只返回相对路径。
@@ -4854,6 +5049,24 @@ export interface components {
        * Format: date-time
        */
       wall_time?: string;
+    };
+    /** TraceSample */
+    TraceSample: {
+      /** Depth Mean M */
+      depth_mean_m?: number | null;
+      /** Elapsed S */
+      elapsed_s: number;
+      /**
+       * Frame Id
+       * @default world
+       */
+      frame_id: string;
+      /** Joint Positions Rad */
+      joint_positions_rad?: number[];
+      /** Sensor Latency Ms */
+      sensor_latency_ms?: number | null;
+      /** Tcp Position M */
+      tcp_position_m?: [number, number, number] | null;
     };
     /**
      * UserRole
@@ -7300,6 +7513,39 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ScenarioDefinitionView"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  sim2real_gap_report_api_v1_simulation_sim2real_gap_report_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GapReportRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GapReportResponse"];
         };
       };
       /** @description Validation Error */

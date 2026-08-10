@@ -105,3 +105,14 @@ class PhysicalTrialResult:
     randomization_level: str
     result_hash: str
     metrics: dict[str, float | int | str | bool]
+    randomization_sample: dict[str, object] = field(default_factory=dict)
+    backend_parameter_evidence: dict[str, object] = field(default_factory=dict)
+    trajectory: list[dict[str, object]] = field(default_factory=list)
+    sensor_stream: list[dict[str, object]] = field(default_factory=list)
+    timebase: dict[str, object] = field(
+        default_factory=lambda: {
+            "timeline": "elapsed_s",
+            "clock": "simulation_time",
+            "frame": "world",
+        }
+    )
