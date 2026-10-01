@@ -212,12 +212,16 @@ test("E2E-11 LiveRun status flow is visible", async ({ page }) => {
     data: draft(),
   });
   const run = await created.json();
+  const terminal = await waitForRunStatus(page, run.run_id, ["SUCCEEDED"]);
 
+  expect(created.status()).toBe(202);
+  expect(run.status).toBe("QUEUED");
   await page.goto("/simulation/live");
-  await expect(page.getByText(run.run_id)).toBeVisible({ timeout: 15_000 });
+  const row = page.getByRole("row").filter({ hasText: run.run_id });
+  await expect(row).toBeVisible({ timeout: 15_000 });
   await expect(
-    page.getByRole("row").filter({ hasText: run.run_id }).getByText(run.status),
-  ).toBeVisible();
+    row.getByText(terminal.status, { exact: true }).first(),
+  ).toBeVisible({ timeout: 15_000 });
 });
 
 test("E2E-12 LiveRun fault timeline includes emergency stop", async ({
