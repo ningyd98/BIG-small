@@ -3574,7 +3574,7 @@ export interface components {
     };
     /**
      * RandomizationParameterDraft
-     * @description One independently editable, bounded physical randomization parameter.
+     * @description 单个可独立编辑且受上下界约束的物理随机化参数。
      */
     RandomizationParameterDraft: {
       /**

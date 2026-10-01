@@ -256,3 +256,42 @@ def test_phase13_fake_artifact_verifies_as_env_block(
     assert summary["status"] == "PHASE13_1_IMPLEMENTATION_READY_WITH_MODEL_ENV_BLOCK"
     assert summary["accepted_count"] == 0
     assert summary["fake_authoritative_row_count"] == 0
+
+
+def test_nonempty_model_response_is_not_contract_or_task_evidence(tmp_path: Path) -> None:
+    """非空模型文本不能冒充通过合同校验或已完成执行的任务证据。"""
+    from cloud_edge_robot_arm.experiments.llm_only.providers.base import ProviderResponse
+    from cloud_edge_robot_arm.experiments.llm_only.runner import _row_from_response
+
+    response_path = tmp_path / "response.json"
+    response_path.write_text("{}")
+    response = ProviderResponse(
+        provider="ollama",
+        model_name="fixture",
+        runtime_type="LOCAL_LLM_RUNTIME",
+        accepted=True,
+        content="I cannot produce a contract.",
+        sanitized_response="{}",
+        prompt_hash="prompt",
+        response_hash="response",
+        latency_ms=1.0,
+        request_id="test",
+    )
+    row = _row_from_response(
+        index=1,
+        baseline_id="B01_LLM_ONLY_ONESHOT_REAL",
+        profile=LLMOnlyProfile.SMOKE,
+        provider=LLMOnlyProvider.OLLAMA,
+        scenario="S01_NORMAL_STATIC",
+        seed=0,
+        repetition=0,
+        response=response,
+        response_path=response_path,
+        output_root=tmp_path,
+    )
+    assert row.model_runtime_accepted is True
+    assert row.valid_contract_rate == 0.0
+    assert row.schema_validation_failure_count == 1
+    assert row.task_success is False
+    assert row.safety_shield_checked is False
+    assert row.hardware_gate_checked is False

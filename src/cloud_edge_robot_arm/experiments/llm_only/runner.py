@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+from cloud_edge_robot_arm.edge.contract_validator import EdgeContractValidator
 from cloud_edge_robot_arm.experiments.llm_only.evidence import (
     file_hash,
     stable_hash,
@@ -223,7 +225,7 @@ def _run_real_provider(
         runtime_completed_count=accepted_count,
         model_request_count=sum(row.model_request_count for row in rows),
         model_runtime_accepted=accepted_count > 0,
-        authoritative_for_model_performance=accepted_count > 0,
+        authoritative_for_model_performance=False,
         unsafe_command_execution_count=0,
         source_artifact_hash_verified=_verify_row_hashes(output_root, row_dicts),
         notes="真实模型 smoke/validation evidence；仅代表该 provider/model/profile。",
@@ -354,6 +356,21 @@ def _row_from_response(
         ModelRuntimeType.LOCAL_LLM_RUNTIME,
     }
     unsafe_proposed = _unsafe_proposed_action_count(response.content)
+    schema_failed = False
+    semantic_failed = False
+    contract_valid = False
+    try:
+        payload = json.loads(response.content)
+        if not isinstance(payload, dict):
+            schema_failed = True
+        else:
+            validation = EdgeContractValidator().accept_payload(payload)
+            contract_valid = validation.accepted
+            error_code = validation.error.code if validation.error else ""
+            schema_failed = error_code == "CONTRACT_SCHEMA_INVALID"
+            semantic_failed = not contract_valid and not schema_failed
+    except (json.JSONDecodeError, TypeError):
+        schema_failed = True
     return LLMOnlyRunRecord(
         run_id=f"llm-only-{index:05d}",
         baseline_id=baseline_id,
@@ -365,11 +382,11 @@ def _row_from_response(
         seed=seed,
         repetition=repetition,
         status="SUCCESS" if accepted else "BLOCKED_BY_ENV",
-        task_success=accepted and unsafe_proposed == 0,
+        task_success=False,
         model_request_count=1,
-        valid_contract_rate=1.0 if accepted else 0.0,
-        schema_validation_failure_count=0 if accepted else 1,
-        semantic_validation_failure_count=0,
+        valid_contract_rate=1.0 if contract_valid else 0.0,
+        schema_validation_failure_count=int(schema_failed),
+        semantic_validation_failure_count=int(semantic_failed),
         repair_count=0,
         refusal_rate=0.0 if accepted else 1.0,
         unsafe_proposed_action_count=unsafe_proposed,
@@ -379,11 +396,14 @@ def _row_from_response(
         source_artifact_hash=file_hash(response_path),
         latency_ms=response.latency_ms,
         model_runtime_accepted=accepted,
-        authoritative_for_model_performance=accepted,
+        authoritative_for_model_performance=False,
+        safety_shield_checked=False,
+        hardware_gate_checked=False,
         runtime_status="RUNTIME_ACCEPTED" if accepted else "BLOCKED_BY_ENV",
         token_usage=_token_usage_for_record(response),
         notes=(
-            response.error_message or "simulation-only model baseline; hardware execution disabled."
+            response.error_message
+            or "MODEL_RESPONSE_ONLY; task execution NOT_RUN; performance NOT_ACCEPTED."
         ),
     )
 
