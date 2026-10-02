@@ -2,6 +2,23 @@
 
 BIG-small 采用“云端智能规划、边缘安全执行”的架构。云端只生成高层任务契约、监督决策和重规划建议；边缘端负责契约校验、安全盾、状态机执行、恢复策略，并保留最终执行拒绝权。
 
+## 当前实施路线：Sim2Real 模拟设备
+
+本项目当前所有研发和实验都通过模拟设备开展，保留既有云边协同架构与 PCSC / ETEAC / AUTO 机制。MuJoCo 提供主物理仿真设备，Isaac Sim 提供对照仿真设备，ROS 2 / MoveIt 提供模拟通信、规划、碰撞验证与模拟控制器；不启动真实设备接入阶段。
+
+模拟动作仍经过 TaskContract → EdgeContractValidator → SafetyShield → TaskExecutor / SkillExecutor → RobotAdapter。云端只决定高层任务，边缘保留最终拒绝权。默认 Linux profile 为 simulation / MuJoCo / headless，真实 dispatch 关闭。真实机器人接口和安全门禁仅保留为未来扩展，本阶段没有真实控制器连接、硬件读写或运动；S3/S4 promotion 固定 LOCKED。
+
+证据按软件检查、实际仿真、参数应用、严格配对和真实模型分别验收。Isaac app/adapter 可运行不等于全参数 DR 或公平配对已接受；fake、synthetic 或配置物化不得升级为物理/模型性能。当前具体状态与限制见 [Ubuntu 交接报告](handover/ubuntu_deployment_report.md)。
+
+```text
+real_robot_validation=NOT_STARTED
+real_controller_contacted=false
+hardware_motion_observed=false
+hardware_write_operations=[]
+highest_real_hardware_acceptance_level=NONE
+real_motion_dispatch_enabled=false
+```
+
 ## 1. 总体分层
 
 - **契约层**：`TaskContract`、telemetry、`CloudCommand`、`FailureSummary`，以及 schema/provenance 字段。
@@ -11,7 +28,7 @@ BIG-small 采用“云端智能规划、边缘安全执行”的架构。云端�
 - **协同模式层**：`PCSC`、`ETEAC` 和 `AUTO 双模式选择器`。
 - **实验与证据层**：Phase 8+ experiment、artifact、statistics、source tree hash 和 verifier。
 - **仿真与机器人集成层**：Mock、MuJoCo、Isaac Sim、ROS 2 / MoveIt。
-- **真实机械臂安全边界**：`RealRobotConfig`、`HardwareExecutionGate`、`OperatorConfirmation` 和 acceptance level。
+- **未来真实机械臂安全边界（当前禁用）**：`RealRobotConfig`、`HardwareExecutionGate`、`OperatorConfirmation` 和 acceptance level。
 - **仿真工作台层**：`dashboard/src/simulation/` 提供 Phase 11 Simulation Workbench，不直接控制硬件。
 - **仿真运行时层**：`simulation_runtime` 提供 Phase 11.1 异步队列、SQLite 持久化、worker lease 和恢复。
 - **模型控制层**：`model_control` 提供 Phase 11.2 Planner profile、secret 安全和 Ollama 管理。
@@ -31,11 +48,11 @@ flowchart LR
   Adapter --> MuJoCo[MuJoCo]
   Adapter --> Isaac[Isaac Sim]
   Adapter --> MoveIt[MoveIt Runtime Dry-Run]
-  Adapter --> Real[RealRobotAdapter]
+  Adapter -.-> Gate[HardwareExecutionGate 当前锁定]
+  Gate -.-> Confirm[OperatorConfirmation 未来现场流程]
+  Confirm -.-> Real[RealRobotAdapter 当前禁用]
   Evidence --> Workbench[Simulation Workbench]
   Evidence --> FinalEval[Phase 12 Final Evaluation]
-  Real --> Gate[HardwareExecutionGate]
-  Gate --> Confirm[OperatorConfirmation]
   Executor --> Evidence[证据流水线]
   Evidence --> Verifiers[验证器与报告]
 ```
@@ -186,15 +203,17 @@ Phase 12 只整合软件、仿真、dry-run 和 planner dry-run 证据。`--smok
 
 ## 12. 验证入口
 
-- 核心检查：`scripts/verify_project.py --profile ci`
+下列为入口脚本索引，不是可原样执行的实验命令。运行前按 [Ubuntu 交接报告](handover/ubuntu_deployment_report.md) 创建独立输出目录；默认历史 artifact 目录保留用于读取原证据。
+
+- 核心检查：`scripts/verify_project.py`
 - Phase 9 core：`scripts/verify_phase9.py`
-- Phase 9.1 ROS 2 / MoveIt：`scripts/verify_phase9_1.py --skip-history`
-- Phase 9.2 Isaac/cross-backend：`scripts/verify_phase9_2.py --output artifacts/phase9_2/final`
+- Phase 9.1 ROS 2 / MoveIt：`scripts/verify_phase9_1.py`
+- Phase 9.2 Isaac/cross-backend：`scripts/verify_phase9_2.py`
 - Phase 10 config/gate：`scripts/verify_phase10_0.py`
 - Phase 10 Synthetic Dry-Run：`scripts/verify_phase10_1.py`
 - Phase 10 MoveIt Runtime Dry-Run：`scripts/verify_phase10_moveit_dry_run.py`
 - Phase 10.2A aggregate：`scripts/verify_phase10_2a.py`
 - Phase 11 Simulation Workbench：`scripts/verify_phase11_simulation_workbench.py`
-- Phase 11.1 Simulation Runtime：`scripts/verify_phase11_1_simulation_runtime.py --ci|--mujoco|--full`
-- Phase 11.2 Model Control Center：`scripts/verify_phase11_2_model_control.py --ci|--ollama|--full`
-- Phase 12 Final Evaluation：`scripts/verify_phase12.py --smoke|--validation|--full`
+- Phase 11.1 Simulation Runtime：`scripts/verify_phase11_1_simulation_runtime.py`
+- Phase 11.2 Model Control Center：`scripts/verify_phase11_2_model_control.py`
+- Phase 12 Final Evaluation：`scripts/verify_phase12.py`

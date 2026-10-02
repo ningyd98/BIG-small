@@ -1,6 +1,18 @@
 # Current Authoritative Status
 
-本文件是当前项目状态的唯一权威入口。任何论文、答辩或 README 状态描述都应与本表一致。
+本文件记录当前实施状态与历史分支基线；论文、答辩和 README 必须同时说明证据版本与验收范围。
+
+## 2026-10-02 Ubuntu 当前快照
+
+项目全部按 Sim2Real 模拟设备路线开展，真实设备阶段禁用。部署与证据索引见 [Ubuntu 交接报告](handover/ubuntu_deployment_report.md)。Core、Dashboard、MuJoCo、ROS2、MoveIt 的本机验收 PASS；Isaac 和 Sim2Real 为 WARN（实际仿真已运行，全参数应用和严格配对未接受）；Phase13 真实模型 BLOCKED；Phase12 full 和 Thesis 为 WARN。
+
+干净 `d571e1b0` full 原始实验保留 5,580 行、5,040 runtime-completed、540 blocked-before-runtime，验收为 PHASE12_REJECTED。360 条 MoveIt 阻塞来自 Phase12 adapter 当前固定禁用，180 条模型阻塞来自未配置真实服务；原摘要的固定环境标签不能用于判断本机是否安装了 Isaac。`da299bd9` 修复了 repetition 丢失，并在独立目录重分析；180 对中 120 对满足旧标量统计规则、60 对含安全停止，full 仍拒绝，verifier-gated authoritative thesis run count 为 0。该统计不满足公平物理配对条件，不形成跨引擎性能结论。
+
+`b35e5390` 的正式工作台验收为 PHASE11_1_SIMULATION_RUNTIME_ACCEPTED / PHASE11_2_SIMULATION_AI_CONSOLE_ACCEPTED，37 E2E 包括实际 MuJoCo；local_model_runtime_accepted=false。原论文历史 466/74 与 35 references / 28 figures 可复现，和新 full 数据分别保存。
+
+## 历史分支基线（保留原验收口径）
+
+下表是此前分支的 verifier 状态，并不将其自动升级为当前 Ubuntu 的全物理 DR、公平配对或真实模型验收。
 
 | Capability | Status | Verifier | Evidence | Hardware Claim |
 |---|---|---|---|---|
