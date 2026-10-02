@@ -213,7 +213,10 @@ def _paired_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         if row.get("experiment_id") != "F15_MUJOCO_ISAAC_PAIRED":
             continue
-        key = f"{row.get('scenario_id')}|{row.get('seed')}|{row.get('control_mode')}"
+        key = (
+            f"{row.get('scenario_id')}|{row.get('seed')}|"
+            f"{row.get('control_mode')}|{row.get('repetition', 0)}"
+        )
         by_key.setdefault(key, []).append(row)
     for key, items in sorted(by_key.items()):
         left = next((item for item in items if item.get("backend") == "MUJOCO"), None)
