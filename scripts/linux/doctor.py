@@ -78,13 +78,26 @@ def main() -> int:
             "NVIDIA",
             ["nvidia-smi", "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"],
         ),
-        probe("ROS2", ["ros2", "--help"]),
-        probe("MoveIt", [sys.executable, "-c", "import moveit_configs_utils, rclpy"]),
         probe("Rerun", [sys.executable, "-c", "import rerun; print(rerun.__version__)"]),
         probe("Ollama", ["ollama", "list"]),
         probe("Docker", ["docker", "info", "--format", "{{.ServerVersion}}"]),
         probe("Disk", ["df", "-h", str(ROOT)]),
     ]
+    mamba = os.environ.get("BIGSMALL_MAMBA_EXE", "")
+    ros_command = (
+        [mamba, "run", "-n", os.environ.get("BIGSMALL_CONDA_ENV", "bigsmall-ros2-jazzy-moveit")]
+        if mamba and Path(mamba).is_file()
+        else []
+    )
+    checks.extend(
+        [
+            probe("ROS2", ros_command + ["ros2", "--help"]),
+            probe(
+                "MoveIt",
+                ros_command + ["python", "-c", "import moveit_configs_utils, rclpy"],
+            ),
+        ]
+    )
     isaac_root = os.environ.get("ISAAC_SIM_ROOT", "")
     checks.append(
         {

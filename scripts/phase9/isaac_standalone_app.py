@@ -143,7 +143,10 @@ def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> Isaac
     )
     from isaacsim.core.api import SimulationContext  # type: ignore[import-not-found]
     from isaacsim.core.api.objects import DynamicCuboid  # type: ignore[import-not-found]
-    from isaacsim.core.prims.impl import SingleArticulation  # type: ignore[import-not-found]
+    from isaacsim.core.prims.impl import (  # type: ignore[import-not-found]
+        SingleArticulation,
+        SingleXFormPrim,
+    )
     from isaacsim.sensors.camera import Camera  # type: ignore[import-not-found]
     from isaacsim.sensors.experimental.physics import (  # type: ignore[import-not-found]
         Contact,
@@ -208,6 +211,10 @@ def _create_or_load_stage(*, runtime: IsaacRuntime, stage: Path | None) -> Isaac
         prim_path="/bigsmall_phase9_franka_like_scene/Geometry/panda_link0",
         name="phase9_2_franka",
     )
+    tcp_prims = [prim for prim in usd_stage.Traverse() if prim.GetName() == "tcp"]
+    if len(tcp_prims) != 1:
+        raise RuntimeError("scene must contain exactly one explicit TCP prim")
+    robot.end_effector = SingleXFormPrim(prim_path=str(tcp_prims[0].GetPath()), name="phase9_2_tcp")
     _trace("robot_created")
     _trace("camera_create_start")
     camera = Camera(
@@ -591,7 +598,7 @@ def _tcp_pose(robot: Any) -> dict[str, float]:
     if end_effector is not None and hasattr(end_effector, "get_world_pose"):
         position, _orientation = end_effector.get_world_pose()
     else:
-        position, _orientation = robot.get_world_pose()
+        raise RuntimeError("TCP end effector is unavailable; robot root is not TCP telemetry")
     return {"x": float(position[0]), "y": float(position[1]), "z": float(position[2])}
 
 

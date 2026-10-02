@@ -4,11 +4,27 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from scripts.phase9 import isaac_standalone_app
 
 from cloud_edge_robot_arm.simulation.phase9_2.verification import verify_isaac_smoke_evidence
+
+
+def test_tcp_telemetry_must_not_fall_back_to_robot_root() -> None:
+    robot = SimpleNamespace(get_world_pose=lambda: ([0.0, 0.0, 0.22], None))
+    with pytest.raises(RuntimeError, match="TCP"):
+        isaac_standalone_app._tcp_pose(robot)
+
+
+def test_tcp_telemetry_uses_explicit_end_effector() -> None:
+    robot = SimpleNamespace(
+        end_effector=SimpleNamespace(get_world_pose=lambda: ([0.45, 0.1, 0.3], None)),
+        get_world_pose=lambda: ([0.0, 0.0, 0.22], None),
+    )
+    assert isaac_standalone_app._tcp_pose(robot) == {"x": 0.45, "y": 0.1, "z": 0.3}
 
 
 def test_isaac_smoke_rejects_missing_required_sensor(tmp_path: Path) -> None:

@@ -7,6 +7,12 @@ ROS2_WS="${BIGSMALL_ROS2_WS:-$HOME/bigsmall_runtime/ros2_ws}"
 BIGSMALL_ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-91}"
 BIGSMALL_RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 
+if [[ -n "${BIGSMALL_MAMBA_EXE:-}" && -x "$BIGSMALL_MAMBA_EXE" ]]; then
+  eval "$("$BIGSMALL_MAMBA_EXE" shell hook --shell bash)"
+  set +u
+  micromamba activate "$CONDA_ENV"
+  set -u
+else
 if [[ -z "${CONDA_EXE:-}" ]]; then
   if command -v conda >/dev/null 2>&1; then
     CONDA_BASE="$(conda info --base)"
@@ -28,6 +34,7 @@ source "$CONDA_SH"
 set +u
 conda activate "$CONDA_ENV"
 set -u
+fi
 
 export ROS_DOMAIN_ID="$BIGSMALL_ROS_DOMAIN_ID"
 export RMW_IMPLEMENTATION="$BIGSMALL_RMW_IMPLEMENTATION"
