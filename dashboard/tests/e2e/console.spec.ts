@@ -1,8 +1,7 @@
 // 控制台 E2E 使用真实 FastAPI 与 fake 运行时服务，验证页面和 API 都不暴露硬件动作。
 import { expect, test, type Page } from "@playwright/test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
-const artifactRoot = path.resolve(process.cwd(), "../artifacts/dashboard_e2e");
 const operatorHeaders = { "x-dashboard-role": "EXPERIMENT_OPERATOR" };
 
 type BatchPayload = Record<string, unknown> & {
@@ -24,35 +23,6 @@ type TimelinePayload = {
 type MetricPayload = {
   name: string;
 };
-
-function seedArtifacts() {
-  rmSync(artifactRoot, { recursive: true, force: true });
-  mkdirSync(path.join(artifactRoot, "phase10"), { recursive: true });
-  writeFileSync(
-    path.join(artifactRoot, "phase10/dashboard_summary.json"),
-    JSON.stringify(
-      {
-        status: "PHASE10_MOVEIT_DRY_RUN_ACCEPTED",
-        planner_backend: "MOVEIT_RUNTIME",
-        hardware_motion_observed: false,
-        sent_to_hardware: false,
-        real_robot_validation: "NOT_STARTED",
-        blockers: [],
-        provenance: {
-          generated_from_commit: "e2e-commit",
-          source_tree_hash: "e2e-tree",
-          worktree_clean: true,
-          generated_at: "2026-06-17T00:00:00Z",
-        },
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf-8",
-  );
-}
-
-test.beforeAll(seedArtifacts);
 
 test("E2E-01 overview keeps dry-run acceptance without hardware validation", async ({
   page,
@@ -154,7 +124,34 @@ test("E2E-06 creates MuJoCo single experiment through FastAPI", async ({
   expect(response.status()).toBe(202);
   expect(payload.backend).toBe("MUJOCO");
   expect(payload.status).toBe("QUEUED");
-  expect(["SUCCEEDED", "BLOCKED_BY_ENV", "FAILED"]).toContain(terminal.status);
+  expect(terminal.status).toBe("SUCCEEDED");
+  expect(terminal.backend).toBe("MUJOCO");
+  const artifactPaths = terminal.artifact_paths as Record<string, string>;
+  const resultPath = path.join(
+    process.env.BIGSMALL_E2E_ARTIFACT_ROOT!,
+    artifactPaths.result,
+  );
+  // SUCCEEDED 状态可先于原子 artifact 落盘；等待证据，仍要求真实运行字段。
+  await expect
+    .poll(
+      () => {
+        try {
+          const evidence = JSON.parse(readFileSync(resultPath, "utf-8"));
+          return {
+            runtime_executed: evidence.runtime_executed,
+            mock_fallback_used: evidence.mock_fallback_used,
+          };
+        } catch {
+          return null;
+        }
+      },
+      { timeout: 15_000 },
+    )
+    .toEqual({ runtime_executed: true, mock_fallback_used: false });
+  const result = JSON.parse(readFileSync(resultPath, "utf-8"));
+  expect(result.runtime_executed).toBe(true);
+  expect(result.mock_fallback_used).toBe(false);
+  expect(result.trial.metrics.physics_steps).toBeGreaterThan(0);
   expect(payload.hardware_motion_observed).toBe(false);
 });
 
@@ -170,6 +167,8 @@ test("E2E-07 creates mode comparison batch", async ({ page }) => {
 
   expect(response.status()).toBe(202);
   expect(payload.progress.total).toBe(3);
+  const terminal = await waitForBatchDone(page, payload.batch_id);
+  expect(terminal.progress.succeeded).toBe(3);
   expect(payload.hardware_write_operations).toEqual([]);
 });
 
@@ -182,6 +181,8 @@ test("E2E-08 creates multi-seed batch", async ({ page }) => {
 
   expect(response.status()).toBe(202);
   expect(payload.progress.total).toBe(3);
+  const terminal = await waitForBatchDone(page, payload.batch_id);
+  expect(terminal.progress.succeeded).toBe(3);
 });
 
 test("E2E-09 creates latency sweep validation", async ({ page }) => {
