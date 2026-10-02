@@ -353,6 +353,7 @@ def _run_smoke(
             "runtime": "isaac_standalone",
             "backend_name": "isaac",
             "pid": os.getpid(),
+            "run_id": run_id,
             "protocol_version": ISAAC_PROTOCOL_VERSION,
         },
         "forbidden_log_scan": {"passed": True, "violations": []},

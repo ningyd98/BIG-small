@@ -55,6 +55,7 @@ class IsaacSimProcessClient:
         self._timeout_s = timeout_s
         self._process: subprocess.Popen[str] | None = None
         self._last_sim_time_s = -1.0
+        self._stdout_buffer = b""
 
     def __enter__(self) -> IsaacSimProcessClient:
         self.start()
@@ -72,6 +73,7 @@ class IsaacSimProcessClient:
         if self._process is not None:
             return
         env = os.environ.copy()
+        self._stdout_buffer = b""
         env.setdefault("PHASE9_2_TRACE_ARGS", "1")
         self._process = subprocess.Popen(
             self._argv,
@@ -143,18 +145,20 @@ class IsaacSimProcessClient:
         skipped_lines = 0
         recent_non_json: list[str] = []
         while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise IsaacProtocolError(
-                    f"Isaac process exited with {process.returncode}: "
-                    f"{''.join(recent_non_json)[-1000:]}"
-                )
-            remaining = max(0.05, deadline - time.monotonic())
-            ready, _, _ = select.select([process.stdout], [], [], remaining)
-            if not ready:
+            if b"\n" not in self._stdout_buffer:
+                remaining = max(0.05, deadline - time.monotonic())
+                ready, _, _ = select.select([process.stdout], [], [], remaining)
+                if not ready:
+                    continue
+                chunk = os.read(process.stdout.fileno(), 65_536)
+                if not chunk:
+                    raise IsaacProtocolError(
+                        f"Isaac process stdout closed: {''.join(recent_non_json)[-1000:]}"
+                    )
+                self._stdout_buffer += chunk
                 continue
-            line = process.stdout.readline()
-            if not line:
-                continue
+            raw_line, _, self._stdout_buffer = self._stdout_buffer.partition(b"\n")
+            line = raw_line.decode("utf-8", errors="replace") + "\n"
             try:
                 decoded = json.loads(line)
             except json.JSONDecodeError:

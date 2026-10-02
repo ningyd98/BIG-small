@@ -46,6 +46,27 @@ def test_isaac_process_client_rejects_replay_runtime(tmp_path: Path) -> None:
             client.handshake()
 
 
+def test_isaac_process_client_reads_ack_buffered_after_log_lines(tmp_path: Path) -> None:
+    worker = _write_worker(tmp_path, replay=False)
+    worker.write_text(
+        worker.read_text().replace(
+            "print(json.dumps(", "print('runtime log line'); print(json.dumps("
+        ),
+        encoding="utf-8",
+    )
+    with IsaacSimProcessClient([sys.executable, str(worker)], timeout_s=1.0) as client:
+        assert client.handshake().status == "READY_TO_CONNECT"
+        response = client.send_command(
+            skill_to_isaac_command(
+                "MOVE_ABOVE",
+                {"target_object_id": "cube"},
+                command_seq=8,
+                safety_approval_id="approval-2",
+            )
+        )
+        assert response["command_seq"] == 8
+
+
 def test_isaac_skill_mapping_never_teleports_tcp_pose() -> None:
     movement_skills = [
         "MOVE_ABOVE",
