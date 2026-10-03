@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import importlib
 import json
 import os
@@ -436,6 +437,9 @@ def _execute_command(
         raise RuntimeError(f"unsupported Isaac command_type: {command_type}")
     telemetry = _sample_telemetry(scene)
     if command_type == "sensor_request":
+        sensor = cast(dict[str, object], telemetry["sensor_frame"])
+        sensor.update(encode_rgbd_sensor_frame(scene.camera, telemetry["raw_rgb"], telemetry["raw_depth"]))
+        sensor["object_detections"] = []
         output_dir.mkdir(parents=True, exist_ok=True)
         _write_runtime_artifacts(output_dir, scene, telemetry)
     public_telemetry = {
@@ -586,6 +590,31 @@ def _sample_telemetry(scene: IsaacScene) -> dict[str, object]:
         "raw_rgb": rgba,
         "raw_depth": depth,
     }
+
+
+def encode_rgbd_sensor_frame(camera: Any, rgba: Any, depth: Any) -> dict[str, object]:
+    """Encode measured aligned optical depth and the calibrated ROS optical pose."""
+    import numpy as np
+
+    rgb = np.asarray(rgba, dtype=np.uint8)[:, :, :3].copy()
+    measured = np.asarray(depth, dtype="<f4").copy()
+    if rgb.ndim != 3 or measured.shape != rgb.shape[:2]:
+        raise ValueError("Isaac RGBD dimensions do not match")
+    measured[~np.isfinite(measured) | (measured <= 0)] = 0
+    intrinsics = np.asarray(camera.get_intrinsics_matrix())
+    position, quaternion = camera.get_world_pose(camera_axes="ros")
+    w, x, y, z = [float(v) for v in quaternion]
+    rotation = np.array([[1 - 2*(y*y+z*z), 2*(x*y-z*w), 2*(x*z+y*w)],
+                         [2*(x*y+z*w), 1 - 2*(x*x+z*z), 2*(y*z-x*w)],
+                         [2*(x*z-y*w), 2*(y*z+x*w), 1 - 2*(x*x+y*y)]])
+    transform = np.eye(4)
+    transform[:3, :3] = rotation
+    transform[:3, 3] = position
+    return {"rgb_base64": base64.b64encode(rgb.tobytes()).decode("ascii"),
+            "depth_float32_base64": base64.b64encode(measured.tobytes()).decode("ascii"),
+            "intrinsics": [float(intrinsics[0, 0]), float(intrinsics[1, 1]), float(intrinsics[0, 2]), float(intrinsics[1, 2])],
+            "camera_to_world": [float(v) for v in transform.ravel()],
+            "captured_at": datetime.now(UTC).isoformat(), "depth_convention": "optical_z_m"}
 
 
 def _numeric_value(value: object) -> float:

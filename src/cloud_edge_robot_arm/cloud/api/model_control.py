@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, status
 from pydantic import BaseModel, Field
@@ -99,6 +99,7 @@ class PlannerDryRunRequest(BaseModel):
     user_instruction: str
     sample_scene: str
     control_mode: str
+    input_mode: Literal["RGBD", "LEGACY_PIPELINE"] = "RGBD"
 
 
 @router.get("/capabilities", response_model=ModelCapabilitiesResponse)
@@ -271,12 +272,13 @@ async def activate_ollama_model(request: Request, model_name: str) -> PlannerRun
 
 
 @router.post("/planner/dry-run")
-async def planner_dry_run(request: Request, body: PlannerDryRunRequest) -> dict[str, object]:
+def planner_dry_run(request: Request, body: PlannerDryRunRequest) -> dict[str, object]:
     try:
         return _service(request).planner_dry_run(
             user_instruction=body.user_instruction,
             sample_scene=body.sample_scene,
             control_mode=body.control_mode,
+            input_mode=body.input_mode,
             transport=_ollama_transport(request),
         )
     except ValueError as exc:

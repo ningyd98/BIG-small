@@ -253,6 +253,7 @@ def _row(run_id: str, *, authoritative: bool, source: str) -> dict[str, object]:
         "research_question": "RQ1",
         "profile": "smoke",
         "backend": "MOCK",
+        "input_mode": "LEGACY_PIPELINE",
         "scenario_id": "S01_NORMAL_STATIC",
         "control_mode": "PCSC",
         "seed": 0,

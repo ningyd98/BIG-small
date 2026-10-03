@@ -1,0 +1,74 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_settling_checks_rotation_and_world_bounds[angular_velocity] _______
+
+failure = 'angular_velocity'
+
+    @pytest.mark.parametrize("failure", ["angular_velocity", "rotated_bounds"])
+    def test_settling_checks_rotation_and_world_bounds(failure: str) -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        session = MuJoCoCaptureSession(SimulatorConfig())
+        backend = session._backend
+        try:
+            # CPU physical model suffices: this probe exercises truth checks, not rendering.
+            backend.initialize(SimulatorConfig(render_rgb=False, render_depth=False))
+            backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
+            session._open = True
+            session._dataset_scene = sample_scene(
+                DatasetConfig(dataset_id="probe", distractor_count=(0, 0)), 0)
+            model, data, mj = backend._model, backend._data, backend._mujoco
+            joint = model.joint("object_free")
+            if failure == "angular_velocity":
+                data.qvel[joint.dofadr[0] + 3] = 25
+            else:
+                adr = joint.qposadr[0]
+                data.qpos[adr:adr + 3] = [.96, 0, .035]
+                data.qpos[adr + 3:adr + 7] = [np.cos(np.pi / 8), 0, 0, np.sin(np.pi / 8)]
+                mj.mj_forward(model, data)
+>           with pytest.raises(ValueError, match="settled|bounds"):
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_labels.py:157: Failed
+________ test_settling_checks_rotation_and_world_bounds[rotated_bounds] ________
+
+failure = 'rotated_bounds'
+
+    @pytest.mark.parametrize("failure", ["angular_velocity", "rotated_bounds"])
+    def test_settling_checks_rotation_and_world_bounds(failure: str) -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        session = MuJoCoCaptureSession(SimulatorConfig())
+        backend = session._backend
+        try:
+            # CPU physical model suffices: this probe exercises truth checks, not rendering.
+            backend.initialize(SimulatorConfig(render_rgb=False, render_depth=False))
+            backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
+            session._open = True
+            session._dataset_scene = sample_scene(
+                DatasetConfig(dataset_id="probe", distractor_count=(0, 0)), 0)
+            model, data, mj = backend._model, backend._data, backend._mujoco
+            joint = model.joint("object_free")
+            if failure == "angular_velocity":
+                data.qvel[joint.dofadr[0] + 3] = 25
+            else:
+                adr = joint.qposadr[0]
+                data.qpos[adr:adr + 3] = [.96, 0, .035]
+                data.qpos[adr + 3:adr + 7] = [np.cos(np.pi / 8), 0, 0, np.sin(np.pi / 8)]
+                mj.mj_forward(model, data)
+>           with pytest.raises(ValueError, match="settled|bounds"):
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_labels.py:157: Failed
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_labels.py::test_settling_checks_rotation_and_world_bounds[angular_velocity]
+FAILED tests/test_rgbd_dataset_labels.py::test_settling_checks_rotation_and_world_bounds[rotated_bounds]
+2 failed, 4 deselected in 0.27s

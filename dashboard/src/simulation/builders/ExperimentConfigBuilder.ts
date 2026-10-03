@@ -22,8 +22,10 @@ const forbiddenKeys = new Set([
 ]);
 
 const defaultDraft: ExperimentDraft = {
-  backend: "MOCK",
+  backend: "MUJOCO",
   run_type: "SINGLE",
+  input_mode: "RGBD",
+  user_instruction: "将红色方块放到绿色区域",
   scenarios: ["S01_NORMAL_STATIC"],
   control_modes: ["PCSC"],
   seeds: [0],
@@ -42,7 +44,7 @@ const defaultDraft: ExperimentDraft = {
     cache_policy: "CACHE_ENABLED",
     retry_budget: 2,
     supervision_period_ms: 300,
-    timeout_ms: 30000,
+    timeout_ms: 120000,
   },
   domain_randomization: { enabled: false, level: "NONE" },
   tags: [],
@@ -66,6 +68,14 @@ export class ExperimentConfigBuilder {
 
   backend(backend: SimulationBackend): ExperimentConfigBuilder {
     return this.next({ backend });
+  }
+
+  inputMode(input_mode: "RGBD" | "LEGACY_PIPELINE"): ExperimentConfigBuilder {
+    return this.next({ input_mode });
+  }
+
+  instruction(user_instruction: string): ExperimentConfigBuilder {
+    return this.next({ user_instruction });
   }
 
   scenario(scenario: string): ExperimentConfigBuilder {

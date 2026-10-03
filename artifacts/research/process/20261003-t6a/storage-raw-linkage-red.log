@@ -1,0 +1,221 @@
+.................................FFFFFFFF                                [100%]
+=================================== FAILURES ===================================
+_____ test_raw_evidence_from_different_acquisition_is_rejected[timestamp] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_raw_evidence_from_differe0')
+changed = 'timestamp'
+
+    @pytest.mark.parametrize("changed", ["timestamp", "episode", "calibration", "rgb", "physics"])
+    def test_raw_evidence_from_different_acquisition_is_rejected(tmp_path, changed):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+        record = sample_record(raw=True)
+        raw = record.raw_captured_frame
+        payload = raw.observation.model_dump()
+        if changed == "timestamp":
+            payload["captured_at"] = "2026-01-01T00:00:00+00:00"
+        elif changed == "episode":
+            payload["episode_id"] = "another-episode"
+        elif changed == "calibration":
+            payload["intrinsics"] = (11.0, 10.0, 2.0, 1.5)
+        elif changed == "rgb":
+            stream = io.BytesIO()
+            Image.new("RGB", (4, 3), (0, 0, 200)).save(stream, format="PNG")
+            payload["rgb_png_base64"] = base64.b64encode(stream.getvalue()).decode()
+        payload["checksum_sha256"] = ""
+        raw = replace(raw, observation=RGBDObservation.model_validate(payload))
+        if changed == "physics":
+            raw = replace(raw, physics_state_hash="other-state", pass_state_hashes=("other-state",)*3)
+        record = record.model_copy(update={"raw_captured_frame": raw})
+        writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
+>       with pytest.raises(ValueError, match="(?i)raw"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:373: Failed
+______ test_raw_evidence_from_different_acquisition_is_rejected[episode] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_raw_evidence_from_differe1')
+changed = 'episode'
+
+    @pytest.mark.parametrize("changed", ["timestamp", "episode", "calibration", "rgb", "physics"])
+    def test_raw_evidence_from_different_acquisition_is_rejected(tmp_path, changed):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+        record = sample_record(raw=True)
+        raw = record.raw_captured_frame
+        payload = raw.observation.model_dump()
+        if changed == "timestamp":
+            payload["captured_at"] = "2026-01-01T00:00:00+00:00"
+        elif changed == "episode":
+            payload["episode_id"] = "another-episode"
+        elif changed == "calibration":
+            payload["intrinsics"] = (11.0, 10.0, 2.0, 1.5)
+        elif changed == "rgb":
+            stream = io.BytesIO()
+            Image.new("RGB", (4, 3), (0, 0, 200)).save(stream, format="PNG")
+            payload["rgb_png_base64"] = base64.b64encode(stream.getvalue()).decode()
+        payload["checksum_sha256"] = ""
+        raw = replace(raw, observation=RGBDObservation.model_validate(payload))
+        if changed == "physics":
+            raw = replace(raw, physics_state_hash="other-state", pass_state_hashes=("other-state",)*3)
+        record = record.model_copy(update={"raw_captured_frame": raw})
+        writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
+>       with pytest.raises(ValueError, match="(?i)raw"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:373: Failed
+____ test_raw_evidence_from_different_acquisition_is_rejected[calibration] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_raw_evidence_from_differe2')
+changed = 'calibration'
+
+    @pytest.mark.parametrize("changed", ["timestamp", "episode", "calibration", "rgb", "physics"])
+    def test_raw_evidence_from_different_acquisition_is_rejected(tmp_path, changed):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+        record = sample_record(raw=True)
+        raw = record.raw_captured_frame
+        payload = raw.observation.model_dump()
+        if changed == "timestamp":
+            payload["captured_at"] = "2026-01-01T00:00:00+00:00"
+        elif changed == "episode":
+            payload["episode_id"] = "another-episode"
+        elif changed == "calibration":
+            payload["intrinsics"] = (11.0, 10.0, 2.0, 1.5)
+        elif changed == "rgb":
+            stream = io.BytesIO()
+            Image.new("RGB", (4, 3), (0, 0, 200)).save(stream, format="PNG")
+            payload["rgb_png_base64"] = base64.b64encode(stream.getvalue()).decode()
+        payload["checksum_sha256"] = ""
+        raw = replace(raw, observation=RGBDObservation.model_validate(payload))
+        if changed == "physics":
+            raw = replace(raw, physics_state_hash="other-state", pass_state_hashes=("other-state",)*3)
+        record = record.model_copy(update={"raw_captured_frame": raw})
+        writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
+>       with pytest.raises(ValueError, match="(?i)raw"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:373: Failed
+________ test_raw_evidence_from_different_acquisition_is_rejected[rgb] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_raw_evidence_from_differe3')
+changed = 'rgb'
+
+    @pytest.mark.parametrize("changed", ["timestamp", "episode", "calibration", "rgb", "physics"])
+    def test_raw_evidence_from_different_acquisition_is_rejected(tmp_path, changed):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+        record = sample_record(raw=True)
+        raw = record.raw_captured_frame
+        payload = raw.observation.model_dump()
+        if changed == "timestamp":
+            payload["captured_at"] = "2026-01-01T00:00:00+00:00"
+        elif changed == "episode":
+            payload["episode_id"] = "another-episode"
+        elif changed == "calibration":
+            payload["intrinsics"] = (11.0, 10.0, 2.0, 1.5)
+        elif changed == "rgb":
+            stream = io.BytesIO()
+            Image.new("RGB", (4, 3), (0, 0, 200)).save(stream, format="PNG")
+            payload["rgb_png_base64"] = base64.b64encode(stream.getvalue()).decode()
+        payload["checksum_sha256"] = ""
+        raw = replace(raw, observation=RGBDObservation.model_validate(payload))
+        if changed == "physics":
+            raw = replace(raw, physics_state_hash="other-state", pass_state_hashes=("other-state",)*3)
+        record = record.model_copy(update={"raw_captured_frame": raw})
+        writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
+>       with pytest.raises(ValueError, match="(?i)raw"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:373: Failed
+______ test_raw_evidence_from_different_acquisition_is_rejected[physics] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_raw_evidence_from_differe4')
+changed = 'physics'
+
+    @pytest.mark.parametrize("changed", ["timestamp", "episode", "calibration", "rgb", "physics"])
+    def test_raw_evidence_from_different_acquisition_is_rejected(tmp_path, changed):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+        record = sample_record(raw=True)
+        raw = record.raw_captured_frame
+        payload = raw.observation.model_dump()
+        if changed == "timestamp":
+            payload["captured_at"] = "2026-01-01T00:00:00+00:00"
+        elif changed == "episode":
+            payload["episode_id"] = "another-episode"
+        elif changed == "calibration":
+            payload["intrinsics"] = (11.0, 10.0, 2.0, 1.5)
+        elif changed == "rgb":
+            stream = io.BytesIO()
+            Image.new("RGB", (4, 3), (0, 0, 200)).save(stream, format="PNG")
+            payload["rgb_png_base64"] = base64.b64encode(stream.getvalue()).decode()
+        payload["checksum_sha256"] = ""
+        raw = replace(raw, observation=RGBDObservation.model_validate(payload))
+        if changed == "physics":
+            raw = replace(raw, physics_state_hash="other-state", pass_state_hashes=("other-state",)*3)
+        record = record.model_copy(update={"raw_captured_frame": raw})
+        writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
+>       with pytest.raises(ValueError, match="(?i)raw"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:373: Failed
+________ test_corrupted_observation_requires_raw_evidence[corruption0] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_corrupted_observation_req0')
+corruption = {'depth_noise_m': 0.002}
+
+    @pytest.mark.parametrize("corruption", [{"depth_noise_m": 0.002}, {"invalid_depth_fraction": 0.1}])
+    def test_corrupted_observation_requires_raw_evidence(tmp_path, corruption):
+        record = sample_record()
+        scene = models().SceneSpec.from_parameters(
+            {**record.scene.scene_parameters, **corruption}, "asset-a", 1)
+        record = record.model_copy(update={"scene": scene})
+        writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
+>       with pytest.raises(ValueError, match="(?i)raw"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:385: Failed
+________ test_corrupted_observation_requires_raw_evidence[corruption1] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_corrupted_observation_req1')
+corruption = {'invalid_depth_fraction': 0.1}
+
+    @pytest.mark.parametrize("corruption", [{"depth_noise_m": 0.002}, {"invalid_depth_fraction": 0.1}])
+    def test_corrupted_observation_requires_raw_evidence(tmp_path, corruption):
+        record = sample_record()
+        scene = models().SceneSpec.from_parameters(
+            {**record.scene.scene_parameters, **corruption}, "asset-a", 1)
+        record = record.model_copy(update={"scene": scene})
+        writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
+>       with pytest.raises(ValueError, match="(?i)raw"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:385: Failed
+___________________ test_reader_verifies_raw_physics_linkage ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-99/test_reader_verifies_raw_physi0')
+
+    def test_reader_verifies_raw_physics_linkage(tmp_path):
+        writer, _, _ = write_fixture(tmp_path, raw=True)
+        record = writer.records[0]
+>       assert "raw_state" in record.paths
+E       AssertionError: assert 'raw_state' in {'camera': 'episodes/e-g-0e9a056d2e3f7e25826d662bad6b9d87/s-36f14d54ae46aeff6407ea6a9076d05c/camera.json', 'depth': 'e...png', 'instance': 'episodes/e-g-0e9a056d2e3f7e25826d662bad6b9d87/s-36f14d54ae46aeff6407ea6a9076d05c/instance.npy', ...}
+E        +  where {'camera': 'episodes/e-g-0e9a056d2e3f7e25826d662bad6b9d87/s-36f14d54ae46aeff6407ea6a9076d05c/camera.json', 'depth': 'e...png', 'instance': 'episodes/e-g-0e9a056d2e3f7e25826d662bad6b9d87/s-36f14d54ae46aeff6407ea6a9076d05c/instance.npy', ...} = SampleRecord(schema_version='rgbd.dataset.v1', sample_id='s-36f14d54ae46aeff6407ea6a9076d05c', group_id='g-0e9a056d2e3...al_hash='', status='NEGATIVE', source='mujoco_camera', label_source='SIMULATOR_GROUND_TRUTH', execution_verified=False).paths
+
+tests/test_rgbd_dataset_integrity.py:392: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_integrity.py::test_raw_evidence_from_different_acquisition_is_rejected[timestamp]
+FAILED tests/test_rgbd_dataset_integrity.py::test_raw_evidence_from_different_acquisition_is_rejected[episode]
+FAILED tests/test_rgbd_dataset_integrity.py::test_raw_evidence_from_different_acquisition_is_rejected[calibration]
+FAILED tests/test_rgbd_dataset_integrity.py::test_raw_evidence_from_different_acquisition_is_rejected[rgb]
+FAILED tests/test_rgbd_dataset_integrity.py::test_raw_evidence_from_different_acquisition_is_rejected[physics]
+FAILED tests/test_rgbd_dataset_integrity.py::test_corrupted_observation_requires_raw_evidence[corruption0]
+FAILED tests/test_rgbd_dataset_integrity.py::test_corrupted_observation_requires_raw_evidence[corruption1]
+FAILED tests/test_rgbd_dataset_integrity.py::test_reader_verifies_raw_physics_linkage
+8 failed, 33 passed in 3.26s

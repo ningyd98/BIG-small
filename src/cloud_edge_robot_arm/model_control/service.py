@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from cloud_edge_robot_arm.model_control.catalog import load_small_model_catalog
@@ -24,6 +25,9 @@ from cloud_edge_robot_arm.model_control.models import (
 from cloud_edge_robot_arm.model_control.providers.ollama import OllamaTransport
 from cloud_edge_robot_arm.model_control.repository import PlannerProfileRepository
 from cloud_edge_robot_arm.model_control.secret_store import SecretStore
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
 
 
 class ModelControlService:
@@ -392,8 +396,31 @@ class ModelControlService:
         sample_scene: str,
         control_mode: str,
         transport: OllamaTransport | None = None,
+        input_mode: str = "RGBD",
     ) -> dict[str, Any]:
         """执行 planner dry-run，明确 dispatch=false 且 hardware_execution=false。"""
+
+        if input_mode == "RGBD":
+            from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
+            from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+            from cloud_edge_robot_arm.vision.capture import capture_simulated_observation
+
+            try:
+                observation = capture_simulated_observation()
+                planner = self.visual_planner()
+                result = PlanningPipeline(planner=planner).process(InitialPlanningRequest(
+                    request_id="rgbd-dry-run-" + uuid4().hex, user_instruction=user_instruction,
+                    observation=observation, control_mode="PERIODIC_CLOUD_SUPERVISION" if control_mode == "PCSC" else "EVENT_TRIGGERED_EDGE_AUTONOMY"))
+                return {"input_mode": "RGBD", "dispatch": False, "hardware_execution": False,
+                        "evaluation_scope": "RGBD_PLANNING_ONLY", "provider_kind": planner.provider.upper(),
+                        "model_name": planner.model_name, "parse_result": result.outcome.value,
+                        "reason": result.reason, "observation": observation.evidence(),
+                        "raw_planner_output": result.attempts[0].draft.raw_text if result.attempts else "",
+                        "validation_errors": result.validation.errors, "repair_attempts": 0,
+                        "final_contract": result.contract.model_dump(mode="json") if result.contract else None}
+            except Exception as exc:
+                return {"input_mode": "RGBD", "dispatch": False, "hardware_execution": False,
+                        "parse_result": "BLOCKED_BY_ENV", "reason": type(exc).__name__, "final_contract": None}
 
         active_id = self.repository.get_active_profile_id()
         profile = self.repository.get_profile(active_id) if active_id else None
@@ -421,6 +448,22 @@ class ModelControlService:
             "repair_attempts": 0,
             "final_contract": {},
         }
+
+    def visual_planner(self) -> RGBDPlannerAdapter:
+        """为规划、工作进程和试运行解析同一份当前启用的模型配置。"""
+        from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+
+        active_id = self.repository.get_active_profile_id()
+        if not active_id:
+            return RGBDPlannerAdapter.from_environment()
+        profile = self.repository.get_profile(active_id)
+        if profile.provider_kind not in {PlannerProviderKind.OLLAMA, PlannerProviderKind.OPENAI_COMPATIBLE}:
+            raise RGBDModelUnavailable("RGBD_MODEL_UNAVAILABLE: active profile is a legacy text/Mock planner")
+        return RGBDPlannerAdapter(base_url=profile.base_url, model=profile.model_name,
+            provider="ollama" if profile.provider_kind == PlannerProviderKind.OLLAMA else "openai_compatible",
+            api_key=self.secret_store.get_secret(profile.profile_id) or "",
+            chat_path=profile.chat_completions_path, timeout_s=profile.timeout_seconds,
+            allow_paid=os.environ.get("BIGSMALL_VLM_ALLOW_PAID_CALL", "").lower() == "true")
 
     def _with_active_flag(self, profile: ModelProviderProfile) -> ModelProviderProfile:
         return profile.model_copy(

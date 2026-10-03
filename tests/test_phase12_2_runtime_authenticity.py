@@ -2093,6 +2093,7 @@ def _row(
         "research_question": "RQ1",
         "profile": "validation",
         "backend": "MOCK",
+        "input_mode": "LEGACY_PIPELINE",
         "scenario_id": "S01_NORMAL_STATIC",
         "control_mode": "PCSC",
         "seed": 0,

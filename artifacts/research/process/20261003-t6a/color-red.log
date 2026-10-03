@@ -1,0 +1,29 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_capture_rejects_unsettled_scene_and_unknown_parameters __________
+
+    def test_capture_rejects_unsettled_scene_and_unknown_parameters() -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        scene = sample_scene(DatasetConfig(dataset_id="labels"), 17)
+        with MuJoCoCaptureSession(SimulatorConfig()) as session:
+            session.apply_scene(scene)
+            with pytest.raises(ValueError, match="settled"):
+                OfflineSceneAdapter(session, settle_steps=0).capture()
+            bad = scene.model_copy(deep=True)
+            bad.scene_parameters["unapplied"] = 99
+            with pytest.raises(ValueError, match="parameters"):
+                session.apply_scene(bad)
+            wrong_color = scene.model_copy(deep=True)
+            wrong_color.scene_parameters["target"]["color_name"] = "red"
+            wrong_color.scene_parameters["target"]["rgba"] = [.08, .2, .9, 1]
+>           with pytest.raises(ValueError, match="color"):
+E           Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_labels.py:132: Failed
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_labels.py::test_capture_rejects_unsettled_scene_and_unknown_parameters
+1 failed, 5 deselected in 0.38s

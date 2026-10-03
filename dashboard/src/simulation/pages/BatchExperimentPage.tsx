@@ -27,7 +27,7 @@ export function BatchExperimentPage() {
   const modeManifest = BatchPlanBuilder.modeComparison({
     scenario: "S01_NORMAL_STATIC",
     seed: 0,
-    backend: "MOCK",
+    backend: "MUJOCO",
   });
 
   return (

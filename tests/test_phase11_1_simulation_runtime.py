@@ -33,6 +33,7 @@ def _client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
 def _draft(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "backend": "MOCK",
+        "input_mode": "LEGACY_PIPELINE",
         "run_type": "SINGLE",
         "scenarios": ["S01_NORMAL_STATIC"],
         "control_modes": ["PCSC"],

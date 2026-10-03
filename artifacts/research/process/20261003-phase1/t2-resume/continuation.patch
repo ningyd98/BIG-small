@@ -1,0 +1,375 @@
+--- a/src/cloud_edge_robot_arm/vision/observations.py
++++ b/src/cloud_edge_robot_arm/vision/observations.py
+@@ -215,13 +215,27 @@
+ def observation_from_sensor_frame(frame: SensorFrame, *, source: str) -> RGBDObservation:
+     if not frame.rgb or not frame.depth or not frame.intrinsics or not frame.camera_to_world:
+         raise ValueError("RGBD_CAMERA_DATA_MISSING")
++    if frame.captured_at is None:
++        raise ValueError("captured_at must record sensor acquisition time")
++    if (
++        type(frame.width) is not int
++        or type(frame.height) is not int
++        or not 1 <= frame.width <= 1280
++        or not 1 <= frame.height <= 720
++    ):
++        raise ValueError("RGB-D dimensions must be integers within 1280 x 720")
++    pixel_count = frame.width * frame.height
++    if len(frame.rgb) != pixel_count * 3:
++        raise ValueError("RGB size must equal width * height * 3")
++    if len(frame.depth) != pixel_count:
++        raise ValueError("depth size must equal width * height")
+     image = Image.frombytes("RGB", (frame.width, frame.height), frame.rgb)
+     output = io.BytesIO()
+     image.save(output, format="PNG")
+     return RGBDObservation.model_validate(
+         {
+             "frame_id": frame.frame_id,
+-            "captured_at": frame.captured_at or datetime.now(UTC),
++            "captured_at": frame.captured_at,
+             "sim_time_s": frame.sim_time_s,
+             "width": frame.width,
+             "height": frame.height,
+--- a/src/cloud_edge_robot_arm/simulation/mujoco/camera.py
++++ b/src/cloud_edge_robot_arm/simulation/mujoco/camera.py
+@@ -22,6 +22,8 @@
+         self._width = width
+         self._height = height
+         self._camera_id = model.camera("rgbd").id
++        model.vis.global_.offwidth = max(model.vis.global_.offwidth, width)
++        model.vis.global_.offheight = max(model.vis.global_.offheight, height)
+         self._renderer = mujoco.Renderer(model, height=height, width=width)
+ 
+     def capture(
+@@ -80,23 +82,45 @@
+         episode_id: str | None,
+         include_instances: bool,
+     ) -> tuple[SensorFrame, tuple[int, ...], dict[int, str], tuple[str, ...]]:
++        captured_at = datetime.now(UTC)
+         started = perf_counter()
+         initial_hash = self._physics_state_hash(data)
++        camera_position = np.asarray(data.cam_xpos[self._camera_id]).copy()
++        camera_rotation = np.asarray(data.cam_xmat[self._camera_id]).copy()
++        camera_fovy = float(self._model.cam_fovy[self._camera_id])
++        depth_znear = float(self._model.vis.map.znear)
++        depth_zfar = float(self._model.vis.map.zfar)
++        depth_extent = float(self._model.stat.extent)
++
++        def check_calibration() -> None:
++            if (
++                not np.array_equal(data.cam_xpos[self._camera_id], camera_position)
++                or not np.array_equal(data.cam_xmat[self._camera_id], camera_rotation)
++                or float(self._model.cam_fovy[self._camera_id]) != camera_fovy
++                or float(self._model.vis.map.znear) != depth_znear
++                or float(self._model.vis.map.zfar) != depth_zfar
++                or float(self._model.stat.extent) != depth_extent
++            ):
++                raise RuntimeError("camera calibration changed during capture")
++
+         self._renderer.disable_depth_rendering()
+         self._renderer.disable_segmentation_rendering()
+         self._renderer.update_scene(data, camera=self._camera_id)
+         if self._physics_state_hash(data) != initial_hash:
+             raise RuntimeError("physics state changed while preparing camera scene")
++        check_calibration()
+         pass_hashes: list[str] = []
+         rgb = self._renderer.render().copy()
+         pass_hashes.append(self._physics_state_hash(data))
+         if pass_hashes[-1] != initial_hash:
+             raise RuntimeError("physics state changed during RGB render")
++        check_calibration()
+         self._renderer.enable_depth_rendering()
+         depth = self._renderer.render().copy()
+         pass_hashes.append(self._physics_state_hash(data))
+         if pass_hashes[-1] != initial_hash:
+             raise RuntimeError("physics state changed during depth render")
++        check_calibration()
+         self._renderer.disable_depth_rendering()
+         instance_ids: tuple[int, ...] = ()
+         instance_labels: dict[int, str] = {}
+@@ -107,6 +131,7 @@
+             pass_hashes.append(self._physics_state_hash(data))
+             if pass_hashes[-1] != initial_hash:
+                 raise RuntimeError("physics state changed during instance render")
++            check_calibration()
+             geom_pixels = np.where(
+                 segmentation[:, :, 1] == int(self._mujoco.mjtObj.mjOBJ_GEOM),
+                 segmentation[:, :, 0],
+@@ -126,20 +151,17 @@
+         depth[~valid | (depth <= 0)] = 0
+         valid = np.isfinite(depth) & (depth > 0)
+         # MuJoCo camera: +X right, +Y up, -Z forward; optical: +Y down, +Z forward.
+-        optical_to_world = np.asarray(data.cam_xmat[self._camera_id]).reshape(3, 3) @ np.diag(
+-            [1, -1, -1]
+-        )
++        optical_to_world = camera_rotation.reshape(3, 3) @ np.diag([1, -1, -1])
+         transform = np.eye(4)
+         transform[:3, :3] = optical_to_world
+-        transform[:3, 3] = data.cam_xpos[self._camera_id]
+-        focal = (self._height / 2) / math.tan(
+-            math.radians(float(self._model.cam_fovy[self._camera_id])) / 2
+-        )
++        transform[:3, 3] = camera_position
++        focal = (self._height / 2) / math.tan(math.radians(camera_fovy) / 2)
+         intrinsics = (focal, focal, (self._width - 1) / 2, (self._height - 1) / 2)
+         calibration_values = np.asarray((*intrinsics, *transform.ravel()), dtype="<f8")
+         calibration = hashlib.sha256(calibration_values.tobytes()).hexdigest()[:16]
+         if self._physics_state_hash(data) != initial_hash:
+             raise RuntimeError("physics state changed while finalizing camera calibration")
++        check_calibration()
+         frame = SensorFrame(
+             frame_id=f"rgbd-{uuid4().hex}",
+             sim_time_s=float(data.time),
+@@ -149,7 +171,7 @@
+             depth=tuple(float(value) for value in depth.ravel()),
+             intrinsics=intrinsics,
+             camera_to_world=tuple(float(value) for value in transform.ravel()),
+-            captured_at=datetime.now(UTC),
++            captured_at=captured_at,
+             latency_ms=(perf_counter() - started) * 1000,
+             scene_id=scene_id,
+             episode_id=episode_id,
+--- a/tests/test_rgbd_observations.py
++++ b/tests/test_rgbd_observations.py
+@@ -5,6 +5,7 @@
+ import base64
+ import io
+ import struct
++from dataclasses import replace
+ from datetime import UTC, datetime
+ 
+ import pytest
+@@ -12,7 +13,7 @@
+ from pydantic import ValidationError
+ 
+ from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+-from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
++from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig, SensorFrame
+ from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+ 
+ 
+@@ -33,6 +34,82 @@
+     }
+ 
+ 
++@pytest.fixture
++def sensor_frame() -> SensorFrame:
++    return SensorFrame(
++        frame_id="historical-camera-frame",
++        captured_at=datetime(2020, 1, 1, tzinfo=UTC),
++        sim_time_s=0.0,
++        width=2,
++        height=2,
++        rgb=bytes((255, 0, 0)) * 4,
++        depth=(2.0, 2.0, 2.0, 0.0),
++        intrinsics=(2.0, 2.0, 0.0, 0.0),
++        camera_to_world=(1, 0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 3, 0, 0, 0, 1),
++    )
++
++
++def test_sensor_frame_requires_acquisition_timestamp(sensor_frame: SensorFrame) -> None:
++    from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
++
++    with pytest.raises(ValueError, match="captured_at"):
++        observation_from_sensor_frame(
++            replace(sensor_frame, captured_at=None), source="mujoco_camera"
++        )
++
++
++def test_historical_sensor_frame_preserves_acquisition_timestamp(sensor_frame: SensorFrame) -> None:
++    from cloud_edge_robot_arm.vision.observations import (
++        RGBDObservation,
++        observation_from_sensor_frame,
++    )
++
++    observation = observation_from_sensor_frame(sensor_frame, source="mujoco_camera")
++    restored = RGBDObservation.model_validate_json(observation.model_dump_json())
++    assert restored.captured_at == datetime(2020, 1, 1, tzinfo=UTC)
++    assert restored.crop((0, 0, 1, 1)).captured_at == restored.captured_at
++
++
++@pytest.mark.parametrize("length", [11, 13])
++def test_sensor_frame_rejects_wrong_rgb_payload_length(
++    sensor_frame: SensorFrame, length: int
++) -> None:
++    from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
++
++    with pytest.raises(ValueError):
++        observation_from_sensor_frame(
++            replace(sensor_frame, rgb=bytes(length)), source="mujoco_camera"
++        )
++
++
++@pytest.mark.parametrize(
++    "changes",
++    [
++        {"width": 0},
++        {"width": -1},
++        {"width": 1281},
++        {"height": 0},
++        {"height": 721},
++        {"width": 1.5},
++        {"rgb": bytes(11)},
++        {"rgb": bytes(13)},
++        {"depth": (2.0,) * 3},
++        {"depth": (2.0,) * 5},
++    ],
++)
++def test_sensor_frame_validates_bounds_and_payloads_before_encoding(
++    sensor_frame: SensorFrame, changes: dict[str, object], monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
++
++    def unexpected_encoding(*args: object, **kwargs: object) -> None:
++        pytest.fail("invalid raw RGB-D reached image encoding")
++
++    monkeypatch.setattr(Image, "frombytes", unexpected_encoding)
++    with pytest.raises(ValueError):
++        observation_from_sensor_frame(replace(sensor_frame, **changes), source="mujoco_camera")
++
++
+ def test_mujoco_camera_produces_registered_rgb_and_metric_depth() -> None:
+     backend = MuJoCoPhysicsBackend()
+     try:
+--- a/tests/test_rgbd_capture_session.py
++++ b/tests/test_rgbd_capture_session.py
+@@ -5,6 +5,7 @@
+ import json
+ import math
+ import struct
++from datetime import UTC, datetime, timedelta
+ 
+ import mujoco
+ import pytest
+@@ -68,6 +69,35 @@
+     assert len(created) == 1
+     with pytest.raises(RuntimeError):
+         created[0].render()
++
++
++def test_capture_session_supports_maximum_resolution() -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    config = SimulatorConfig(camera_width=1280, camera_height=720)
++    with MuJoCoCaptureSession(config) as session:
++        captured = session.capture_with_instances()
++        observation = captured.observation
++        assert (observation.width, observation.height) == (1280, 720)
++        assert len(observation.depth_values()) == 1280 * 720
++        assert len(observation.valid_mask_bytes()) == 1280 * 720
++        assert len(captured.instance_ids) == 1280 * 720
++        assert len(captured.pass_state_hashes) == 3
++        assert len(set(captured.pass_state_hashes)) == 1
++
++
++def test_camera_preserves_larger_offscreen_framebuffer() -> None:
++    from cloud_edge_robot_arm.simulation.mujoco.camera import MuJoCoRGBDCamera
++
++    model = mujoco.MjModel.from_xml_path(SimulatorConfig().model_path)
++    model.vis.global_.offwidth = 960
++    model.vis.global_.offheight = 600
++    camera = MuJoCoRGBDCamera(mujoco, model, width=320, height=240)
++    try:
++        assert model.vis.global_.offwidth == 960
++        assert model.vis.global_.offheight == 600
++    finally:
++        camera.close()
+ 
+ 
+ def test_capture_artifacts_include_raw_depth_mask_instances_and_calibration(tmp_path) -> None:
+@@ -112,3 +142,72 @@
+             monkeypatch.setattr(renderer_type, "render", moved_render)
+             session.capture_with_instances()
+     assert backend._camera is None
++
++
++def test_capture_timestamp_includes_render_latency(monkeypatch: pytest.MonkeyPatch) -> None:
++    from cloud_edge_robot_arm.simulation.mujoco import camera
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    started_at = datetime(2026, 10, 3, tzinfo=UTC)
++    current_time = started_at
++
++    class CaptureClock:
++        @staticmethod
++        def now(tz):
++            return current_time.astimezone(tz)
++
++    with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++        renderer_type = type(session._backend._camera._renderer)
++        original_render = renderer_type.render
++
++        def delayed_render(renderer, *args, **kwargs):
++            nonlocal current_time
++            image = original_render(renderer, *args, **kwargs)
++            current_time += timedelta(seconds=2)
++            return image
++
++        monkeypatch.setattr(camera, "datetime", CaptureClock)
++        monkeypatch.setattr(renderer_type, "render", delayed_render)
++        captured = session.capture_with_instances()
++
++    assert captured.observation.captured_at == started_at
++    assert (current_time - captured.observation.captured_at).total_seconds() == 6
++
++
++@pytest.mark.parametrize("field", ["cam_xpos", "cam_xmat", "cam_fovy", "znear", "zfar", "extent"])
++def test_concurrent_calibration_change_rejects_mixed_frame(
++    monkeypatch: pytest.MonkeyPatch, field: str
++) -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    with pytest.raises(RuntimeError, match="camera calibration changed"):
++        with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++            backend = session._backend
++            assert backend._camera is not None and backend._data is not None
++            renderer_type = type(backend._camera._renderer)
++            original_render = renderer_type.render
++            count = 0
++
++            def changed_calibration_render(renderer, *args, **kwargs):
++                nonlocal count
++                image = original_render(renderer, *args, **kwargs)
++                count += 1
++                if count == 1:
++                    camera_id = backend._camera._camera_id
++                    if field == "cam_fovy":
++                        backend._model.cam_fovy[camera_id] += 1.0
++                    elif field == "cam_xpos":
++                        backend._data.cam_xpos[camera_id, 0] += 0.1
++                    elif field == "cam_xmat":
++                        # A 180-degree rotation remains a valid right-handed calibration.
++                        backend._data.cam_xmat[camera_id, :6] *= -1
++                    elif field == "extent":
++                        backend._model.stat.extent *= 1.1
++                    else:
++                        clipping = backend._model.vis.map
++                        setattr(clipping, field, getattr(clipping, field) * 1.1)
++                return image
++
++            monkeypatch.setattr(renderer_type, "render", changed_calibration_render)
++            session.capture_with_instances()
++    assert backend._camera is None
+--- a/src/cloud_edge_robot_arm/model_control/service.py
++++ b/src/cloud_edge_robot_arm/model_control/service.py
+@@ -450,7 +450,7 @@
+         }
+ 
+     def visual_planner(self) -> RGBDPlannerAdapter:
+-        """Resolve the same active profile for planning, worker and dry-run."""
++        """为规划、工作进程和试运行解析同一份当前启用的模型配置。"""
+         from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+ 
+         active_id = self.repository.get_active_profile_id()
+--- a/assets/manifest.yaml
++++ b/assets/manifest.yaml
+@@ -3,8 +3,8 @@
+ assets:
+   - id: franka_panda_mujoco_scene
+     path: robots/franka_panda/scene.xml
+-    sha256: 74d2a3339df4d97a14d7d3d4c20c6879fe3cfa382e59e46569622fd2d5a8cfc1
++    sha256: 6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1
+     source: BIG-small Phase 9 reference MJCF generated for CI physics validation
+-    version: phase9.reference.v1
++    version: phase9.reference.v2
+     license: MIT-compatible project asset
+     units: SI

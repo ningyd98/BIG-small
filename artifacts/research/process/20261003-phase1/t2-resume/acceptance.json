@@ -1,0 +1,103 @@
+{
+  "task": "T2",
+  "status": "DONE",
+  "scope": "P1 同步 RGB-D 增补验收；不升级模型、物理任务或正式研究结果",
+  "date": "2026-10-03",
+  "changed_files": [
+    "src/cloud_edge_robot_arm/vision/observations.py",
+    "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
+    "tests/test_rgbd_observations.py",
+    "tests/test_rgbd_capture_session.py",
+    "src/cloud_edge_robot_arm/model_control/service.py",
+    "assets/manifest.yaml"
+  ],
+  "changes": [
+    "拒绝缺失采集时间；保留历史帧时刻与裁剪身份",
+    "编码前严格检查尺寸和 RGB/depth 长度",
+    "时间戳记在采集开始，包含渲染延迟",
+    "跨 pass 复核相机位姿、视场角、近远裁剪面与深度尺度",
+    "支持 1280×720，保留更大的已有离屏缓冲区",
+    "补齐 visual_planner 中文说明；为现有 RGB-D 场景更新资产哈希及版本 phase9.reference.v2"
+  ],
+  "validation": {
+    "final_acceptance": {
+      "passed": 123,
+      "failed": 0,
+      "warnings": 1,
+      "duration_s": 41.08,
+      "log": "final-acceptance-tests.log",
+      "command": "MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_observations.py tests/test_rgbd_capture_session.py tests/test_phase9_mujoco_load.py tests/test_phase9_mujoco_physics_step.py tests/test_phase9_asset_registry.py tests/test_research_provenance.py tests/test_rgbd_planning.py tests/test_rgbd_runtime.py tests/test_rgbd_isaac_transport.py tests/test_phase11_1_simulation_runtime.py tests/test_chinese_comment_checker.py"
+    },
+    "t2_focused": {
+      "passed": 42,
+      "failed": 0,
+      "log": "green-t2-acceptance-wave2.log"
+    },
+    "broader_before_asset_manifest_fix": {
+      "passed": 773,
+      "failed": 1,
+      "failure": "test_phase9_asset_manifest_records_hash_and_license",
+      "failure_resolution": "修复资产清单，已纳入最终123项通过回归",
+      "excluded_files": [
+        "tests/test_phase12_1_actual_runner_semantics.py",
+        "tests/test_phase12_2_runtime_authenticity.py"
+      ],
+      "log": "final-regression.log"
+    },
+    "complete_full_suite_passed": false,
+    "initial_full_suite": {
+      "status": "INTERRUPTED_FOR_REVIEW_FIXES",
+      "exit_code": 2,
+      "passed": 164,
+      "failed": 1,
+      "failure": "test_model_control_public_api_has_chinese_docstrings",
+      "failure_resolution": "中文说明已修复，最终123项复测覆盖",
+      "log": "full-pytest.log"
+    },
+    "ruff": {
+      "status": "PASS",
+      "log": "final-ruff.log"
+    },
+    "mypy": {
+      "status": "PASS",
+      "source_files": 7,
+      "log": "final-mypy.log"
+    },
+    "docs": {
+      "existing_findings": 30,
+      "new_findings": 0,
+      "log": "docs-comparison.json"
+    },
+    "source_hashes": "final-source-hashes.json"
+  },
+  "capture": {
+    "evidence_kind": "REAL_CAPTURE",
+    "path": "final-capture/measurement.json",
+    "max_error_m": 0.0027281284332274502,
+    "mean_error_m": 0.0007935903072357231,
+    "threshold_m": 0.005,
+    "sample_count": 100,
+    "valid_table_pixels": 36300,
+    "same_state_passes": 3,
+    "renderer_released": true,
+    "integrity": "final-capture-integrity.json"
+  },
+  "review": {
+    "status": "APPROVED",
+    "findings_fixed": 2,
+    "report": "task-2-rereview.md"
+  },
+  "boundaries": [
+    "单会话单写者，不承诺任意并发写后还原的检测或线程安全",
+    "平面高度误差不等于 G1 目标三维定位能力",
+    "REAL_VLM、研究 PHYSICS、正式实验及真实硬件均未执行",
+    "保留并行产生的原P1关闭记录，本报告是增补证据"
+  ],
+  "next_ready": [
+    "T6a",
+    "T3",
+    "T4"
+  ],
+  "committed": false,
+  "pushed": false
+}

@@ -2,6 +2,14 @@
 
 本文件记录当前实施状态与历史分支基线；论文、答辩和 README 必须同时说明证据版本与验收范围。
 
+## 2026-10-03 RGB-D 分阶段改造
+
+用户已授权按[代理执行计划](superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)启动实施并重建过程文档。当前首批 P1 的 T1 来源审计、T2 同步 RGB-D 采集均已完成并通过独立审查；88 项合并回归通过，真实采集 100 个桌面点的最大高度反投影误差为 2.728 mm（门槛 5 mm）；尚未接受真实 VLM、视觉驱动物理抓放或新正式实验结果。
+
+本轮过程记录统一位于 `docs/research/process/`，启动基线位于 `artifacts/research/process/20261003-phase1/`。历史 Phase 验收保留，以下 Ubuntu 快照不自动升级为新研究方法的验收。软件契约通过、真实图像采集、真实模型调用和物理任务成功分别记账。
+
+后续 **T6a 静态数据工厂为 `IN_PROGRESS`**。共享数据契约、原子恢复/来源与分组校验、四个CLI已实现；124项数据测试、123项旧路径回归、定向Ruff/mypy（18 source文件）及[独立代码审查](../artifacts/research/process/20261003-t6a/final-review.md)通过。真实100个独立组已完成生成、校验、导出与离线重建，35正例/65负例，train/calibration/selection/test=80/5/5/10；1000组仍在真实生成，尚未通过全部T6a验收。见[进展摘要](../artifacts/research/process/20261003-t6a/acceptance-progress.json)。T6b的10000组未运行；静态感知记录均不作为动作成功证据，真实VLM、研究物理抓放、正式研究结果与硬件状态未因此升级。
+
 ## 2026-10-02 Ubuntu 当前快照
 
 项目全部按 Sim2Real 模拟设备路线开展，真实设备阶段禁用。部署与证据索引见 [Ubuntu 交接报告](handover/ubuntu_deployment_report.md)。Core、Dashboard、MuJoCo、ROS2、MoveIt 的本机验收 PASS；Isaac 和 Sim2Real 为 WARN（实际仿真已运行，全参数应用和严格配对未接受）；Phase13 真实模型 BLOCKED；Phase12 full 和 Thesis 为 WARN。

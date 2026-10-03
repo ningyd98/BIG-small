@@ -1,0 +1,42 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_tiny_budget_does_not_write_unbudgeted_metadata[1] ____________
+
+cpu_factory = (<module 'cloud_edge_robot_arm.datasets.rgbd.generator' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_ar...n'>, <function cpu_factory.<locals>.scene at 0x7dfc27373060>, <function cpu_factory.<locals>.labels at 0x7dfbfc9b22a0>)
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-123/test_tiny_budget_does_not_writ0')
+max_bytes = 1
+
+    @pytest.mark.parametrize("max_bytes", [1, 1024])
+    def test_tiny_budget_does_not_write_unbudgeted_metadata(cpu_factory, tmp_path, max_bytes):
+        module, config, session, _, _ = cpu_factory
+        result = module.generate_dataset(config.model_copy(update={"max_bytes": max_bytes}), tmp_path,
+                                         lambda: False)
+        assert result.status == "INCOMPLETE" and session.captures == 0
+        assert result.resources["manifest_persisted"] is False
+>       assert sum(p.stat().st_size for p in tmp_path.rglob("*") if p.is_file()) <= max_bytes
+E       assert 2358 <= 1
+E        +  where 2358 = sum(<generator object test_tiny_budget_does_not_write_unbudgeted_metadata.<locals>.<genexpr> at 0x7dfbfcaebb90>)
+
+tests/test_rgbd_dataset_generation.py:427: AssertionError
+__________ test_tiny_budget_does_not_write_unbudgeted_metadata[1024] ___________
+
+cpu_factory = (<module 'cloud_edge_robot_arm.datasets.rgbd.generator' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_ar...n'>, <function cpu_factory.<locals>.scene at 0x7dfbfc95fba0>, <function cpu_factory.<locals>.labels at 0x7dfbfc95f740>)
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-123/test_tiny_budget_does_not_writ1')
+max_bytes = 1024
+
+    @pytest.mark.parametrize("max_bytes", [1, 1024])
+    def test_tiny_budget_does_not_write_unbudgeted_metadata(cpu_factory, tmp_path, max_bytes):
+        module, config, session, _, _ = cpu_factory
+        result = module.generate_dataset(config.model_copy(update={"max_bytes": max_bytes}), tmp_path,
+                                         lambda: False)
+        assert result.status == "INCOMPLETE" and session.captures == 0
+        assert result.resources["manifest_persisted"] is False
+>       assert sum(p.stat().st_size for p in tmp_path.rglob("*") if p.is_file()) <= max_bytes
+E       assert 2364 <= 1024
+E        +  where 2364 = sum(<generator object test_tiny_budget_does_not_write_unbudgeted_metadata.<locals>.<genexpr> at 0x7dfbfc9ad2f0>)
+
+tests/test_rgbd_dataset_generation.py:427: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_generation.py::test_tiny_budget_does_not_write_unbudgeted_metadata[1]
+FAILED tests/test_rgbd_dataset_generation.py::test_tiny_budget_does_not_write_unbudgeted_metadata[1024]
+2 failed, 31 deselected in 0.34s

@@ -12,7 +12,7 @@ import hashlib
 import json
 import math
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from cloud_edge_robot_arm.dashboard.event_stream import DashboardEventStream
+from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
 from cloud_edge_robot_arm.dashboard.redaction import redact
 from cloud_edge_robot_arm.experiments.models import (
     CachePolicy,
@@ -93,7 +94,8 @@ FORBIDDEN_FIELDS = [
 class SimulationWorkbenchService:
     """仿真工作台服务 facade，桥接 scenario registry、runtime 和 artifact 导出。"""
 
-    def __init__(self, *, artifact_root: Path, event_stream: DashboardEventStream | None = None):
+    def __init__(self, *, artifact_root: Path, event_stream: DashboardEventStream | None = None,
+                 planner_factory: Callable[[], PlannerAdapter] | None = None):
         self.artifact_root = artifact_root
         self.phase_root = artifact_root / "phase11"
         self.runs_root = self.phase_root / "runs"
@@ -120,6 +122,7 @@ class SimulationWorkbenchService:
             database_path=database_path,
             event_stream=self.events,
             runtime_root=artifact_root / "phase11_1/runtime",
+            planner_factory=planner_factory,
         )
 
     def capabilities(self) -> SimulationCapabilitiesResponse:
@@ -256,12 +259,21 @@ class SimulationWorkbenchService:
         _validate_scenarios(draft.scenarios)
         manifest = self._manifest(draft, run_count=run_count)
         blockers = _backend_blockers(draft.backend, self.capabilities())
+        warnings = [] if not blockers else ["selected backend is not ready"]
+        if draft.input_mode == "RGBD":
+            warnings.append("RGBD_PLANNING_ONLY: captures real RGB/depth and validates a visual plan; task execution and grasp success are not evaluated")
+            if draft.backend not in {SimulationBackend.MUJOCO, SimulationBackend.ISAAC_SIM}:
+                blockers.append("RGBD requires a real simulator camera; Mock is LEGACY_PIPELINE only")
+            if any(scenario != "S01_NORMAL_STATIC" for scenario in draft.scenarios):
+                blockers.append("RGBD currently supports S01_NORMAL_STATIC only; fault evaluation requires LEGACY_PIPELINE")
+            if draft.domain_randomization.enabled:
+                blockers.append("RGBD domain randomization is not implemented")
         return ValidationResponse(
             valid=not blockers,
             manifest=manifest,
             run_count=run_count,
             blockers=blockers,
-            warnings=[] if not blockers else ["selected backend is not ready"],
+            warnings=warnings,
         )
 
     def list_runs(self) -> SimulationRunListResponse:

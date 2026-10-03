@@ -69,6 +69,15 @@ def check_scene_sufficiency(
     scene_staleness_ms: int = 5_000,
 ) -> str | None:
     """Return a reason string if the scene is insufficient, else None."""
+    if request.observation is not None:
+        age_ms = int((datetime.now(UTC) - request.observation.captured_at).total_seconds() * 1000)
+        if age_ms < -1000 or age_ms > scene_staleness_ms:
+            return f"RGBD observation is stale or future-dated (age={age_ms}ms, max={scene_staleness_ms}ms)"
+        try:
+            request.observation.depth_range()
+        except ValueError as exc:
+            return f"RGBD observation invalid: {exc}"
+        return None
     scene = request.scene
     now = datetime.now(UTC)
     age_ms = int((now - scene.updated_at).total_seconds() * 1_000)
@@ -467,9 +476,12 @@ class PlanningPipeline:
                 )
 
         # --- Scene sufficiency ---
-        insufficiency = check_scene_sufficiency(
-            request, scene_staleness_ms=self._scene_staleness_ms
-        )
+        if getattr(self._planner, "requires_rgbd", False) and request.observation is None:
+            insufficiency = "RGBD observation required: provide registered RGB, depth and calibration"
+        elif request.observation is not None and not getattr(self._planner, "requires_rgbd", False):
+            insufficiency = "RGBD observation requires a visual planner; text-only fallback is disabled"
+        else:
+            insufficiency = check_scene_sufficiency(request, scene_staleness_ms=self._scene_staleness_ms)
         if insufficiency is not None:
             response = InitialPlanningResponse(
                 request_id=request.request_id,
@@ -494,6 +506,9 @@ class PlanningPipeline:
             self._cache[request.request_id] = (request_hash, response)
             return response
         latency_ms = int((time.monotonic() - started) * 1_000)
+
+        if request.observation is not None and draft.observed_scene is not None:
+            request = request.model_copy(update={"scene": draft.observed_scene})
 
         raw_output_hash = hashlib.sha256(draft.raw_text.encode("utf-8")).hexdigest()
 

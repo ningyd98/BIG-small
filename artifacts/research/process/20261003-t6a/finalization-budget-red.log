@@ -1,0 +1,66 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____________ test_finalization_cannot_exceed_persistent_disk_budget ____________
+
+cpu_factory = (<module 'cloud_edge_robot_arm.datasets.rgbd.generator' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_ar...n'>, <function cpu_factory.<locals>.scene at 0x708e5056a7a0>, <function cpu_factory.<locals>.labels at 0x708e272b1620>)
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-119/test_finalization_cannot_excee0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x708e5057c320>
+
+    def test_finalization_cannot_exceed_persistent_disk_budget(cpu_factory, tmp_path, monkeypatch):
+        module, config, _, _, _ = cpu_factory
+        config = config.model_copy(update={"groups": 20})
+        pre_finalize = []
+        original = module.write_splits
+    
+        def measure(root, split, records):
+            pre_finalize.append(sum(p.stat().st_size for p in root.rglob("*") if p.is_file()))
+            return original(root, split, records)
+    
+        monkeypatch.setattr(module, "write_splits", measure)
+        assert module.generate_dataset(config, tmp_path / "baseline", lambda: False).status == "COMPLETE"
+        capped = config.model_copy(update={"max_bytes": pre_finalize[0] + 150_000})
+        root = tmp_path / "capped"
+        result = module.generate_dataset(capped, root, lambda: False)
+>       assert result.status == "INCOMPLETE"
+E       AssertionError: assert 'COMPLETE' == 'INCOMPLETE'
+E         
+E         - INCOMPLETE
+E         ? --
+E         + COMPLETE
+
+tests/test_rgbd_dataset_generation.py:362: AssertionError
+______________ test_finalization_reserves_atomic_write_free_space ______________
+
+cpu_factory = (<module 'cloud_edge_robot_arm.datasets.rgbd.generator' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_ar...n'>, <function cpu_factory.<locals>.scene at 0x708e2704fb00>, <function cpu_factory.<locals>.labels at 0x708e2704efc0>)
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-119/test_finalization_reserves_ato0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x708e2703bd40>
+
+    def test_finalization_reserves_atomic_write_free_space(cpu_factory, tmp_path, monkeypatch):
+        module, config, _, _, _ = cpu_factory
+        original = module.assign_splits
+        real_disk_usage = module.shutil.disk_usage
+        phase = {"finalizing": False}
+    
+        def mark_finalization(records, seed):
+            phase["finalizing"] = True
+            return original(records, seed)
+    
+        def available(path):
+            actual = real_disk_usage(path)
+            return actual._replace(free=12_000) if phase["finalizing"] else actual
+    
+        monkeypatch.setattr(module, "assign_splits", mark_finalization)
+        monkeypatch.setattr(module.shutil, "disk_usage", available)
+        result = module.generate_dataset(config, tmp_path, lambda: False)
+>       assert result.status == "INCOMPLETE"
+E       AssertionError: assert 'COMPLETE' == 'INCOMPLETE'
+E         
+E         - INCOMPLETE
+E         ? --
+E         + COMPLETE
+
+tests/test_rgbd_dataset_generation.py:387: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_generation.py::test_finalization_cannot_exceed_persistent_disk_budget
+FAILED tests/test_rgbd_dataset_generation.py::test_finalization_reserves_atomic_write_free_space
+2 failed, 19 deselected in 7.38s

@@ -343,3 +343,9 @@ describe("Phase 11 simulation toolkit", () => {
     expect(recovery.summary()).toContain("1 recovered");
   });
 });
+
+it("default experiments use actual RGB-D camera planning", () => {
+  const draft = ExperimentConfigBuilder.create().build();
+  expect(draft.backend).toBe("MUJOCO");
+  expect(draft.input_mode).toBe("RGBD");
+});

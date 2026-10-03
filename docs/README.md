@@ -7,8 +7,16 @@
 - [项目入口](../README.md): 当前能力、快速开始和安全声明。
 - [项目状态](project_status.md): 各能力域状态、验证入口、证据和硬件声明边界。
 - [当前权威状态](current_authoritative_status.md): 当前唯一权威状态入口。
+- [RGB-D 分阶段过程文档](research/process/README.md): 本轮进度、执行日志、验证矩阵、裁定与风险、变更记录和交接入口。
+- [RGB-D 研究证据清单](research/evidence_inventory.md): 历史来源边界与新研究审计规则。
+- [RGB-D 云边协同代理执行计划](superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md): 代理开发入口，按实际依赖、并行边界、阻塞处理和完成证据推进，明确基线与量化目标。
+- [研究设计与量化目标](superpowers/specs/2026-10-03-rgbd-evidence-research-design.md): B0—B5 对照、G0—G5 目标、数据隔离及统计协议的统一依据。
+- [修订开题报告](../output/doc/20261002-opening-proposal/开题报告.md)（[Word](../output/doc/20261002-opening-proposal/开题报告_执行决策闭环与创新提升_20261003.docx)）：执行决策闭环、两项主创新、量化提升判据和十二周研究安排。
+- [开题报告零基础图解说明](../output/doc/20261002-opening-proposal/开题报告_零基础项目准备与图解说明.md)：从抓放案例理解系统、两项创新和实验，附学习顺序、代码入口及开题准备清单。
 - [路线图](roadmap.md): Phase 11 仿真工作台之后的计划。
 - [术语表](glossary.md): PCSC、ETEAC、AUTO、证据、溯源等术语。
+- [开题评审通俗全景指南](开题评审项目全貌通俗说明指南.md): 面向 MEM 开题答辩、项目通俗拆解、实验账本与高频 Q&A。
+- [推荐核心参考文献学习指南](开题与论文推荐核心参考文献学习指南.md): 5 大核心领域权威文献、精读剖析、项目映射与 MEM 理论支撑。
 
 ## 系统架构
 

@@ -1,0 +1,121 @@
+.FF.                                                                     [100%]
+=================================== FAILURES ===================================
+____________ test_capture_labels_use_real_instances_and_reuse_model ____________
+
+    def test_capture_labels_use_real_instances_and_reuse_model() -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        config = DatasetConfig(dataset_id="labels", distractor_count=(3, 3), half_size=(.04, .04),
+                               camera_height=(1.2, 1.2),
+                               depth_noise_m=(0,), invalid_depth_fractions=(0,))
+        with MuJoCoCaptureSession(SimulatorConfig()) as session:
+            scene = sample_scene(config, 17)
+            session.apply_scene(scene)
+            adapter = OfflineSceneAdapter(session, settle_steps=config.settle_steps)
+>           frame, truth = adapter.capture()
+                           ^^^^^^^^^^^^^^^^^
+
+tests/test_rgbd_dataset_labels.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/rgbd/capture.py:216: in capture
+    truth = self.capture_ground_truth()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.datasets.rgbd.capture.OfflineSceneAdapter object at 0x7ba2b1583830>
+
+    def capture_ground_truth(self) -> dict[str, Any]:
+        session = self.session
+        scene = session._dataset_scene
+        if not session._open or scene is None:
+            raise RuntimeError("apply an offline scene before requesting ground truth")
+        backend = session._backend
+        model, data = backend._model, backend._data
+        assert model is not None and data is not None
+        params = scene.scene_parameters
+        objects = [(1, "target", "object", "object_geom"), *[
+            (i + 2, "distractor", f"dataset_distractor_{i}", f"dataset_distractor_{i}_geom")
+            for i in range(len(params["distractors"]))],
+            (5, "destination", "target_region", "target_region_geom")]
+        instances = []
+        speeds = []
+        for semantic_id, role, body_name, geom_name in objects:
+            body, geom = model.body(body_name), model.geom(geom_name)
+            pos = data.geom_xpos[geom.id]
+            size = geom.size
+            if role != "destination":
+                joint = model.body_jntadr[body.id]
+                dof = model.jnt_dofadr[joint]
+                speeds.append(float(np.linalg.norm(data.qvel[dof:dof + 3])))
+                vertical_extent = float(np.abs(data.geom_xmat[geom.id].reshape(3, 3)[2]) @ size)
+                if (abs(pos[2] - vertical_extent) > .002 or
+                        not -.30 <= pos[0] - size[0] < pos[0] + size[0] <= 1 or
+                        not -.45 <= pos[1] - size[1] < pos[1] + size[1] <= .45):
+>                   raise ValueError("object is not settled on table or outside table bounds")
+E                   ValueError: object is not settled on table or outside table bounds
+
+src/cloud_edge_robot_arm/datasets/rgbd/capture.py:196: ValueError
+________ test_depth_corruption_preserves_original_and_becomes_negative _________
+
+    def test_depth_corruption_preserves_original_and_becomes_negative() -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        config = DatasetConfig(dataset_id="labels", depth_noise_m=(.005,),
+                               invalid_depth_fractions=(1,))
+        with MuJoCoCaptureSession(SimulatorConfig()) as session:
+            session.apply_scene(sample_scene(config, 17))
+>           frame, truth = OfflineSceneAdapter(session).capture()
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rgbd_dataset_labels.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/rgbd/capture.py:216: in capture
+    truth = self.capture_ground_truth()
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.datasets.rgbd.capture.OfflineSceneAdapter object at 0x7ba2b0613770>
+
+    def capture_ground_truth(self) -> dict[str, Any]:
+        session = self.session
+        scene = session._dataset_scene
+        if not session._open or scene is None:
+            raise RuntimeError("apply an offline scene before requesting ground truth")
+        backend = session._backend
+        model, data = backend._model, backend._data
+        assert model is not None and data is not None
+        params = scene.scene_parameters
+        objects = [(1, "target", "object", "object_geom"), *[
+            (i + 2, "distractor", f"dataset_distractor_{i}", f"dataset_distractor_{i}_geom")
+            for i in range(len(params["distractors"]))],
+            (5, "destination", "target_region", "target_region_geom")]
+        instances = []
+        speeds = []
+        for semantic_id, role, body_name, geom_name in objects:
+            body, geom = model.body(body_name), model.geom(geom_name)
+            pos = data.geom_xpos[geom.id]
+            size = geom.size
+            if role != "destination":
+                joint = model.body_jntadr[body.id]
+                dof = model.jnt_dofadr[joint]
+                speeds.append(float(np.linalg.norm(data.qvel[dof:dof + 3])))
+                vertical_extent = float(np.abs(data.geom_xmat[geom.id].reshape(3, 3)[2]) @ size)
+                if (abs(pos[2] - vertical_extent) > .002 or
+                        not -.30 <= pos[0] - size[0] < pos[0] + size[0] <= 1 or
+                        not -.45 <= pos[1] - size[1] < pos[1] + size[1] <= .45):
+>                   raise ValueError("object is not settled on table or outside table bounds")
+E                   ValueError: object is not settled on table or outside table bounds
+
+src/cloud_edge_robot_arm/datasets/rgbd/capture.py:196: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_labels.py::test_capture_labels_use_real_instances_and_reuse_model
+FAILED tests/test_rgbd_dataset_labels.py::test_depth_corruption_preserves_original_and_becomes_negative
+2 failed, 2 passed in 0.64s

@@ -1613,6 +1613,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/vision/observations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Capture */
+    post: operations["capture_api_v1_vision_observations_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/health": {
     parameters: {
       query?: never;
@@ -1971,6 +1988,26 @@ export interface components {
        * Format: date-time
        */
       updated_at?: string;
+    };
+    /** CaptureRequest */
+    CaptureRequest: {
+      /**
+       * Backend
+       * @default MUJOCO
+       * @enum {string}
+       */
+      backend: "MUJOCO" | "ISAAC_SIM";
+      /**
+       * Scenario Id
+       * @default S01_NORMAL_STATIC
+       * @constant
+       */
+      scenario_id: "S01_NORMAL_STATIC";
+      /**
+       * Seed
+       * @default 0
+       */
+      seed: number;
     };
     /**
      * CommandAckStatus
@@ -2555,6 +2592,12 @@ export interface components {
       domain_randomization?: components["schemas"]["DomainRandomizationDraft"];
       /** Fault Profiles */
       fault_profiles?: components["schemas"]["FaultProfileDraft"][];
+      /**
+       * Input Mode
+       * @default RGBD
+       * @enum {string}
+       */
+      input_mode: "RGBD" | "LEGACY_PIPELINE";
       /** Network Profiles */
       network_profiles?: components["schemas"]["NetworkDraft"][];
       /** Parameter Overrides */
@@ -2574,6 +2617,11 @@ export interface components {
       seeds: number[];
       /** Tags */
       tags?: string[];
+      /**
+       * User Instruction
+       * @default 将红色方块放到绿色区域
+       */
+      user_instruction: string;
     };
     /** ExperimentJobRecord */
     ExperimentJobRecord: {
@@ -3454,10 +3502,11 @@ export interface components {
        * @default EVENT_TRIGGERED_EDGE_AUTONOMY
        */
       control_mode: string;
+      observation?: components["schemas"]["RGBDObservation"] | null;
       /** Request Id */
       request_id: string;
       safety_policy?: components["schemas"]["SafetyPolicyReference"] | null;
-      scene: components["schemas"]["SceneSummary"];
+      scene?: components["schemas"]["SceneSummary"];
       /** User Instruction */
       user_instruction: string;
     };
@@ -3571,6 +3620,41 @@ export interface components {
       queued: number;
       /** Running */
       running: number;
+    };
+    /** RGBDObservation */
+    RGBDObservation: {
+      /** Camera To World */
+      camera_to_world: number[];
+      /**
+       * Captured At
+       * Format: date-time
+       */
+      captured_at: string;
+      /**
+       * Depth Convention
+       * @default optical_z_m
+       * @constant
+       */
+      depth_convention: "optical_z_m";
+      /** Depth Float32 Base64 */
+      depth_float32_base64: string;
+      /** Frame Id */
+      frame_id: string;
+      /** Height */
+      height: number;
+      /** Intrinsics */
+      intrinsics: [number, number, number, number];
+      /** Rgb Png Base64 */
+      rgb_png_base64: string;
+      /** Sim Time S */
+      sim_time_s: number;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "mujoco_camera" | "isaac_camera" | "rgbd_camera";
+      /** Width */
+      width: number;
     };
     /**
      * RandomizationParameterDraft
@@ -8111,6 +8195,39 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RiskSnapshotResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  capture_api_v1_vision_observations_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaptureRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RGBDObservation"];
         };
       };
       /** @description Validation Error */

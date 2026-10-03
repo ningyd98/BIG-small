@@ -1,0 +1,4461 @@
+--- /dev/null
++++ b/configs/rgbd/dataset_full.yaml
+@@ -0,0 +1,11 @@
++# T6b only: run after T5/T8 and measured resource-budget acceptance.
++dataset_id: rgbd-full-20261003
++groups: 10000
++seed: 20361003
++width: 320
++height: 240
++model_path: assets/robots/franka_panda/scene.xml
++max_attempt_multiplier: 5
++min_free_bytes: 1073741824
++max_bytes: 34359738368
++settle_steps: 120
+--- /dev/null
++++ b/configs/rgbd/dataset_smoke.yaml
+@@ -0,0 +1,11 @@
++# T6a: actual RGB-D capture, static labels; no model calls or action-success claims.
++dataset_id: rgbd-smoke-20261003
++groups: 100
++seed: 20261003
++width: 320
++height: 240
++model_path: assets/robots/franka_panda/scene.xml
++max_attempt_multiplier: 5
++min_free_bytes: 268435456
++max_bytes: 1073741824
++settle_steps: 120
+--- /dev/null
++++ b/configs/rgbd/dataset_validation.yaml
+@@ -0,0 +1,11 @@
++# T6a: independent 1000-group production validation run.
++dataset_id: rgbd-validation-20261003
++groups: 1000
++seed: 20271003
++width: 320
++height: 240
++model_path: assets/robots/franka_panda/scene.xml
++max_attempt_multiplier: 5
++min_free_bytes: 536870912
++max_bytes: 8589934592
++settle_steps: 120
+--- /dev/null
++++ b/scripts/export_rgbd_training.py
+@@ -0,0 +1,31 @@
++"""Export grounding examples from permitted splits, preserving negative examples."""
++
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--dataset", type=Path, required=True)
++    parser.add_argument("--split", choices=("train", "calibration", "selection"), required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args(argv)
++    from cloud_edge_robot_arm.datasets.rgbd.exporters import export_grounding_sft
++
++    try:
++        if args.output.resolve().is_relative_to(args.dataset.resolve()):
++            raise ValueError("export output must be outside the source dataset")
++        count = export_grounding_sft(args.dataset, args.split, args.output)
++        print(json.dumps({"status": "COMPLETE", "samples": count, "split": args.split,
++                          "output": str(args.output.resolve())}, ensure_ascii=False))
++        return 0
++    except (ValueError, OSError) as exc:
++        print(json.dumps({"status": "FAILED", "reason": str(exc)}, ensure_ascii=False))
++        return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- /dev/null
++++ b/scripts/generate_rgbd_dataset.py
+@@ -0,0 +1,50 @@
++"""Generate or resume bounded, model-free MuJoCo RGB-D evidence."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import signal
++from pathlib import Path
++
++import yaml
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--config", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args(argv)
++    from cloud_edge_robot_arm.datasets.rgbd.generator import generate_dataset
++    from cloud_edge_robot_arm.datasets.rgbd.models import DatasetConfig
++
++    cancelled = False
++
++    def request_cancel(_signal: int, _frame: object) -> None:
++        nonlocal cancelled
++        cancelled = True
++
++    previous = {number: signal.signal(number, request_cancel)
++                for number in (signal.SIGINT, signal.SIGTERM)}
++    try:
++        config = DatasetConfig.model_validate(yaml.safe_load(args.config.read_text()))
++        result = generate_dataset(config, args.output, lambda: cancelled)
++        print(json.dumps({"output": str(args.output.resolve()),
++                          "manifest": result.model_dump(mode="json")}, ensure_ascii=False))
++        return {"COMPLETE": 0, "BLOCKED": 3, "CANCELLED": 130}.get(result.status, 4)
++    except (ValueError, yaml.YAMLError, FileNotFoundError) as exc:
++        print(json.dumps({"status": "FAILED", "reason": str(exc)}, ensure_ascii=False))
++        return 2
++    except (ImportError, RuntimeError) as exc:
++        print(json.dumps({"status": "BLOCKED", "reason": str(exc)}, ensure_ascii=False))
++        return 3
++    except OSError as exc:
++        print(json.dumps({"status": "INCOMPLETE", "reason": str(exc)}, ensure_ascii=False))
++        return 4
++    finally:
++        for number, handler in previous.items():
++            signal.signal(number, handler)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- /dev/null
++++ b/scripts/replay_rgbd_sample.py
+@@ -0,0 +1,43 @@
++"""Reconstruct a saved observation without refreshing its timestamp or dispatching actions."""
++
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--dataset", type=Path, required=True)
++    parser.add_argument("--sample-id", required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args(argv)
++    from cloud_edge_robot_arm.datasets.rgbd.writer import load_records
++    from cloud_edge_robot_arm.vision.capture import save_observation
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    try:
++        if args.output.resolve().is_relative_to(args.dataset.resolve()):
++            raise ValueError("replay output must be outside the source dataset")
++        records = load_records(args.dataset)
++        record = next((item for item in records if item.sample_id == args.sample_id), None)
++        if record is None:
++            raise ValueError("sample ID does not belong to this dataset")
++        observation = load_offline_observation(record)
++        paths = save_observation(observation, args.output)
++        (args.output / "valid_mask.u8").write_bytes(observation.valid_mask_bytes())
++        print(json.dumps({"status": "COMPLETE", "sample_id": record.sample_id,
++                          "observation_id": observation.observation_id,
++                          "captured_at": observation.captured_at.isoformat(),
++                          "execution_verified": False, "offline_replay": True,
++                          "files": {key: str(path) for key, path in paths.items()}},
++                         ensure_ascii=False))
++        return 0
++    except (OSError, ValueError) as exc:
++        print(json.dumps({"status": "FAILED", "reason": str(exc)}, ensure_ascii=False))
++        return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- /dev/null
++++ b/scripts/validate_rgbd_dataset.py
+@@ -0,0 +1,26 @@
++"""Validate saved payloads, provenance, quality, and group split boundaries."""
++
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--dataset", type=Path, required=True)
++    args = parser.parse_args(argv)
++    from cloud_edge_robot_arm.datasets.rgbd.quality import validate_dataset
++
++    try:
++        result = validate_dataset(args.dataset)
++        print(result.model_dump_json(indent=2))
++        return 0 if result.valid else 4
++    except (OSError, ValueError) as exc:
++        print(json.dumps({"valid": False, "errors": [str(exc)]}, ensure_ascii=False))
++        return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/__init__.py
+@@ -0,0 +1 @@
++"""Reproducible offline research datasets."""
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/__init__.py
+@@ -0,0 +1 @@
++"""Versioned RGB-D dataset generation and audit tools."""
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/capture.py
+@@ -0,0 +1,244 @@
++"""Offline-only scene application, settling and simulator truth capability."""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import xml.etree.ElementTree as ET
++from dataclasses import replace
++from pathlib import Path
++from typing import Any
++from uuid import uuid4
++
++import numpy as np
++
++from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec
++from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import COLORS
++from cloud_edge_robot_arm.vision.capture import CapturedFrame, MuJoCoCaptureSession
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++
++def _validate_parameters(params: dict[str, Any]) -> None:
++    expected = {"target", "distractors", "destination", "camera", "light_intensity",
++                "depth_noise_m", "invalid_depth_fraction"}
++    if set(params) != expected or len(params["distractors"]) > 3:
++        raise ValueError("unsupported scene parameters")
++    objects = [params["target"], *params["distractors"]]
++    for obj in [*objects, params["destination"]]:
++        expected_keys = {"position", "half_size", "rgba"}
++        if obj is not params["destination"]:
++            expected_keys |= {"color_name", "mass_kg", "friction"}
++        if set(obj) != expected_keys:
++            raise ValueError("unsupported object parameters")
++        for key, length in (("position", 3), ("half_size", 3), ("rgba", 4)):
++            values = np.asarray(obj[key], dtype=float)
++            if values.shape != (length,) or not np.isfinite(values).all():
++                raise ValueError(f"invalid {key} parameters")
++        x, y, z = obj["position"]
++        hx, hy, hz = obj["half_size"]
++        if (min(hx, hy, hz) <= 0 or max(hx, hy, hz) > .15 or
++                not -.30 <= x - hx < x + hx <= 1.0 or
++                not -.45 <= y - hy < y + hy <= .45 or not hz <= z <= .5):
++            raise ValueError("object outside supported table bounds")
++        if not all(0 <= c <= 1 for c in obj["rgba"]):
++            raise ValueError("invalid RGBA parameters")
++    for obj in objects:
++        if obj["color_name"] not in {"red", "blue", "yellow"}:
++            raise ValueError("unsupported color parameters")
++        if not np.allclose(obj["rgba"], COLORS[obj["color_name"]], atol=1e-6):
++            raise ValueError("color name must agree with the rendered palette")
++        if not 0 < obj["mass_kg"] <= 1 or not 0 < obj["friction"] <= 5:
++            raise ValueError("invalid mass/friction parameters")
++    camera = params["camera"]
++    if set(camera) != {"position", "quaternion", "fovy"}:
++        raise ValueError("unsupported camera parameters")
++    pos = np.asarray(camera["position"], dtype=float)
++    quat = np.asarray(camera["quaternion"], dtype=float)
++    if (pos.shape != (3,) or not np.isfinite(pos).all() or not .5 <= pos[2] <= 3 or
++            quat.shape != (4,) or not np.isfinite(quat).all() or
++            not np.isclose(np.linalg.norm(quat), 1) or not 1 < camera["fovy"] < 179):
++        raise ValueError("invalid camera parameters")
++    if not 0 <= params["light_intensity"] <= 1:
++        raise ValueError("invalid light parameters")
++    if not 0 <= params["depth_noise_m"] <= .1 or not 0 <= params["invalid_depth_fraction"] <= 1:
++        raise ValueError("invalid depth perturbation parameters")
++
++
++def _prepare(session: MuJoCoCaptureSession) -> None:
++    """Add reusable free-body slots once; all subsequent scenes share this model/renderer."""
++    tree = ET.fromstring(Path(session._config.model_path).read_text(encoding="utf-8"))
++    world = tree.find("worldbody")
++    if world is None:
++        raise ValueError("dataset MJCF requires a worldbody")
++    for index in range(3):
++        body = ET.SubElement(world, "body", name=f"dataset_distractor_{index}",
++                             pos=f"{index} 0 -5", gravcomp="1")
++        ET.SubElement(body, "freejoint", name=f"dataset_distractor_{index}_free")
++        ET.SubElement(body, "geom", name=f"dataset_distractor_{index}_geom", type="box",
++                      size="0.045 0.045 0.045", mass="0.08", contype="1", conaffinity="1",
++                      rgba="0 0 0 0")
++    backend = session._backend
++    backend.shutdown()
++    backend.initialize(session._config, model_xml=ET.tostring(tree, encoding="unicode"))
++    session._dataset_prepared = True
++
++
++def apply_scene(session: MuJoCoCaptureSession, scene: SceneSpec) -> None:
++    params = scene.scene_parameters
++    _validate_parameters(params)
++    asset_hash = hashlib.sha256(Path(session._config.model_path).read_bytes()).hexdigest()
++    if scene.asset_family_hash != asset_hash:
++        raise ValueError("scene asset family does not match capture model")
++    if not session._dataset_prepared:
++        _prepare(session)
++    backend = session._backend
++    mj, model, data = backend._mujoco, backend._model, backend._data
++    assert mj is not None and model is not None and data is not None
++
++    def set_geometry(name: str, obj: dict[str, Any]) -> None:
++        geom = model.geom(name)
++        size = np.asarray(obj["half_size"])
++        geom.size[:] = size
++        geom.rgba[:] = obj["rgba"]
++        model.geom_rbound[geom.id] = np.linalg.norm(size)
++        model.geom_aabb[geom.id] = [0, 0, 0, *size]
++        # Each dataset movable body has one centered box. Refresh its collision BVH leaf.
++        nodes = np.flatnonzero(model.bvh_nodeid == geom.id)
++        for node in nodes:
++            model.bvh_aabb[node] = [0, 0, 0, *size]
++        if "mass_kg" in obj:
++            mass = obj["mass_kg"]
++            body_id = int(model.geom_bodyid[geom.id])
++            model.body_mass[body_id] = mass
++            model.body_inertia[body_id] = mass / 3 * (np.sum(size ** 2) - size ** 2)
++            geom.friction[:] = [obj["friction"], .01, .001]
++
++    set_geometry("object_geom", params["target"])
++    set_geometry("target_region_geom", params["destination"])
++    model.body("target_region").pos[:] = params["destination"]["position"]
++    for index in range(3):
++        body = model.body(f"dataset_distractor_{index}")
++        geom = model.geom(f"dataset_distractor_{index}_geom")
++        active = index < len(params["distractors"])
++        # Keep compiled body collision masks/BVH valid; unused slots remain below the table.
++        model.body_gravcomp[body.id] = 0 if active else 1
++        if active:
++            set_geometry(f"dataset_distractor_{index}_geom", params["distractors"][index])
++        else:
++            geom.rgba[:] = [0, 0, 0, 0]
++    camera = model.camera("rgbd")
++    camera.pos[:] = params["camera"]["position"]
++    camera.quat[:] = params["camera"]["quaternion"]
++    camera.fovy[:] = params["camera"]["fovy"]
++    model.light("rgbd_light").diffuse[:] = params["light_intensity"]
++    mj.mj_setConst(model, data)
++    mj.mj_resetData(model, data)
++    data.qpos[model.joint("joint1").qposadr[0]] = -.8
++    backend._target_positions = np.zeros(7)
++    backend._target_positions[0] = -.8
++    backend._estop_engaged = False
++    backend._gripper_open = True
++    backend._pending_joint_targets = []
++    backend._total_physics_steps = 0
++    backend._episode_id = uuid4().hex
++    # Capture reads only identity from this scenario; scene geometry was applied above.
++    from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
++
++    backend._scenario = replace(
++        PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=scene.seed),
++        scenario_id=scene.group_id)
++    backend._rng = np.random.default_rng(scene.seed)
++    backend._sensor_noise_std_m = 0.0  # Preserve a clean raw frame before offline perturbations.
++    for name, obj in [("object", params["target"]), *[
++            (f"dataset_distractor_{i}", obj) for i, obj in enumerate(params["distractors"])]]:
++        body = model.body(name)
++        adr = model.jnt_qposadr[model.body_jntadr[body.id]]
++        data.qpos[adr:adr + 3] = obj["position"]
++        data.qpos[adr + 3:adr + 7] = [1, 0, 0, 0]
++    mj.mj_forward(model, data)
++    session._dataset_scene = scene
++    session._dataset_settled = False
++
++
++class OfflineSceneAdapter:
++    """Separate ground-truth capability unavailable on the online RGBDObservation type."""
++
++    def __init__(self, session: MuJoCoCaptureSession, *, settle_steps: int = 120) -> None:
++        if not 0 <= settle_steps <= 10000:
++            raise ValueError("settle_steps outside bounded budget")
++        self.session = session
++        self.settle_steps = settle_steps
++
++    def capture_ground_truth(self) -> dict[str, Any]:
++        session = self.session
++        scene = session._dataset_scene
++        if not session._open or scene is None:
++            raise RuntimeError("apply an offline scene before requesting ground truth")
++        backend = session._backend
++        model, data = backend._model, backend._data
++        assert model is not None and data is not None
++        params = scene.scene_parameters
++        objects = [(1, "target", "object", "object_geom"), *[
++            (i + 2, "distractor", f"dataset_distractor_{i}", f"dataset_distractor_{i}_geom")
++            for i in range(len(params["distractors"]))],
++            (5, "destination", "target_region", "target_region_geom")]
++        instances = []
++        speeds = []
++        angular_speeds = []
++        for semantic_id, role, body_name, geom_name in objects:
++            body, geom = model.body(body_name), model.geom(geom_name)
++            pos = data.geom_xpos[geom.id]
++            size = geom.size
++            if role != "destination":
++                joint = model.body_jntadr[body.id]
++                dof = model.jnt_dofadr[joint]
++                speeds.append(float(np.linalg.norm(data.qvel[dof:dof + 3])))
++                angular_speeds.append(float(np.linalg.norm(data.qvel[dof + 3:dof + 6])))
++                extents = np.abs(data.geom_xmat[geom.id].reshape(3, 3)) @ size
++                if (abs(pos[2] - extents[2]) > .002 or
++                        not -.30 <= pos[0] - extents[0] < pos[0] + extents[0] <= 1 or
++                        not -.45 <= pos[1] - extents[1] < pos[1] + extents[1] <= .45):
++                    raise ValueError("object is not settled on table or outside table bounds")
++            instances.append({"semantic_id": semantic_id, "role": role, "geom_ids": [geom.id],
++                              "position": pos.tolist(), "half_size": size.tolist()})
++        max_speed = max(speeds, default=0.)
++        max_angular_speed = max(angular_speeds, default=0.)
++        penetration = max((max(0., -float(c.dist)) for c in data.contact[:data.ncon]), default=0.)
++        if max_speed > .02 or max_angular_speed > .1 or penetration > .002:
++            raise ValueError("scene is not settled or has excessive penetration")
++        return {"instances": instances, "target_color_name": params["target"]["color_name"],
++                "settling": {"steps": self.settle_steps, "sim_time_s": float(data.time),
++                             "max_linear_speed_m_s": max_speed,
++                             "max_angular_speed_rad_s": max_angular_speed,
++                             "max_penetration_m": penetration}}
++
++    def capture(self) -> tuple[CapturedFrame, dict[str, Any]]:
++        session = self.session
++        if not session._open or session._dataset_scene is None:
++            raise RuntimeError("apply an offline scene before capture")
++        if not session._dataset_settled:
++            if self.settle_steps:
++                session._backend.step(self.settle_steps)
++            session._dataset_settled = True
++        truth = self.capture_ground_truth()
++        raw = session.capture_with_instances()
++        params = session._dataset_scene.scene_parameters
++        noise, invalid = params["depth_noise_m"], params["invalid_depth_fraction"]
++        if not noise and not invalid:
++            return raw, truth
++        observation = raw.observation
++        depths = np.frombuffer(base64.b64decode(observation.depth_float32_base64),
++                               dtype="<f4").copy()
++        valid = depths > 0
++        rng = np.random.default_rng(session._dataset_scene.seed ^ 0xD3E7)
++        if noise:
++            depths[valid] += rng.normal(0, noise, int(valid.sum())).astype("<f4")
++        depths[~valid | (depths <= 0) | (rng.random(len(depths)) < invalid)] = 0
++        values = observation.model_dump()
++        mask = (depths > 0).astype("u1").tobytes()
++        values.update(depth_float32_base64=base64.b64encode(depths.tobytes()).decode(),
++                      valid_mask_base64=base64.b64encode(mask).decode(),
++                      checksum_sha256="")
++        frame = replace(raw, observation=RGBDObservation.model_validate(values))
++        truth["_raw_captured_frame"] = raw
++        return frame, truth
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/exporters.py
+@@ -0,0 +1,82 @@
++"""Grounding SFT export; simulator labels are confined to assistant targets."""
++
++from __future__ import annotations
++
++from pathlib import Path
++from typing import Literal
++
++from cloud_edge_robot_arm.datasets.rgbd.models import SplitManifest, canonical_json
++from cloud_edge_robot_arm.datasets.rgbd.quality import validate_dataset
++
++
++def export_grounding_sft(
++    root: Path, split: Literal["train", "calibration", "selection"], output: Path
++) -> int:
++    """Export all retained examples, including explicit observation requests.
++
++    User content contains exactly an instruction and two opaque RGB/depth image
++    paths relative to dataset root. Metric depth/calibration references remain
++    top-level metadata. The test role is denied at runtime as well as in typing.
++    """
++    if split == "test":
++        raise ValueError("test holdout export is denied")
++    if split not in {"train", "calibration", "selection"}:
++        raise ValueError("unknown training split")
++    from cloud_edge_robot_arm.datasets.rgbd.writer import _atomic_write, load_records
++    from cloud_edge_robot_arm.vision.offline_reader import resolve_payload
++
++    root, output = Path(root).resolve(), Path(output).resolve()
++    report = validate_dataset(root)
++    if not report.valid:
++        raise ValueError("dataset validation failed: " + "; ".join(report.errors))
++    # Never allow an export destination to overwrite original evidence or audit.
++    if output == root or output.is_dir():
++        raise ValueError("export output must be a file")
++    if output.is_relative_to(root) and output.parts[len(root.parts)] != "exports":
++        raise ValueError("export inside a dataset must use the exports directory")
++    audit = SplitManifest.model_validate_json(
++        resolve_payload(root, "reports/split_audit.json").read_bytes()
++    )
++    rows = []
++    for record in sorted(load_records(root), key=lambda item: item.sample_id):
++        if audit.sample_assignments[record.sample_id] != split:
++            continue
++        labels = record.labels
++        assistant = {
++            "action": labels["suggested_action"],
++            "positive": labels["positive"],
++            "negative_reasons": labels["negative_reasons"],
++            "execution_verified": False,
++        }
++        if labels["positive"]:
++            assistant.update(
++                {key: labels[key] for key in ("target_pixel", "destination_pixel", "surface_point")}
++            )
++        rows.append(
++            {
++                "schema_version": "rgbd.dataset.v1",
++                "sample_id": record.sample_id,
++                "split": split,
++                "messages": [
++                    {
++                        "role": "user",
++                        "content": {
++                            "instruction": labels["instruction"],
++                            "images": [record.paths["rgb"], record.paths["depth_vis"]],
++                        },
++                    },
++                    {"role": "assistant", "content": canonical_json(assistant)},
++                ],
++                "metadata": {
++                    "dataset_root": str(root),
++                    "depth": record.paths["depth"],
++                    "camera": record.paths["camera"],
++                    "source": record.source,
++                    "label_source": record.label_source,
++                    "content_hash": record.content_hash,
++                },
++            }
++        )
++    output.parent.mkdir(parents=True, exist_ok=True)
++    _atomic_write(output, "".join(canonical_json(row) + "\n" for row in rows).encode())
++    return len(rows)
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/generator.py
+@@ -0,0 +1,611 @@
++"""Bounded, resumable offline RGB-D production; never invokes a model service."""
++
++from __future__ import annotations
++
++import errno
++import fcntl
++import hashlib
++import importlib.metadata
++import json
++import os
++import platform
++import resource
++import shutil
++import tempfile
++from collections.abc import Callable
++from datetime import UTC, datetime
++from pathlib import Path
++from time import perf_counter
++from typing import Any
++
++from cloud_edge_robot_arm.datasets.rgbd.models import (
++    DatasetConfig,
++    DatasetManifest,
++    SampleRecord,
++    SplitManifest,
++    canonical_json,
++    content_digest,
++)
++from cloud_edge_robot_arm.datasets.rgbd.quality import (
++    find_duplicate,
++    perceptual_signature,
++    validate_dataset,
++)
++from cloud_edge_robot_arm.datasets.rgbd.splitter import ROLES, assign_splits, write_splits
++from cloud_edge_robot_arm.datasets.rgbd.writer import (
++    DatasetWriter,
++    load_manifest,
++    save_manifest,
++)
++from cloud_edge_robot_arm.datasets.rgbd.writer import (
++    load_records as load_records,
++)
++from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++
++
++def _capture_dependencies() -> tuple[Any, Any, Any, Any]:
++    # Import renderer-facing code only after resume, budget, and cancellation checks.
++    from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
++    from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame
++    from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    return MuJoCoCaptureSession, OfflineSceneAdapter, sample_scene, label_frame
++
++
++def _source_evidence(config: DatasetConfig) -> dict[str, Any]:
++    package = Path(__file__).resolve().parents[2]
++    relevant = [
++        *Path(__file__).parent.glob("*.py"),
++        package / "vision" / "capture.py",
++        package / "vision" / "observations.py",
++        package / "vision" / "offline_reader.py",
++        package / "simulation" / "config.py",
++        package / "simulation" / "models.py",
++        package / "simulation" / "mujoco" / "backend.py",
++        package / "simulation" / "mujoco" / "camera.py",
++        package / "contracts" / "models.py",
++        package / "contracts" / "__init__.py",
++        package / "errors.py",
++        package / "simulation" / "backend.py",
++        package / "simulation" / "mujoco" / "spec_randomization.py",
++        *(
++            package / relative / "__init__.py"
++            for relative in (".", "datasets", "vision", "simulation", "simulation/mujoco")
++        ),
++    ]
++    hashes = {
++        str(path.relative_to(package)): hashlib.sha256(path.read_bytes()).hexdigest()
++        for path in sorted(set(relevant))
++    }
++    model = Path(config.model_path).resolve()
++    assets = {
++        str(path.relative_to(model.parent)): hashlib.sha256(path.read_bytes()).hexdigest()
++        for path in sorted(model.parent.rglob("*"))
++        if path.is_file()
++    }
++    versions = {}
++    for name in ("mujoco", "numpy", "pillow", "pydantic"):
++        try:
++            versions[name] = importlib.metadata.version(name)
++        except importlib.metadata.PackageNotFoundError:
++            versions[name] = "NOT_INSTALLED"
++    return {
++        "source_hash": content_digest(hashes),
++        "source_files": hashes,
++        "asset_hash": content_digest(assets),
++        "asset_files": assets,
++        "model_path": str(model),
++        "model_exists": model.is_file(),
++        "python": platform.python_version(),
++        "dependencies": versions,
++        "evidence_kind": "REAL_CAPTURE",
++        "model_calls": 0,
++    }
++
++
++def _atomic_json(path: Path, value: Any) -> None:
++    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
++    try:
++        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
++            stream.write(canonical_json(value) + "\n")
++            stream.flush()
++            os.fsync(stream.fileno())
++        os.replace(temporary, path)
++    finally:
++        Path(temporary).unlink(missing_ok=True)
++
++
++def _journal(path: Path, event: str, attempt: int, **details: Any) -> None:
++    with path.open("a", encoding="utf-8") as stream:
++        stream.write(canonical_json({"event": event, "attempt": attempt, **details}) + "\n")
++        stream.flush()
++        os.fsync(stream.fileno())
++
++
++def _read_attempts(path: Path) -> tuple[int, int, int]:
++    if not path.exists():
++        return 0, 0, 0
++    if path.is_symlink():
++        raise ValueError("symlink attempt journal is forbidden")
++    raw = path.read_bytes()
++    attempts = rejected = failures = 0
++    offset = 0
++    outcomes: set[int] = set()
++    lines = raw.splitlines(keepends=True)
++    for index, line in enumerate(lines):
++        try:
++            item = json.loads(line)
++        except (ValueError, UnicodeDecodeError):
++            if index != len(lines) - 1 or line.endswith(b"\n"):
++                raise ValueError("invalid attempt journal") from None
++            # A partial append cannot have reached capture: started events are fsynced first.
++            _atomic_json(
++                path.with_name("attempt-journal-recovery.json"),
++                {
++                    "discarded_tail_sha256": hashlib.sha256(line).hexdigest(),
++                    "reason": "interrupted final journal append",
++                    "retained_bytes": offset,
++                },
++            )
++            with path.open("r+b") as stream:
++                stream.truncate(offset)
++                stream.flush()
++                os.fsync(stream.fileno())
++            break
++        number = item.get("attempt")
++        if type(number) is not int or number < 1:
++            raise ValueError("invalid attempt number")
++        event = item.get("event")
++        if event == "started":
++            if number != attempts + 1:
++                raise ValueError("attempt journal is not consecutive")
++            attempts = number
++        elif event in {"rejected", "published", "failed"}:
++            if number > attempts or number in outcomes:
++                raise ValueError("duplicate or unmatched attempt outcome")
++            outcomes.add(number)
++            rejected += int(event == "rejected")
++            failures += int(event == "failed")
++        else:
++            raise ValueError("unknown attempt journal event")
++        offset += len(line)
++        if index == len(lines) - 1 and not line.endswith(b"\n"):
++            with path.open("ab") as stream:
++                stream.write(b"\n")
++                stream.flush()
++                os.fsync(stream.fileno())
++    return attempts, rejected, failures
++
++
++def _counts(manifest: DatasetManifest, records: list[SampleRecord]) -> None:
++    manifest.completed_groups = len({record.group_id for record in records})
++    manifest.sample_count = len(records)
++    manifest.positive_count = sum(record.status == "POSITIVE" for record in records)
++    manifest.negative_count = sum(record.status == "NEGATIVE" for record in records)
++    manifest.content_hash = content_digest(sorted(record.content_hash for record in records))
++    manifest.updated_at = datetime.now(UTC)
++
++
++def _disk_reason(config: DatasetConfig, root: Path, used: int, needed: int = 0) -> str | None:
++    if used + needed > config.max_bytes:
++        return "disk dataset byte budget exhausted"
++    if shutil.disk_usage(root).free - needed < config.min_free_bytes:
++        return "disk free-space reserve would be violated"
++    return None
++
++
++def _payload_reserve(record: SampleRecord) -> int:
++    observation = record.captured_frame.observation if record.captured_frame else None
++    if observation is None:
++        return 0
++    # Upper bound for encoded PNGs, numeric arrays, metadata, index replacement and staging.
++    copies = 2 if record.raw_captured_frame is not None else 1
++    return observation.width * observation.height * (24 * copies) + 131072
++
++
++def _json_size(value: Any) -> int:
++    return len((canonical_json(value) + "\n").encode("utf-8"))
++
++
++def _reserve_replacements(
++    config: DatasetConfig, output: Path, replacements: list[tuple[Path, int]]
++) -> None:
++    """Bound retained dataset bytes and free space for sequential atomic writes.
++
++    max_bytes covers every persistent file under the dataset root, including
++    indexes/reports/manifests. Temporary atomic copies are separately charged
++    against available filesystem space while preserving min_free_bytes.
++    """
++    used = sum(
++        path.stat().st_size
++        for path in output.rglob("*")
++        if path.is_file() and not path.is_symlink()
++    )
++    growth = peak_growth = 0
++    previous_sizes: dict[Path, int] = {}
++    for path, new_size in replacements:
++        if path.is_symlink():
++            raise ValueError("symlink finalization output is forbidden")
++        old_size = previous_sizes.get(path, path.stat().st_size if path.is_file() else 0)
++        peak_growth = max(peak_growth, growth + new_size)
++        growth += new_size - old_size
++        previous_sizes[path] = new_size
++        if used + growth > config.max_bytes:
++            raise OSError(errno.ENOSPC, "disk dataset byte budget exhausted during finalization")
++    if shutil.disk_usage(output).free - peak_growth < config.min_free_bytes:
++        raise OSError(
++            errno.ENOSPC, "disk free-space reserve for atomic finalization would be violated"
++        )
++
++
++def _finalization_sizes(
++    output: Path, records: list[SampleRecord], split: SplitManifest, manifest: DatasetManifest
++) -> list[tuple[Path, int]]:
++    sizes = dict.fromkeys(ROLES, 0)
++    for record in records:
++        sizes[split.sample_assignments[record.sample_id]] += _json_size(
++            record.model_dump(mode="json")
++        )
++    replacements = [(output / "splits" / f"{role}.jsonl", sizes[role]) for role in ROLES]
++    replacements.append(
++        (output / "reports" / "split_audit.json", _json_size(split.model_dump(mode="json")))
++    )
++    # Report errors may grow with samples; actual payload sizes are checked again
++    # before publication. Leave bounded room for status/resource metadata as well.
++    replacements.extend(
++        [
++            (output / "manifest.json", _json_size(manifest.model_dump(mode="json"))),
++            (output / "reports" / "quality.json", 4096 + 1024 * len(records)),
++            (output / "manifest.json", _json_size(manifest.model_dump(mode="json")) + 4096),
++        ]
++    )
++    return replacements
++
++
++def _save_final_manifest(output: Path, config: DatasetConfig, manifest: DatasetManifest) -> None:
++    """Include the final manifest itself in the reported retained-byte count."""
++    used = sum(
++        path.stat().st_size
++        for path in output.rglob("*")
++        if path.is_file() and not path.is_symlink()
++    )
++    path = output / "manifest.json"
++    previous_size = path.stat().st_size if path.exists() else 0
++    manifest.resources["dataset_bytes_measurement"] = "all retained files including final manifest"
++    for _ in range(8):
++        projected = used - previous_size + _json_size(manifest.model_dump(mode="json"))
++        if manifest.resources.get("dataset_bytes") == projected:
++            break
++        manifest.resources["dataset_bytes"] = projected
++        manifest.resources["bytes_per_sample"] = (
++            projected / manifest.sample_count if manifest.sample_count else None
++        )
++    _reserve_replacements(config, output, [(path, _json_size(manifest.model_dump(mode="json")))])
++    save_manifest(output, manifest)
++
++
++def _generate_locked(
++    config: DatasetConfig, output: Path, cancel: Callable[[], bool]
++) -> DatasetManifest:
++    started = perf_counter()
++    existing = load_manifest(output)
++    if existing is not None and existing.config_hash != config.config_hash:
++        raise ValueError("cannot resume incompatible dataset config")
++    source = _source_evidence(config)
++    source_path = output / "source.json"
++    if source_path.is_symlink():
++        raise ValueError("symlink source evidence is forbidden")
++    if source_path.exists() and json.loads(source_path.read_text()) != source:
++        raise ValueError("cannot resume dataset with changed source or assets")
++    if existing is not None and existing.source != source:
++        raise ValueError("cannot resume dataset with changed source or assets")
++    manifest = existing or DatasetManifest(
++        dataset_id=config.dataset_id,
++        config=config,
++        config_hash=config.config_hash,
++        status="RUNNING",
++        requested_groups=config.groups,
++        source=source,
++    )
++    if existing is None and not (output / "config.json").exists():
++        try:
++            _reserve_replacements(
++                config,
++                output,
++                [
++                    (output / "config.json", _json_size(config.model_dump(mode="json"))),
++                    (source_path, _json_size(source)),
++                    (output / "samples.jsonl", 0),
++                    (output / "manifest.json", _json_size(manifest.model_dump(mode="json")) + 4096),
++                ],
++            )
++        except OSError as exc:
++            manifest.status, manifest.reason = "INCOMPLETE", f"initial disk metadata reserve: {exc}"
++            manifest.resources["manifest_persisted"] = False
++            return manifest
++    elapsed_before = float(manifest.resources.get("generation_wall_time_s", 0))
++    journal_path = output / "attempts.jsonl"
++    attempts, rejected, failures = _read_attempts(journal_path)
++    if manifest.attempts > attempts:
++        raise ValueError("attempt journal missing previously recorded attempts")
++    if attempts > config.groups * config.max_attempt_multiplier:
++        raise ValueError("attempt journal exceeds configured sampling budget")
++    writer = DatasetWriter(output, config)
++    if writer.records and not source_path.exists() and existing is None:
++        raise ValueError("cannot resume existing episodes without source evidence")
++    if len({record.group_id for record in writer.records}) > config.groups:
++        raise ValueError("committed groups exceed requested dataset size")
++    if len(writer.records) > attempts:
++        raise ValueError("committed samples lack a durable attempt history")
++    if not source_path.exists():
++        _atomic_json(source_path, source)
++    manifest.attempts = attempts
++    manifest.rejected_count = rejected
++    manifest.status = "RUNNING"
++    manifest.reason = None
++    _counts(manifest, writer.records)
++    save_manifest(output, manifest)
++    stage = "preflight"
++    active_attempt: int | None = None
++
++    def persist_progress() -> None:
++        _counts(manifest, writer.records)
++        manifest.resources["failed_attempts"] = failures
++        _reserve_replacements(
++            config,
++            output,
++            [
++                (output / "manifest.json", _json_size(manifest.model_dump(mode="json")) + 4096),
++            ],
++        )
++        save_manifest(output, manifest)
++
++    def record_attempt(event: str, attempt: int, **details: Any) -> None:
++        current_size = journal_path.stat().st_size if journal_path.exists() else 0
++        appended_size = _json_size({"event": event, "attempt": attempt, **details})
++        # Before consuming a new attempt, reserve its outcome plus enough terminal
++        # manifest space to record resource/status diagnostics without crossing cap.
++        outcome_reserve = 4096 if event == "started" else 0
++        _reserve_replacements(
++            config,
++            output,
++            [
++                (journal_path, current_size + appended_size + outcome_reserve),
++                (output / "manifest.json", _json_size(manifest.model_dump(mode="json")) + 4096),
++            ],
++        )
++        _journal(journal_path, event, attempt, **details)
++
++    try:
++        initial_stop = _disk_reason(config, output, writer.total_bytes)
++        if cancel():
++            manifest.status, manifest.reason = "CANCELLED", "user cancellation"
++        elif initial_stop:
++            manifest.status, manifest.reason = "INCOMPLETE", initial_stop
++        elif manifest.completed_groups < config.groups and attempts < (
++            config.groups * config.max_attempt_multiplier
++        ):
++            stage = "renderer"
++            session_type, adapter_type, sample_scene, label_frame = _capture_dependencies()
++            simulator = SimulatorConfig(
++                model_path=config.model_path,
++                seed=config.seed,
++                render_rgb=True,
++                render_depth=True,
++                camera_width=config.width,
++                camera_height=config.height,
++            )
++            with session_type(simulator) as session:
++                adapter = adapter_type(session, settle_steps=config.settle_steps)
++                while manifest.completed_groups < config.groups:
++                    stage = "preflight"
++                    if cancel():
++                        manifest.status, manifest.reason = "CANCELLED", "user cancellation"
++                        break
++                    if manifest.attempts >= config.groups * config.max_attempt_multiplier:
++                        break
++                    disk_stop = _disk_reason(config, output, writer.total_bytes)
++                    if disk_stop:
++                        manifest.status, manifest.reason = "INCOMPLETE", disk_stop
++                        break
++                    number = manifest.attempts + 1
++                    seed = config.seed + number - 1
++                    record_attempt("started", number, seed=seed)
++                    active_attempt = number
++                    manifest.attempts = number
++                    persist_progress()
++                    stage = "sampling"
++                    try:
++                        scene = sample_scene(config, seed)
++                        previous = next(
++                            (
++                                record
++                                for record in writer.records
++                                if record.group_id == scene.group_id
++                                or record.scene.scene_hash == scene.scene_hash
++                            ),
++                            None,
++                        )
++                        if previous is not None:
++                            record_attempt(
++                                "rejected",
++                                number,
++                                reason="duplicate scene",
++                                duplicate_sample_id=previous.sample_id,
++                            )
++                            manifest.rejected_count += 1
++                            active_attempt = None
++                            persist_progress()
++                            continue
++                        stage = "capture"
++                        session.apply_scene(scene)
++                        frame, truth = adapter.capture()
++                        stage = "labeling"
++                        raw_frame = truth.get("_raw_captured_frame")
++                        labels = dict(
++                            label_frame(
++                                frame,
++                                {
++                                    key: value
++                                    for key, value in truth.items()
++                                    if key != "_raw_captured_frame"
++                                },
++                            )
++                        )
++                        record = SampleRecord.from_capture(
++                            scene, frame, labels, raw_captured_frame=raw_frame
++                        )
++                        record.perceptual_hash = perceptual_signature(frame.observation)
++                        duplicate = find_duplicate(record, writer.records)
++                        if duplicate is not None:
++                            record_attempt(
++                                "rejected",
++                                number,
++                                reason="duplicate visual evidence",
++                                duplicate_sample_id=duplicate,
++                            )
++                            manifest.rejected_count += 1
++                            active_attempt = None
++                            persist_progress()
++                            continue
++                        disk_stop = _disk_reason(
++                            config, output, writer.total_bytes, _payload_reserve(record)
++                        )
++                        if disk_stop:
++                            record_attempt("failed", number, reason=disk_stop)
++                            failures += 1
++                            active_attempt = None
++                            manifest.status, manifest.reason = "INCOMPLETE", disk_stop
++                            break
++                        stage = "write"
++                        writer.write_episode([record])
++                        record_attempt(
++                            "published",
++                            number,
++                            sample_id=record.sample_id,
++                            group_id=record.group_id,
++                        )
++                        active_attempt = None
++                        persist_progress()
++                    except ValueError as exc:
++                        if stage == "write":
++                            raise
++                        record_attempt("rejected", number, reason=str(exc), stage=stage)
++                        manifest.rejected_count += 1
++                        active_attempt = None
++                        persist_progress()
++        if manifest.status == "RUNNING" and manifest.completed_groups < config.groups:
++            manifest.status, manifest.reason = "INCOMPLETE", "sampling attempt budget exhausted"
++    except KeyboardInterrupt:
++        manifest.status, manifest.reason = "CANCELLED", "user interruption"
++    except (OSError, RuntimeError, ImportError, ValueError) as exc:
++        if isinstance(exc, OSError) and exc.errno in {errno.ENOSPC, errno.EDQUOT}:
++            manifest.status = "INCOMPLETE"
++        elif stage in {"renderer", "capture"}:
++            manifest.status = "BLOCKED"
++        else:
++            manifest.status = "FAILED"
++        manifest.reason = f"{stage}: {type(exc).__name__}: {exc}"
++        if active_attempt is not None:
++            failures += 1
++            try:
++                record_attempt("failed", active_attempt, reason=manifest.reason)
++            except OSError:
++                pass  # The fsynced started event still preserves the consumed attempt.
++        # Atomic publication may have succeeded before index replacement failed.
++        try:
++            writer = DatasetWriter(output, config)
++        except OSError:
++            pass
++
++    _counts(manifest, writer.records)
++    manifest.resources.update(
++        {
++            "generation_wall_time_s": elapsed_before + perf_counter() - started,
++            "last_invocation_wall_time_s": perf_counter() - started,
++            "dataset_bytes": writer.total_bytes,
++            "bytes_per_sample": writer.total_bytes / manifest.sample_count
++            if manifest.sample_count
++            else None,
++            "process_lifetime_peak_rss_bytes": (
++                resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
++            ),
++            "gpu_peak_memory_bytes": "NOT_MEASURED",
++            "gpu_peak_memory_reason": "No per-process GPU memory sampler attached to this run",
++            "renderer_processes": 1,
++            "failed_attempts": failures,
++            "disk_budget_semantics": "max_bytes covers all retained dataset files; "
++            "atomic temporary copies additionally preserve min_free_bytes of filesystem free space",
++        }
++    )
++    try:
++        split = assign_splits(writer.records, config.seed)
++        _reserve_replacements(
++            config, output, _finalization_sizes(output, writer.records, split, manifest)
++        )
++        write_splits(output, split, writer.records)
++        _reserve_replacements(
++            config,
++            output,
++            [(output / "manifest.json", _json_size(manifest.model_dump(mode="json")))],
++        )
++        save_manifest(output, manifest)
++        if manifest.status == "RUNNING" and manifest.completed_groups == config.groups:
++            report = validate_dataset(output)
++            _reserve_replacements(
++                config,
++                output,
++                [
++                    (
++                        output / "reports" / "quality.json",
++                        _json_size(report.model_dump(mode="json")),
++                    ),
++                    (output / "manifest.json", _json_size(manifest.model_dump(mode="json")) + 4096),
++                ],
++            )
++            _atomic_json(output / "reports" / "quality.json", report.model_dump(mode="json"))
++            if report.valid:
++                manifest.status, manifest.reason = "COMPLETE", None
++            else:
++                manifest.status, manifest.reason = "FAILED", "; ".join(report.errors)
++        manifest.resources.update(
++            {
++                "generation_wall_time_s": elapsed_before + perf_counter() - started,
++                "last_invocation_wall_time_s": perf_counter() - started,
++            }
++        )
++        _save_final_manifest(output, config, manifest)
++    except (OSError, ValueError) as exc:
++        manifest.status = (
++            "INCOMPLETE"
++            if isinstance(exc, OSError) and exc.errno in {errno.ENOSPC, errno.EDQUOT}
++            else "FAILED"
++        )
++        manifest.reason = f"finalization: {type(exc).__name__}: {exc}"
++        try:
++            _save_final_manifest(output, config, manifest)
++        except OSError:
++            manifest.resources["manifest_persisted"] = False
++    return manifest
++
++
++def generate_dataset(
++    config: DatasetConfig, output: Path, cancel: Callable[[], bool]
++) -> DatasetManifest:
++    """Continue one source/config-bound dataset, preserving all committed episodes."""
++    config = DatasetConfig.model_validate(config.model_dump(mode="json"))
++    output = Path(output).resolve()
++    output.mkdir(parents=True, exist_ok=True)
++    lock_path = output / ".generator.lock"
++    if lock_path.is_symlink():
++        raise ValueError("symlink generator lock is forbidden")
++    with lock_path.open("a") as lock:
++        try:
++            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
++        except BlockingIOError as exc:
++            raise ValueError("another process owns this dataset generator") from exc
++        try:
++            return _generate_locked(config, output, cancel)
++        finally:
++            fcntl.flock(lock, fcntl.LOCK_UN)
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/labels.py
+@@ -0,0 +1,56 @@
++"""Simulator truth is consumed only by offline labels, never online observations."""
++
++from __future__ import annotations
++
++from typing import Any
++
++import numpy as np
++
++from cloud_edge_robot_arm.vision.capture import CapturedFrame
++
++
++def label_frame(frame: CapturedFrame, truth: dict[str, Any]) -> dict[str, Any]:
++    observation = frame.observation
++    ids = np.asarray(frame.instance_ids).reshape(observation.height, observation.width)
++    valid = np.frombuffer(observation.valid_mask_bytes(), dtype=np.uint8).reshape(ids.shape) > 0
++    instances = []
++    chosen = {}
++    for obj in truth["instances"]:
++        mask = np.isin(ids, obj["geom_ids"])
++        ys, xs = np.where(mask)
++        count = len(xs)
++        bbox = ([int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1]
++                if count else None)
++        useful = mask & valid
++        vy, vx = np.where(useful)
++        pixel = None
++        if len(vx):
++            # A visible, valid pixel nearest the visible centroid cannot fall into an occluder.
++            index = int(np.argmin((vx - xs.mean()) ** 2 + (vy - ys.mean()) ** 2))
++            pixel = [int(vx[index]), int(vy[index])]
++        chosen[obj["semantic_id"]] = pixel
++        instances.append({**obj, "bbox_xyxy": bbox, "visible_pixels": count,
++                          "valid_depth_fraction": float(len(vx) / count) if count else 0.})
++    target = next(obj for obj in instances if obj["role"] == "target")
++    destination = next(obj for obj in instances if obj["role"] == "destination")
++    reasons = []
++    if target["visible_pixels"] < 100:
++        reasons.append("TARGET_TOO_SMALL_OR_OCCLUDED")
++    if target["valid_depth_fraction"] < .95:
++        reasons.append("TARGET_DEPTH_INVALID")
++    if destination["visible_pixels"] < 100 or destination["valid_depth_fraction"] < .95:
++        reasons.append("DESTINATION_NOT_OBSERVABLE")
++    pixel = chosen[1]
++    point = observation.world_point((pixel[0], pixel[1])) if pixel is not None else None
++    color = truth["target_color_name"]
++    color_zh = {"red": "红色", "blue": "蓝色", "yellow": "黄色"}[color]
++    return {"instruction": f"将{color_zh}方块移动到绿色区域。",
++            "instruction_en": f"Move the {color} block to the green region.",
++            "target_instance_id": 1, "destination_instance_id": 5, "instances": instances,
++            "target_pixel": chosen[1], "destination_pixel": chosen[5],
++            "surface_point": [point.x, point.y, point.z] if point else None,
++            "object_center": target["position"], "positive": not reasons,
++            "negative_reasons": reasons,
++            "suggested_action": "REQUEST_MORE_OBSERVATION" if reasons else "GROUND_TARGET",
++            "label_source": "SIMULATOR_GROUND_TRUTH", "execution_verified": False,
++            "settling": truth["settling"]}
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/models.py
+@@ -0,0 +1,272 @@
++"""Shared, payload-free contracts for offline RGB-D evidence."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++import re
++from datetime import UTC, datetime
++from pathlib import Path, PurePosixPath
++from typing import Annotated, Any, Literal
++
++from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
++
++from cloud_edge_robot_arm.vision.capture import CapturedFrame
++
++
++def canonical_json(value: Any) -> str:
++    return json.dumps(
++        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
++    )
++
++
++def content_digest(value: Any) -> str:
++    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
++
++
++def safe_component(value: str) -> str:
++    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}", value):
++        raise ValueError("ID must be a safe opaque path component")
++    return value
++
++
++def safe_relative_path(value: str) -> str:
++    path = PurePosixPath(value)
++    if (
++        not value
++        or "\\" in value
++        or path.is_absolute()
++        or any(part in {"", ".", ".."} for part in value.split("/"))
++        or ":" in value
++    ):
++        raise ValueError("payload path must be normalized and relative to the dataset root")
++    return value
++
++
++SafeID = Annotated[str, AfterValidator(safe_component)]
++
++
++class DurableModel(BaseModel):
++    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
++    schema_version: Literal["rgbd.dataset.v1"] = "rgbd.dataset.v1"
++
++
++class DatasetConfig(DurableModel):
++    dataset_id: SafeID
++    groups: int = Field(default=100, ge=1, le=10000)
++    seed: int = Field(default=0, ge=0)
++    width: int = Field(default=320, ge=1, le=1280)
++    height: int = Field(default=240, ge=1, le=720)
++    model_path: str = "assets/robots/franka_panda/scene.xml"
++    max_attempt_multiplier: int = Field(default=5, ge=1, le=5)
++    min_free_bytes: int = Field(default=268435456, ge=0)
++    max_bytes: int = Field(default=8589934592, gt=0)
++    target_x: tuple[float, float] = (0.18, 0.55)
++    target_y: tuple[float, float] = (-0.20, 0.28)
++    half_size: tuple[float, float] = (0.025, 0.045)
++    camera_height: tuple[float, float] = (1.2, 1.6)
++    camera_x: tuple[float, float] = (0.30, 0.40)
++    camera_y: tuple[float, float] = (-0.04, 0.04)
++    camera_fovy: tuple[float, float] = (45, 55)
++    light_intensity: tuple[float, float] = (0.65, 1.0)
++    distractor_count: tuple[int, int] = (0, 3)
++    depth_noise_m: tuple[float, ...] = (0.0, 0.002, 0.005)
++    invalid_depth_fractions: tuple[float, ...] = (0.0, 0.1, 0.3)
++    settle_steps: int = Field(default=120, ge=0, le=10000)
++
++    @model_validator(mode="after")
++    def validate_ranges(self) -> DatasetConfig:
++        for name in (
++            "target_x",
++            "target_y",
++            "half_size",
++            "camera_height",
++            "camera_x",
++            "camera_y",
++            "camera_fovy",
++            "light_intensity",
++            "distractor_count",
++        ):
++            lo, hi = getattr(self, name)
++            if not math.isfinite(lo) or not math.isfinite(hi) or lo > hi:
++                raise ValueError(f"{name} must be a finite ordered range")
++        if self.half_size[0] <= 0 or self.camera_height[0] <= 0:
++            raise ValueError("object size and camera height must be positive")
++        if not 0 < self.camera_fovy[0] <= self.camera_fovy[1] < 180:
++            raise ValueError("camera_fovy must lie inside (0, 180)")
++        if not 0 <= self.light_intensity[0] <= self.light_intensity[1] <= 1:
++            raise ValueError("light intensity must lie in [0, 1]")
++        if not 0 <= self.distractor_count[0] <= self.distractor_count[1] <= 3:
++            raise ValueError("distractor_count must lie in [0, 3]")
++        if not self.depth_noise_m or any(not math.isfinite(v) or v < 0 for v in self.depth_noise_m):
++            raise ValueError("depth noise choices must be finite and nonnegative")
++        if not self.invalid_depth_fractions or any(
++            not math.isfinite(v) or not 0 <= v <= 1 for v in self.invalid_depth_fractions
++        ):
++            raise ValueError("invalid depth fractions must lie in [0, 1]")
++        return self
++
++    @property
++    def config_hash(self) -> str:
++        return content_digest(self.model_dump(mode="json"))
++
++
++class SceneSpec(DurableModel):
++    group_id: SafeID
++    scene_parameters: dict[str, Any]
++    asset_family_hash: str = Field(min_length=1)
++    seed: int = Field(ge=0)
++
++    @field_validator("scene_parameters")
++    @classmethod
++    def json_parameters(cls, value: dict[str, Any]) -> dict[str, Any]:
++        canonical_json(value)
++        return value
++
++    @property
++    def scene_hash(self) -> str:
++        return content_digest(
++            {"parameters": self.scene_parameters, "asset_family_hash": self.asset_family_hash}
++        )
++
++    @classmethod
++    def from_parameters(
++        cls, parameters: dict[str, Any], asset_family_hash: str, seed: int
++    ) -> SceneSpec:
++        physical = {
++            k: v
++            for k, v in parameters.items()
++            if k not in {"camera", "light_intensity", "depth_noise_m", "invalid_depth_fraction"}
++        }
++        group = content_digest({"parameters": physical, "asset_family_hash": asset_family_hash})
++        return cls(
++            group_id=f"g-{group[:32]}",
++            scene_parameters=parameters,
++            asset_family_hash=asset_family_hash,
++            seed=seed,
++        )
++
++
++class SampleRecord(DurableModel):
++    sample_id: SafeID
++    group_id: SafeID
++    episode_id: SafeID
++    frame_id: SafeID
++    scene: SceneSpec
++    observation_metadata: dict[str, Any]
++    labels: dict[str, Any]
++    physics_state_hash: str
++    paths: dict[str, str] = Field(default_factory=dict)
++    file_hashes: dict[str, str] = Field(default_factory=dict)
++    content_hash: str = ""
++    perceptual_hash: str = ""
++    status: Literal["POSITIVE", "NEGATIVE"]
++    source: str = "mujoco_camera"
++    label_source: Literal["SIMULATOR_GROUND_TRUTH"] = "SIMULATOR_GROUND_TRUTH"
++    execution_verified: Literal[False] = False
++    captured_frame: CapturedFrame | None = Field(default=None, exclude=True, repr=False)
++    raw_captured_frame: CapturedFrame | None = Field(default=None, exclude=True, repr=False)
++    root: Path | None = Field(default=None, exclude=True, repr=False)
++
++    @field_validator("paths")
++    @classmethod
++    def validate_paths(cls, value: dict[str, str]) -> dict[str, str]:
++        for path in value.values():
++            safe_relative_path(path)
++        return value
++
++    @model_validator(mode="after")
++    def validate_metadata(self) -> SampleRecord:
++        if self.group_id != self.scene.group_id:
++            raise ValueError("sample and scene group IDs disagree")
++        if any(
++            key in self.observation_metadata
++            for key in {"rgb_png_base64", "depth_float32_base64", "valid_mask_base64"}
++        ):
++            raise ValueError("observation metadata must not contain image payloads")
++        canonical_json(self.observation_metadata)
++        canonical_json(self.labels)
++        return self
++
++    @classmethod
++    def from_capture(
++        cls,
++        scene: SceneSpec,
++        frame: CapturedFrame,
++        labels: dict[str, Any],
++        *,
++        raw_captured_frame: CapturedFrame | None = None,
++    ) -> SampleRecord:
++        observation = frame.observation
++        metadata = observation.model_dump(
++            mode="json", exclude={"rgb_png_base64", "depth_float32_base64", "valid_mask_base64"}
++        )
++        identity = content_digest(
++            {"scene": scene.scene_hash, "observation": observation.checksum_sha256}
++        )
++        return cls(
++            sample_id=f"s-{identity[:32]}",
++            group_id=scene.group_id,
++            episode_id=f"e-{scene.group_id}",
++            frame_id=observation.frame_id,
++            scene=scene,
++            observation_metadata=metadata,
++            labels=labels,
++            physics_state_hash=frame.physics_state_hash,
++            status="POSITIVE" if labels.get("positive") is True else "NEGATIVE",
++            source=observation.source,
++            captured_frame=frame,
++            raw_captured_frame=raw_captured_frame,
++        )
++
++
++class DatasetManifest(DurableModel):
++    dataset_id: SafeID
++    config: DatasetConfig
++    config_hash: str
++    status: Literal["RUNNING", "COMPLETE", "INCOMPLETE", "CANCELLED", "BLOCKED", "FAILED"]
++    requested_groups: int = Field(ge=1, le=10000)
++    completed_groups: int = Field(default=0, ge=0)
++    sample_count: int = Field(default=0, ge=0)
++    attempts: int = Field(default=0, ge=0)
++    positive_count: int = Field(default=0, ge=0)
++    negative_count: int = Field(default=0, ge=0)
++    rejected_count: int = Field(default=0, ge=0)
++    reason: str | None = None
++    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
++    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
++    source: dict[str, Any] = Field(default_factory=dict)
++    resources: dict[str, Any] = Field(default_factory=dict)
++    content_hash: str = ""
++
++    @model_validator(mode="after")
++    def validate_config(self) -> DatasetManifest:
++        if self.dataset_id != self.config.dataset_id or self.config_hash != self.config.config_hash:
++            raise ValueError("manifest/config mismatch")
++        if self.requested_groups != self.config.groups:
++            raise ValueError("manifest requested groups disagree with configuration")
++        if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
++            raise ValueError("manifest timestamps must include timezone")
++        return self
++
++
++class QualityReport(DurableModel):
++    valid: bool
++    sample_count: int = Field(ge=0)
++    group_count: int = Field(ge=0)
++    errors: list[str] = Field(default_factory=list)
++    warnings: list[str] = Field(default_factory=list)
++    positive_count: int = 0
++    negative_count: int = 0
++    split_counts: dict[str, int] = Field(default_factory=dict)
++    duplicate_count: int = 0
++
++
++class SplitManifest(DurableModel):
++    seed: int = Field(ge=0)
++    group_assignments: dict[str, Literal["train", "calibration", "selection", "test"]]
++    sample_assignments: dict[str, Literal["train", "calibration", "selection", "test"]]
++    counts: dict[str, int]
++    duplicates: list[dict[str, Any]] = Field(default_factory=list)
++    algorithm_version: str = "group-content-v1"
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/quality.py
+@@ -0,0 +1,406 @@
++"""Payload-backed validation and conservative local RGB-D duplicate screening."""
++
++from __future__ import annotations
++
++import base64
++import binascii
++import io
++import json
++import re
++from collections.abc import Sequence
++from functools import lru_cache
++from pathlib import Path
++
++import numpy as np
++from PIL import Image
++
++from cloud_edge_robot_arm.datasets.rgbd.models import (
++    DatasetConfig,
++    QualityReport,
++    SampleRecord,
++    SplitManifest,
++    canonical_json,
++    content_digest,
++    safe_relative_path,
++)
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++
++def source_identity(record: SampleRecord) -> str:
++    """Full canonical physical/asset hash; never trust a user-supplied group ID."""
++    physical = {
++        key: value
++        for key, value in record.scene.scene_parameters.items()
++        if key not in {"camera", "light_intensity", "depth_noise_m", "invalid_depth_fraction"}
++    }
++    return content_digest(
++        {"parameters": physical, "asset_family_hash": record.scene.asset_family_hash}
++    )
++
++
++def perceptual_signature(observation: RGBDObservation) -> str:
++    """Return v1 RGB 64x48 + metric depth 32x24 thumbnails, with no labels.
++
++    Local channel-centered colors remove uniform lighting offsets. Comparison
++    requires matching chromatic support and local colors, then metric depth.
++    Unlike a global average/dHash, the fixed background cannot drown out a moved
++    colored object. This conservative test detects small photometric changes;
++    source grouping additionally covers viewpoint and corruption derivatives.
++    """
++    with Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))) as image:
++        rgb = np.asarray(image.resize((64, 48), Image.Resampling.BOX), dtype=np.uint8)
++    depth = np.frombuffer(base64.b64decode(observation.depth_float32_base64), dtype="<f4")
++    depth = depth.reshape((observation.height, observation.width))
++    small_depth = np.asarray(
++        Image.fromarray(depth).resize((32, 24), Image.Resampling.NEAREST), dtype="<f4"
++    )
++    return canonical_json(
++        {
++            "version": "local-rgbd-v1",
++            "shape": [observation.width, observation.height],
++            "rgb": base64.b64encode(rgb.tobytes()).decode(),
++            "depth": base64.b64encode(small_depth.tobytes()).decode(),
++        }
++    )
++
++
++@lru_cache(maxsize=4096)
++def _decode_signature(
++    signature: str,
++) -> tuple[tuple[int, ...], np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
++    try:
++        payload = json.loads(signature)
++        if (
++            set(payload) != {"version", "shape", "rgb", "depth"}
++            or payload["version"] != "local-rgbd-v1"
++        ):
++            raise ValueError("unknown signature version")
++        shape = payload["shape"]
++        if (
++            not isinstance(shape, list)
++            or len(shape) != 2
++            or any(type(n) is not int or n < 1 for n in shape)
++            or shape[0] > 1280
++            or shape[1] > 720
++        ):
++            raise ValueError("invalid signature dimensions")
++        rgb = (
++            np.frombuffer(base64.b64decode(payload["rgb"], validate=True), dtype=np.uint8)
++            .reshape(48, 64, 3)
++            .astype(np.float32)
++            / 255
++        )
++        depth = np.frombuffer(
++            base64.b64decode(payload["depth"], validate=True), dtype="<f4"
++        ).reshape(24, 32)
++        if not np.isfinite(depth).all() or (depth < 0).any():
++            raise ValueError("invalid signature depth")
++        chroma = rgb - rgb.mean(axis=2, keepdims=True)
++        support = rgb.max(axis=2) - rgb.min(axis=2) > 0.15
++        coarse = chroma.reshape(12, 4, 16, 4, 3).mean(axis=(1, 3))
++        gray = rgb.mean(axis=2)
++        return tuple(shape), chroma, support, depth, coarse, gray - np.median(gray)
++    except (ValueError, TypeError, KeyError, binascii.Error) as exc:
++        raise ValueError("invalid perceptual signature") from exc
++
++
++def _near_duplicate(first: str, second: str) -> bool:
++    left, right = _decode_signature(first), _decode_signature(second)
++    if left[0] != right[0] or np.max(np.abs(left[4] - right[4])) > 0.035:
++        return False
++    union = left[2] | right[2]
++    if union.any():
++        intersection = left[2] & right[2]
++        if intersection.sum() / union.sum() < 0.95:
++            return False
++        changed = np.max(np.abs(left[1] - right[1]), axis=2) > 0.06
++        if (changed & union).sum() / union.sum() > 0.02:
++            return False
++    elif np.max(np.abs(left[5] - right[5])) > 0.04:
++        return False
++    valid = (left[3] > 0) & (right[3] > 0)
++    if np.mean((left[3] > 0) != (right[3] > 0)) > 0.02:
++        return False
++    return bool(not valid.any() or np.max(np.abs(left[3][valid] - right[3][valid])) <= 0.015)
++
++
++def duplicate_reason(candidate: SampleRecord, existing: SampleRecord) -> str | None:
++    for record in (candidate, existing):
++        if record.perceptual_hash:
++            _decode_signature(record.perceptual_hash)
++    if candidate.group_id == existing.group_id:
++        return "source_group"
++    if candidate.episode_id == existing.episode_id:
++        return "episode"
++    if source_identity(candidate) == source_identity(existing):
++        return "canonical_source"
++    if candidate.scene.scene_hash == existing.scene.scene_hash:
++        return "scene_content"
++    if candidate.content_hash and candidate.content_hash == existing.content_hash:
++        return "content_hash"
++    if (
++        candidate.perceptual_hash
++        and existing.perceptual_hash
++        and _near_duplicate(candidate.perceptual_hash, existing.perceptual_hash)
++    ):
++        return "near_duplicate"
++    return None
++
++
++def find_duplicate(candidate: SampleRecord, existing: Sequence[SampleRecord]) -> str | None:
++    """Return a matching existing sample ID, or None; persist the signature first."""
++    if candidate.perceptual_hash:
++        _decode_signature(candidate.perceptual_hash)
++    for record in sorted(existing, key=lambda item: item.sample_id):
++        if duplicate_reason(candidate, record):
++            return record.sample_id
++    return None
++
++
++def _validate_labels(record: SampleRecord, observation: RGBDObservation) -> None:
++    from cloud_edge_robot_arm.vision.offline_reader import load_numeric, resolve_payload
++
++    labels = record.labels
++    required = {
++        "instruction",
++        "instruction_en",
++        "target_instance_id",
++        "destination_instance_id",
++        "instances",
++        "target_pixel",
++        "destination_pixel",
++        "surface_point",
++        "object_center",
++        "positive",
++        "negative_reasons",
++        "suggested_action",
++        "label_source",
++        "execution_verified",
++    }
++    if not required <= labels.keys() or any(
++        not isinstance(labels[key], str) or not labels[key].strip()
++        for key in ("instruction", "instruction_en")
++    ):
++        raise ValueError("incomplete grounding labels")
++    if not isinstance(labels["negative_reasons"], list) or any(
++        not isinstance(reason, str) or not reason for reason in labels["negative_reasons"]
++    ):
++        raise ValueError("negative reasons must be a list of nonempty strings")
++    if (
++        labels["label_source"] != "SIMULATOR_GROUND_TRUTH"
++        or labels["execution_verified"] is not False
++    ):
++        raise ValueError("labels cannot claim verified physical execution")
++    if labels["target_instance_id"] != 1 or labels["destination_instance_id"] != 5:
++        raise ValueError("invalid target/destination semantic IDs")
++    assert record.root is not None
++    instances = load_numeric(
++        resolve_payload(record.root, record.paths["instance"]).read_bytes(),
++        "<i4",
++        (observation.height, observation.width),
++        "instance",
++    )
++    depth_valid = np.frombuffer(observation.valid_mask_bytes(), dtype="u1").reshape(instances.shape)
++    by_id = {}
++    for item in labels["instances"]:
++        semantic_id = item["semantic_id"]
++        if type(semantic_id) is not int or semantic_id in by_id or not 1 <= semantic_id <= 5:
++            raise ValueError("duplicate/invalid label semantic ID")
++        by_id[semantic_id] = item
++        ys, xs = np.where(instances == semantic_id)
++        count = len(xs)
++        box = (
++            [int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1] if count else None
++        )
++        valid_fraction = float(depth_valid[ys, xs].mean()) if count else 0.0
++        if item["visible_pixels"] != count or item["bbox_xyxy"] != box:
++            raise ValueError("label visibility/bbox disagrees with semantic payload")
++        if not np.isclose(item["valid_depth_fraction"], valid_fraction, atol=1e-7):
++            raise ValueError("label depth fraction disagrees with restored depth")
++    if 1 not in by_id or 5 not in by_id:
++        raise ValueError("missing target/destination instance labels")
++    target = by_id[1]
++    destination = by_id[5]
++    threshold_positive = all(
++        item["visible_pixels"] >= 100 and item["valid_depth_fraction"] >= 0.95
++        for item in (target, destination)
++    )
++    if labels["object_center"] != target["position"]:
++        raise ValueError("object center differs from the target position")
++    if type(labels["positive"]) is not bool or labels["positive"] != (record.status == "POSITIVE"):
++        raise ValueError("record/label positive status disagrees")
++    if labels["positive"] and not threshold_positive:
++        raise ValueError("research negative incorrectly marked positive")
++    if labels["positive"]:
++        if labels["surface_point"] is None:
++            raise ValueError("positive sample missing metric surface grounding")
++        if labels["negative_reasons"] or labels["suggested_action"] != "GROUND_TARGET":
++            raise ValueError("positive label has inconsistent action/reasons")
++    elif not labels["negative_reasons"] or labels["suggested_action"] != "REQUEST_MORE_OBSERVATION":
++        raise ValueError("negative sample must retain reasons and request observation")
++    for name, semantic_id in (("target_pixel", 1), ("destination_pixel", 5)):
++        pixel = labels[name]
++        if pixel is None:
++            if labels["positive"]:
++                raise ValueError("positive sample missing grounding pixel")
++            continue
++        if (
++            not isinstance(pixel, list)
++            or len(pixel) != 2
++            or any(type(v) is not int for v in pixel)
++            or not 0 <= pixel[0] < observation.width
++            or not 0 <= pixel[1] < observation.height
++            or instances[pixel[1], pixel[0]] != semantic_id
++            or not depth_valid[pixel[1], pixel[0]]
++        ):
++            raise ValueError("grounding pixel does not belong to its semantic instance")
++    if labels["surface_point"] is not None:
++        pixel = labels["target_pixel"]
++        if pixel is None:
++            raise ValueError("surface point requires a selected target pixel")
++        point = observation.world_point(tuple(pixel))
++        if not np.allclose(labels["surface_point"], [point.x, point.y, point.z], atol=1e-6):
++            raise ValueError("surface grounding disagrees with metric depth/calibration")
++
++
++def validate_dataset(root: Path) -> QualityReport:
++    """Verify complete durable evidence, schemas, labels, counts and holdout audit.
++
++    A fully populated RUNNING manifest can pass the generator's completion gate
++    with a warning; partial/cancelled/failed datasets never report valid=True.
++    Validation is read-only and does not repair/rewrite the original data.
++    """
++    from cloud_edge_robot_arm.datasets.rgbd.splitter import ROLES, assign_splits
++    from cloud_edge_robot_arm.datasets.rgbd.writer import load_manifest, load_records
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation, resolve_payload
++
++    root = Path(root).resolve()
++    errors, warnings = [], []
++    records, manifest, split = [], None, None
++    try:
++        config = DatasetConfig.model_validate_json(
++            resolve_payload(root, "config.json").read_bytes()
++        )
++        manifest = load_manifest(root)
++        if manifest is None:
++            raise ValueError("missing dataset manifest")
++        if manifest.config_hash != config.config_hash:
++            raise ValueError("config hash mismatch")
++        source = json.loads(resolve_payload(root, "source.json").read_bytes())
++        if source != manifest.source:
++            raise ValueError("source evidence differs from manifest")
++        for kind in ("source", "asset"):
++            hashes = source.get(f"{kind}_files")
++            if not isinstance(hashes, dict) or not hashes:
++                raise ValueError(f"missing {kind} file evidence")
++            for name, digest in hashes.items():
++                safe_relative_path(name)
++                if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
++                    raise ValueError(f"invalid {kind} file checksum")
++            if source.get(f"{kind}_hash") != content_digest(hashes):
++                raise ValueError(f"{kind} evidence hash mismatch")
++        records = load_records(root)
++        indexed = [
++            SampleRecord.model_validate_json(line)
++            for line in resolve_payload(root, "samples.jsonl").read_bytes().splitlines()
++            if line.strip()
++        ]
++        if {r.sample_id for r in indexed} != {r.sample_id for r in records} or len(indexed) != len(
++            records
++        ):
++            raise ValueError("dataset index does not completely cover committed samples")
++    except (ValueError, OSError, TypeError, KeyError) as exc:
++        errors.append(f"dataset evidence: {exc}")
++    for record in records:
++        try:
++            observation = load_offline_observation(record)
++            if manifest and (
++                observation.width != manifest.config.width
++                or observation.height != manifest.config.height
++            ):
++                raise ValueError("observation dimensions differ from dataset config")
++            if not record.perceptual_hash or record.perceptual_hash != perceptual_signature(
++                observation
++            ):
++                raise ValueError("perceptual signature does not match restored observation")
++            _validate_labels(record, observation)
++        except (ValueError, OSError, TypeError, KeyError, IndexError) as exc:
++            errors.append(f"sample {record.sample_id}: {exc}")
++    positive_count = sum(record.status == "POSITIVE" for record in records)
++    negative_count = len(records) - positive_count
++    expected_split = None
++    try:
++        split = SplitManifest.model_validate_json(
++            resolve_payload(root, "reports/split_audit.json").read_bytes()
++        )
++        if manifest and split.seed != manifest.config.seed:
++            raise ValueError("split seed differs from dataset config")
++        expected_split = assign_splits(records, split.seed)
++        if split != expected_split:
++            raise ValueError("split audit differs from verified source/content assignments")
++        seen = set()
++        canonical_records = {r.sample_id: r.model_dump(mode="json") for r in records}
++        for role in ROLES:
++            role_records = [
++                SampleRecord.model_validate_json(line)
++                for line in resolve_payload(root, f"splits/{role}.jsonl").read_bytes().splitlines()
++                if line.strip()
++            ]
++            actual = set()
++            for record in role_records:
++                if record.sample_id in seen or canonical_records.get(
++                    record.sample_id
++                ) != record.model_dump(mode="json"):
++                    raise ValueError("overlapping holdouts or altered split record")
++                seen.add(record.sample_id)
++                actual.add(record.sample_id)
++            expected = {
++                sample_id
++                for sample_id, assigned in split.sample_assignments.items()
++                if assigned == role
++            }
++            if actual != expected:
++                raise ValueError(f"{role} split coverage/assignment mismatch")
++        if seen != set(canonical_records):
++            raise ValueError("split files do not cover all retained samples")
++    except (ValueError, OSError, TypeError, KeyError) as exc:
++        errors.append(f"holdout integrity: {exc}")
++    group_count = (
++        sum(expected_split.counts.values())
++        if expected_split
++        else len({source_identity(r) for r in records})
++    )
++    if manifest:
++        if manifest.status not in {"COMPLETE", "RUNNING"}:
++            reason = manifest.reason or "generation did not complete"
++            errors.append(f"dataset status is {manifest.status}: {reason}")
++        elif manifest.status == "RUNNING":
++            warnings.append("complete payload checked before final COMPLETE manifest publication")
++        if manifest.completed_groups != group_count or group_count != manifest.requested_groups:
++            errors.append("manifest/requested/independent group counts disagree")
++        if (
++            manifest.sample_count != len(records)
++            or manifest.positive_count != positive_count
++            or manifest.negative_count != negative_count
++        ):
++            errors.append("manifest sample/positive/negative counts disagree")
++        if (
++            not len(records)
++            or manifest.attempts < group_count
++            or manifest.attempts
++            > manifest.requested_groups * manifest.config.max_attempt_multiplier
++        ):
++            errors.append("empty dataset or inconsistent bounded attempt count")
++        if manifest.content_hash != content_digest(sorted(r.content_hash for r in records)):
++            errors.append("manifest content hash mismatch")
++    return QualityReport(
++        valid=not errors,
++        sample_count=len(records),
++        group_count=group_count,
++        positive_count=positive_count,
++        negative_count=negative_count,
++        errors=errors,
++        warnings=warnings,
++        split_counts=expected_split.counts if expected_split else {},
++        duplicate_count=len(expected_split.duplicates) if expected_split else 0,
++    )
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/scene_sampler.py
+@@ -0,0 +1,59 @@
++"""Seeded static scene proposals; only SceneSpec defines dataset scene identity."""
++
++from __future__ import annotations
++
++import hashlib
++from pathlib import Path
++from typing import Any
++
++import numpy as np
++
++from cloud_edge_robot_arm.datasets.rgbd.models import DatasetConfig, SceneSpec
++
++COLORS = {"red": [.9, .12, .08, 1.], "blue": [.08, .2, .9, 1.],
++          "yellow": [.95, .8, .06, 1.]}
++
++
++def sample_scene(config: DatasetConfig, seed: int) -> SceneSpec:
++    rng = np.random.default_rng(seed)
++    destination = {"position": [.20, .25, .002], "half_size": [.07, .07, .002],
++                   "rgba": [.1, .6, .2, 1.]}
++    placed: list[dict[str, Any]] = [destination]
++    color = str(rng.choice(list(COLORS)))
++
++    def object_spec(target: bool) -> dict[str, Any]:
++        size = rng.uniform(*config.half_size, size=3)
++        for _ in range(300):
++            x = float(rng.uniform(*(config.target_x if target else (.13, .65))))
++            y = float(rng.uniform(*(config.target_y if target else (-.30, .32))))
++            if not (-.28 < x - size[0] and x + size[0] < .98 and
++                    -.43 < y - size[1] and y + size[1] < .43):
++                continue
++            if all(abs(x - obj["position"][0]) > size[0] + obj["half_size"][0] + .015 or
++                   abs(y - obj["position"][1]) > size[1] + obj["half_size"][1] + .015
++                   for obj in placed):
++                break
++        else:
++            raise ValueError("scene layout cannot fit non-overlapping objects within the table")
++        name = color if target else str(rng.choice([c for c in COLORS if c != color]))
++        obj = {"position": [x, y, float(size[2] + .008)], "half_size": size.tolist(),
++               "rgba": COLORS[name].copy(), "color_name": name,
++               "mass_kg": float(rng.uniform(.05, .15)),
++               "friction": float(rng.uniform(.5, 1.0))}
++        placed.append(obj)
++        return obj
++
++    params = {"target": object_spec(True),
++              "distractors": [object_spec(False) for _ in range(
++                  int(rng.integers(config.distractor_count[0], config.distractor_count[1] + 1)))],
++              "destination": destination,
++              "camera": {"position": [float(rng.uniform(*config.camera_x)),
++                                      float(rng.uniform(*config.camera_y)),
++                                      float(rng.uniform(*config.camera_height))],
++                         "quaternion": [1., 0., 0., 0.],
++                         "fovy": float(rng.uniform(*config.camera_fovy))},
++              "light_intensity": float(rng.uniform(*config.light_intensity)),
++              "depth_noise_m": float(rng.choice(config.depth_noise_m)),
++              "invalid_depth_fraction": float(rng.choice(config.invalid_depth_fractions))}
++    asset_hash = hashlib.sha256(Path(config.model_path).read_bytes()).hexdigest()
++    return SceneSpec.from_parameters(params, asset_hash, seed)
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/splitter.py
+@@ -0,0 +1,111 @@
++"""Deterministic source-connected holdouts with auditable duplicate evidence."""
++
++from __future__ import annotations
++
++import hashlib
++from collections.abc import Sequence
++from pathlib import Path
++from typing import Literal
++
++from cloud_edge_robot_arm.datasets.rgbd.models import SampleRecord, SplitManifest, canonical_json
++from cloud_edge_robot_arm.datasets.rgbd.quality import duplicate_reason, source_identity
++
++SplitRole = Literal["train", "calibration", "selection", "test"]
++ROLES: tuple[SplitRole, ...] = ("train", "calibration", "selection", "test")
++ALGORITHM = "source-content-local-rgbd-v1"
++
++
++def assign_splits(records: Sequence[SampleRecord], seed: int) -> SplitManifest:
++    """Keep connected source/episode/content/perceptual groups in one holdout.
++
++    Largest-remainder allocation applies to independent connected groups, not
++    frame counts. Hash ordering makes results independent of input iteration.
++    """
++    if type(seed) is not int or seed < 0:
++        raise ValueError("split seed must be a nonnegative integer")
++    ordered = sorted(records, key=lambda record: record.sample_id)
++    if len({record.sample_id for record in ordered}) != len(ordered):
++        raise ValueError("duplicate sample identity")
++    parent = list(range(len(ordered)))
++
++    def find(index: int) -> int:
++        while parent[index] != index:
++            parent[index] = parent[parent[index]]
++            index = parent[index]
++        return index
++
++    duplicates = []
++    for i, current in enumerate(ordered):
++        for j in range(i):
++            reason = duplicate_reason(current, ordered[j])
++            if reason:
++                parent[find(i)] = find(j)
++                duplicates.append(
++                    {
++                        "sample_id": current.sample_id,
++                        "duplicate_of": ordered[j].sample_id,
++                        "reason": reason,
++                    }
++                )
++    components: dict[int, list[SampleRecord]] = {}
++    for index, record in enumerate(ordered):
++        components.setdefault(find(index), []).append(record)
++
++    def rank(component: list[SampleRecord]) -> str:
++        identity = canonical_json(sorted({source_identity(record) for record in component}))
++        return hashlib.sha256(f"{seed}:{identity}".encode()).hexdigest()
++
++    groups = sorted(components.values(), key=rank)
++    proportions = (80, 5, 5, 10)
++    quotas = [len(groups) * percentage // 100 for percentage in proportions]
++    # Integer remainders avoid floating-point quota errors (e.g. 100 -> 80/5/5/10).
++    remainder_order = sorted(range(4), key=lambda i: (-(len(groups) * proportions[i] % 100), i))
++    for index in remainder_order[: len(groups) - sum(quotas)]:
++        quotas[index] += 1
++    group_assignments: dict[str, SplitRole] = {}
++    sample_assignments: dict[str, SplitRole] = {}
++    start = 0
++    for role, quota in zip(ROLES, quotas, strict=True):
++        for component in groups[start : start + quota]:
++            for record in component:
++                group_assignments[record.group_id] = role
++                sample_assignments[record.sample_id] = role
++        start += quota
++    return SplitManifest(
++        seed=seed,
++        group_assignments=group_assignments,
++        sample_assignments=sample_assignments,
++        counts=dict(zip(ROLES, quotas, strict=True)),
++        duplicates=duplicates,
++        algorithm_version=ALGORITHM,
++    )
++
++
++def write_splits(root: Path, manifest: SplitManifest, records: Sequence[SampleRecord]) -> None:
++    """Atomically replace each role file, then publish its audit manifest last.
++
++    A concurrent/incomplete replacement fails validation rather than exposing an
++    apparently verified mixture. Generation supports one writer per dataset.
++    """
++    from cloud_edge_robot_arm.datasets.rgbd.writer import _atomic_write
++
++    manifest = SplitManifest.model_validate(manifest.model_dump(mode="json"))
++    expected = assign_splits(records, manifest.seed)
++    if manifest != expected:
++        raise ValueError("split manifest does not match source-connected assignments")
++    root = Path(root).resolve()
++    for directory in (root / "splits", root / "reports"):
++        if directory.is_symlink():
++            raise ValueError("symlink split/report directory is forbidden")
++        directory.mkdir(parents=True, exist_ok=True)
++    for role in ROLES:
++        payload = "".join(
++            canonical_json(record.model_dump(mode="json")) + "\n"
++            for record in sorted(records, key=lambda item: item.sample_id)
++            if manifest.sample_assignments[record.sample_id] == role
++        )
++        _atomic_write(root / "splits" / f"{role}.jsonl", payload.encode())
++    _atomic_write(
++        root / "reports" / "split_audit.json",
++        (canonical_json(manifest.model_dump(mode="json")) + "\n").encode(),
++    )
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/writer.py
+@@ -0,0 +1,442 @@
++"""Atomic episode publication, payload verification and resumable indexes.
++
++Only a renamed episode directory with a valid COMMIT.json is authoritative.
++samples.jsonl is an atomically replaced, reconstructible index of those episodes.
++One dataset writer process is supported, matching the single-renderer contract.
++"""
++
++from __future__ import annotations
++
++import base64
++import errno
++import hashlib
++import io
++import json
++import os
++import shutil
++import tempfile
++import uuid
++from collections.abc import Sequence
++from pathlib import Path
++from typing import Any
++
++import numpy as np
++from PIL import Image
++
++from cloud_edge_robot_arm.datasets.rgbd.models import (
++    DatasetConfig,
++    DatasetManifest,
++    SampleRecord,
++    canonical_json,
++    content_digest,
++    safe_component,
++)
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.offline_reader import (
++    load_numeric,
++    load_offline_observation,
++    resolve_payload,
++)
++
++
++def _fsync_directory(path: Path) -> None:
++    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
++    try:
++        os.fsync(descriptor)
++    finally:
++        os.close(descriptor)
++
++
++def _write_bytes(path: Path, payload: bytes) -> None:
++    with path.open("wb") as stream:
++        stream.write(payload)
++        stream.flush()
++        os.fsync(stream.fileno())
++
++
++def _json_bytes(value: Any) -> bytes:
++    return (canonical_json(value) + "\n").encode("utf-8")
++
++
++def _atomic_write(path: Path, payload: bytes) -> None:
++    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
++    try:
++        with os.fdopen(descriptor, "wb") as stream:
++            stream.write(payload)
++            stream.flush()
++            os.fsync(stream.fileno())
++        os.replace(temporary, path)
++        _fsync_directory(path.parent)
++    finally:
++        Path(temporary).unlink(missing_ok=True)
++
++
++def _config(root: Path) -> DatasetConfig | None:
++    path = root / "config.json"
++    if not path.exists():
++        return None
++    return DatasetConfig.model_validate_json(resolve_payload(root, "config.json").read_bytes())
++
++
++def load_manifest(root: Path) -> DatasetManifest | None:
++    root = Path(root).resolve()
++    if not (root / "manifest.json").exists():
++        return None
++    manifest = DatasetManifest.model_validate_json(
++        resolve_payload(root, "manifest.json").read_bytes()
++    )
++    config = _config(root)
++    if config is not None and manifest.config_hash != config.config_hash:
++        raise ValueError("manifest/config mismatch")
++    return manifest
++
++
++def save_manifest(root: Path, manifest: DatasetManifest) -> None:
++    root = Path(root).resolve()
++    root.mkdir(parents=True, exist_ok=True)
++    # Revalidate because pydantic model_copy intentionally does not validate updates.
++    manifest = DatasetManifest.model_validate(manifest.model_dump(mode="json"))
++    existing = load_manifest(root)
++    config = _config(root)
++    if (existing is not None and existing.config_hash != manifest.config_hash) or (
++        config is not None and config.config_hash != manifest.config_hash
++    ):
++        raise ValueError("refusing to overwrite incompatible dataset config/manifest")
++    _atomic_write(root / "manifest.json", _json_bytes(manifest.model_dump(mode="json")))
++
++
++def _read_records(payload: bytes, root: Path) -> list[SampleRecord]:
++    return [
++        SampleRecord.model_validate_json(line).model_copy(update={"root": root})
++        for line in payload.splitlines()
++        if line.strip()
++    ]
++
++
++def _content_hash(record: SampleRecord, observation: RGBDObservation, instance_bytes: bytes) -> str:
++    return content_digest(
++        {
++            "scene_hash": record.scene.scene_hash,
++            "physics_state_hash": record.physics_state_hash,
++            "labels": record.labels,
++            "rgb": hashlib.sha256(base64.b64decode(observation.rgb_png_base64)).hexdigest(),
++            "depth": hashlib.sha256(base64.b64decode(observation.depth_float32_base64)).hexdigest(),
++            "mask": hashlib.sha256(observation.valid_mask_bytes()).hexdigest(),
++            "instance": hashlib.sha256(instance_bytes).hexdigest(),
++            "calibration": {
++                key: record.observation_metadata.get(key)
++                for key in (
++                    "width",
++                    "height",
++                    "intrinsics",
++                    "camera_to_world",
++                    "depth_convention",
++                    "calibration_version",
++                    "source",
++                )
++            },
++        }
++    )
++
++
++def load_records(root: Path) -> list[SampleRecord]:
++    """Verify committed episodes, ignoring staging debris and a missing/stale index."""
++    root = Path(root).resolve()
++    config = _config(root)
++    manifest = load_manifest(root)
++    if config is None and manifest is not None:
++        config = manifest.config
++    records: list[SampleRecord] = []
++    seen: set[str] = set()
++    episodes = root / "episodes"
++    if episodes.is_symlink():
++        raise ValueError("symlink episodes path is forbidden")
++    if episodes.exists():
++        for directory in sorted(episodes.iterdir()):
++            if directory.is_symlink() or not directory.is_dir():
++                raise ValueError("invalid committed episode path")
++            safe_component(directory.name)
++            prefix = f"episodes/{directory.name}/"
++            commit = json.loads(resolve_payload(root, prefix + "COMMIT.json").read_bytes())
++            if commit.get("schema_version") != "rgbd.dataset.v1":
++                raise ValueError("unknown episode schema")
++            if config is None or commit.get("config_hash") != config.config_hash:
++                raise ValueError("committed episode/config mismatch")
++            payload = resolve_payload(root, prefix + "records.jsonl").read_bytes()
++            if hashlib.sha256(payload).hexdigest() != commit.get("records_sha256"):
++                raise ValueError("episode index checksum mismatch")
++            episode_records = _read_records(payload, root)
++            if not episode_records or len(episode_records) != commit.get("sample_count"):
++                raise ValueError("committed episode count mismatch")
++            for record in episode_records:
++                if record.episode_id != directory.name or record.sample_id in seen:
++                    raise ValueError("duplicate or mismatched committed sample identity")
++                observation = load_offline_observation(record)
++                instances = load_numeric(
++                    resolve_payload(root, record.paths["instance"]).read_bytes(),
++                    "<i4",
++                    (observation.height, observation.width),
++                    "instance",
++                )
++                if _content_hash(record, observation, instances.tobytes()) != record.content_hash:
++                    raise ValueError("sample content hash mismatch")
++                seen.add(record.sample_id)
++                records.append(record)
++    records.sort(key=lambda item: (item.episode_id, item.sample_id))
++    index = root / "samples.jsonl"
++    if index.exists():
++        committed = {record.sample_id: record.model_dump(mode="json") for record in records}
++        indexed: set[str] = set()
++        for record in _read_records(resolve_payload(root, "samples.jsonl").read_bytes(), root):
++            if record.sample_id in indexed or committed.get(record.sample_id) != record.model_dump(
++                mode="json"
++            ):
++                raise ValueError("dataset index differs from committed episodes")
++            indexed.add(record.sample_id)
++    return records
++
++
++def _array_bytes(array: np.ndarray) -> bytes:
++    stream = io.BytesIO()
++    np.save(stream, array, allow_pickle=False)
++    return stream.getvalue()
++
++
++def _observation_payloads(observation: RGBDObservation) -> dict[str, bytes]:
++    shape = (observation.height, observation.width)
++    metadata = observation.model_dump(
++        mode="json", exclude={"rgb_png_base64", "depth_float32_base64", "valid_mask_base64"}
++    )
++    return {
++        "rgb": base64.b64decode(observation.rgb_png_base64, validate=True),
++        "depth": _array_bytes(
++            np.frombuffer(base64.b64decode(observation.depth_float32_base64), dtype="<f4").reshape(
++                shape
++            )
++        ),
++        "valid_mask": _array_bytes(
++            np.frombuffer(observation.valid_mask_bytes(), dtype="u1").reshape(shape)
++        ),
++        "camera": _json_bytes(metadata),
++    }
++
++
++class DatasetWriter:
++    def __init__(self, root: Path, config: DatasetConfig) -> None:
++        self.root = Path(root).resolve()
++        self.config = DatasetConfig.model_validate(config.model_dump(mode="json"))
++        self.root.mkdir(parents=True, exist_ok=True)
++        existing = _config(self.root)
++        manifest = load_manifest(self.root)
++        if (existing is not None and existing.config_hash != config.config_hash) or (
++            manifest is not None and manifest.config_hash != config.config_hash
++        ):
++            raise ValueError("cannot resume incompatible dataset config")
++        if existing is None:
++            _atomic_write(self.root / "config.json", _json_bytes(config.model_dump(mode="json")))
++        for name in ("episodes", ".staging"):
++            path = self.root / name
++            if path.is_symlink():
++                raise ValueError("symlink dataset directory is forbidden")
++            path.mkdir(exist_ok=True)
++        self._records = load_records(self.root)
++        self._write_index()
++
++    @property
++    def records(self) -> list[SampleRecord]:
++        return list(self._records)
++
++    @property
++    def total_bytes(self) -> int:
++        return sum(
++            path.stat().st_size
++            for path in self.root.rglob("*")
++            if path.is_file() and not path.is_symlink()
++        )
++
++    def _write_index(self) -> None:
++        _atomic_write(
++            self.root / "samples.jsonl",
++            b"".join(_json_bytes(record.model_dump(mode="json")) for record in self._records),
++        )
++
++    def _prepare(self, record: SampleRecord, stage: Path) -> SampleRecord:
++        frame = record.captured_frame
++        if frame is None:
++            raise ValueError("new records require captured_frame payload")
++        # Reconstruct the boundary object instead of trusting model_copy mutations.
++        record = SampleRecord.model_validate(
++            {
++                **record.model_dump(mode="json"),
++                "captured_frame": frame,
++                "raw_captured_frame": record.raw_captured_frame,
++            }
++        )
++        observation = frame.observation
++        if record.observation_metadata != observation.model_dump(
++            mode="json", exclude={"rgb_png_base64", "depth_float32_base64", "valid_mask_base64"}
++        ):
++            raise ValueError("captured frame differs from indexed observation metadata")
++        if (
++            not record.physics_state_hash.strip()
++            or record.physics_state_hash != frame.physics_state_hash
++            or len(frame.pass_state_hashes) != 3
++            or any(value != frame.physics_state_hash for value in frame.pass_state_hashes)
++        ):
++            raise ValueError("three render passes must preserve a nonempty indexed physics state")
++        if len(frame.instance_ids) != observation.width * observation.height:
++            raise ValueError("instance shape does not match camera dimensions")
++        mapping: dict[int, int] = {}
++        for instance in record.labels.get("instances", []):
++            semantic = instance["semantic_id"]
++            if type(semantic) is not int or not 1 <= semantic <= 5:
++                raise ValueError("semantic instance IDs must lie in [1, 5]")
++            for geom in instance["geom_ids"]:
++                if type(geom) is not int or geom < 0 or geom in mapping:
++                    raise ValueError("ambiguous or invalid geometry semantic mapping")
++                mapping[geom] = semantic
++        semantics = np.array([mapping.get(geom, 0) for geom in frame.instance_ids], dtype="<i4")
++        semantics = semantics.reshape((observation.height, observation.width))
++        payloads = _observation_payloads(observation)
++        try:
++            payloads["depth_vis"] = base64.b64decode(observation.depth_png_base64())
++        except ValueError:
++            stream = io.BytesIO()
++            Image.new("L", (observation.width, observation.height), 0).save(stream, format="PNG")
++            payloads["depth_vis"] = stream.getvalue()
++        payloads.update(
++            {
++                "instance": _array_bytes(semantics),
++                "scene": _json_bytes(record.scene.model_dump(mode="json")),
++                "labels": _json_bytes(record.labels),
++                "state": _json_bytes({
++                    "physics_state_hash": frame.physics_state_hash,
++                    "pass_state_hashes": frame.pass_state_hashes,
++                }),
++            }
++        )
++        if record.raw_captured_frame is not None:
++            raw = record.raw_captured_frame
++            if (
++                raw.physics_state_hash != record.physics_state_hash
++                or len(raw.pass_state_hashes) != 3
++                or any(value != record.physics_state_hash for value in raw.pass_state_hashes)
++            ):
++                raise ValueError("raw evidence must share the same physics state")
++            payloads.update(
++                {
++                    "raw_" + key: value
++                    for key, value in _observation_payloads(
++                        record.raw_captured_frame.observation
++                    ).items()
++                }
++            )
++            payloads["raw_state"] = _json_bytes(
++                {
++                    "physics_state_hash": raw.physics_state_hash,
++                    "pass_state_hashes": raw.pass_state_hashes,
++                }
++            )
++        names = {
++            "rgb": "rgb.png",
++            "depth": "depth.npy",
++            "depth_vis": "depth_vis.png",
++            "valid_mask": "valid_mask.npy",
++            "instance": "instance.npy",
++            "camera": "camera.json",
++            "scene": "scene.json",
++            "labels": "labels.jsonl",
++            "state": "state.json",
++            "raw_rgb": "raw_rgb.png",
++            "raw_depth": "raw_depth.npy",
++            "raw_valid_mask": "raw_valid_mask.npy",
++            "raw_camera": "raw_camera.json",
++            "raw_state": "raw_state.json",
++        }
++        sample_directory = stage / record.sample_id
++        sample_directory.mkdir()
++        for key, payload in payloads.items():
++            _write_bytes(sample_directory / names[key], payload)
++        _fsync_directory(sample_directory)
++        return record.model_copy(
++            update={
++                "paths": {
++                    key: f"episodes/{record.episode_id}/{record.sample_id}/{names[key]}"
++                    for key in payloads
++                },
++                "file_hashes": {
++                    key: hashlib.sha256(payload).hexdigest() for key, payload in payloads.items()
++                },
++                "content_hash": _content_hash(record, observation, semantics.tobytes()),
++                "root": self.root,
++                "captured_frame": None,
++                "raw_captured_frame": None,
++            }
++        )
++
++    def write_episode(self, records: Sequence[SampleRecord]) -> None:
++        if not records:
++            raise ValueError("cannot publish an empty episode")
++        episode_ids = {safe_component(record.episode_id) for record in records}
++        if len(episode_ids) != 1 or len({r.sample_id for r in records}) != len(records):
++            raise ValueError("episode requires one ID and unique samples")
++        episode_id = next(iter(episode_ids))
++        existing = [record for record in self._records if record.episode_id == episode_id]
++        if existing and all(record.captured_frame is None for record in records):
++            if sorted(r.model_dump_json() for r in existing) != sorted(
++                r.model_dump_json() for r in records
++            ):
++                raise ValueError("existing episode has different content")
++            load_records(self.root)
++            return
++        if (
++            any(r.sample_id in {item.sample_id for item in self._records} for r in records)
++            and not existing
++        ):
++            raise ValueError("sample ID conflicts with an existing episode")
++        stage_root = self.root / ".staging" / uuid.uuid4().hex
++        stage = stage_root / "episodes" / episode_id
++        stage.mkdir(parents=True)
++        try:
++            prepared = sorted(
++                (self._prepare(record, stage) for record in records),
++                key=lambda item: item.sample_id,
++            )
++            if existing:
++                if [r.model_dump(mode="json") for r in existing] != [
++                    r.model_dump(mode="json") for r in prepared
++                ]:
++                    raise ValueError("existing episode has different content")
++                load_records(self.root)
++                return
++            for record in prepared:
++                load_offline_observation(record.model_copy(update={"root": stage_root}))
++            index = b"".join(_json_bytes(record.model_dump(mode="json")) for record in prepared)
++            _write_bytes(stage / "records.jsonl", index)
++            _write_bytes(
++                stage / "COMMIT.json",
++                _json_bytes(
++                    {
++                        "schema_version": "rgbd.dataset.v1",
++                        "config_hash": self.config.config_hash,
++                        "sample_count": len(prepared),
++                        "records_sha256": hashlib.sha256(index).hexdigest(),
++                    }
++                ),
++            )
++            _fsync_directory(stage)
++            index_growth = sum(
++                len(_json_bytes(record.model_dump(mode="json"))) for record in prepared
++            )
++            if self.total_bytes + index_growth > self.config.max_bytes:
++                raise OSError(errno.ENOSPC, "dataset byte budget exhausted")
++            if shutil.disk_usage(self.root).free - index_growth < self.config.min_free_bytes:
++                raise OSError(errno.ENOSPC, "dataset minimum free space budget exhausted")
++            os.replace(stage, self.root / "episodes" / episode_id)
++            _fsync_directory(self.root / "episodes")
++            self._records = sorted(
++                [*self._records, *prepared], key=lambda item: (item.episode_id, item.sample_id)
++            )
++            self._write_index()
++        finally:
++            shutil.rmtree(stage_root, ignore_errors=True)
+--- a/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
++++ b/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
+@@ -89,6 +89,7 @@
+         config: SimulatorConfig,
+         *,
+         model_parameters: Mapping[str, float] | None = None,
++        model_xml: str | None = None,
+     ) -> None:
+         if find_spec("mujoco") is None:
+             raise RuntimeError(
+@@ -103,7 +104,13 @@
+         self._model_parameters = {
+             str(name): float(value) for name, value in (model_parameters or {}).items()
+         }
+-        if self._model_parameters:
++        if model_xml is not None and self._model_parameters:
++            raise ValueError("model_xml and model_parameters are mutually exclusive")
++        if model_xml is not None:
++            self._model = mujoco.MjModel.from_xml_string(model_xml)
++            self._mjspec_xml_sha256 = ""
++            self._model_parameter_evidence = []
++        elif self._model_parameters:
+             build = compile_randomized_mjspec_model(
+                 mujoco,
+                 model_path=model_path,
+--- a/src/cloud_edge_robot_arm/vision/capture.py
++++ b/src/cloud_edge_robot_arm/vision/capture.py
+@@ -7,13 +7,16 @@
+ import struct
+ from dataclasses import dataclass
+ from pathlib import Path
+-from typing import Literal
++from typing import TYPE_CHECKING, Literal
+ 
+ from cloud_edge_robot_arm.simulation.backend import SimulatorBackend
+ from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+ from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+ from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation, observation_from_sensor_frame
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec
+ 
+ 
+ @dataclass(frozen=True)
+@@ -33,8 +36,14 @@
+         self._config = config.model_copy(update={"render_rgb": True, "render_depth": True})
+         self._backend = MuJoCoPhysicsBackend()
+         self._open = False
++        self._dataset_scene: SceneSpec | None = None
++        self._dataset_prepared = False
++        self._dataset_settled = False
+ 
+     def __enter__(self) -> MuJoCoCaptureSession:
++        self._dataset_scene = None
++        self._dataset_prepared = False
++        self._dataset_settled = False
+         try:
+             self._backend.initialize(self._config)
+             self._backend.reset(
+@@ -52,6 +61,14 @@
+ 
+     def capture(self) -> RGBDObservation:
+         return self.capture_with_instances().observation
++
++    def apply_scene(self, scene: SceneSpec) -> None:
++        """Apply an offline scene without advancing physics or exposing truth online."""
++        if not self._open:
++            raise RuntimeError("MuJoCo capture session is closed")
++        from cloud_edge_robot_arm.datasets.rgbd.capture import apply_scene
++
++        apply_scene(self, scene)
+ 
+     def capture_with_instances(self) -> CapturedFrame:
+         if not self._open:
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/vision/offline_reader.py
+@@ -0,0 +1,179 @@
++"""Strict offline replay; acquisition timestamps and checksums remain unchanged."""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import io
++import json
++from pathlib import Path
++from typing import TYPE_CHECKING, Any
++
++import numpy as np
++from PIL import Image
++
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.datasets.rgbd.models import SampleRecord
++
++
++def resolve_payload(root: Path, relative: str) -> Path:
++    from cloud_edge_robot_arm.datasets.rgbd.models import safe_relative_path
++
++    safe_relative_path(relative)
++    root = root.resolve()
++    path = root / relative
++    current = root
++    for part in Path(relative).parts:
++        current = current / part
++        if current.is_symlink():
++            raise ValueError("symlink payload path is forbidden")
++    if not path.resolve().is_relative_to(root):
++        raise ValueError("payload path lies outside dataset root")
++    if not path.is_file():
++        raise ValueError(f"missing payload path: {relative}")
++    return path
++
++
++def verified_payloads(record: SampleRecord) -> dict[str, bytes]:
++    if record.root is None:
++        raise ValueError("offline record must be bound to its dataset root")
++    required = {
++        "rgb", "depth", "depth_vis", "valid_mask", "instance", "camera", "scene", "labels", "state"
++    }
++    if not required <= record.paths.keys() or record.paths.keys() != record.file_hashes.keys():
++        raise ValueError("payload paths and checksums must cover every required file")
++    prefix = f"episodes/{record.episode_id}/{record.sample_id}/"
++    result = {}
++    for key, relative in record.paths.items():
++        if not relative.startswith(prefix):
++            raise ValueError("payload path does not belong to the indexed episode/sample")
++        payload = resolve_payload(record.root, relative).read_bytes()
++        if hashlib.sha256(payload).hexdigest() != record.file_hashes[key]:
++            raise ValueError(f"payload checksum mismatch: {relative}")
++        result[key] = payload
++    return result
++
++
++def load_numeric(payload: bytes, dtype: str, shape: tuple[int, int], name: str) -> np.ndarray:
++    stream = io.BytesIO(payload)
++    try:
++        version = np.lib.format.read_magic(stream)
++        if version == (1, 0):
++            stored_shape, _, stored_dtype = np.lib.format.read_array_header_1_0(stream)
++        elif version == (2, 0):
++            stored_shape, _, stored_dtype = np.lib.format.read_array_header_2_0(stream)
++        else:
++            raise ValueError("unsupported numeric array version")
++    except (ValueError, OSError, EOFError) as exc:
++        raise ValueError(f"invalid {name} array (pickle forbidden)") from exc
++    if stored_dtype.hasobject or stored_dtype != np.dtype(dtype):
++        raise ValueError(f"{name} dtype must be {dtype}; float32 depth is required")
++    if stored_shape != shape:
++        raise ValueError(f"{name} shape does not match camera dimensions")
++    if len(payload) - stream.tell() != shape[0] * shape[1] * stored_dtype.itemsize:
++        raise ValueError(f"{name} payload length does not match array dimensions")
++    stream.seek(0)
++    array = np.load(stream, allow_pickle=False)
++    if not isinstance(array, np.ndarray):
++        raise ValueError(f"{name} must contain one numeric ndarray")
++    return array
++
++
++def _decode_observation(
++    payloads: dict[str, bytes], metadata: dict[str, Any], prefix: str = ""
++) -> RGBDObservation:
++    if type(metadata.get("width")) is not int or type(metadata.get("height")) is not int:
++        raise ValueError("camera dimensions must be integers")
++    shape = (metadata["height"], metadata["width"])
++    if not 1 <= shape[0] <= 720 or not 1 <= shape[1] <= 1280:
++        raise ValueError("camera dimensions exceed RGB-D bounds")
++    depth = load_numeric(payloads[prefix + "depth"], "<f4", shape, "depth")
++    mask = load_numeric(payloads[prefix + "valid_mask"], "u1", shape, "valid_mask")
++    return RGBDObservation.model_validate(
++        {
++            **metadata,
++            "rgb_png_base64": base64.b64encode(payloads[prefix + "rgb"]).decode("ascii"),
++            "depth_float32_base64": base64.b64encode(depth.tobytes(order="C")).decode("ascii"),
++            "valid_mask_base64": base64.b64encode(mask.tobytes(order="C")).decode("ascii"),
++        }
++    )
++
++
++def _validate_state(payload: bytes, expected_hash: str, name: str) -> None:
++    state = json.loads(payload)
++    if not isinstance(state, dict):
++        raise ValueError(f"{name} render passes need a physics state object")
++    passes = state.get("pass_state_hashes")
++    if (
++        not expected_hash.strip()
++        or state.get("physics_state_hash") != expected_hash
++        or not isinstance(passes, list)
++        or len(passes) != 3
++        or any(value != expected_hash for value in passes)
++    ):
++        raise ValueError(
++            f"{name} three render passes must share the nonempty indexed physics state"
++        )
++
++
++def load_offline_observation(record: SampleRecord) -> RGBDObservation:
++    """Reconstruct verified camera input without any simulator truth or clock update."""
++    payloads = verified_payloads(record)
++    metadata = json.loads(payloads["camera"])
++    if metadata != record.observation_metadata:
++        raise ValueError("camera metadata does not match sample record")
++    if not metadata.get("checksum_sha256"):
++        raise ValueError("original observation checksum is required")
++    if json.loads(payloads["scene"]) != record.scene.model_dump(mode="json"):
++        raise ValueError("scene metadata does not match sample record")
++    if json.loads(payloads["labels"]) != record.labels:
++        raise ValueError("label metadata does not match sample record")
++    if (record.labels.get("positive") is True) != (record.status == "POSITIVE"):
++        raise ValueError("positive label and sample status disagree")
++    observation = _decode_observation(payloads, metadata)
++    if observation.frame_id != record.frame_id or observation.source != record.source:
++        raise ValueError("observation identity/source does not match sample record")
++    _validate_state(payloads["state"], record.physics_state_hash, "main")
++    instance = load_numeric(
++        payloads["instance"], "<i4", (observation.height, observation.width), "instance"
++    )
++    semantics = {0, *(item["semantic_id"] for item in record.labels.get("instances", []))}
++    if not set(np.unique(instance)).issubset(semantics):
++        raise ValueError("instance mask contains unknown semantic IDs")
++    try:
++        expected_depth = base64.b64decode(observation.depth_png_base64())
++        with Image.open(io.BytesIO(expected_depth)) as expected:
++            expected_pixels = expected.tobytes()
++    except ValueError:
++        expected_pixels = bytes(observation.width * observation.height)
++    try:
++        with Image.open(io.BytesIO(payloads["depth_vis"])) as image:
++            if image.format != "PNG" or image.size != (observation.width, observation.height):
++                raise ValueError("depth visualization dimensions do not match camera")
++            if image.mode != "L" or image.tobytes() != expected_pixels:
++                raise ValueError("depth visualization does not match metric depth")
++    except OSError as exc:
++        raise ValueError("invalid depth visualization PNG") from exc
++    raw_keys = {"raw_rgb", "raw_depth", "raw_valid_mask", "raw_camera", "raw_state"}
++    corrupted = any(
++        float(record.scene.scene_parameters.get(key, 0)) > 0
++        for key in ("depth_noise_m", "invalid_depth_fraction")
++    )
++    if corrupted and not raw_keys <= payloads.keys():
++        raise ValueError("depth-corrupted observation requires raw RGB-D evidence")
++    if raw_keys & payloads.keys():
++        if not raw_keys <= payloads.keys():
++            raise ValueError("raw RGB-D evidence is incomplete")
++        raw_metadata = json.loads(payloads["raw_camera"])
++        if not raw_metadata.get("checksum_sha256"):
++            raise ValueError("raw observation checksum is required")
++        raw_observation = _decode_observation(payloads, raw_metadata, "raw_")
++        allowed_changes = {"depth_float32_base64", "valid_mask_base64", "checksum_sha256"}
++        if raw_observation.model_dump(exclude=allowed_changes) != observation.model_dump(
++            exclude=allowed_changes
++        ):
++            raise ValueError("raw evidence must share the same acquisition, RGB and calibration")
++        _validate_state(payloads["raw_state"], record.physics_state_hash, "raw")
++    return observation
+--- /dev/null
++++ b/tests/test_rgbd_dataset_export.py
+@@ -0,0 +1,319 @@
++"""SFT exports only verified trainable evidence and preserve research negatives."""
++
++from __future__ import annotations
++
++import base64
++import importlib
++import io
++import json
++from datetime import UTC, datetime
++
++import numpy as np
++import pytest
++from PIL import Image
++
++from cloud_edge_robot_arm.datasets.rgbd.models import (
++    DatasetConfig,
++    DatasetManifest,
++    SampleRecord,
++    SceneSpec,
++    content_digest,
++)
++from cloud_edge_robot_arm.vision.capture import CapturedFrame
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++
++def module(name):
++    try:
++        return importlib.import_module(f"cloud_edge_robot_arm.datasets.rgbd.{name}")
++    except ModuleNotFoundError:
++        pytest.fail(f"RGB-D {name} is not implemented")
++
++
++@pytest.fixture
++def dataset(tmp_path):
++    quality, splitter, storage = module("quality"), module("splitter"), module("writer")
++    root = tmp_path / "dataset"
++    config = DatasetConfig(
++        dataset_id="test-dataset", groups=20, width=96, height=64, min_free_bytes=0
++    )
++    writer = storage.DatasetWriter(root, config)
++    for i in range(20):
++        positive = i % 2 == 0
++        side = 10 if positive else 8
++        x, y = 2 + 11 * (i % 5), 1 + 11 * (i // 5)
++        rgb = np.full((64, 96, 3), 80, dtype=np.uint8)
++        rgb[y : y + side, x : x + side] = [220, 20, 20]
++        ids = np.full((64, 96), -1, dtype=np.int32)
++        ids[y : y + side, x : x + side] = 11
++        ids[52:62, 84:94] = 22
++        rgb[52:62, 84:94] = [20, 180, 20]
++        depth = np.full((64, 96), 2, dtype="<f4")
++        depth[y : y + side, x : x + side] = 1
++        png = io.BytesIO()
++        Image.fromarray(rgb).save(png, format="PNG")
++        observation = RGBDObservation(
++            frame_id=f"f-{i}",
++            captured_at=datetime(2020, 1, 1, tzinfo=UTC),
++            sim_time_s=float(i),
++            width=96,
++            height=64,
++            rgb_png_base64=base64.b64encode(png.getvalue()).decode(),
++            depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
++            intrinsics=(60, 60, 32, 24),
++            camera_to_world=(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
++            source="mujoco_camera",
++        )
++        frame = CapturedFrame(
++            observation,
++            tuple(map(int, ids.flat)),
++            {11: "target", 22: "destination"},
++            "a" * 64,
++            ("a" * 64,) * 3,
++        )
++        scene = SceneSpec.from_parameters(
++            {"target": {"position": [i / 100, 0, 0.04]}}, "assets-test", i
++        )
++        labels = {
++            "instruction": "将红色方块移至绿色区域",
++            "instruction_en": "Move the red block to the green area",
++            "target_instance_id": 1,
++            "destination_instance_id": 5,
++            "instances": [
++                {
++                    "semantic_id": 1,
++                    "role": "target",
++                    "geom_ids": [11],
++                    "bbox_xyxy": [x, y, x + side, y + side],
++                    "visible_pixels": side * side,
++                    "valid_depth_fraction": 1.0,
++                    "position": [i / 100, 0, 0.04],
++                    "half_size": [0.03, 0.03, 0.03],
++                },
++                {
++                    "semantic_id": 5,
++                    "role": "destination",
++                    "geom_ids": [22],
++                    "bbox_xyxy": [84, 52, 94, 62],
++                    "visible_pixels": 100,
++                    "valid_depth_fraction": 1.0,
++                    "position": [0.4, 0.2, 0.002],
++                    "half_size": [0.07, 0.07, 0.002],
++                },
++            ],
++            "target_pixel": [x + side // 2, y + side // 2],
++            "destination_pixel": [89, 57],
++            "surface_point": list(
++                observation.world_point((x + side // 2, y + side // 2)).model_dump().values()
++            ),
++            "object_center": [i / 100, 0, 0.04],
++            "positive": positive,
++            "negative_reasons": [] if positive else ["TARGET_TOO_SMALL"],
++            "suggested_action": "GROUND_TARGET" if positive else "REQUEST_MORE_OBSERVATION",
++            "label_source": "SIMULATOR_GROUND_TRUTH",
++            "execution_verified": False,
++        }
++        record = SampleRecord.from_capture(scene, frame, labels)
++        record.perceptual_hash = quality.perceptual_signature(observation)
++        writer.write_episode([record])
++    records = storage.load_records(root)
++    split = splitter.assign_splits(records, config.seed)
++    splitter.write_splits(root, split, records)
++    source = {"source_files": {"fixture.py": "a" * 64}, "asset_files": {"scene.xml": "b" * 64}}
++    source.update(
++        source_hash=content_digest(source["source_files"]),
++        asset_hash=content_digest(source["asset_files"]),
++    )
++    (root / "source.json").write_text(json.dumps(source))
++    manifest = DatasetManifest(
++        dataset_id=config.dataset_id,
++        config=config,
++        config_hash=config.config_hash,
++        status="COMPLETE",
++        requested_groups=20,
++        completed_groups=20,
++        sample_count=20,
++        positive_count=10,
++        negative_count=10,
++        attempts=20,
++        source=source,
++        content_hash=content_digest(sorted(record.content_hash for record in records)),
++    )
++    storage.save_manifest(root, manifest)
++    return root, records, split
++
++
++def test_test_split_export_is_denied(tmp_path):
++    with pytest.raises(ValueError, match="test"):
++        module("exporters").export_grounding_sft(
++            tmp_path / "missing", "test", tmp_path / "leaked.jsonl"
++        )
++    assert not (tmp_path / "leaked.jsonl").exists()
++
++
++def test_negative_conditions_are_retained(dataset, tmp_path):
++    root, records, split = dataset
++    output = tmp_path / "training.jsonl"
++    count = module("exporters").export_grounding_sft(root, "train", output)
++    rows = [json.loads(line) for line in output.read_text().splitlines()]
++    expected = [
++        record for record in records if split.sample_assignments[record.sample_id] == "train"
++    ]
++    assert count == len(rows) == len(expected) == 16
++    actions = [json.loads(row["messages"][1]["content"])["action"] for row in rows]
++    assert actions.count("REQUEST_MORE_OBSERVATION") == sum(
++        r.status == "NEGATIVE" for r in expected
++    )
++    assert "GROUND_TARGET" in actions and "REQUEST_MORE_OBSERVATION" in actions
++
++
++def test_sft_user_has_only_instruction_and_opaque_image_paths(dataset, tmp_path):
++    root, _, _ = dataset
++    output = tmp_path / "training.jsonl"
++    module("exporters").export_grounding_sft(root, "train", output)
++    for row in map(json.loads, output.read_text().splitlines()):
++        user, assistant = row["messages"]
++        assert user["role"] == "user" and assistant["role"] == "assistant"
++        assert set(user["content"]) == {"instruction", "images"}
++        assert len(user["content"]["images"]) == 2
++        for path in user["content"]["images"]:
++            assert not any(
++                word in path.lower() for word in ("red", "target", "negative", "positive", "pose")
++            )
++            assert (root / path).is_file()
++        assert "object_center" not in json.dumps(user)
++
++
++def test_valid_dataset_verifies_restored_evidence_and_counts(dataset):
++    root, _, _ = dataset
++    report = module("quality").validate_dataset(root)
++    assert report.valid, report.errors
++    assert (
++        report.sample_count,
++        report.group_count,
++        report.positive_count,
++        report.negative_count,
++    ) == (20, 20, 10, 10)
++    assert report.split_counts == {"train": 16, "calibration": 1, "selection": 1, "test": 2}
++
++
++@pytest.mark.parametrize(
++    "damage", ["depth", "labels", "manifest", "split", "missing_split", "signature"]
++)
++def test_dataset_damage_blocks_validation_and_export(dataset, tmp_path, damage):
++    root, records, split = dataset
++    if damage in {"depth", "labels"}:
++        path = root / records[0].paths[damage]
++        path.write_bytes(path.read_bytes() + b"tamper")
++    elif damage == "manifest":
++        path = root / "manifest.json"
++        payload = json.loads(path.read_text())
++        payload["negative_count"] = 0
++        path.write_text(json.dumps(payload))
++    elif damage == "split":
++        train = root / "splits/train.jsonl"
++        (root / "splits/test.jsonl").write_text(train.read_text())
++    elif damage == "missing_split":
++        (root / "splits/test.jsonl").unlink()
++    else:
++        path = root / "reports/split_audit.json"
++        payload = json.loads(path.read_text())
++        payload["schema_version"] = "unknown.v999"
++        path.write_text(json.dumps(payload))
++    report = module("quality").validate_dataset(root)
++    assert not report.valid and report.errors
++    output = tmp_path / "must-not-exist.jsonl"
++    with pytest.raises(ValueError):
++        module("exporters").export_grounding_sft(root, "train", output)
++    assert not output.exists()
++
++
++def test_empty_directory_is_not_valid(tmp_path):
++    report = module("quality").validate_dataset(tmp_path)
++    assert not report.valid and report.errors
++
++
++def test_export_cannot_overwrite_dataset_directory(dataset):
++    root, _, _ = dataset
++    with pytest.raises(ValueError, match="file"):
++        module("exporters").export_grounding_sft(root, "train", root)
++
++
++@pytest.mark.parametrize(
++    "change",
++    [
++        {"surface_point": None},
++        {"object_center": [999, 999, 999]},
++        {"negative_reasons": ""},
++        {"instruction_en": ""},
++    ],
++)
++def test_inconsistent_grounding_labels_are_invalid(dataset, change):
++    root, records, _ = dataset
++    record = next(r for r in records if r.status == "POSITIVE")
++    observation = importlib.import_module(
++        "cloud_edge_robot_arm.vision.offline_reader"
++    ).load_offline_observation(record)
++    altered = record.model_copy(update={"labels": {**record.labels, **change}})
++    with pytest.raises(ValueError):
++        module("quality")._validate_labels(altered, observation)
++
++
++@pytest.mark.parametrize("damage", ["small_destination", "invalid_destination_pixel"])
++def test_positive_grounding_requires_observable_destination(dataset, damage):
++    root, records, _ = dataset
++    record = next(r for r in records if r.status == "POSITIVE")
++    observation = importlib.import_module(
++        "cloud_edge_robot_arm.vision.offline_reader"
++    ).load_offline_observation(record)
++    labels = json.loads(json.dumps(record.labels))
++    instance_path = root / record.paths["instance"]
++    semantics = np.load(instance_path, allow_pickle=False)
++    if damage == "small_destination":
++        semantics[52:62, 84] = 0
++        np.save(instance_path, semantics, allow_pickle=False)
++        destination = next(item for item in labels["instances"] if item["semantic_id"] == 5)
++        destination.update(visible_pixels=90, bbox_xyxy=[85, 52, 94, 62])
++    else:
++        depth = (
++            np.frombuffer(base64.b64decode(observation.depth_float32_base64), dtype="<f4")
++            .copy()
++            .reshape(64, 96)
++        )
++        depth[57, 89] = 0
++        observation = RGBDObservation.model_validate(
++            {
++                **observation.model_dump(),
++                "depth_float32_base64": base64.b64encode(depth.tobytes()).decode(),
++                "valid_mask_base64": None,
++                "checksum_sha256": "",
++            }
++        )
++        next(item for item in labels["instances"] if item["semantic_id"] == 5)[
++            "valid_depth_fraction"
++        ] = 0.99
++    altered = record.model_copy(update={"labels": labels})
++    with pytest.raises(ValueError):
++        module("quality")._validate_labels(altered, observation)
++
++
++@pytest.mark.parametrize(
++    "damage", ["missing_source", "source_mismatch", "source_digest", "empty_content_hash"]
++)
++def test_source_and_dataset_digests_are_required(dataset, damage):
++    root, _, _ = dataset
++    source_path, manifest_path = root / "source.json", root / "manifest.json"
++    if damage == "missing_source":
++        source_path.unlink()
++    elif damage == "source_mismatch":
++        source_path.write_text("{}")
++    else:
++        manifest = json.loads(manifest_path.read_text())
++        if damage == "source_digest":
++            manifest["source"]["source_hash"] = "c" * 64
++            source_path.write_text(json.dumps(manifest["source"]))
++        else:
++            manifest["content_hash"] = ""
++        manifest_path.write_text(json.dumps(manifest))
++    report = module("quality").validate_dataset(root)
++    assert not report.valid, report
+--- /dev/null
++++ b/tests/test_rgbd_dataset_generation.py
+@@ -0,0 +1,550 @@
++"""CPU-only orchestration fixtures exercise real storage, recovery, and CLI boundaries."""
++
++from __future__ import annotations
++
++import base64
++import errno
++import importlib
++import io
++import json
++import subprocess
++import sys
++from datetime import UTC, datetime
++
++import numpy as np
++import pytest
++from PIL import Image
++
++
++def generator():
++    try:
++        return importlib.import_module("cloud_edge_robot_arm.datasets.rgbd.generator")
++    except ModuleNotFoundError:
++        pytest.fail("RGB-D dataset generator is not implemented")
++
++
++@pytest.fixture
++def cpu_factory(monkeypatch):
++    """Only capture is replaced: samples, payload checks, splits and disk writes stay real."""
++    module = generator()
++    from cloud_edge_robot_arm.datasets.rgbd.models import (
++        DatasetConfig,
++        SceneSpec,
++        content_digest,
++    )
++    from cloud_edge_robot_arm.vision.capture import CapturedFrame
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    class Session:
++        captures = 0
++        fail_enter = False
++
++        def __init__(self, config):
++            self.scene = None
++
++        def __enter__(self):
++            if self.fail_enter:
++                raise RuntimeError("EGL fixture unavailable")
++            return self
++
++        def __exit__(self, *_):
++            pass
++
++        def apply_scene(self, scene):
++            self.scene = scene
++
++    class Adapter:
++        def __init__(self, session, *, settle_steps):
++            self.session = session
++
++        def capture(self):
++            scene = self.session.scene
++            seed = scene.seed
++            Session.captures += 1
++            rgb = np.random.default_rng(seed).integers(0, 256, (24, 32, 3), dtype=np.uint8)
++            png = io.BytesIO()
++            Image.fromarray(rgb).save(png, format="PNG")
++            depth = np.full((24, 32), 1 + seed * 0.01, dtype="<f4")
++            observation = RGBDObservation(
++                frame_id=f"fixture-{seed}",
++                captured_at=datetime(2020, 1, 1, tzinfo=UTC),
++                sim_time_s=0,
++                width=32,
++                height=24,
++                rgb_png_base64=base64.b64encode(png.getvalue()).decode(),
++                depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
++                intrinsics=(30, 30, 15.5, 11.5),
++                camera_to_world=(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
++                source="mujoco_camera",
++                scene_id=scene.group_id,
++                episode_id=f"episode-{seed}",
++                calibration_version="fixture-v1",
++            )
++            ids = tuple(1 if i % 32 < 16 else 2 for i in range(32 * 24))
++            raw_frame = CapturedFrame(
++                observation,
++                ids,
++                {1: "target", 2: "destination"},
++                "fixture-state",
++                ("fixture-state",) * 3,
++            )
++            if seed % 2:
++                indices = [index for index, geom in enumerate(ids) if geom == 1][:40]
++                depth.reshape(-1)[indices] = 0
++                observation = RGBDObservation.model_validate(
++                    {
++                        **observation.model_dump(),
++                        "depth_float32_base64": base64.b64encode(depth.tobytes()).decode(),
++                        "valid_mask_base64": None,
++                        "checksum_sha256": "",
++                    }
++                )
++            frame = CapturedFrame(
++                observation,
++                ids,
++                {1: "target", 2: "destination"},
++                "fixture-state",
++                ("fixture-state",) * 3,
++            )
++            return frame, {"_raw_captured_frame": raw_frame, "seed": seed}
++
++    def scene(config, seed):
++        return SceneSpec.from_parameters(
++            {"target": {"position": [seed, 0, 0.04]}}, "fixture-asset", seed
++        )
++
++    def labels(frame, truth):
++        negative = truth["seed"] % 2 == 1
++        depth = float(np.float32(1 + truth["seed"] * 0.01))
++        return {
++            "instruction": "Locate the red block",
++            "instruction_en": "Locate the red block",
++            "target_instance_id": 1,
++            "destination_instance_id": 5,
++            "instances": [
++                {
++                    "semantic_id": 1,
++                    "role": "target",
++                    "geom_ids": [1],
++                    "bbox_xyxy": [0, 0, 16, 24],
++                    "visible_pixels": 384,
++                    "valid_depth_fraction": 344 / 384 if negative else 1.0,
++                    "position": [0, 0, 0.04],
++                    "half_size": [0.03] * 3,
++                },
++                {
++                    "semantic_id": 5,
++                    "role": "destination",
++                    "geom_ids": [2],
++                    "bbox_xyxy": [16, 0, 32, 24],
++                    "visible_pixels": 384,
++                    "valid_depth_fraction": 1.0,
++                    "position": [0.3, 0, 0.002],
++                    "half_size": [0.07, 0.07, 0.002],
++                },
++            ],
++            "target_pixel": None if negative else [8, 12],
++            "destination_pixel": [24, 12],
++            "surface_point": None if negative else [-0.25 * depth, depth / 60, depth],
++            "object_center": [0, 0, 0.04],
++            "positive": not negative,
++            "negative_reasons": ["INVALID_DEPTH"] if negative else [],
++            "suggested_action": "REQUEST_MORE_OBSERVATION" if negative else "GROUND_TARGET",
++            "label_source": "SIMULATOR_GROUND_TRUTH",
++            "execution_verified": False,
++        }
++
++    monkeypatch.setattr(module, "_capture_dependencies", lambda: (Session, Adapter, scene, labels))
++    fixture_sources = {"fixture.py": "a" * 64}
++    fixture_assets = {"fixture.xml": "b" * 64}
++    monkeypatch.setattr(
++        module,
++        "_source_evidence",
++        lambda config: {
++            "source_hash": content_digest(fixture_sources),
++            "source_files": fixture_sources,
++            "asset_hash": content_digest(fixture_assets),
++            "asset_files": fixture_assets,
++            "evidence_kind": "SOFTWARE_FIXTURE",
++        },
++    )
++    config = DatasetConfig(
++        dataset_id="cpu-fixture", groups=3, width=32, height=24, min_free_bytes=0, settle_steps=0
++    )
++    return module, config, Session, scene, labels
++
++
++def test_generator_without_model(cpu_factory, tmp_path, monkeypatch):
++    module, config, _, _, _ = cpu_factory
++    import urllib.request
++
++    def forbidden(*args, **kwargs):
++        raise AssertionError("offline generation must not call model or network services")
++
++    monkeypatch.setattr(urllib.request, "urlopen", forbidden)
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "COMPLETE"
++    assert (result.completed_groups, result.sample_count, result.attempts) == (3, 3, 3)
++    assert (result.positive_count, result.negative_count) == (2, 1)
++    assert result.resources["bytes_per_sample"] > 0
++    assert result.resources["gpu_peak_memory_bytes"] == "NOT_MEASURED"
++    assert (tmp_path / "reports" / "split_audit.json").exists()
++
++
++def test_sampling_stops_at_five_times_budget_across_resume(cpu_factory, tmp_path, monkeypatch):
++    module, config, session, scene, labels = cpu_factory
++    config = config.model_copy(update={"groups": 2})
++    session_type, adapter, _, _ = module._capture_dependencies()
++    monkeypatch.setattr(
++        module,
++        "_capture_dependencies",
++        lambda: (session_type, adapter, lambda cfg, seed: scene(cfg, 0), labels),
++    )
++    first = module.generate_dataset(config, tmp_path, lambda: session.captures >= 1)
++    assert first.status == "CANCELLED" and first.attempts == 1
++    second = module.generate_dataset(config, tmp_path, lambda: False)
++    assert second.status == "INCOMPLETE"
++    assert (second.attempts, second.completed_groups, second.rejected_count) == (10, 1, 9)
++    third = module.generate_dataset(config, tmp_path, lambda: False)
++    assert third.attempts == 10
++    assert third.completed_groups == 1
++
++
++def test_cancel_preserves_committed_episode_and_resume_finishes(cpu_factory, tmp_path):
++    module, config, session, _, _ = cpu_factory
++    first = module.generate_dataset(config, tmp_path, lambda: session.captures >= 1)
++    records_before = module.load_records(tmp_path)
++    assert first.status == "CANCELLED" and len(records_before) == 1
++    second = module.generate_dataset(config, tmp_path, lambda: False)
++    records_after = module.load_records(tmp_path)
++    assert second.status == "COMPLETE" and second.attempts == 3
++    assert len({record.sample_id for record in records_after}) == 3
++    retained = next(
++        record for record in records_after if record.sample_id == records_before[0].sample_id
++    )
++    assert records_before[0].file_hashes == retained.file_hashes
++
++
++def test_disk_failure_keeps_published_episodes_and_attempts(cpu_factory, tmp_path, monkeypatch):
++    module, config, _, _, _ = cpu_factory
++    original = module.DatasetWriter.write_episode
++
++    def disk_full(writer, records):
++        if len(writer.records) == 1:
++            raise OSError(errno.ENOSPC, "disk full fixture")
++        return original(writer, records)
++
++    with monkeypatch.context() as patch:
++        patch.setattr(module.DatasetWriter, "write_episode", disk_full)
++        first = module.generate_dataset(config, tmp_path, lambda: False)
++    assert first.status == "INCOMPLETE"
++    assert (first.completed_groups, first.attempts) == (1, 2)
++    assert len(module.load_records(tmp_path)) == 1
++    second = module.generate_dataset(config, tmp_path, lambda: False)
++    assert second.status == "COMPLETE" and second.attempts == 4
++
++
++def test_disk_budget_prevents_first_capture(cpu_factory, tmp_path):
++    module, config, session, _, _ = cpu_factory
++    config = config.model_copy(update={"min_free_bytes": 10**30})
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "INCOMPLETE"
++    assert result.attempts == result.sample_count == session.captures == 0
++    assert "disk" in result.reason.lower()
++
++
++def test_unavailable_renderer_is_blocked(cpu_factory, tmp_path):
++    module, config, session, _, _ = cpu_factory
++    session.fail_enter = True
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "BLOCKED"
++    assert result.completed_groups == 0 and result.attempts == 0
++    assert "EGL fixture unavailable" in result.reason
++
++
++def test_resume_rejects_changed_source_or_config(cpu_factory, tmp_path, monkeypatch):
++    module, config, session, _, _ = cpu_factory
++    module.generate_dataset(config, tmp_path, lambda: session.captures >= 1)
++    before = (tmp_path / "manifest.json").read_bytes()
++    with pytest.raises(ValueError, match="config"):
++        module.generate_dataset(config.model_copy(update={"seed": 5}), tmp_path, lambda: False)
++    monkeypatch.setattr(module, "_source_evidence", lambda cfg: {"source_hash": "changed"})
++    with pytest.raises(ValueError, match="source"):
++        module.generate_dataset(config, tmp_path, lambda: False)
++    assert (tmp_path / "manifest.json").read_bytes() == before
++
++
++def test_attempt_journal_recovers_counter_ahead_of_manifest(cpu_factory, tmp_path):
++    module, config, session, _, _ = cpu_factory
++    module.generate_dataset(config, tmp_path, lambda: session.captures >= 1)
++    with (tmp_path / "attempts.jsonl").open("a") as stream:
++        stream.write(json.dumps({"event": "started", "attempt": 2, "seed": 1}) + "\n")
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "COMPLETE"
++    assert result.attempts == 4
++
++
++def test_missing_attempt_history_never_resets_budget(cpu_factory, tmp_path):
++    module, config, session, _, _ = cpu_factory
++    module.generate_dataset(config, tmp_path, lambda: session.captures >= 1)
++    (tmp_path / "attempts.jsonl").unlink()
++    with pytest.raises(ValueError, match="attempt"):
++        module.generate_dataset(config, tmp_path, lambda: False)
++
++
++def test_interrupted_last_journal_line_is_recovered(cpu_factory, tmp_path):
++    module, config, session, _, _ = cpu_factory
++    module.generate_dataset(config, tmp_path, lambda: session.captures >= 1)
++    with (tmp_path / "attempts.jsonl").open("ab") as stream:
++        stream.write(b'{"event":"started","attempt":')
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "COMPLETE" and result.attempts == 3
++    assert (tmp_path / "attempt-journal-recovery.json").exists()
++
++
++def test_post_publish_disk_failure_recovers_commit(cpu_factory, tmp_path, monkeypatch):
++    module, config, _, _, _ = cpu_factory
++    original = module.DatasetWriter.write_episode
++
++    def interrupted(writer, records):
++        original(writer, records)
++        raise OSError(errno.ENOSPC, "post-publish failure")
++
++    with monkeypatch.context() as patch:
++        patch.setattr(module.DatasetWriter, "write_episode", interrupted)
++        first = module.generate_dataset(config, tmp_path, lambda: False)
++    assert first.status == "INCOMPLETE" and first.completed_groups == 1
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "COMPLETE" and result.attempts == 3
++
++
++def test_complete_dataset_is_revalidated_without_capture(cpu_factory, tmp_path):
++    module, config, session, _, _ = cpu_factory
++    assert module.generate_dataset(config, tmp_path, lambda: False).status == "COMPLETE"
++    session.fail_enter = True
++    assert module.generate_dataset(config, tmp_path, lambda: False).status == "COMPLETE"
++    record = module.load_records(tmp_path)[0]
++    (tmp_path / record.paths["rgb"]).write_bytes(b"corrupted")
++    with pytest.raises(ValueError):
++        module.generate_dataset(config, tmp_path, lambda: False)
++
++
++def test_validation_failure_cannot_be_marked_complete(cpu_factory, tmp_path, monkeypatch):
++    module, config, _, _, _ = cpu_factory
++    from cloud_edge_robot_arm.datasets.rgbd.models import QualityReport
++
++    monkeypatch.setattr(
++        module,
++        "validate_dataset",
++        lambda root: QualityReport(
++            valid=False, sample_count=3, group_count=3, errors=["injected quality failure"]
++        ),
++    )
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "FAILED" and "quality failure" in result.reason
++
++
++def test_generation_duration_includes_final_validation(cpu_factory, tmp_path, monkeypatch):
++    module, config, _, _, _ = cpu_factory
++    clock = [0.0]
++    original = module.validate_dataset
++    monkeypatch.setattr(module, "perf_counter", lambda: clock[0])
++
++    def delayed_validation(root):
++        result = original(root)
++        clock[0] = 7.0
++        return result
++
++    monkeypatch.setattr(module, "validate_dataset", delayed_validation)
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "COMPLETE"
++    assert result.resources["generation_wall_time_s"] == 7.0
++
++
++@pytest.mark.parametrize(
++    "script",
++    [
++        "generate_rgbd_dataset",
++        "validate_rgbd_dataset",
++        "export_rgbd_training",
++        "replay_rgbd_sample",
++    ],
++)
++def test_dataset_clis_expose_help(script):
++    result = subprocess.run(
++        [sys.executable, f"scripts/{script}.py", "--help"],
++        capture_output=True,
++        text=True,
++        timeout=20,
++    )
++    assert result.returncode == 0, result.stderr
++    assert "usage:" in result.stdout
++
++
++def test_validate_export_and_replay_clis_use_persisted_samples(cpu_factory, tmp_path):
++    module, config, _, _, _ = cpu_factory
++    dataset = tmp_path / "dataset"
++    assert module.generate_dataset(config, dataset, lambda: False).status == "COMPLETE"
++    record = module.load_records(dataset)[0]
++    commands = [
++        ["validate_rgbd_dataset", "--dataset", str(dataset)],
++        [
++            "export_rgbd_training",
++            "--dataset",
++            str(dataset),
++            "--split",
++            "train",
++            "--output",
++            str(tmp_path / "train.jsonl"),
++        ],
++        [
++            "replay_rgbd_sample",
++            "--dataset",
++            str(dataset),
++            "--sample-id",
++            record.sample_id,
++            "--output",
++            str(tmp_path / "replay"),
++        ],
++    ]
++    for name, *arguments in commands:
++        result = subprocess.run(
++            [sys.executable, f"scripts/{name}.py", *arguments],
++            capture_output=True,
++            text=True,
++            timeout=20,
++        )
++        assert result.returncode == 0, result.stdout + result.stderr
++        assert json.loads(result.stdout)
++    replay = json.loads((tmp_path / "replay" / "observation.json").read_text())
++    assert replay["captured_at"].startswith("2020-01-01")
++    denied = subprocess.run(
++        [
++            sys.executable,
++            "scripts/export_rgbd_training.py",
++            "--dataset",
++            str(dataset),
++            "--split",
++            "test",
++            "--output",
++            str(tmp_path / "test.jsonl"),
++        ],
++        capture_output=True,
++        timeout=20,
++    )
++    assert denied.returncode == 2 and not (tmp_path / "test.jsonl").exists()
++
++
++def test_finalization_cannot_exceed_persistent_disk_budget(cpu_factory, tmp_path, monkeypatch):
++    module, config, _, _, _ = cpu_factory
++    config = config.model_copy(update={"groups": 20})
++    pre_finalize = []
++    original = module.write_splits
++
++    def measure(root, split, records):
++        pre_finalize.append(sum(p.stat().st_size for p in root.rglob("*") if p.is_file()))
++        return original(root, split, records)
++
++    monkeypatch.setattr(module, "write_splits", measure)
++    assert (
++        module.generate_dataset(config, tmp_path / "baseline", lambda: False).status == "COMPLETE"
++    )
++    capped = config.model_copy(update={"max_bytes": pre_finalize[0] + 150_000})
++    root = tmp_path / "capped"
++    result = module.generate_dataset(capped, root, lambda: False)
++    assert result.status == "INCOMPLETE"
++    assert "disk" in result.reason.lower()
++    assert result.completed_groups == 20
++    assert len(module.load_records(root)) == 20
++    assert sum(p.stat().st_size for p in root.rglob("*") if p.is_file()) <= capped.max_bytes
++    assert not (root / "splits" / "train.jsonl").exists()
++
++
++def test_finalization_reserves_atomic_write_free_space(cpu_factory, tmp_path, monkeypatch):
++    module, config, _, _, _ = cpu_factory
++    original = module.assign_splits
++    real_disk_usage = module.shutil.disk_usage
++    phase = {"finalizing": False}
++
++    def mark_finalization(records, seed):
++        phase["finalizing"] = True
++        return original(records, seed)
++
++    def available(path):
++        actual = real_disk_usage(path)
++        return actual._replace(free=12_000) if phase["finalizing"] else actual
++
++    monkeypatch.setattr(module, "assign_splits", mark_finalization)
++    monkeypatch.setattr(module.shutil, "disk_usage", available)
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "INCOMPLETE"
++    assert result.completed_groups == 3
++    assert len(module.load_records(tmp_path)) == 3
++    assert "free-space" in result.reason
++    assert not (tmp_path / "splits" / "train.jsonl").exists()
++
++
++@pytest.mark.parametrize(
++    "relative",
++    [
++        "contracts/models.py",
++        "contracts/__init__.py",
++        "errors.py",
++        "simulation/backend.py",
++        "simulation/mujoco/spec_randomization.py",
++        "__init__.py",
++        "datasets/__init__.py",
++        "vision/__init__.py",
++        "simulation/__init__.py",
++        "simulation/mujoco/__init__.py",
++    ],
++)
++def test_source_fingerprint_covers_runtime_dependencies(relative, monkeypatch):
++    from pathlib import Path
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import DatasetConfig
++
++    module = generator()
++    config = DatasetConfig(dataset_id="source-fixture")
++    baseline = module._source_evidence(config)
++    original = Path.read_bytes
++    changed = Path(module.__file__).resolve().parents[2] / relative
++
++    def altered_bytes(path):
++        value = original(path)
++        return value + b"\n# simulated runtime change\n" if path == changed else value
++
++    monkeypatch.setattr(Path, "read_bytes", altered_bytes)
++    modified = module._source_evidence(config)
++    assert baseline["source_hash"] != modified["source_hash"]
++    assert baseline["source_files"][relative] != modified["source_files"][relative]
++
++
++@pytest.mark.parametrize("max_bytes", [1, 1024])
++def test_tiny_budget_does_not_write_unbudgeted_metadata(cpu_factory, tmp_path, max_bytes):
++    module, config, session, _, _ = cpu_factory
++    result = module.generate_dataset(
++        config.model_copy(update={"max_bytes": max_bytes}), tmp_path, lambda: False
++    )
++    assert result.status == "INCOMPLETE" and session.captures == 0
++    assert result.resources["manifest_persisted"] is False
++    assert sum(p.stat().st_size for p in tmp_path.rglob("*") if p.is_file()) <= max_bytes
++    assert not (tmp_path / "manifest.json").exists()
++
++
++def test_rejection_journal_retains_terminal_metadata_within_budget(
++    cpu_factory, tmp_path, monkeypatch
++):
++    module, config, _, scene, labels = cpu_factory
++    session, adapter, _, _ = module._capture_dependencies()
++    monkeypatch.setattr(
++        module,
++        "_capture_dependencies",
++        lambda: (session, adapter, lambda cfg, seed: scene(cfg, 0), labels),
++    )
++    config = config.model_copy(update={"groups": 1000, "max_bytes": 190_000})
++    result = module.generate_dataset(config, tmp_path, lambda: False)
++    assert result.status == "INCOMPLETE" and result.completed_groups == 1
++    assert result.attempts < 5000
++    assert sum(p.stat().st_size for p in tmp_path.rglob("*") if p.is_file()) <= config.max_bytes
++    assert json.loads((tmp_path / "manifest.json").read_text())["status"] == "INCOMPLETE"
+--- /dev/null
++++ b/tests/test_rgbd_dataset_integrity.py
+@@ -0,0 +1,495 @@
++"""Dataset boundaries and real filesystem recovery without a renderer."""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import importlib
++import io
++import json
++import os
++from datetime import UTC, datetime
++from pathlib import Path
++
++import numpy as np
++import pytest
++from PIL import Image
++from pydantic import ValidationError
++
++
++def models():
++    try:
++        return importlib.import_module("cloud_edge_robot_arm.datasets.rgbd.models")
++    except ModuleNotFoundError:
++        pytest.fail("shared RGB-D dataset models are not implemented")
++
++
++def test_scene_identity_ignores_seed_and_group_identity_ignores_camera():
++    model = models().SceneSpec
++    parameters = {"target": {"position": [0.3, 0.1, 0.04]}, "camera": {"fovy": 45}}
++    first = model.from_parameters(parameters, "asset-a", 1)
++    second = model.from_parameters(parameters, "asset-a", 99)
++    variant = model.from_parameters({**parameters, "camera": {"fovy": 55}}, "asset-a", 1)
++    assert first.group_id == second.group_id == variant.group_id
++    assert first.scene_hash == second.scene_hash
++    assert first.scene_hash != variant.scene_hash
++
++
++@pytest.mark.parametrize(
++    "change",
++    [
++        {"dataset_id": "../escape"},
++        {"target_x": (0.5, 0.1)},
++        {"camera_height": (float("nan"), 2.0)},
++        {"max_attempt_multiplier": 6},
++        {"distractor_count": (0, 4)},
++        {"invalid_depth_fractions": (1.1,)},
++    ],
++)
++def test_config_rejects_unsafe_or_unbounded_values(change):
++    with pytest.raises(ValidationError):
++        models().DatasetConfig(**{"dataset_id": "ds", **change})
++
++
++def test_config_hash_covers_generation_parameters():
++    config = models().DatasetConfig(dataset_id="ds")
++    clone = models().DatasetConfig.model_validate_json(config.model_dump_json())
++    assert config.config_hash == clone.config_hash
++    assert config.config_hash != models().DatasetConfig(dataset_id="ds", seed=1).config_hash
++
++
++def sample_record(*, raw=False):
++    from cloud_edge_robot_arm.vision.capture import CapturedFrame
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    stream = io.BytesIO()
++    Image.new("RGB", (4, 3), (90, 30, 10)).save(stream, format="PNG")
++    depth = np.array([[0.0, 0.1, 1.234567, 2.0]] * 3, dtype="<f4")
++    observation = RGBDObservation(
++        frame_id="frame-7",
++        captured_at=datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC),
++        sim_time_s=0.125,
++        width=4,
++        height=3,
++        source="mujoco_camera",
++        rgb_png_base64=base64.b64encode(stream.getvalue()).decode(),
++        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
++        intrinsics=(10.0, 10.0, 2.0, 1.5),
++        camera_to_world=(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1.4, 0, 0, 0, 1),
++        episode_id="original-episode",
++        calibration_version="camera-v1",
++    )
++    frame = CapturedFrame(
++        observation,
++        (-1, 10, 11, 12) * 3,
++        {10: "target", 11: "distractor", 12: "destination"},
++        "state-hash",
++        ("state-hash",) * 3,
++    )
++    scene = models().SceneSpec.from_parameters(
++        {"target": {"position": [0.3, 0.1, 0.04]}}, "asset-a", 1
++    )
++    labels = {
++        "positive": False,
++        "negative_reasons": ["TARGET_TOO_SMALL"],
++        "instances": [
++            {"semantic_id": 1, "geom_ids": [10]},
++            {"semantic_id": 2, "geom_ids": [11]},
++            {"semantic_id": 5, "geom_ids": [12]},
++        ],
++    }
++    return models().SampleRecord.from_capture(
++        scene, frame, labels, raw_captured_frame=frame if raw else None
++    )
++
++
++def storage():
++    try:
++        return importlib.import_module("cloud_edge_robot_arm.datasets.rgbd.writer")
++    except ModuleNotFoundError:
++        pytest.fail("atomic RGB-D dataset storage is not implemented")
++
++
++def write_fixture(tmp_path, *, raw=False):
++    config = models().DatasetConfig(dataset_id="ds", groups=1, width=4, height=3, min_free_bytes=0)
++    record = sample_record(raw=raw)
++    writer = storage().DatasetWriter(tmp_path, config)
++    writer.write_episode([record])
++    return writer, record, config
++
++
++def test_offline_reader_preserves_timestamp(tmp_path):
++    writer, original, _ = write_fixture(tmp_path)
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    stored = storage().load_records(tmp_path)[0]
++    replayed = load_offline_observation(stored)
++    assert replayed == original.captured_frame.observation
++    assert replayed.captured_at.isoformat() == "2025-01-02T03:04:05+00:00"
++    assert stored.root == tmp_path.resolve()
++    assert "base64" not in (tmp_path / "samples.jsonl").read_text()
++    assert "captured_frame" not in stored.model_dump()
++    assert np.load(tmp_path / stored.paths["depth"], allow_pickle=False).dtype == np.dtype("<f4")
++    assert np.load(tmp_path / stored.paths["instance"], allow_pickle=False).tolist() == [
++        [0, 1, 2, 5],
++        [0, 1, 2, 5],
++        [0, 1, 2, 5],
++    ]
++    assert writer.total_bytes > 48
++
++
++def test_raw_evidence_is_preserved_with_separate_hashes(tmp_path):
++    writer, original, _ = write_fixture(tmp_path, raw=True)
++    stored = writer.records[0]
++    assert {"raw_rgb", "raw_depth", "raw_valid_mask", "raw_camera"} <= stored.paths.keys()
++    metadata = json.loads((tmp_path / stored.paths["raw_camera"]).read_text())
++    assert metadata["checksum_sha256"] == original.raw_captured_frame.observation.checksum_sha256
++    assert "base64" not in json.dumps(metadata)
++
++
++def test_atomic_publish_survives_disk_failure(tmp_path, monkeypatch):
++    config = models().DatasetConfig(dataset_id="ds", groups=1, min_free_bytes=0)
++    writer = storage().DatasetWriter(tmp_path, config)
++    original = os.replace
++
++    def disk_full(source, destination):
++        if Path(destination).parent.name == "episodes":
++            raise OSError(28, "No space left on device")
++        return original(source, destination)
++
++    monkeypatch.setattr(os, "replace", disk_full)
++    with pytest.raises(OSError):
++        writer.write_episode([sample_record()])
++    assert storage().load_records(tmp_path) == []
++    monkeypatch.setattr(os, "replace", original)
++    resumed = storage().DatasetWriter(tmp_path, config)
++    resumed.write_episode([sample_record()])
++    resumed.write_episode([sample_record()])
++    assert len(storage().load_records(tmp_path)) == 1
++
++
++def test_recovery_rebuilds_index_after_publish_before_index_crash(tmp_path, monkeypatch):
++    config = models().DatasetConfig(dataset_id="ds", groups=1, min_free_bytes=0)
++    writer = storage().DatasetWriter(tmp_path, config)
++    original = os.replace
++
++    def crash(source, destination):
++        if Path(destination) == tmp_path / "samples.jsonl":
++            raise OSError("index publication interrupted")
++        return original(source, destination)
++
++    monkeypatch.setattr(os, "replace", crash)
++    with pytest.raises(OSError):
++        writer.write_episode([sample_record()])
++    monkeypatch.setattr(os, "replace", original)
++    resumed = storage().DatasetWriter(tmp_path, config)
++    assert len(resumed.records) == 1
++    assert len((tmp_path / "samples.jsonl").read_text().splitlines()) == 1
++
++
++def test_same_episode_with_changed_labels_is_rejected(tmp_path):
++    writer, record, _ = write_fixture(tmp_path)
++    altered = record.model_copy(
++        update={"labels": {**record.labels, "negative_reasons": ["changed"]}}
++    )
++    with pytest.raises(ValueError, match="(?i)(different|conflict|identical)"):
++        writer.write_episode([altered])
++
++
++@pytest.mark.parametrize("key", ["rgb", "depth", "camera", "labels", "instance"])
++def test_altered_payload_blocks_reader_and_resume(tmp_path, key):
++    writer, _, config = write_fixture(tmp_path)
++    record = writer.records[0]
++    payload = tmp_path / record.paths[key]
++    payload.write_bytes(payload.read_bytes() + b"tampered")
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    with pytest.raises(ValueError, match="(?i)(hash|checksum)"):
++        load_offline_observation(record)
++    with pytest.raises(ValueError, match="(?i)(hash|checksum)"):
++        storage().DatasetWriter(tmp_path, config)
++
++
++@pytest.mark.parametrize(
++    "path",
++    [
++        "../escape.npy",
++        "/tmp/escape.npy",
++        "episodes/../escape.npy",
++        "episodes\\escape.npy",
++        "./episode.npy",
++    ],
++)
++def test_record_rejects_path_traversal(path):
++    record = sample_record()
++    with pytest.raises(ValidationError):
++        models().SampleRecord.model_validate({**record.model_dump(), "paths": {"depth": path}})
++
++
++def test_reader_rejects_symlink_payload(tmp_path):
++    writer, _, _ = write_fixture(tmp_path)
++    record = writer.records[0]
++    payload = tmp_path / record.paths["depth"]
++    external = tmp_path.parent / "external-depth.npy"
++    external.write_bytes(payload.read_bytes())
++    payload.unlink()
++    payload.symlink_to(external)
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    with pytest.raises(ValueError, match="(?i)(symlink|outside|path)"):
++        load_offline_observation(record)
++
++
++@pytest.mark.parametrize("dtype", [object, np.float64, np.int32])
++def test_reader_rejects_unsafe_depth_dtype_even_with_matching_file_hash(tmp_path, dtype):
++    writer, _, _ = write_fixture(tmp_path)
++    record = writer.records[0]
++    payload = tmp_path / record.paths["depth"]
++    np.save(payload, np.ones((3, 4), dtype=dtype))
++    record.file_hashes["depth"] = hashlib.sha256(payload.read_bytes()).hexdigest()
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    with pytest.raises(ValueError, match="(?i)(pickle|dtype|float32)"):
++        load_offline_observation(record)
++
++
++def test_config_resume_and_manifest_conflicts_are_not_overwritten(tmp_path):
++    _, _, config = write_fixture(tmp_path)
++    with pytest.raises(ValueError, match="(?i)config"):
++        storage().DatasetWriter(tmp_path, config.model_copy(update={"seed": 2}))
++    manifest = models().DatasetManifest(
++        dataset_id="ds",
++        config=config,
++        config_hash=config.config_hash,
++        status="RUNNING",
++        requested_groups=1,
++    )
++    storage().save_manifest(tmp_path, manifest)
++    assert storage().load_manifest(tmp_path) == manifest
++    other = models().DatasetConfig(dataset_id="other", groups=1)
++    conflict = models().DatasetManifest(
++        dataset_id="other",
++        config=other,
++        config_hash=other.config_hash,
++        status="COMPLETE",
++        requested_groups=1,
++    )
++    with pytest.raises(ValueError, match="(?i)config"):
++        storage().save_manifest(tmp_path, conflict)
++    assert storage().load_manifest(tmp_path) == manifest
++
++
++def test_numpy_header_shape_is_checked_before_loading_payload(tmp_path, monkeypatch):
++    writer, _, _ = write_fixture(tmp_path)
++    record = writer.records[0]
++    payload = tmp_path / record.paths["depth"]
++    with payload.open("wb") as stream:
++        np.lib.format.write_array_header_1_0(
++            stream, {"descr": "<f4", "fortran_order": False, "shape": (999999999, 999999999)}
++        )
++    record.file_hashes["depth"] = hashlib.sha256(payload.read_bytes()).hexdigest()
++    original = np.load
++
++    def reject_dangerous_allocation(*args, **kwargs):
++        pytest.fail("unsafe ndarray dimensions reached the allocating NumPy loader")
++
++    monkeypatch.setattr(np, "load", reject_dangerous_allocation)
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    with pytest.raises(ValueError, match="(?i)(shape|dimensions)"):
++        load_offline_observation(record)
++    monkeypatch.setattr(np, "load", original)
++
++
++def test_writer_rejects_inconsistent_positive_status(tmp_path):
++    config = models().DatasetConfig(dataset_id="ds", groups=1, min_free_bytes=0)
++    writer = storage().DatasetWriter(tmp_path, config)
++    inconsistent = sample_record().model_copy(update={"status": "POSITIVE"})
++    with pytest.raises(ValueError, match="(?i)(positive|status)"):
++        writer.write_episode([inconsistent])
++    assert writer.records == []
++
++
++def test_content_hash_ignores_acquisition_identity_and_time(tmp_path):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    record = sample_record()
++    writer, _, _ = write_fixture(tmp_path / "first")
++    original = record.captured_frame.observation
++    changed = RGBDObservation.model_validate(
++        {
++            **original.model_dump(),
++            "frame_id": "different-frame",
++            "observation_id": "different-frame",
++            "episode_id": "different-episode",
++            "captured_at": "2026-06-01T12:00:00+00:00",
++            "checksum_sha256": "",
++        }
++    )
++    frame = replace(record.captured_frame, observation=changed)
++    derivative = models().SampleRecord.from_capture(record.scene, frame, record.labels)
++    second = storage().DatasetWriter(tmp_path / "second", writer.config)
++    second.write_episode([derivative])
++    assert second.records[0].content_hash == writer.records[0].content_hash
++    assert second.records[0].file_hashes["camera"] != writer.records[0].file_hashes["camera"]
++
++
++@pytest.mark.parametrize("limits", [{"max_bytes": 1024}, {"min_free_bytes": 10**20}])
++def test_byte_and_free_space_budget_prevents_episode_publication(tmp_path, limits):
++    config = models().DatasetConfig(**{"dataset_id": "ds", "min_free_bytes": 0, **limits})
++    writer = storage().DatasetWriter(tmp_path, config)
++    with pytest.raises(OSError, match="(?i)(budget|space)"):
++        writer.write_episode([sample_record()])
++    assert storage().load_records(tmp_path) == []
++    assert list((tmp_path / "episodes").iterdir()) == []
++
++
++@pytest.mark.parametrize("changed", ["timestamp", "episode", "calibration", "rgb", "physics"])
++def test_raw_evidence_from_different_acquisition_is_rejected(tmp_path, changed):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    record = sample_record(raw=True)
++    raw = record.raw_captured_frame
++    payload = raw.observation.model_dump()
++    if changed == "timestamp":
++        payload["captured_at"] = "2026-01-01T00:00:00+00:00"
++    elif changed == "episode":
++        payload["episode_id"] = "another-episode"
++    elif changed == "calibration":
++        payload["intrinsics"] = (11.0, 10.0, 2.0, 1.5)
++    elif changed == "rgb":
++        stream = io.BytesIO()
++        Image.new("RGB", (4, 3), (0, 0, 200)).save(stream, format="PNG")
++        payload["rgb_png_base64"] = base64.b64encode(stream.getvalue()).decode()
++    payload["checksum_sha256"] = ""
++    raw = replace(raw, observation=RGBDObservation.model_validate(payload))
++    if changed == "physics":
++        raw = replace(raw, physics_state_hash="other-state", pass_state_hashes=("other-state",) * 3)
++    record = record.model_copy(update={"raw_captured_frame": raw})
++    writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
++    with pytest.raises(ValueError, match="(?i)raw"):
++        writer.write_episode([record])
++    assert writer.records == []
++
++
++@pytest.mark.parametrize("corruption", [{"depth_noise_m": 0.002}, {"invalid_depth_fraction": 0.1}])
++def test_corrupted_observation_requires_raw_evidence(tmp_path, corruption):
++    record = sample_record()
++    scene = models().SceneSpec.from_parameters(
++        {**record.scene.scene_parameters, **corruption}, "asset-a", 1
++    )
++    record = record.model_copy(update={"scene": scene})
++    writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="ds"))
++    with pytest.raises(ValueError, match="(?i)raw"):
++        writer.write_episode([record])
++
++
++def test_reader_verifies_raw_physics_linkage(tmp_path):
++    writer, _, _ = write_fixture(tmp_path, raw=True)
++    record = writer.records[0]
++    assert "raw_state" in record.paths
++    path = tmp_path / record.paths["raw_state"]
++    payload = json.loads(path.read_text())
++    payload["physics_state_hash"] = "other-state"
++    path.write_text(json.dumps(payload))
++    record.file_hashes["raw_state"] = hashlib.sha256(path.read_bytes()).hexdigest()
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    with pytest.raises(ValueError, match="(?i)raw"):
++        load_offline_observation(record)
++
++
++@pytest.mark.parametrize("passes", [(), ("state-hash",), ("state-hash",) * 2,
++                                    ("state-hash",) * 4])
++def test_writer_requires_three_synchronized_passes(tmp_path, passes):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.datasets.rgbd.writer import DatasetWriter
++
++    record = sample_record()
++    record.captured_frame = replace(record.captured_frame, pass_state_hashes=passes)
++    writer = DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="passes"))
++    with pytest.raises(ValueError, match="render passes"):
++        writer.write_episode([record])
++
++
++@pytest.mark.parametrize("passes", [(), ("state-hash",), ("state-hash",) * 2,
++                                    ("state-hash",) * 4])
++def test_writer_requires_three_raw_passes(tmp_path, passes):
++    from dataclasses import replace
++
++    record = sample_record(raw=True)
++    record.raw_captured_frame = replace(record.raw_captured_frame, pass_state_hashes=passes)
++    writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="raw-passes"))
++    with pytest.raises(ValueError, match="raw"):
++        writer.write_episode([record])
++
++
++@pytest.mark.parametrize("empty_hash", ["", "   "])
++def test_empty_physics_hash_is_not_sync_evidence(tmp_path, empty_hash):
++    from dataclasses import replace
++
++    record = sample_record()
++    record.physics_state_hash = empty_hash
++    record.captured_frame = replace(record.captured_frame, physics_state_hash=empty_hash,
++                                    pass_state_hashes=(empty_hash,) * 3)
++    writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="empty-hash"))
++    with pytest.raises(ValueError, match="render passes"):
++        writer.write_episode([record])
++
++
++def test_main_state_file_is_persisted_and_verified_on_replay(tmp_path):
++    writer, _, _ = write_fixture(tmp_path)
++    record = writer.records[0]
++    assert "state" in record.paths
++    state_path = tmp_path / record.paths["state"]
++    state = json.loads(state_path.read_text())
++    assert state["physics_state_hash"] == "state-hash"
++    assert state["pass_state_hashes"] == ["state-hash"] * 3
++    state["pass_state_hashes"] = []
++    state_path.write_text(json.dumps(state))
++    record.file_hashes["state"] = hashlib.sha256(state_path.read_bytes()).hexdigest()
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    with pytest.raises(ValueError, match="render passes"):
++        load_offline_observation(record)
++
++
++@pytest.mark.parametrize("mode,value", [("L", 255), ("RGB", (255, 0, 255))])
++def test_wrong_depth_visualization_rejected_even_with_matching_hash(tmp_path, mode, value):
++    writer, _, _ = write_fixture(tmp_path)
++    record = writer.records[0]
++    path = tmp_path / record.paths["depth_vis"]
++    Image.new(mode, (4, 3), value).save(path, format="PNG")
++    record.file_hashes["depth_vis"] = hashlib.sha256(path.read_bytes()).hexdigest()
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    with pytest.raises(ValueError, match="depth visualization"):
++        load_offline_observation(record)
++
++
++def test_all_invalid_depth_keeps_black_visualization_and_replays(tmp_path):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
++
++    record = sample_record()
++    frame = record.captured_frame
++    observation = RGBDObservation.model_validate({
++        **frame.observation.model_dump(),
++        "depth_float32_base64": base64.b64encode(np.zeros((3, 4), dtype="<f4").tobytes()).decode(),
++        "valid_mask_base64": None, "checksum_sha256": "",
++    })
++    record = models().SampleRecord.from_capture(
++        record.scene, replace(frame, observation=observation), record.labels)
++    writer = storage().DatasetWriter(tmp_path, models().DatasetConfig(dataset_id="invalid"))
++    writer.write_episode([record])
++    saved = writer.records[0]
++    assert load_offline_observation(saved) == observation
++    with Image.open(tmp_path / saved.paths["depth_vis"]) as image:
++        assert image.mode == "L" and image.getextrema() == (0, 0)
+--- /dev/null
++++ b/tests/test_rgbd_dataset_labels.py
+@@ -0,0 +1,165 @@
++"""Offline labels follow actual rendered, settled geometry and retain hard negatives."""
++
++from __future__ import annotations
++
++from dataclasses import replace
++
++import numpy as np
++import pytest
++
++from cloud_edge_robot_arm.datasets.rgbd.models import DatasetConfig, SceneSpec
++
++
++def test_sampler_reproducible_and_camera_variants_stay_in_group() -> None:
++    from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
++
++    config = DatasetConfig(dataset_id="labels")
++    first = sample_scene(config, 17)
++    assert first == sample_scene(config, 17)
++    other = sample_scene(config, 18)
++    assert first.group_id != other.group_id
++    params = dict(first.scene_parameters)
++    params["camera"] = {**params["camera"], "fovy": 48}
++    variant = SceneSpec.from_parameters(params, first.asset_family_hash, 500)
++    assert variant.group_id == first.group_id
++    assert variant.scene_hash != first.scene_hash
++    for obj in [params["target"], *params["distractors"]]:
++        assert obj["position"][2] > obj["half_size"][2]
++
++
++def test_capture_labels_use_real_instances_and_reuse_model() -> None:
++    from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
++    from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame
++    from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
++    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    config = DatasetConfig(dataset_id="labels", distractor_count=(3, 3), half_size=(.04, .04),
++                           camera_height=(1.2, 1.2),
++                           depth_noise_m=(0,), invalid_depth_fractions=(0,))
++    with MuJoCoCaptureSession(SimulatorConfig()) as session:
++        scene = sample_scene(config, 17)
++        session.apply_scene(scene)
++        adapter = OfflineSceneAdapter(session, settle_steps=config.settle_steps)
++        frame, truth = adapter.capture()
++        model, camera = session._backend._model, session._backend._camera
++        labels = label_frame(frame, truth)
++        assert labels["positive"], labels["negative_reasons"]
++        assert len(labels["instances"]) == 5
++        assert labels["execution_verified"] is False
++        assert labels["surface_point"][2] > labels["object_center"][2]
++        target = labels["instances"][0]
++        assert np.allclose(target["half_size"], scene.scene_parameters["target"]["half_size"])
++        u, v = labels["target_pixel"]
++        assert frame.instance_ids[v * frame.observation.width + u] in target["geom_ids"]
++        assert abs(target["position"][2] - target["half_size"][2]) < .002
++        assert truth["settling"]["max_linear_speed_m_s"] < .02
++        assert model.body("object").mass[0] == pytest.approx(
++            scene.scene_parameters["target"]["mass_kg"])
++        assert model.geom("object_geom").friction[0] == pytest.approx(
++            scene.scene_parameters["target"]["friction"])
++        assert np.allclose(model.geom("object_geom").rgba,
++                           scene.scene_parameters["target"]["rgba"])
++        assert np.allclose([frame.observation.camera_to_world[i] for i in (3, 7, 11)],
++                           scene.scene_parameters["camera"]["position"])
++        assert model.camera("rgbd").fovy[0] == pytest.approx(
++            scene.scene_parameters["camera"]["fovy"])
++        assert "instances" not in frame.observation.model_dump()
++        assert frame.observation.scene_id == scene.group_id
++        second_scene = sample_scene(config, 18)
++        session.apply_scene(second_scene)
++        second, _ = adapter.capture()
++        assert session._backend._model is model
++        assert session._backend._camera is camera
++        assert second.observation.checksum_sha256 != frame.observation.checksum_sha256
++        assert second.observation.episode_id != frame.observation.episode_id
++        session.apply_scene(scene)
++        repeated, repeated_truth = adapter.capture()
++        assert repeated.observation.rgb_png_base64 == frame.observation.rgb_png_base64
++        assert repeated.observation.depth_float32_base64 == frame.observation.depth_float32_base64
++        assert repeated.physics_state_hash == frame.physics_state_hash
++        assert repeated_truth == truth
++        hidden = replace(frame, instance_ids=tuple(
++            -1 if geom in target["geom_ids"] else geom for geom in frame.instance_ids))
++        hidden_labels = label_frame(hidden, truth)
++        assert not hidden_labels["positive"]
++        assert hidden_labels["target_pixel"] is None
++        assert hidden_labels["instances"][0]["bbox_xyxy"] is None
++
++
++def test_depth_corruption_preserves_original_and_becomes_negative() -> None:
++    from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
++    from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame
++    from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
++    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    config = DatasetConfig(dataset_id="labels", depth_noise_m=(.005,),
++                           invalid_depth_fractions=(1,))
++    with MuJoCoCaptureSession(SimulatorConfig()) as session:
++        session.apply_scene(sample_scene(config, 17))
++        frame, truth = OfflineSceneAdapter(session).capture()
++        labels = label_frame(frame, truth)
++        raw = truth["_raw_captured_frame"]
++        assert not labels["positive"]
++        assert "TARGET_DEPTH_INVALID" in labels["negative_reasons"]
++        assert labels["target_pixel"] is None
++        assert labels["suggested_action"] == "REQUEST_MORE_OBSERVATION"
++        assert not any(frame.observation.valid_mask_bytes())
++        assert any(raw.observation.valid_mask_bytes())
++        assert raw.observation.captured_at == frame.observation.captured_at
++        assert raw.physics_state_hash == frame.physics_state_hash
++
++
++def test_capture_rejects_unsettled_scene_and_unknown_parameters() -> None:
++    from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
++    from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
++    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    scene = sample_scene(DatasetConfig(dataset_id="labels"), 17)
++    with MuJoCoCaptureSession(SimulatorConfig()) as session:
++        session.apply_scene(scene)
++        with pytest.raises(ValueError, match="settled"):
++            OfflineSceneAdapter(session, settle_steps=0).capture()
++        bad = scene.model_copy(deep=True)
++        bad.scene_parameters["unapplied"] = 99
++        with pytest.raises(ValueError, match="parameters"):
++            session.apply_scene(bad)
++        wrong_color = scene.model_copy(deep=True)
++        wrong_color.scene_parameters["target"]["color_name"] = "red"
++        wrong_color.scene_parameters["target"]["rgba"] = [.08, .2, .9, 1]
++        with pytest.raises(ValueError, match="color"):
++            session.apply_scene(wrong_color)
++
++
++@pytest.mark.parametrize("failure", ["angular_velocity", "rotated_bounds"])
++def test_settling_checks_rotation_and_world_bounds(failure: str) -> None:
++    from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
++    from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
++    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++    from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    session = MuJoCoCaptureSession(SimulatorConfig())
++    backend = session._backend
++    try:
++        # CPU physical model suffices: this probe exercises truth checks, not rendering.
++        backend.initialize(SimulatorConfig(render_rgb=False, render_depth=False))
++        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
++        session._open = True
++        session._dataset_scene = sample_scene(
++            DatasetConfig(dataset_id="probe", distractor_count=(0, 0)), 0)
++        model, data, mj = backend._model, backend._data, backend._mujoco
++        joint = model.joint("object_free")
++        if failure == "angular_velocity":
++            data.qvel[joint.dofadr[0] + 3] = 25
++        else:
++            adr = joint.qposadr[0]
++            data.qpos[adr:adr + 3] = [.96, 0, .035]
++            data.qpos[adr + 3:adr + 7] = [np.cos(np.pi / 8), 0, 0, np.sin(np.pi / 8)]
++            mj.mj_forward(model, data)
++        with pytest.raises(ValueError, match="settled|bounds"):
++            OfflineSceneAdapter(session).capture_ground_truth()
++    finally:
++        backend.shutdown()
+--- /dev/null
++++ b/tests/test_rgbd_dataset_splits.py
+@@ -0,0 +1,126 @@
++"""Holdout separation follows source and image evidence, never random seeds."""
++
++from __future__ import annotations
++
++import base64
++import importlib
++import io
++from datetime import UTC, datetime
++
++import numpy as np
++import pytest
++from PIL import Image
++
++from cloud_edge_robot_arm.datasets.rgbd.models import SampleRecord, SceneSpec
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++
++def module(name):
++    try:
++        return importlib.import_module(f"cloud_edge_robot_arm.datasets.rgbd.{name}")
++    except ModuleNotFoundError:
++        pytest.fail(f"RGB-D {name} is not implemented")
++
++
++def record(index, *, scene=None, **changes):
++    scene = scene or SceneSpec.from_parameters(
++        {"target": {"position": [float(index), 0, 0.04]}, "camera": {"fovy": 45}},
++        "asset-a",
++        index,
++    )
++    return SampleRecord(
++        **{
++            "sample_id": f"s-{index}",
++            "group_id": scene.group_id,
++            "episode_id": f"e-{index}",
++            "frame_id": f"f-{index}",
++            "scene": scene,
++            "observation_metadata": {},
++            "labels": {"positive": True},
++            "physics_state_hash": "a" * 64,
++            "status": "POSITIVE",
++            **changes,
++        }
++    )
++
++
++def observation(*, offset=0, brightness=0):
++    rgb = np.full((48, 64, 3), 90 + brightness, dtype=np.uint8)
++    rgb[15:25, 20 + offset : 30 + offset] = [190 + brightness, 25 + brightness, 25 + brightness]
++    depth = np.full((48, 64), 2, dtype="<f4")
++    depth[15:25, 20 + offset : 30 + offset] = 1
++    image = io.BytesIO()
++    Image.fromarray(rgb).save(image, format="PNG")
++    return RGBDObservation(
++        frame_id="test-frame",
++        captured_at=datetime(2020, 1, 1, tzinfo=UTC),
++        sim_time_s=0,
++        width=64,
++        height=48,
++        rgb_png_base64=base64.b64encode(image.getvalue()).decode(),
++        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
++        intrinsics=(60, 60, 32, 24),
++        camera_to_world=(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
++        source="mujoco_camera",
++    )
++
++
++def test_group_split_80_5_5_10():
++    records = [record(i) for i in range(100)]
++    splits = module("splitter").assign_splits(records, seed=17)
++    assert splits.counts == {"train": 80, "calibration": 5, "selection": 5, "test": 10}
++    assert len(splits.sample_assignments) == 100
++    assert splits == module("splitter").assign_splits(list(reversed(records)), seed=17)
++
++
++def test_same_scene_different_seed_is_duplicate():
++    first = record(0)
++    forged = first.scene.model_copy(update={"seed": 1234, "group_id": "forged-group"})
++    second = record(1, scene=forged)
++    splits = module("splitter").assign_splits([first, second], seed=4)
++    assert sum(splits.counts.values()) == 1
++    assert splits.sample_assignments[first.sample_id] == splits.sample_assignments[second.sample_id]
++    assert splits.duplicates
++    assert module("quality").find_duplicate(second, [first]) == first.sample_id
++
++
++def test_episode_augmentations_keep_split():
++    first = record(0)
++    variant = first.scene.model_copy(
++        update={"scene_parameters": {**first.scene.scene_parameters, "camera": {"fovy": 55}}}
++    )
++    second = record(1, scene=variant)
++    records = [first, second, *[record(i) for i in range(2, 101)]]
++    splits = module("splitter").assign_splits(records, seed=3)
++    assert splits.counts == {"train": 80, "calibration": 5, "selection": 5, "test": 10}
++    assert splits.sample_assignments[first.sample_id] == splits.sample_assignments[second.sample_id]
++
++
++def test_content_duplicates_cannot_cross_splits():
++    records = [record(i) for i in range(101)]
++    records[0].content_hash = records[-1].content_hash = "f" * 64
++    splits = module("splitter").assign_splits(records, seed=21)
++    assert sum(splits.counts.values()) == 100
++    assert splits.sample_assignments["s-0"] == splits.sample_assignments["s-100"]
++
++
++def test_near_duplicate_brightness_change_is_detected_without_collapsing_layouts():
++    quality = module("quality")
++    first = record(0, perceptual_hash=quality.perceptual_signature(observation()))
++    near = record(1, perceptual_hash=quality.perceptual_signature(observation(brightness=4)))
++    moved = record(2, perceptual_hash=quality.perceptual_signature(observation(offset=12)))
++    assert quality.find_duplicate(near, [first]) == first.sample_id
++    assert quality.find_duplicate(moved, [first]) is None
++    splits = module("splitter").assign_splits([first, near, moved], seed=0)
++    assert sum(splits.counts.values()) == 2
++    assert any(item["reason"] == "near_duplicate" for item in splits.duplicates)
++
++
++def test_duplicate_sample_identity_is_rejected():
++    with pytest.raises(ValueError, match="sample"):
++        module("splitter").assign_splits([record(0), record(0)], seed=0)
++
++
++def test_malformed_perceptual_signature_is_rejected():
++    with pytest.raises(ValueError, match="signature"):
++        module("quality").find_duplicate(record(1, perceptual_hash="junk"), [record(0)])
+diff --git a/.gitignore b/.gitignore
+index e4525b47..e9e67298 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -76,6 +76,6 @@ thesis/chapters/*.aux
+ # Linux local runtimes, caches and unique deployment evidence
+ cache/
+ logs/
+-datasets/
++/datasets/
+ results/
+ artifacts/deployment/

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -29,6 +29,7 @@ from cloud_edge_robot_arm.skill_cache.models import (
     SkillStatistics,
     SkillTemplate,
 )
+from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
 # ── Health ───────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,8 @@ class PlanningRequest(BaseModel):
         default="EVENT_TRIGGERED_EDGE_AUTONOMY",
         pattern=r"^(PERIODIC_CLOUD_SUPERVISION|EVENT_TRIGGERED_EDGE_AUTONOMY)$",
     )
-    scene: SceneSummary
+    scene: SceneSummary = Field(default_factory=lambda: SceneSummary(scene_version=1, updated_at=datetime.now(UTC)))
+    observation: RGBDObservation | None = None
     capabilities: RobotCapabilities = Field(default_factory=lambda: RobotCapabilities())
     safety_policy: SafetyPolicyReference | None = None
 

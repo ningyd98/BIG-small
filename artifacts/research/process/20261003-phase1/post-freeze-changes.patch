@@ -1,0 +1,227 @@
+--- reviewed/src/cloud_edge_robot_arm/vision/observations.py
++++ current/src/cloud_edge_robot_arm/vision/observations.py
+@@ -215,13 +215,27 @@
+ def observation_from_sensor_frame(frame: SensorFrame, *, source: str) -> RGBDObservation:
+     if not frame.rgb or not frame.depth or not frame.intrinsics or not frame.camera_to_world:
+         raise ValueError("RGBD_CAMERA_DATA_MISSING")
++    if frame.captured_at is None:
++        raise ValueError("captured_at must record sensor acquisition time")
++    if (
++        type(frame.width) is not int
++        or type(frame.height) is not int
++        or not 1 <= frame.width <= 1280
++        or not 1 <= frame.height <= 720
++    ):
++        raise ValueError("RGB-D dimensions must be integers within 1280 x 720")
++    pixel_count = frame.width * frame.height
++    if len(frame.rgb) != pixel_count * 3:
++        raise ValueError("RGB size must equal width * height * 3")
++    if len(frame.depth) != pixel_count:
++        raise ValueError("depth size must equal width * height")
+     image = Image.frombytes("RGB", (frame.width, frame.height), frame.rgb)
+     output = io.BytesIO()
+     image.save(output, format="PNG")
+     return RGBDObservation.model_validate(
+         {
+             "frame_id": frame.frame_id,
+-            "captured_at": frame.captured_at or datetime.now(UTC),
++            "captured_at": frame.captured_at,
+             "sim_time_s": frame.sim_time_s,
+             "width": frame.width,
+             "height": frame.height,
+--- reviewed/src/cloud_edge_robot_arm/simulation/mujoco/camera.py
++++ current/src/cloud_edge_robot_arm/simulation/mujoco/camera.py
+@@ -80,23 +80,39 @@
+         episode_id: str | None,
+         include_instances: bool,
+     ) -> tuple[SensorFrame, tuple[int, ...], dict[int, str], tuple[str, ...]]:
++        captured_at = datetime.now(UTC)
+         started = perf_counter()
+         initial_hash = self._physics_state_hash(data)
++        camera_position = np.asarray(data.cam_xpos[self._camera_id]).copy()
++        camera_rotation = np.asarray(data.cam_xmat[self._camera_id]).copy()
++        camera_fovy = float(self._model.cam_fovy[self._camera_id])
++
++        def check_calibration() -> None:
++            if (
++                not np.array_equal(data.cam_xpos[self._camera_id], camera_position)
++                or not np.array_equal(data.cam_xmat[self._camera_id], camera_rotation)
++                or float(self._model.cam_fovy[self._camera_id]) != camera_fovy
++            ):
++                raise RuntimeError("camera calibration changed during capture")
++
+         self._renderer.disable_depth_rendering()
+         self._renderer.disable_segmentation_rendering()
+         self._renderer.update_scene(data, camera=self._camera_id)
+         if self._physics_state_hash(data) != initial_hash:
+             raise RuntimeError("physics state changed while preparing camera scene")
++        check_calibration()
+         pass_hashes: list[str] = []
+         rgb = self._renderer.render().copy()
+         pass_hashes.append(self._physics_state_hash(data))
+         if pass_hashes[-1] != initial_hash:
+             raise RuntimeError("physics state changed during RGB render")
++        check_calibration()
+         self._renderer.enable_depth_rendering()
+         depth = self._renderer.render().copy()
+         pass_hashes.append(self._physics_state_hash(data))
+         if pass_hashes[-1] != initial_hash:
+             raise RuntimeError("physics state changed during depth render")
++        check_calibration()
+         self._renderer.disable_depth_rendering()
+         instance_ids: tuple[int, ...] = ()
+         instance_labels: dict[int, str] = {}
+@@ -107,6 +123,7 @@
+             pass_hashes.append(self._physics_state_hash(data))
+             if pass_hashes[-1] != initial_hash:
+                 raise RuntimeError("physics state changed during instance render")
++            check_calibration()
+             geom_pixels = np.where(
+                 segmentation[:, :, 1] == int(self._mujoco.mjtObj.mjOBJ_GEOM),
+                 segmentation[:, :, 0],
+@@ -126,20 +143,17 @@
+         depth[~valid | (depth <= 0)] = 0
+         valid = np.isfinite(depth) & (depth > 0)
+         # MuJoCo camera: +X right, +Y up, -Z forward; optical: +Y down, +Z forward.
+-        optical_to_world = np.asarray(data.cam_xmat[self._camera_id]).reshape(3, 3) @ np.diag(
+-            [1, -1, -1]
+-        )
++        optical_to_world = camera_rotation.reshape(3, 3) @ np.diag([1, -1, -1])
+         transform = np.eye(4)
+         transform[:3, :3] = optical_to_world
+-        transform[:3, 3] = data.cam_xpos[self._camera_id]
+-        focal = (self._height / 2) / math.tan(
+-            math.radians(float(self._model.cam_fovy[self._camera_id])) / 2
+-        )
++        transform[:3, 3] = camera_position
++        focal = (self._height / 2) / math.tan(math.radians(camera_fovy) / 2)
+         intrinsics = (focal, focal, (self._width - 1) / 2, (self._height - 1) / 2)
+         calibration_values = np.asarray((*intrinsics, *transform.ravel()), dtype="<f8")
+         calibration = hashlib.sha256(calibration_values.tobytes()).hexdigest()[:16]
+         if self._physics_state_hash(data) != initial_hash:
+             raise RuntimeError("physics state changed while finalizing camera calibration")
++        check_calibration()
+         frame = SensorFrame(
+             frame_id=f"rgbd-{uuid4().hex}",
+             sim_time_s=float(data.time),
+@@ -149,7 +163,7 @@
+             depth=tuple(float(value) for value in depth.ravel()),
+             intrinsics=intrinsics,
+             camera_to_world=tuple(float(value) for value in transform.ravel()),
+-            captured_at=datetime.now(UTC),
++            captured_at=captured_at,
+             latency_ms=(perf_counter() - started) * 1000,
+             scene_id=scene_id,
+             episode_id=episode_id,
+--- reviewed/tests/test_rgbd_observations.py
++++ current/tests/test_rgbd_observations.py
+@@ -53,11 +53,16 @@
+     from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
+ 
+     with pytest.raises(ValueError, match="captured_at"):
+-        observation_from_sensor_frame(replace(sensor_frame, captured_at=None), source="mujoco_camera")
++        observation_from_sensor_frame(
++            replace(sensor_frame, captured_at=None), source="mujoco_camera"
++        )
+ 
+ 
+ def test_historical_sensor_frame_preserves_acquisition_timestamp(sensor_frame: SensorFrame) -> None:
+-    from cloud_edge_robot_arm.vision.observations import RGBDObservation, observation_from_sensor_frame
++    from cloud_edge_robot_arm.vision.observations import (
++        RGBDObservation,
++        observation_from_sensor_frame,
++    )
+ 
+     observation = observation_from_sensor_frame(sensor_frame, source="mujoco_camera")
+     restored = RGBDObservation.model_validate_json(observation.model_dump_json())
+@@ -71,8 +76,10 @@
+ ) -> None:
+     from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
+ 
+-    with pytest.raises(ValueError, match="RGB.*size"):
+-        observation_from_sensor_frame(replace(sensor_frame, rgb=bytes(length)), source="mujoco_camera")
++    with pytest.raises(ValueError):
++        observation_from_sensor_frame(
++            replace(sensor_frame, rgb=bytes(length)), source="mujoco_camera"
++        )
+ 
+ 
+ @pytest.mark.parametrize(
+--- reviewed/tests/test_rgbd_capture_session.py
++++ current/tests/test_rgbd_capture_session.py
+@@ -5,6 +5,7 @@
+ import json
+ import math
+ import struct
++from datetime import UTC, datetime, timedelta
+ 
+ import mujoco
+ import pytest
+@@ -112,3 +113,67 @@
+             monkeypatch.setattr(renderer_type, "render", moved_render)
+             session.capture_with_instances()
+     assert backend._camera is None
++
++
++def test_capture_timestamp_includes_render_latency(monkeypatch: pytest.MonkeyPatch) -> None:
++    from cloud_edge_robot_arm.simulation.mujoco import camera
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    started_at = datetime(2026, 10, 3, tzinfo=UTC)
++    current_time = started_at
++
++    class CaptureClock:
++        @staticmethod
++        def now(tz):
++            return current_time.astimezone(tz)
++
++    with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++        renderer_type = type(session._backend._camera._renderer)
++        original_render = renderer_type.render
++
++        def delayed_render(renderer, *args, **kwargs):
++            nonlocal current_time
++            image = original_render(renderer, *args, **kwargs)
++            current_time += timedelta(seconds=2)
++            return image
++
++        monkeypatch.setattr(camera, "datetime", CaptureClock)
++        monkeypatch.setattr(renderer_type, "render", delayed_render)
++        captured = session.capture_with_instances()
++
++    assert captured.observation.captured_at == started_at
++    assert (current_time - captured.observation.captured_at).total_seconds() == 6
++
++
++@pytest.mark.parametrize("field", ["cam_xpos", "cam_xmat", "cam_fovy"])
++def test_concurrent_calibration_change_rejects_mixed_frame(
++    monkeypatch: pytest.MonkeyPatch, field: str
++) -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    with pytest.raises(RuntimeError, match="camera calibration changed"):
++        with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++            backend = session._backend
++            assert backend._camera is not None and backend._data is not None
++            renderer_type = type(backend._camera._renderer)
++            original_render = renderer_type.render
++            count = 0
++
++            def changed_calibration_render(renderer, *args, **kwargs):
++                nonlocal count
++                image = original_render(renderer, *args, **kwargs)
++                count += 1
++                if count == 1:
++                    camera_id = backend._camera._camera_id
++                    if field == "cam_fovy":
++                        backend._model.cam_fovy[camera_id] += 1.0
++                    elif field == "cam_xpos":
++                        backend._data.cam_xpos[camera_id, 0] += 0.1
++                    else:
++                        # A 180-degree rotation remains a valid right-handed calibration.
++                        backend._data.cam_xmat[camera_id, :6] *= -1
++                return image
++
++            monkeypatch.setattr(renderer_type, "render", changed_calibration_render)
++            session.capture_with_instances()
++    assert backend._camera is None

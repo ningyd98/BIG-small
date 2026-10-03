@@ -83,7 +83,7 @@ from cloud_edge_robot_arm.skill_cache.repository import SkillCacheRepository
 
 
 def create_app(
-    pipeline: PlanningPipeline,
+    pipeline: PlanningPipeline | None = None,
     *,
     supervisor: PeriodicSupervisorService | None = None,
     event_controller: Any = None,
@@ -96,6 +96,11 @@ def create_app(
     clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     """Build the FastAPI application wired to a PlanningPipeline and optional event controller."""
+    default_visual_pipeline = pipeline is None
+    if pipeline is None:
+        from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+
+        pipeline = PlanningPipeline(planner=RGBDPlannerAdapter.from_environment())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -126,6 +131,9 @@ def create_app(
     app.include_router(dashboard_router)
     app.include_router(simulation_workbench_router)
     app.include_router(model_control_router)
+    from cloud_edge_robot_arm.cloud.api.vision import router as vision_router
+
+    app.include_router(vision_router)
 
     # ── Health ───────────────────────────────────────────────────────────
 
@@ -166,7 +174,7 @@ def create_app(
     # ── Create plan ──────────────────────────────────────────────────────
 
     @app.post("/api/v1/plans", response_model=PlanningResponse, status_code=201)
-    async def create_plan(body: PlanningRequest) -> PlanningResponse:
+    def create_plan(body: PlanningRequest, request: Request) -> PlanningResponse:
         from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
 
         ireq = InitialPlanningRequest(
@@ -174,9 +182,16 @@ def create_app(
             user_instruction=body.user_instruction,
             control_mode=body.control_mode,
             scene=body.scene,
+            observation=body.observation,
             capabilities=body.capabilities,
             safety_policy=body.safety_policy,
         )
+        if default_visual_pipeline and body.observation is not None:
+            from cloud_edge_robot_arm.cloud.api.model_control import _service
+            try:
+                pipeline._planner = _service(request).visual_planner()
+            except RuntimeError as exc:
+                return PlanningResponse(request_id=body.request_id, outcome="PLANNER_FAILED", reason=str(exc), created_at=datetime.now(UTC).isoformat())
         result = pipeline.process(ireq)
         return _planning_response(result)
 

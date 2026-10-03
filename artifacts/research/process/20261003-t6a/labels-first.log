@@ -1,0 +1,208 @@
+.FFF                                                                     [100%]
+=================================== FAILURES ===================================
+____________ test_capture_labels_use_real_instances_and_reuse_model ____________
+
+    def test_capture_labels_use_real_instances_and_reuse_model() -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        config = DatasetConfig(dataset_id="labels", distractor_count=(3, 3), half_size=(.04, .04),
+                               camera_height=(1.2, 1.2),
+                               depth_noise_m=(0,), invalid_depth_fractions=(0,))
+        with MuJoCoCaptureSession(SimulatorConfig()) as session:
+            scene = sample_scene(config, 17)
+>           session.apply_scene(scene)
+
+tests/test_rgbd_dataset_labels.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/capture.py:68: in apply_scene
+    apply_scene(self, scene)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = <cloud_edge_robot_arm.vision.capture.MuJoCoCaptureSession object at 0x77445515d0a0>
+scene = SceneSpec(schema_version='rgbd.dataset.v1', group_id='g-dd76c4449e467a07233f2f46559942a4', scene_parameters={'target':...d_depth_fraction': 0.0}, asset_family_hash='6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1', seed=17)
+
+    def apply_scene(session: MuJoCoCaptureSession, scene: SceneSpec) -> None:
+        params = scene.scene_parameters
+        _validate_parameters(params)
+        asset_hash = hashlib.sha256(Path(session._config.model_path).read_bytes()).hexdigest()
+        if scene.asset_family_hash != asset_hash:
+            raise ValueError("scene asset family does not match capture model")
+        if not session._dataset_prepared:
+            _prepare(session)
+        backend = session._backend
+        mj, model, data = backend._mujoco, backend._model, backend._data
+        assert mj is not None and model is not None and data is not None
+    
+        def set_geometry(name: str, obj: dict[str, Any]) -> None:
+            geom = model.geom(name)
+            size = np.asarray(obj["half_size"])
+            geom.size[:] = size
+            geom.rgba[:] = obj["rgba"]
+            model.geom_rbound[geom.id] = np.linalg.norm(size)
+            model.geom_aabb[geom.id] = [0, 0, 0, *size]
+            # Each dataset movable body has one centered box. Refresh its collision BVH leaf.
+            nodes = np.flatnonzero(model.bvh_nodeid == geom.id)
+            for node in nodes:
+                model.bvh_aabb[node] = [0, 0, 0, *size]
+            if "mass_kg" in obj:
+                mass = obj["mass_kg"]
+                body_id = int(model.geom_bodyid[geom.id])
+                model.body_mass[body_id] = mass
+                model.body_inertia[body_id] = mass / 3 * (np.sum(size ** 2) - size ** 2)
+                geom.friction[:] = [obj["friction"], .01, .001]
+    
+        set_geometry("object_geom", params["target"])
+        set_geometry("target_region_geom", params["destination"])
+        model.body("target_region").pos[:] = params["destination"]["position"]
+        for index in range(3):
+            body = model.body(f"dataset_distractor_{index}")
+            geom = model.geom(f"dataset_distractor_{index}_geom")
+            active = index < len(params["distractors"])
+            geom.contype[:] = int(active)
+            geom.conaffinity[:] = int(active)
+>           body.gravcomp[:] = 0 if active else 1
+            ^^^^^^^^^^^^^
+E           AttributeError: 'mujoco._structs._MjModelBodyViews' object has no attribute 'gravcomp'
+
+src/cloud_edge_robot_arm/datasets/rgbd/capture.py:122: AttributeError
+________ test_depth_corruption_preserves_original_and_becomes_negative _________
+
+    def test_depth_corruption_preserves_original_and_becomes_negative() -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        config = DatasetConfig(dataset_id="labels", depth_noise_m=(.005,),
+                               invalid_depth_fractions=(1,))
+        with MuJoCoCaptureSession(SimulatorConfig()) as session:
+>           session.apply_scene(sample_scene(config, 17))
+
+tests/test_rgbd_dataset_labels.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/capture.py:68: in apply_scene
+    apply_scene(self, scene)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = <cloud_edge_robot_arm.vision.capture.MuJoCoCaptureSession object at 0x7744535c9880>
+scene = SceneSpec(schema_version='rgbd.dataset.v1', group_id='g-588b813680a2f987b508a928d174a741', scene_parameters={'target':...d_depth_fraction': 1.0}, asset_family_hash='6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1', seed=17)
+
+    def apply_scene(session: MuJoCoCaptureSession, scene: SceneSpec) -> None:
+        params = scene.scene_parameters
+        _validate_parameters(params)
+        asset_hash = hashlib.sha256(Path(session._config.model_path).read_bytes()).hexdigest()
+        if scene.asset_family_hash != asset_hash:
+            raise ValueError("scene asset family does not match capture model")
+        if not session._dataset_prepared:
+            _prepare(session)
+        backend = session._backend
+        mj, model, data = backend._mujoco, backend._model, backend._data
+        assert mj is not None and model is not None and data is not None
+    
+        def set_geometry(name: str, obj: dict[str, Any]) -> None:
+            geom = model.geom(name)
+            size = np.asarray(obj["half_size"])
+            geom.size[:] = size
+            geom.rgba[:] = obj["rgba"]
+            model.geom_rbound[geom.id] = np.linalg.norm(size)
+            model.geom_aabb[geom.id] = [0, 0, 0, *size]
+            # Each dataset movable body has one centered box. Refresh its collision BVH leaf.
+            nodes = np.flatnonzero(model.bvh_nodeid == geom.id)
+            for node in nodes:
+                model.bvh_aabb[node] = [0, 0, 0, *size]
+            if "mass_kg" in obj:
+                mass = obj["mass_kg"]
+                body_id = int(model.geom_bodyid[geom.id])
+                model.body_mass[body_id] = mass
+                model.body_inertia[body_id] = mass / 3 * (np.sum(size ** 2) - size ** 2)
+                geom.friction[:] = [obj["friction"], .01, .001]
+    
+        set_geometry("object_geom", params["target"])
+        set_geometry("target_region_geom", params["destination"])
+        model.body("target_region").pos[:] = params["destination"]["position"]
+        for index in range(3):
+            body = model.body(f"dataset_distractor_{index}")
+            geom = model.geom(f"dataset_distractor_{index}_geom")
+            active = index < len(params["distractors"])
+            geom.contype[:] = int(active)
+            geom.conaffinity[:] = int(active)
+>           body.gravcomp[:] = 0 if active else 1
+            ^^^^^^^^^^^^^
+E           AttributeError: 'mujoco._structs._MjModelBodyViews' object has no attribute 'gravcomp'
+
+src/cloud_edge_robot_arm/datasets/rgbd/capture.py:122: AttributeError
+_________ test_capture_rejects_unsettled_scene_and_unknown_parameters __________
+
+    def test_capture_rejects_unsettled_scene_and_unknown_parameters() -> None:
+        from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
+        from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        scene = sample_scene(DatasetConfig(dataset_id="labels"), 17)
+        with MuJoCoCaptureSession(SimulatorConfig()) as session:
+>           session.apply_scene(scene)
+
+tests/test_rgbd_dataset_labels.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/capture.py:68: in apply_scene
+    apply_scene(self, scene)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+session = <cloud_edge_robot_arm.vision.capture.MuJoCoCaptureSession object at 0x774453595700>
+scene = SceneSpec(schema_version='rgbd.dataset.v1', group_id='g-588b813680a2f987b508a928d174a741', scene_parameters={'target':...d_depth_fraction': 0.0}, asset_family_hash='6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1', seed=17)
+
+    def apply_scene(session: MuJoCoCaptureSession, scene: SceneSpec) -> None:
+        params = scene.scene_parameters
+        _validate_parameters(params)
+        asset_hash = hashlib.sha256(Path(session._config.model_path).read_bytes()).hexdigest()
+        if scene.asset_family_hash != asset_hash:
+            raise ValueError("scene asset family does not match capture model")
+        if not session._dataset_prepared:
+            _prepare(session)
+        backend = session._backend
+        mj, model, data = backend._mujoco, backend._model, backend._data
+        assert mj is not None and model is not None and data is not None
+    
+        def set_geometry(name: str, obj: dict[str, Any]) -> None:
+            geom = model.geom(name)
+            size = np.asarray(obj["half_size"])
+            geom.size[:] = size
+            geom.rgba[:] = obj["rgba"]
+            model.geom_rbound[geom.id] = np.linalg.norm(size)
+            model.geom_aabb[geom.id] = [0, 0, 0, *size]
+            # Each dataset movable body has one centered box. Refresh its collision BVH leaf.
+            nodes = np.flatnonzero(model.bvh_nodeid == geom.id)
+            for node in nodes:
+                model.bvh_aabb[node] = [0, 0, 0, *size]
+            if "mass_kg" in obj:
+                mass = obj["mass_kg"]
+                body_id = int(model.geom_bodyid[geom.id])
+                model.body_mass[body_id] = mass
+                model.body_inertia[body_id] = mass / 3 * (np.sum(size ** 2) - size ** 2)
+                geom.friction[:] = [obj["friction"], .01, .001]
+    
+        set_geometry("object_geom", params["target"])
+        set_geometry("target_region_geom", params["destination"])
+        model.body("target_region").pos[:] = params["destination"]["position"]
+        for index in range(3):
+            body = model.body(f"dataset_distractor_{index}")
+            geom = model.geom(f"dataset_distractor_{index}_geom")
+            active = index < len(params["distractors"])
+            geom.contype[:] = int(active)
+            geom.conaffinity[:] = int(active)
+>           body.gravcomp[:] = 0 if active else 1
+            ^^^^^^^^^^^^^
+E           AttributeError: 'mujoco._structs._MjModelBodyViews' object has no attribute 'gravcomp'
+
+src/cloud_edge_robot_arm/datasets/rgbd/capture.py:122: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_labels.py::test_capture_labels_use_real_instances_and_reuse_model
+FAILED tests/test_rgbd_dataset_labels.py::test_depth_corruption_preserves_original_and_becomes_negative
+FAILED tests/test_rgbd_dataset_labels.py::test_capture_rejects_unsettled_scene_and_unknown_parameters
+3 failed, 1 passed in 0.55s

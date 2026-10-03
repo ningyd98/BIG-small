@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_rejection_journal_retains_terminal_metadata_within_budget ________
+
+cpu_factory = (<module 'cloud_edge_robot_arm.datasets.rgbd.generator' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_ar...n'>, <function cpu_factory.<locals>.scene at 0x73cf8039b100>, <function cpu_factory.<locals>.labels at 0x73cf559a63e0>)
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-125/test_rejection_journal_retains0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x73cf80375730>
+
+    def test_rejection_journal_retains_terminal_metadata_within_budget(cpu_factory, tmp_path, monkeypatch):
+        module, config, _, scene, labels = cpu_factory
+        session, adapter, _, _ = module._capture_dependencies()
+        monkeypatch.setattr(module, "_capture_dependencies", lambda: (
+            session, adapter, lambda cfg, seed: scene(cfg, 0), labels))
+        config = config.model_copy(update={"groups": 1000, "max_bytes": 190_000})
+        result = module.generate_dataset(config, tmp_path, lambda: False)
+        assert result.status == "INCOMPLETE" and result.completed_groups == 1
+        assert result.attempts < 5000
+>       assert sum(p.stat().st_size for p in tmp_path.rglob("*") if p.is_file()) <= config.max_bytes
+E       AssertionError: assert 190091 <= 190000
+E        +  where 190091 = sum(<generator object test_rejection_journal_retains_terminal_metadata_within_budget.<locals>.<genexpr> at 0x73cf557246c0>)
+E        +  and   190000 = DatasetConfig(schema_version='rgbd.dataset.v1', dataset_id='cpu-fixture', groups=1000, seed=0, width=32, height=24, mo...), distractor_count=(0, 3), depth_noise_m=(0.0, 0.002, 0.005), invalid_depth_fractions=(0.0, 0.1, 0.3), settle_steps=0).max_bytes
+
+tests/test_rgbd_dataset_generation.py:544: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_generation.py::test_rejection_journal_retains_terminal_metadata_within_budget
+1 failed, 33 deselected in 25.19s

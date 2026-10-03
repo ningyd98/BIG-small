@@ -181,6 +181,8 @@ class ExperimentDraft(BaseModel):
 
     backend: SimulationBackend
     run_type: SimulationRunType = SimulationRunType.SINGLE
+    input_mode: Literal["RGBD", "LEGACY_PIPELINE"] = "RGBD"
+    user_instruction: str = Field(default="将红色方块放到绿色区域", min_length=1, max_length=1000)
     scenarios: list[str] = Field(min_length=1, max_length=15)
     control_modes: list[str] = Field(min_length=1, max_length=3)
     seeds: list[int] = Field(min_length=1, max_length=100)

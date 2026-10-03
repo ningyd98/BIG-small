@@ -60,8 +60,10 @@ WEBSOCKET_RECEIVE_TIMEOUT_SECONDS = 30.0
 def _service(request: Request) -> SimulationWorkbenchService:
     service = getattr(request.app.state, "simulation_workbench_service", None)
     if service is None:
+        from cloud_edge_robot_arm.cloud.api.model_control import _service as model_service
         service = SimulationWorkbenchService(
-            artifact_root=Path(os.environ.get("DASHBOARD_ARTIFACT_ROOT", "artifacts"))
+            artifact_root=Path(os.environ.get("DASHBOARD_ARTIFACT_ROOT", "artifacts")),
+            planner_factory=model_service(request).visual_planner,
         )
         request.app.state.simulation_workbench_service = service
     return service

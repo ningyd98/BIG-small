@@ -9,12 +9,14 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from cloud_edge_robot_arm.simulation_runtime.models import WorkerStatusView
 from cloud_edge_robot_arm.simulation_runtime.repository import SimulationJobRepository
 from cloud_edge_robot_arm.simulation_runtime.resource_limits import SimulationResourcePolicy
 from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ class SimulationJobDispatcher:
         repository: SimulationJobRepository,
         artifact_root: Path,
         resource_policy: SimulationResourcePolicy | None = None,
+        planner_factory: Callable[[], PlannerAdapter] | None = None,
     ) -> None:
         self.repository = repository
         self.artifact_root = artifact_root
@@ -46,12 +49,14 @@ class SimulationJobDispatcher:
             SimulationWorker(
                 worker_id="mujoco-worker-1",
                 backend="MUJOCO",
+                planner_factory=planner_factory,
                 repository=repository,
                 artifact_root=artifact_root,
             ),
             SimulationWorker(
                 worker_id="isaac-blocked-worker-1",
                 backend="ISAAC_SIM",
+                planner_factory=planner_factory,
                 repository=repository,
                 artifact_root=artifact_root,
             ),

@@ -174,6 +174,7 @@ def build_sample_run(output: Path) -> dict[str, Any]:
         ExperimentDraft.model_validate(
             {
                 "backend": "MOCK",
+        "input_mode": "LEGACY_PIPELINE",
                 "run_type": "SINGLE",
                 "scenarios": ["S01_NORMAL_STATIC"],
                 "control_modes": ["PCSC"],

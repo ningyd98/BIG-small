@@ -11,11 +11,13 @@ import hashlib
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from cloud_edge_robot_arm.dashboard.redaction import redact
+from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
 from cloud_edge_robot_arm.experiments.models import (
     CachePolicy,
     ExperimentConfig,
@@ -66,12 +68,14 @@ class SimulationWorker:
         repository: SimulationJobRepository,
         artifact_root: Path,
         lease_ttl_seconds: int = 30,
+        planner_factory: Callable[[], PlannerAdapter] | None = None,
     ) -> None:
         self.worker_id = worker_id
         self.backend = backend
         self.repository = repository
         self.artifact_root = artifact_root
         self.lease_ttl_seconds = lease_ttl_seconds
+        self.planner_factory = planner_factory
         self.active_job_id = ""
         self.heartbeat_at: str | None = None
 
@@ -223,7 +227,7 @@ class SimulationWorker:
             artifacts = self._write_terminal_artifacts(
                 job_id,
                 attempt=attempt.attempt,
-                status=RuntimeJobStatus.FAILED,
+                status=self.repository.get_job(job_id).status,
                 error=error,
             )
 
@@ -237,6 +241,8 @@ class SimulationWorker:
             self.repository.heartbeat_lease(job.lease_id, lease_ttl_seconds=self.lease_ttl_seconds)
             time.sleep(0.05)
         self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
+        if draft.input_mode == "RGBD":
+            return self._run_rgbd(job, draft)
         if job.backend == SimulationBackend.MOCK.value:
             return self._run_mock(job, draft)
         if job.backend == SimulationBackend.MUJOCO.value:
@@ -257,6 +263,47 @@ class SimulationWorker:
             error_message="backend_blocked",
         )
         raise RuntimeError("backend_blocked")
+
+    def _run_rgbd(
+        self, job: SimulationJobRecord, draft: ExperimentDraft
+    ) -> tuple[dict[str, Any], list[TimelineEvent], list[SimulationMetric]]:
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
+        from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+        from cloud_edge_robot_arm.vision.capture import capture_simulated_observation, save_observation
+        from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+
+        run_dir = self.artifact_root / job.artifact_root
+        try:
+            if job.backend not in {"MUJOCO", "ISAAC_SIM"}:
+                raise RuntimeError("RGBD_CAMERA_REQUIRED: select MuJoCo or Isaac; Mock is legacy only")
+            observation = capture_simulated_observation(backend=job.backend, scenario_id=job.scenario_id, seed=job.seed)
+            save_observation(observation, run_dir)
+            self.repository.append_event(job.job_id, event_type="rgbd_captured", source="rgbd_camera",
+                                         payload=observation.evidence())
+            planner = self.planner_factory() if self.planner_factory else RGBDPlannerAdapter.from_environment()
+            response = PlanningPipeline(planner=planner).process(
+                InitialPlanningRequest(request_id=job.run_id, user_instruction=draft.user_instruction,
+                                       observation=observation,
+                                       control_mode="EVENT_TRIGGERED_EDGE_AUTONOMY" if job.control_mode != "PCSC" else "PERIODIC_CLOUD_SUPERVISION"))
+            _atomic_write_json(run_dir / "visual_plan.json", response.model_dump(mode="json"))
+            if response.outcome != "PLANNED":
+                if response.reason and "RGBD_MODEL_UNAVAILABLE" in response.reason:
+                    raise RuntimeError(response.reason)
+                raise ValueError(response.reason or "visual planning rejected")
+        except (RuntimeError, ImportError, OSError) as exc:
+            self._transition(job.job_id, RuntimeJobStatus.RUNNING, RuntimeJobStatus.BLOCKED_BY_ENV,
+                             job.lease_id, error_message=str(exc))
+            raise
+        latency = sum(attempt.latency_ms for attempt in response.attempts)
+        self.repository.append_event(job.job_id, event_type="rgbd_plan_validated", source="rgbd_visual",
+                                     payload={"evaluation_scope": "RGBD_PLANNING_ONLY", "task_success": False,
+                                              "task_execution": "NOT_RUN", "latency_ms": latency})
+        metric = SimulationMetric(name="valid_decision_latency_ms", value=latency, unit="ms", source="rgbd_visual",
+                                  backend=SimulationBackend(job.backend), scenario=job.scenario_id,
+                                  seed=job.seed, control_mode=job.control_mode)
+        return {"evaluation_scope": "RGBD_PLANNING_ONLY", "task_success": False,
+                "task_execution": "NOT_RUN", "planning_outcome": response.outcome.value,
+                "observation": observation.evidence(), "contract": response.contract.model_dump(mode="json")}, [], [metric]
 
     def _run_mock(
         self, job: SimulationJobRecord, draft: ExperimentDraft
@@ -404,14 +451,20 @@ class SimulationWorker:
             {
                 "status": job.status.value,
                 "backend": job.backend,
-                "runner": "MUJOCO_SCENARIO" if job.backend == "MUJOCO" else "MOCK_SCENARIO",
+                "runner": "RGBD_VISUAL_PLANNING" if job.draft.get("input_mode", "RGBD") == "RGBD" else ("MUJOCO_SCENARIO" if job.backend == "MUJOCO" else "MOCK_SCENARIO"),
                 "runtime_executed": True,
-                "mock_fallback_used": False if job.backend == "MUJOCO" else None,
+                "mock_fallback_used": False,
                 "real_controller_contacted": False,
                 "hardware_motion_observed": False,
                 "hardware_write_operations": [],
             }
         )
+        if job.draft.get("input_mode", "RGBD") == "RGBD":
+            result_payload.update(evaluation_scope="RGBD_PLANNING_ONLY", task_success=False, task_execution="NOT_RUN")
+        for key, relative in {"rgb": "rgb.png", "depth": "depth.f32", "depth_visualization": "depth.png",
+                              "observation": "observation.json", "visual_plan": "visual_plan.json"}.items():
+            if (run_dir / relative).exists():
+                paths[key] = run_dir / relative
         trial_payload = result_payload.get("trial", {})
         if not isinstance(trial_payload, dict):
             trial_payload = {}
@@ -577,6 +630,10 @@ class SimulationWorker:
             "rerun_viewer_manifest": "rerun_viewer_manifest.json",
             "sim_real_gap_report": "sim_real_gap_report.json",
         }
+        for key, name in {"rgb": "rgb.png", "depth": "depth.f32", "depth_visualization": "depth.png",
+                          "observation": "observation.json", "visual_plan": "visual_plan.json"}.items():
+            if (run_dir / name).exists():
+                names[key] = name
         return {
             key: (run_dir / name).relative_to(self.artifact_root).as_posix()
             for key, name in names.items()

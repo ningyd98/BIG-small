@@ -33,6 +33,8 @@ import type { ExperimentDraft } from "../domain/ExperimentDraft";
 
 // 仿真工作台只构造高层实验草案，提交后由后端 allowlist runner 和队列执行。
 type FormValues = {
+  inputMode: "RGBD" | "LEGACY_PIPELINE";
+  instruction: string;
   backend: "MOCK" | "MUJOCO" | "ISAAC_SIM" | "MOVEIT_DRY_RUN";
   scenario: string;
   controlMode: "PCSC" | "ETEAC" | "AUTO";
@@ -64,7 +66,9 @@ export function SimulationWorkbenchPage() {
   );
 
   const initialValues: FormValues = {
-    backend: "MOCK",
+    inputMode: "RGBD",
+    instruction: "将红色方块放到绿色区域",
+    backend: "MUJOCO",
     scenario: scenarioItems[0]?.scenario_id ?? "S01_NORMAL_STATIC",
     controlMode: "PCSC",
     seed: 0,
@@ -84,6 +88,8 @@ export function SimulationWorkbenchPage() {
     setError("");
     try {
       const draft: ExperimentDraft = ExperimentConfigBuilder.create()
+        .inputMode(normalized.inputMode)
+        .instruction(normalized.instruction)
         .backend(normalized.backend)
         .scenario(normalized.scenario)
         .controlMode(normalized.controlMode)
@@ -117,7 +123,7 @@ export function SimulationWorkbenchPage() {
       <Alert
         type="info"
         showIcon
-        title="仿真工作台仅运行 Mock、MuJoCo、Isaac 环境检查和 MoveIt dry-run 只读规划证据；不连接真实控制器。"
+        title="默认采集相机 RGB 与对齐深度，交给视觉模型规划。目前验证观测与规划合同，不执行抓取；Mock 和历史故障测试需选择 LEGACY_PIPELINE。"
       />
       {error && <Alert type="error" showIcon title={error} />}
 
@@ -129,6 +135,12 @@ export function SimulationWorkbenchPage() {
             initialValues={initialValues}
             onFinish={handleSubmit}
           >
+            <Form.Item label="输入方式" name="inputMode" rules={[{ required: true }]}>
+              <Select options={[{ value: "RGBD", label: "视觉 + 深度（默认）" }, { value: "LEGACY_PIPELINE", label: "历史软件流程测试" }]} />
+            </Form.Item>
+            <Form.Item label="任务指令" name="instruction" rules={[{ required: true }]}>
+              <Input.TextArea rows={2} />
+            </Form.Item>
             <Form.Item
               label="Backend"
               name="backend"

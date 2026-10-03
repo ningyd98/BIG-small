@@ -1,0 +1,94 @@
+"""RGB-D must come from rendered cameras and preserve metric geometry."""
+
+from __future__ import annotations
+
+import base64
+import io
+import struct
+from datetime import UTC, datetime
+
+import pytest
+from PIL import Image
+from pydantic import ValidationError
+
+from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+
+
+def observation_payload() -> dict[str, object]:
+    image = io.BytesIO()
+    Image.new("RGB", (2, 2), (255, 0, 0)).save(image, format="PNG")
+    return {
+        "frame_id": "test-camera",
+        "captured_at": datetime.now(UTC).isoformat(),
+        "sim_time_s": 0.0,
+        "width": 2,
+        "height": 2,
+        "rgb_png_base64": base64.b64encode(image.getvalue()).decode(),
+        "depth_float32_base64": base64.b64encode(struct.pack("<4f", 2, 2, 2, 0)).decode(),
+        "intrinsics": [2, 2, 0, 0],
+        "camera_to_world": [1, 0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 3, 0, 0, 0, 1],
+        "source": "mujoco_camera",
+    }
+
+
+def test_mujoco_camera_produces_registered_rgb_and_metric_depth() -> None:
+    backend = MuJoCoPhysicsBackend()
+    try:
+        backend.initialize(SimulatorConfig(render_rgb=True, render_depth=True))
+        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
+        frame = backend.get_sensor_frame()
+        assert frame.rgb is not None
+        assert frame.width == 320 and frame.height == 240
+        assert len(frame.rgb) == frame.width * frame.height * 3
+        assert len(frame.depth) == frame.width * frame.height
+        assert min(d for d in frame.depth if d > 0) > 0.01
+        assert frame.object_detections == []
+        assert len(frame.camera_to_world) == 16
+    finally:
+        backend.shutdown()
+
+
+def test_metric_depth_backprojects_with_calibration() -> None:
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+    observation = RGBDObservation.model_validate(observation_payload())
+    point = observation.world_point((1, 0))
+    assert (point.x, point.y, point.z) == pytest.approx((2, 2, 5))
+    with pytest.raises(ValueError, match="depth"):
+        observation.world_point((1, 1))
+
+
+@pytest.mark.parametrize("field,value", [
+    ("depth_float32_base64", "AAAA"),
+    ("rgb_png_base64", "not-base64"),
+    ("width", 1281),
+    ("intrinsics", [0, 2, 0, 0]),
+    ("camera_to_world", [0] * 16),
+])
+def test_invalid_rgbd_is_rejected(field: str, value: object) -> None:
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+    payload = observation_payload()
+    payload[field] = value
+    with pytest.raises(ValidationError):
+        RGBDObservation.model_validate(payload)
+
+
+def test_depth_visualization_has_same_resolution_as_rgb() -> None:
+    from cloud_edge_robot_arm.vision.observations import RGBDObservation
+
+    observation = RGBDObservation.model_validate(observation_payload())
+    image = Image.open(io.BytesIO(base64.b64decode(observation.depth_png_base64())))
+    assert image.size == (2, 2)
+    assert image.getpixel((0, 0)) != image.getpixel((1, 1))
+
+
+def test_default_camera_has_visible_target_surface() -> None:
+    from cloud_edge_robot_arm.vision.capture import capture_simulated_observation
+
+    observation = capture_simulated_observation()
+    image = Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64)))
+    red_pixels = sum(1 for r, g, b in image.get_flattened_data() if r - g > 50 and r - b > 50)
+    assert red_pixels > 100, "the initial arm pose must not hide the cube from the visual planner"

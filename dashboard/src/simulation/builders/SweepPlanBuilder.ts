@@ -19,7 +19,7 @@ export class SweepPlanBuilder {
 
   private constructor(options: SweepOptions) {
     this.maxRuns = options.maxRuns;
-    this.backendValue = options.backend ?? "MOCK";
+    this.backendValue = options.backend ?? "MUJOCO";
     this.maxConcurrency = options.maxConcurrency ?? 1;
   }
 

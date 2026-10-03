@@ -13,14 +13,12 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from cloud_edge_robot_arm.cloud.api.app import create_app
-from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
-from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
 
 
 def create_console_app(*, dashboard_dist: Path | None = None) -> FastAPI:
     """Create API app with optional Dashboard SPA mount under ``/console``."""
 
-    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
+    app = create_app()
     dist = dashboard_dist or Path("dashboard/dist")
     mount_console(app, dist)
     return app

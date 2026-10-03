@@ -9,13 +9,14 @@ controls joints, motors, PWM, or low-level trajectory points directly.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 from cloud_edge_robot_arm.contracts import Pose, TaskContract
+from cloud_edge_robot_arm.vision.observations import RGBDObservation
 
 # ── Scene Summary ────────────────────────────────────────────────────────────
 
@@ -103,7 +104,8 @@ class InitialPlanningRequest(BaseModel):
         default="EVENT_TRIGGERED_EDGE_AUTONOMY",
         pattern=r"^(PERIODIC_CLOUD_SUPERVISION|EVENT_TRIGGERED_EDGE_AUTONOMY|AUTO)$",
     )
-    scene: SceneSummary
+    scene: SceneSummary = Field(default_factory=lambda: SceneSummary(scene_version=1, updated_at=datetime.now(UTC)))
+    observation: RGBDObservation | None = None
     capabilities: RobotCapabilities = Field(default_factory=lambda: RobotCapabilities())
     safety_policy: SafetyPolicyReference | None = None
     previous_contract: TaskContract | None = None
@@ -127,6 +129,8 @@ class PlannerDraft(BaseModel):
     raw_text: str
     parsed_json: dict[str, Any] | None = None
     parse_error: str | None = None
+    observed_scene: SceneSummary | None = None
+    observation_evidence: dict[str, Any] = Field(default_factory=dict)
 
 
 class ValidationResult(BaseModel):

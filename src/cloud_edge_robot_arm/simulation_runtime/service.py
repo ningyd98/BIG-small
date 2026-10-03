@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from cloud_edge_robot_arm.dashboard.event_stream import DashboardEventStream
+from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
 from cloud_edge_robot_arm.dashboard.models import DashboardEvent
 from cloud_edge_robot_arm.experiments.reproducibility import stable_hash
 from cloud_edge_robot_arm.experiments.runner import git_sha
@@ -67,6 +69,7 @@ class SimulationRuntimeService:
         event_stream: DashboardEventStream,
         runtime_root: Path | None = None,
         resource_policy: SimulationResourcePolicy | None = None,
+        planner_factory: Callable[[], PlannerAdapter] | None = None,
     ) -> None:
         self.artifact_root = artifact_root
         self.runs_root = runtime_root or artifact_root / "phase11_1/runtime"
@@ -77,6 +80,7 @@ class SimulationRuntimeService:
             repository=self.repository,
             artifact_root=artifact_root,
             resource_policy=self.resource_policy,
+            planner_factory=planner_factory,
         )
         self.events = event_stream
         self._started = False

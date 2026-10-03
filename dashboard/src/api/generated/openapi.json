@@ -627,6 +627,32 @@
         "title": "BatchRecord",
         "type": "object"
       },
+      "CaptureRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "default": "MUJOCO",
+            "enum": ["MUJOCO", "ISAAC_SIM"],
+            "title": "Backend",
+            "type": "string"
+          },
+          "scenario_id": {
+            "const": "S01_NORMAL_STATIC",
+            "default": "S01_NORMAL_STATIC",
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "seed": {
+            "default": 0,
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "title": "CaptureRequest",
+        "type": "object"
+      },
       "CommandAckStatus": {
         "enum": [
           "ACCEPTED",
@@ -1656,6 +1682,12 @@
             "title": "Fault Profiles",
             "type": "array"
           },
+          "input_mode": {
+            "default": "RGBD",
+            "enum": ["RGBD", "LEGACY_PIPELINE"],
+            "title": "Input Mode",
+            "type": "string"
+          },
           "network_profiles": {
             "items": {
               "$ref": "#/components/schemas/NetworkDraft"
@@ -1719,6 +1751,13 @@
             "maxItems": 20,
             "title": "Tags",
             "type": "array"
+          },
+          "user_instruction": {
+            "default": "\u5c06\u7ea2\u8272\u65b9\u5757\u653e\u5230\u7eff\u8272\u533a\u57df",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "User Instruction",
+            "type": "string"
           }
         },
         "required": ["backend", "scenarios", "control_modes", "seeds"],
@@ -3188,6 +3227,16 @@
             "title": "Control Mode",
             "type": "string"
           },
+          "observation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RGBDObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_id": {
             "minLength": 1,
             "title": "Request Id",
@@ -3212,7 +3261,7 @@
             "type": "string"
           }
         },
-        "required": ["request_id", "user_instruction", "scene"],
+        "required": ["request_id", "user_instruction"],
         "title": "PlanningRequest",
         "type": "object"
       },
@@ -3460,6 +3509,105 @@
           "max_batch_runs"
         ],
         "title": "QueueStatusResponse",
+        "type": "object"
+      },
+      "RGBDObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_to_world": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 16,
+            "minItems": 16,
+            "title": "Camera To World",
+            "type": "array"
+          },
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "depth_convention": {
+            "const": "optical_z_m",
+            "default": "optical_z_m",
+            "title": "Depth Convention",
+            "type": "string"
+          },
+          "depth_float32_base64": {
+            "maxLength": 5000000,
+            "minLength": 1,
+            "title": "Depth Float32 Base64",
+            "type": "string"
+          },
+          "frame_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Frame Id",
+            "type": "string"
+          },
+          "height": {
+            "maximum": 720.0,
+            "minimum": 1.0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "intrinsics": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Intrinsics",
+            "type": "array"
+          },
+          "rgb_png_base64": {
+            "maxLength": 5000000,
+            "minLength": 1,
+            "title": "Rgb Png Base64",
+            "type": "string"
+          },
+          "sim_time_s": {
+            "minimum": 0.0,
+            "title": "Sim Time S",
+            "type": "number"
+          },
+          "source": {
+            "enum": ["mujoco_camera", "isaac_camera", "rgbd_camera"],
+            "title": "Source",
+            "type": "string"
+          },
+          "width": {
+            "maximum": 1280.0,
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frame_id",
+          "captured_at",
+          "sim_time_s",
+          "width",
+          "height",
+          "rgb_png_base64",
+          "depth_float32_base64",
+          "intrinsics",
+          "camera_to_world",
+          "source"
+        ],
+        "title": "RGBDObservation",
         "type": "object"
       },
       "RandomizationParameterDraft": {
@@ -10384,6 +10532,45 @@
           }
         },
         "summary": "Latest Task Risk"
+      }
+    },
+    "/api/v1/vision/observations": {
+      "post": {
+        "operationId": "capture_api_v1_vision_observations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RGBDObservation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Capture",
+        "tags": ["rgbd-vision"]
       }
     },
     "/health": {

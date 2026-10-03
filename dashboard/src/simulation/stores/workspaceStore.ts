@@ -5,7 +5,7 @@ export type SimulationWorkspace = {
 };
 
 let workspace: SimulationWorkspace = {
-  activeBackend: "MOCK",
+  activeBackend: "MUJOCO",
   activeScenario: "S01_NORMAL_STATIC",
 };
 

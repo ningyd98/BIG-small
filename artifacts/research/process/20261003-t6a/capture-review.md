@@ -1,0 +1,15 @@
+# T6a capture and labeling cross-review
+
+Read-only review of `datasets/rgbd/{capture,scene_sampler,labels}.py`, `vision/capture.py`, camera rendering and the T6-only backend diff against the before snapshot. No source edits or GPU rendering. Two substantive boundary defects were reproduced using a real MuJoCo model with `render_rgb=False`, `render_depth=False`; output is in `capture-review-cpu-probes.log`.
+
+1. **P2: rotationally moving objects pass the static settling gate.** `datasets/rgbd/capture.py:191` checks only the first three free-joint velocity components. Setting the object's angular velocity to 25 rad/s with zero linear velocity yields a successful truth record reporting `max_linear_speed_m_s: 0.0`. A static dataset should also bound and record angular speed before accepting a settled scene.
+
+2. **P2: table bounds use object-local extents after physics can rotate the object.** `datasets/rgbd/capture.py:194` and the next line compare x/y against `geom.size`, although z already uses rotated world extents. A square block at x=0.955, yaw=45 degrees has actual maximum x=1.0044974746830584, beyond the table's 1.0 edge, yet the gate accepts it. Use `abs(geom_xmat.reshape(3,3)) @ geom.size` for all three world-space half extents.
+
+Both findings were sent to root immediately with reproduction evidence. They concern acceptance boundaries; this CPU probe does not claim the default sampler routinely produces those states.
+
+Resolution: root added a 0.1 rad/s angular-speed gate with retained `max_angular_speed_rad_s` evidence, and now computes all table bounds using world-space rotated extents. I reviewed the resulting code and independently ran only `tests/test_rgbd_dataset_labels.py::test_settling_checks_rotation_and_world_bounds` (two actual-model CPU cases): **2 passed**, saved in `capture-review-fixed-cpu.log`. Both findings are resolved. No further substantive defects were found within this capture/label review scope.
+
+Other reviewed behavior matches the current T6a interface: sampled size/mass/friction/color/camera/light are applied to actual model fields; distractor slots reuse one compiled model after preparation; scene reset and physical stepping are kept separate from action-success claims. Geometry IDs come from the actual segmentation pass and are mapped to stable semantic IDs. Labels use visible mask pixels with valid depth, retain explicit negative reasons, and never mark execution verified. Raw depth perturbation keeps acquisition metadata and RGB unchanged. The only production caller of truth/label APIs is the offline generator, and online RGBDObservation remains free of labels and object truth. The T6-only existing-backend change adds optional `model_xml` with mutual exclusion against model parameter compilation.
+
+Potential later extension, not a T6a blocker under the frozen interface: actual object orientation is currently omitted from instance labels. The inherited broader dataset design calls for `orientation_wxyz` when trajectory/grasp labels are introduced; T5/T6b should add it explicitly rather than inferring orientation from axis-aligned half sizes.

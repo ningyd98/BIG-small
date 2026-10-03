@@ -1,0 +1,1426 @@
+--- before/src/cloud_edge_robot_arm/research/__init__.py
++++ after/src/cloud_edge_robot_arm/research/__init__.py
+@@ -0,0 +1,2 @@
++"""Auditable provenance contracts for new RGB-D research runs."""
++
+--- before/src/cloud_edge_robot_arm/research/models.py
++++ after/src/cloud_edge_robot_arm/research/models.py
+@@ -0,0 +1,50 @@
++"""Evidence records keep historical software results apart from research runs."""
++
++from __future__ import annotations
++
++from enum import StrEnum
++from typing import Literal
++
++from pydantic import BaseModel, Field
++
++
++class EvidenceKind(StrEnum):
++    SOFTWARE = "SOFTWARE"
++    MOCK = "MOCK"
++    PLANNING = "PLANNING"
++    PHYSICS = "PHYSICS"
++    HARDWARE = "HARDWARE"
++
++
++class StageStatus(StrEnum):
++    REAL = "REAL"
++    NOT_EXECUTED = "NOT_EXECUTED"
++    BLOCKED = "BLOCKED"
++    MOCK = "MOCK"
++
++
++class StageEvidence(BaseModel):
++    stage: str
++    status: StageStatus
++    source_hashes: list[str] = Field(default_factory=list)
++    reason: str | None = None
++
++
++class RunProvenance(BaseModel):
++    run_id: str
++    source_tree_hash: str
++    scene_group_id: str
++    split_role: str
++    model_snapshot_hash: str | None = None
++    observation_hashes: list[str] = Field(default_factory=list)
++    physics_steps: int = Field(ge=0)
++    evidence_kind: EvidenceKind
++    blocked_reason: str | None = None
++    stages: list[StageEvidence] = Field(default_factory=list)
++    # A completed task outcome is distinct from authentic runtime evidence.
++    task_success: bool = False
++    # Existing Phase 11/12 data is preserved, but excluded from new-run rates.
++    cohort: Literal["NEW_RESEARCH", "HISTORICAL"] = "NEW_RESEARCH"
++    # Online consumption of labels or simulator truth invalidates the run.
++    ground_truth_exposed_online: bool = False
++
+--- before/src/cloud_edge_robot_arm/research/provenance.py
++++ after/src/cloud_edge_robot_arm/research/provenance.py
+@@ -0,0 +1,134 @@
++"""Aggregate a research run ledger without promoting legacy or mock evidence."""
++
++from __future__ import annotations
++
++from collections import defaultdict
++from collections.abc import Sequence
++
++from pydantic import BaseModel, Field
++
++from cloud_edge_robot_arm.research.models import EvidenceKind, RunProvenance, StageStatus
++
++CORE_STAGES = ("PERCEPTION", "INFERENCE", "ACTION")
++
++
++def _has_hashes(values: Sequence[str]) -> bool:
++    return bool(values) and all(value.strip() for value in values)
++
++
++class ProvenanceAudit(BaseModel):
++    historical_count: int = 0
++    success_denominator: int = 0
++    physical_success_count: int = 0
++    occurred_stage_count: int = 0
++    real_stage_count: int = 0
++    expected_stage_count: int = 0
++    stage_coverage: float = 0.0
++    stage_authenticity: float = 0.0
++    stage_authenticity_by_name: dict[str, dict[str, int]] = Field(default_factory=dict)
++    leakage_count: int = 0
++    cross_split_scene_groups: dict[str, list[str]] = Field(default_factory=dict)
++    blocked_reasons: dict[str, str] = Field(default_factory=dict)
++    duplicate_run_ids: list[str] = Field(default_factory=list)
++    audit_issues: dict[str, list[str]] = Field(default_factory=dict)
++
++
++def audit_provenance(records: Sequence[RunProvenance]) -> ProvenanceAudit:
++    """Audit only new research trials; retain pre-action blocks in the rate base."""
++    result = ProvenanceAudit()
++    splits_by_group: dict[str, set[str]] = defaultdict(set)
++    first_by_id: dict[str, RunProvenance] = {}
++    conflicting_ids: set[str] = set()
++    online_truth_ids: set[str] = set()
++    for record in records:
++        if record.cohort == "HISTORICAL":
++            result.historical_count += 1
++            continue
++        splits_by_group[record.scene_group_id].add(record.split_role)
++        if record.ground_truth_exposed_online:
++            online_truth_ids.add(record.run_id)
++        first = first_by_id.get(record.run_id)
++        if first is not None:
++            if record.run_id not in result.duplicate_run_ids:
++                result.duplicate_run_ids.append(record.run_id)
++            if record != first:
++                conflicting_ids.add(record.run_id)
++            continue
++        first_by_id[record.run_id] = record
++
++    for record in first_by_id.values():
++        result.success_denominator += 1
++        result.expected_stage_count += max(len(record.stages), len(CORE_STAGES))
++        occurred = [stage for stage in record.stages if stage.status != StageStatus.NOT_EXECUTED]
++        result.occurred_stage_count += len(occurred)
++        result.real_stage_count += sum(
++            stage.status == StageStatus.REAL and _has_hashes(stage.source_hashes)
++            for stage in occurred
++        )
++        for stage in occurred:
++            counts = result.stage_authenticity_by_name.setdefault(
++                stage.stage, {"real": 0, "occurred": 0}
++            )
++            counts["occurred"] += 1
++            counts["real"] += int(
++                stage.status == StageStatus.REAL and _has_hashes(stage.source_hashes)
++            )
++
++        issues: list[str] = []
++        if record.run_id in conflicting_ids:
++            issues.append("conflicting duplicate run ID")
++        for name in CORE_STAGES:
++            count = sum(stage.stage == name for stage in record.stages)
++            if count == 0:
++                issues.append(f"missing {name} stage")
++            elif count > 1:
++                issues.append(f"duplicate {name} stage")
++        for stage in record.stages:
++            if stage.status == StageStatus.REAL and not _has_hashes(stage.source_hashes):
++                issues.append(f"{stage.stage} REAL stage has no source hashes")
++        if issues:
++            result.audit_issues[record.run_id] = issues
++
++        reason = record.blocked_reason
++        if not reason and not (record.model_snapshot_hash or "").strip():
++            reason = "missing model snapshot"
++        if not reason and not _has_hashes(record.observation_hashes):
++            reason = "missing RGB-D observation hashes"
++        if not reason:
++            blocked_stage = next(
++                (stage for stage in record.stages if stage.status == StageStatus.BLOCKED), None
++            )
++            if blocked_stage is not None:
++                reason = blocked_stage.reason or f"{blocked_stage.stage} blocked"
++        if reason:
++            result.blocked_reasons[record.run_id] = reason
++
++        authentic = (
++            record.evidence_kind == EvidenceKind.PHYSICS
++            and record.physics_steps > 0
++            and bool(record.source_tree_hash.strip())
++            and bool((record.model_snapshot_hash or "").strip())
++            and _has_hashes(record.observation_hashes)
++            and bool(record.stages)
++            and not issues
++            and all(
++                stage.status == StageStatus.REAL and _has_hashes(stage.source_hashes)
++                for stage in record.stages
++            )
++            and not reason
++            and record.run_id not in online_truth_ids
++        )
++        if record.task_success and authentic:
++            result.physical_success_count += 1
++
++    result.cross_split_scene_groups = {
++        group: sorted(splits)
++        for group, splits in splits_by_group.items()
++        if len(splits) > 1
++    }
++    result.leakage_count = len(online_truth_ids) + len(result.cross_split_scene_groups)
++    if result.expected_stage_count:
++        result.stage_coverage = result.occurred_stage_count / result.expected_stage_count
++    if result.occurred_stage_count:
++        result.stage_authenticity = result.real_stage_count / result.occurred_stage_count
++    return result
+--- before/src/cloud_edge_robot_arm/vision/observations.py
++++ after/src/cloud_edge_robot_arm/vision/observations.py
+@@ -3,8 +3,10 @@
+ from __future__ import annotations
+ 
+ import base64
++import binascii
+ import hashlib
+ import io
++import json
+ import math
+ import struct
+ from datetime import UTC, datetime
+@@ -21,6 +23,7 @@
+     model_config = ConfigDict(extra="forbid", frozen=True)
+ 
+     frame_id: str = Field(min_length=1, max_length=160)
++    observation_id: str = ""
+     captured_at: datetime
+     sim_time_s: float = Field(ge=0, allow_inf_nan=False)
+     width: int = Field(ge=1, le=1280)
+@@ -31,9 +34,17 @@
+     camera_to_world: tuple[float, ...] = Field(min_length=16, max_length=16)
+     depth_convention: Literal["optical_z_m"] = "optical_z_m"
+     source: Literal["mujoco_camera", "isaac_camera", "rgbd_camera"]
++    scene_id: str | None = None
++    episode_id: str | None = None
++    calibration_version: str | None = None
++    valid_mask_base64: str | None = Field(default=None, repr=False)
++    checksum_sha256: str = ""
+ 
+     @model_validator(mode="after")
+     def validate_pair(self) -> RGBDObservation:
++        if self.observation_id and self.observation_id != self.frame_id:
++            raise ValueError("observation_id must match frame_id")
++        object.__setattr__(self, "observation_id", self.frame_id)
+         if self.captured_at.tzinfo is None:
+             raise ValueError("captured_at must include timezone")
+         try:
+@@ -49,29 +60,96 @@
+             raise ValueError("invalid RGB-D image encoding") from exc
+         if len(depth) != self.width * self.height * 4:
+             raise ValueError("depth size must equal width * height * float32")
+-        if any(not math.isfinite(v[0]) or v[0] < 0 for v in struct.iter_unpack("<f", depth)):
++        depths = tuple(v[0] for v in struct.iter_unpack("<f", depth))
++        if any(not math.isfinite(value) or value < 0 for value in depths):
+             raise ValueError("depth must be finite nonnegative metres (zero = invalid)")
++        expected_mask = bytes(int(value > 0) for value in depths)
++        if self.valid_mask_base64 is None:
++            object.__setattr__(
++                self, "valid_mask_base64", base64.b64encode(expected_mask).decode("ascii")
++            )
++        else:
++            try:
++                supplied_mask = base64.b64decode(self.valid_mask_base64, validate=True)
++            except (ValueError, binascii.Error) as exc:
++                raise ValueError("invalid depth mask encoding") from exc
++            if supplied_mask != expected_mask:
++                raise ValueError("valid mask must match positive finite depth")
+         fx, fy, cx, cy = self.intrinsics
+         if not all(math.isfinite(v) for v in self.intrinsics + self.camera_to_world):
+             raise ValueError("camera calibration must be finite")
+-        if fx <= 0 or fy <= 0 or not 0 <= cx < self.width or not 0 <= cy < self.height:
++        if fx <= 0 or fy <= 0:
+             raise ValueError("invalid camera intrinsics")
+         matrix = self.camera_to_world
+         if matrix[12:] != (0, 0, 0, 1):
+             raise ValueError("camera transform must be homogeneous")
+-        rows = [matrix[i:i + 3] for i in (0, 4, 8)]
++        rows = [matrix[i : i + 3] for i in (0, 4, 8)]
+         for i in range(3):
+             for j in range(3):
+                 dot = sum(a * b for a, b in zip(rows[i], rows[j], strict=True))
+                 if abs(dot - float(i == j)) > 1e-4:
+                     raise ValueError("camera rotation must be orthonormal")
+         a, b, c = rows
+-        determinant = (a[0] * (b[1] * c[2] - b[2] * c[1])
+-                       - a[1] * (b[0] * c[2] - b[2] * c[0])
+-                       + a[2] * (b[0] * c[1] - b[1] * c[0]))
++        determinant = (
++            a[0] * (b[1] * c[2] - b[2] * c[1])
++            - a[1] * (b[0] * c[2] - b[2] * c[0])
++            + a[2] * (b[0] * c[1] - b[1] * c[0])
++        )
+         if abs(determinant - 1) > 1e-4:
+             raise ValueError("camera rotation must be right-handed")
++        checksum_fields = {
++            "frame_id": self.frame_id,
++            "captured_at": self.captured_at.astimezone(UTC).isoformat(),
++            "sim_time_s": self.sim_time_s,
++            "source": self.source,
++            "depth_convention": self.depth_convention,
++            "scene_id": self.scene_id,
++            "episode_id": self.episode_id,
++            "calibration_version": self.calibration_version,
++            "width": self.width,
++            "height": self.height,
++            "intrinsics": self.intrinsics,
++            "camera_to_world": self.camera_to_world,
++            "rgb_sha256": hashlib.sha256(rgb).hexdigest(),
++            "depth_sha256": hashlib.sha256(depth).hexdigest(),
++            "mask_sha256": hashlib.sha256(expected_mask).hexdigest(),
++        }
++        checksum = hashlib.sha256(json.dumps(checksum_fields, sort_keys=True).encode()).hexdigest()
++        if self.checksum_sha256 and self.checksum_sha256 != checksum:
++            raise ValueError("RGB-D checksum mismatch")
++        object.__setattr__(self, "checksum_sha256", checksum)
+         return self
++
++    def valid_mask_bytes(self) -> bytes:
++        assert self.valid_mask_base64 is not None
++        return base64.b64decode(self.valid_mask_base64, validate=True)
++
++    def crop(self, box: tuple[int, int, int, int]) -> RGBDObservation:
++        left, top, right, bottom = box
++        if not (0 <= left < right <= self.width and 0 <= top < bottom <= self.height):
++            raise ValueError("crop is outside camera image")
++        with Image.open(io.BytesIO(base64.b64decode(self.rgb_png_base64))) as image:
++            output = io.BytesIO()
++            image.crop(box).save(output, format="PNG")
++        depths = self.depth_values()
++        selected = [
++            depths[y * self.width + x] for y in range(top, bottom) for x in range(left, right)
++        ]
++        fx, fy, cx, cy = self.intrinsics
++        return RGBDObservation.model_validate(
++            {
++                **self.model_dump(),
++                "width": right - left,
++                "height": bottom - top,
++                "rgb_png_base64": base64.b64encode(output.getvalue()).decode("ascii"),
++                "depth_float32_base64": base64.b64encode(
++                    struct.pack(f"<{len(selected)}f", *selected)
++                ).decode("ascii"),
++                "intrinsics": (fx, fy, cx - left, cy - top),
++                "valid_mask_base64": None,
++                "checksum_sha256": "",
++            }
++        )
+ 
+     def depth_values(self) -> tuple[float, ...]:
+         raw = base64.b64decode(self.depth_float32_base64, validate=True)
+@@ -87,8 +165,9 @@
+         fx, fy, cx, cy = self.intrinsics
+         camera = ((u - cx) * depth / fx, (v - cy) * depth / fy, depth)
+         matrix = self.camera_to_world
+-        world = [sum(matrix[i + j] * camera[j] for j in range(3)) + matrix[i + 3]
+-                 for i in (0, 4, 8)]
++        world = [
++            sum(matrix[i + j] * camera[j] for j in range(3)) + matrix[i + 3] for i in (0, 4, 8)
++        ]
+         return Pose(x=world[0], y=world[1], z=world[2])
+ 
+     def depth_range(self) -> tuple[float, float]:
+@@ -100,8 +179,10 @@
+     def depth_png_base64(self) -> str:
+         near, far = self.depth_range()
+         span = max(far - near, 1e-6)
+-        pixels = bytes(0 if value <= 0 else 1 + round(254 * (far - value) / span)
+-                       for value in self.depth_values())
++        pixels = bytes(
++            0 if value <= 0 else 1 + round(254 * (far - value) / span)
++            for value in self.depth_values()
++        )
+         image = Image.frombytes("L", (self.width, self.height), pixels)
+         output = io.BytesIO()
+         image.save(output, format="PNG")
+@@ -109,14 +190,25 @@
+ 
+     def evidence(self) -> dict[str, object]:
+         return {
+-            "input_mode": "RGBD", "frame_id": self.frame_id,
+-            "source": self.source, "captured_at": self.captured_at.isoformat(),
+-            "sim_time_s": self.sim_time_s, "width": self.width, "height": self.height,
+-            "intrinsics": list(self.intrinsics), "camera_to_world": list(self.camera_to_world),
++            "input_mode": "RGBD",
++            "frame_id": self.frame_id,
++            "observation_id": self.observation_id,
++            "scene_id": self.scene_id,
++            "episode_id": self.episode_id,
++            "calibration_version": self.calibration_version,
++            "checksum_sha256": self.checksum_sha256,
++            "source": self.source,
++            "captured_at": self.captured_at.isoformat(),
++            "sim_time_s": self.sim_time_s,
++            "width": self.width,
++            "height": self.height,
++            "intrinsics": list(self.intrinsics),
++            "camera_to_world": list(self.camera_to_world),
+             "depth_convention": self.depth_convention,
+             "rgb_sha256": hashlib.sha256(base64.b64decode(self.rgb_png_base64)).hexdigest(),
+             "depth_sha256": hashlib.sha256(base64.b64decode(self.depth_float32_base64)).hexdigest(),
+-            "model_image_count": 2, "ground_truth_used_for_control": False,
++            "model_image_count": 2,
++            "ground_truth_used_for_control": False,
+         }
+ 
+ 
+@@ -126,11 +218,25 @@
+     image = Image.frombytes("RGB", (frame.width, frame.height), frame.rgb)
+     output = io.BytesIO()
+     image.save(output, format="PNG")
+-    return RGBDObservation.model_validate({
+-        "frame_id": frame.frame_id, "captured_at": frame.captured_at or datetime.now(UTC),
+-        "sim_time_s": frame.sim_time_s, "width": frame.width, "height": frame.height,
+-        "rgb_png_base64": base64.b64encode(output.getvalue()).decode("ascii"),
+-        "depth_float32_base64": base64.b64encode(struct.pack(f"<{len(frame.depth)}f", *frame.depth)).decode("ascii"),
+-        "intrinsics": frame.intrinsics, "camera_to_world": frame.camera_to_world,
+-        "source": source,
+-    })
++    return RGBDObservation.model_validate(
++        {
++            "frame_id": frame.frame_id,
++            "captured_at": frame.captured_at or datetime.now(UTC),
++            "sim_time_s": frame.sim_time_s,
++            "width": frame.width,
++            "height": frame.height,
++            "rgb_png_base64": base64.b64encode(output.getvalue()).decode("ascii"),
++            "depth_float32_base64": base64.b64encode(
++                struct.pack(f"<{len(frame.depth)}f", *frame.depth)
++            ).decode("ascii"),
++            "intrinsics": frame.intrinsics,
++            "camera_to_world": frame.camera_to_world,
++            "source": source,
++            "scene_id": frame.scene_id,
++            "episode_id": frame.episode_id,
++            "calibration_version": frame.calibration_version,
++            "valid_mask_base64": base64.b64encode(frame.valid_mask).decode("ascii")
++            if frame.valid_mask is not None
++            else None,
++        }
++    )
+--- before/src/cloud_edge_robot_arm/vision/capture.py
++++ after/src/cloud_edge_robot_arm/vision/capture.py
+@@ -1,24 +1,88 @@
+ """Capture paired simulator images and retain auditable metric depth."""
++
+ from __future__ import annotations
+ 
+ import base64
+ import json
++import struct
++from dataclasses import dataclass
+ from pathlib import Path
+ from typing import Literal
+ 
++from cloud_edge_robot_arm.simulation.backend import SimulatorBackend
+ from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+ from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
++from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation, observation_from_sensor_frame
+ 
+ 
+-def capture_simulated_observation(*, backend: Literal["MUJOCO", "ISAAC_SIM"] = "MUJOCO",
+-                                  scenario_id: str = "S01_NORMAL_STATIC", seed: int = 0) -> RGBDObservation:
++@dataclass(frozen=True)
++class CapturedFrame:
++    observation: RGBDObservation
++    # Flattened row-major MuJoCo geom IDs; -1 is background. Names map IDs to MJCF geoms.
++    instance_ids: tuple[int, ...]
++    instance_labels: dict[int, str]
++    physics_state_hash: str
++    pass_state_hashes: tuple[str, ...]
++
++
++class MuJoCoCaptureSession:
++    """Reuse one renderer while explicitly capturing fresh frames from one episode."""
++
++    def __init__(self, config: SimulatorConfig) -> None:
++        self._config = config.model_copy(update={"render_rgb": True, "render_depth": True})
++        self._backend = MuJoCoPhysicsBackend()
++        self._open = False
++
++    def __enter__(self) -> MuJoCoCaptureSession:
++        try:
++            self._backend.initialize(self._config)
++            self._backend.reset(
++                PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=self._config.seed)
++            )
++        except BaseException:
++            self._backend.shutdown()
++            raise
++        self._open = True
++        return self
++
++    def __exit__(self, *_exc: object) -> None:
++        self._open = False
++        self._backend.shutdown()
++
++    def capture(self) -> RGBDObservation:
++        return self.capture_with_instances().observation
++
++    def capture_with_instances(self) -> CapturedFrame:
++        if not self._open:
++            raise RuntimeError("MuJoCo capture session is closed")
++        frame, ids, labels, pass_hashes = self._backend.capture_sensor_frame_with_instances()
++        if len(set(pass_hashes)) != 1:
++            raise RuntimeError("render passes observed different physics states")
++        return CapturedFrame(
++            observation=observation_from_sensor_frame(frame, source="mujoco_camera"),
++            instance_ids=ids,
++            instance_labels=labels,
++            physics_state_hash=pass_hashes[0],
++            pass_state_hashes=pass_hashes,
++        )
++
++
++def capture_simulated_observation(
++    *,
++    backend: Literal["MUJOCO", "ISAAC_SIM"] = "MUJOCO",
++    scenario_id: str = "S01_NORMAL_STATIC",
++    seed: int = 0,
++) -> RGBDObservation:
++    simulator: SimulatorBackend
+     if backend == "MUJOCO":
+         from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
++
+         simulator = MuJoCoPhysicsBackend()
+         source = "mujoco_camera"
+     elif backend == "ISAAC_SIM":
+         from cloud_edge_robot_arm.simulation.isaac.backend import IsaacSimBackend
++
+         simulator = IsaacSimBackend()
+         source = "isaac_camera"
+     else:
+@@ -33,12 +97,50 @@
+ 
+ def save_observation(observation: RGBDObservation, directory: Path) -> dict[str, Path]:
+     directory.mkdir(parents=True, exist_ok=True)
+-    paths = {"rgb": directory / "rgb.png", "depth": directory / "depth.f32",
+-             "depth_visualization": directory / "depth.png", "observation": directory / "observation.json"}
++    paths = {
++        "rgb": directory / "rgb.png",
++        "depth": directory / "depth.f32",
++        "depth_visualization": directory / "depth.png",
++        "observation": directory / "observation.json",
++    }
+     paths["rgb"].write_bytes(base64.b64decode(observation.rgb_png_base64))
+     paths["depth"].write_bytes(base64.b64decode(observation.depth_float32_base64))
+     paths["depth_visualization"].write_bytes(base64.b64decode(observation.depth_png_base64()))
+-    metadata = {**observation.evidence(), "model_image_count": 0,
+-                "files": {name: path.name for name, path in paths.items() if name != "observation"}}
+-    paths["observation"].write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
++    metadata = {
++        **observation.evidence(),
++        "model_image_count": 0,
++        "files": {name: path.name for name, path in paths.items() if name != "observation"},
++    }
++    paths["observation"].write_text(
++        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
++    )
+     return paths
++
++
++def save_captured_frame(frame: CapturedFrame, directory: Path) -> dict[str, Path]:
++    """Persist raw registered inputs and offline-only geom IDs for audit."""
++    paths = save_observation(frame.observation, directory)
++    paths["mask"] = directory / "valid_mask.u8"
++    paths["instances"] = directory / "instance_geom_ids.i32"
++    paths["mask"].write_bytes(frame.observation.valid_mask_bytes())
++    paths["instances"].write_bytes(struct.pack(f"<{len(frame.instance_ids)}i", *frame.instance_ids))
++    metadata = json.loads(paths["observation"].read_text(encoding="utf-8"))
++    metadata.update(
++        {
++            "physics_state_hash": frame.physics_state_hash,
++            "pass_state_hashes": list(frame.pass_state_hashes),
++            "instance_id_convention": "MuJoCo geom ID, -1 background; row-major int32",
++            "instance_labels": {str(key): value for key, value in frame.instance_labels.items()},
++        }
++    )
++    metadata["files"].update(
++        {
++            "mask": paths["mask"].name,
++            "instances": paths["instances"].name,
++        }
++    )
++    paths["observation"].write_text(
++        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
++        encoding="utf-8",
++    )
++    return paths
+--- before/src/cloud_edge_robot_arm/simulation/models.py
++++ after/src/cloud_edge_robot_arm/simulation/models.py
+@@ -43,6 +43,10 @@
+     intrinsics: tuple[float, ...] = ()
+     camera_to_world: tuple[float, ...] = ()
+     captured_at: datetime | None = None
++    scene_id: str | None = None
++    episode_id: str | None = None
++    calibration_version: str | None = None
++    valid_mask: bytes | None = None
+ 
+ 
+ @dataclass(frozen=True)
+--- before/src/cloud_edge_robot_arm/simulation/mujoco/camera.py
++++ after/src/cloud_edge_robot_arm/simulation/mujoco/camera.py
+@@ -2,10 +2,13 @@
+ 
+ from __future__ import annotations
+ 
++import hashlib
+ import math
++import struct
+ from datetime import UTC, datetime
+ from time import perf_counter
+ from typing import Any
++from uuid import uuid4
+ 
+ import numpy as np
+ 
+@@ -21,30 +24,143 @@
+         self._camera_id = model.camera("rgbd").id
+         self._renderer = mujoco.Renderer(model, height=height, width=width)
+ 
+-    def capture(self, data: Any, *, rng: Any, noise_std_m: float) -> SensorFrame:
++    def capture(
++        self,
++        data: Any,
++        *,
++        rng: Any,
++        noise_std_m: float,
++        scene_id: str | None = None,
++        episode_id: str | None = None,
++    ) -> SensorFrame:
++        frame, _, _, _ = self._capture(
++            data,
++            rng=rng,
++            noise_std_m=noise_std_m,
++            scene_id=scene_id,
++            episode_id=episode_id,
++            include_instances=False,
++        )
++        return frame
++
++    def capture_with_instances(
++        self,
++        data: Any,
++        *,
++        rng: Any,
++        noise_std_m: float,
++        scene_id: str | None = None,
++        episode_id: str | None = None,
++    ) -> tuple[SensorFrame, tuple[int, ...], dict[int, str], tuple[str, ...]]:
++        return self._capture(
++            data,
++            rng=rng,
++            noise_std_m=noise_std_m,
++            scene_id=scene_id,
++            episode_id=episode_id,
++            include_instances=True,
++        )
++
++    @staticmethod
++    def _physics_state_hash(data: Any) -> str:
++        digest = hashlib.sha256(struct.pack("<d", float(data.time)))
++        for name in ("qpos", "qvel", "act", "ctrl"):
++            values = np.asarray(getattr(data, name), dtype="<f8")
++            digest.update(struct.pack("<I", values.size))
++            digest.update(values.tobytes())
++        return digest.hexdigest()
++
++    def _capture(
++        self,
++        data: Any,
++        *,
++        rng: Any,
++        noise_std_m: float,
++        scene_id: str | None,
++        episode_id: str | None,
++        include_instances: bool,
++    ) -> tuple[SensorFrame, tuple[int, ...], dict[int, str], tuple[str, ...]]:
+         started = perf_counter()
++        initial_hash = self._physics_state_hash(data)
+         self._renderer.disable_depth_rendering()
++        self._renderer.disable_segmentation_rendering()
+         self._renderer.update_scene(data, camera=self._camera_id)
++        if self._physics_state_hash(data) != initial_hash:
++            raise RuntimeError("physics state changed while preparing camera scene")
++        pass_hashes: list[str] = []
+         rgb = self._renderer.render().copy()
++        pass_hashes.append(self._physics_state_hash(data))
++        if pass_hashes[-1] != initial_hash:
++            raise RuntimeError("physics state changed during RGB render")
+         self._renderer.enable_depth_rendering()
+         depth = self._renderer.render().copy()
++        pass_hashes.append(self._physics_state_hash(data))
++        if pass_hashes[-1] != initial_hash:
++            raise RuntimeError("physics state changed during depth render")
+         self._renderer.disable_depth_rendering()
++        instance_ids: tuple[int, ...] = ()
++        instance_labels: dict[int, str] = {}
++        if include_instances:
++            self._renderer.enable_segmentation_rendering()
++            segmentation = self._renderer.render().copy()
++            self._renderer.disable_segmentation_rendering()
++            pass_hashes.append(self._physics_state_hash(data))
++            if pass_hashes[-1] != initial_hash:
++                raise RuntimeError("physics state changed during instance render")
++            geom_pixels = np.where(
++                segmentation[:, :, 1] == int(self._mujoco.mjtObj.mjOBJ_GEOM),
++                segmentation[:, :, 0],
++                -1,
++            )
++            instance_ids = tuple(int(value) for value in geom_pixels.ravel())
++            for geom_id in set(instance_ids) - {-1}:
++                name = self._mujoco.mj_id2name(
++                    self._model,
++                    self._mujoco.mjtObj.mjOBJ_GEOM,
++                    geom_id,
++                )
++                instance_labels[geom_id] = str(name or f"geom_{geom_id}")
+         valid = np.isfinite(depth) & (depth > 0) & (depth < 10.0)
+         if noise_std_m:
+             depth[valid] += rng.normal(0, noise_std_m, size=int(valid.sum()))
+         depth[~valid | (depth <= 0)] = 0
++        valid = np.isfinite(depth) & (depth > 0)
+         # MuJoCo camera: +X right, +Y up, -Z forward; optical: +Y down, +Z forward.
+-        optical_to_world = np.asarray(data.cam_xmat[self._camera_id]).reshape(3, 3) @ np.diag([1, -1, -1])
++        optical_to_world = np.asarray(data.cam_xmat[self._camera_id]).reshape(3, 3) @ np.diag(
++            [1, -1, -1]
++        )
+         transform = np.eye(4)
+         transform[:3, :3] = optical_to_world
+         transform[:3, 3] = data.cam_xpos[self._camera_id]
+-        focal = (self._height / 2) / math.tan(math.radians(float(self._model.cam_fovy[self._camera_id])) / 2)
+-        return SensorFrame(
+-            frame_id="rgbd", sim_time_s=float(data.time), width=self._width, height=self._height,
+-            rgb=rgb.tobytes(), depth=tuple(float(value) for value in depth.ravel()),
+-            intrinsics=(focal, focal, (self._width - 1) / 2, (self._height - 1) / 2),
++        focal = (self._height / 2) / math.tan(
++            math.radians(float(self._model.cam_fovy[self._camera_id])) / 2
++        )
++        intrinsics = (focal, focal, (self._width - 1) / 2, (self._height - 1) / 2)
++        calibration_values = np.asarray((*intrinsics, *transform.ravel()), dtype="<f8")
++        calibration = hashlib.sha256(calibration_values.tobytes()).hexdigest()[:16]
++        if self._physics_state_hash(data) != initial_hash:
++            raise RuntimeError("physics state changed while finalizing camera calibration")
++        frame = SensorFrame(
++            frame_id=f"rgbd-{uuid4().hex}",
++            sim_time_s=float(data.time),
++            width=self._width,
++            height=self._height,
++            rgb=rgb.tobytes(),
++            depth=tuple(float(value) for value in depth.ravel()),
++            intrinsics=intrinsics,
+             camera_to_world=tuple(float(value) for value in transform.ravel()),
+-            captured_at=datetime.now(UTC), latency_ms=(perf_counter() - started) * 1000,
++            captured_at=datetime.now(UTC),
++            latency_ms=(perf_counter() - started) * 1000,
++            scene_id=scene_id,
++            episode_id=episode_id,
++            calibration_version=calibration,
++            valid_mask=valid.astype(np.uint8).tobytes(),
++        )
++        return (
++            frame,
++            instance_ids,
++            instance_labels,
++            tuple(pass_hashes),
+         )
+ 
+     def close(self) -> None:
+--- before/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
++++ after/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
+@@ -7,6 +7,7 @@
+ from importlib.util import find_spec
+ from pathlib import Path
+ from typing import Any
++from uuid import uuid4
+ 
+ import numpy as np
+ 
+@@ -23,10 +24,10 @@
+     SensorFrame,
+     SimulationStepResult,
+ )
++from cloud_edge_robot_arm.simulation.mujoco.camera import MuJoCoRGBDCamera
+ from cloud_edge_robot_arm.simulation.mujoco.spec_randomization import (
+     compile_randomized_mjspec_model,
+ )
+-from cloud_edge_robot_arm.simulation.mujoco.camera import MuJoCoRGBDCamera
+ 
+ 
+ class MuJoCoPhysicsBackend:
+@@ -54,6 +55,7 @@
+         self._actuator_delay_steps = 0
+         self._pending_joint_targets: list[tuple[int, np.ndarray[Any, Any]]] = []
+         self._camera: MuJoCoRGBDCamera | None = None
++        self._episode_id: str | None = None
+ 
+     @property
+     def total_physics_steps(self) -> int:
+@@ -127,6 +129,7 @@
+         self._require_loaded()
+         assert self._mujoco is not None and self._model is not None and self._data is not None
+         self._scenario = scenario
++        self._episode_id = uuid4().hex
+         self._rng = np.random.default_rng(scenario.seed)
+         self._mujoco.mj_resetData(self._model, self._data)
+         self._target_positions = np.zeros(7, dtype=float)
+@@ -178,6 +181,7 @@
+         self._data = None
+         self._model = None
+         self._mujoco = None
++        self._episode_id = None
+ 
+     def get_sim_time(self) -> float:
+         self._require_loaded()
+@@ -210,6 +214,25 @@
+ 
+     def get_sensor_frame(self) -> SensorFrame:
+         return self._sensor_frame
++
++    def capture_sensor_frame_with_instances(
++        self,
++    ) -> tuple[SensorFrame, tuple[int, ...], dict[int, str], tuple[str, ...]]:
++        """Render a new frame without advancing physics or replacing the cached step frame."""
++        self._require_loaded()
++        if self._scenario is None or self._config is None:
++            raise RuntimeError("MuJoCo scenario is not reset")
++        if not (self._config.render_rgb and self._config.render_depth):
++            raise RuntimeError("RGB-D rendering is not enabled")
++        if self._camera is None:
++            self._camera = MuJoCoRGBDCamera(
++                self._mujoco, self._model,
++                width=self._config.camera_width, height=self._config.camera_height,
++            )
++        return self._camera.capture_with_instances(
++            self._data, rng=self._rng, noise_std_m=self._sensor_noise_std_m,
++            scene_id=self._scenario.scenario_id, episode_id=self._episode_id,
++        )
+ 
+     def apply_joint_targets(self, targets: JointCommand) -> None:
+         if self._estop_engaged:
+@@ -335,6 +358,8 @@
+                 )
+             self._sensor_frame = self._camera.capture(
+                 self._data, rng=self._rng, noise_std_m=self._sensor_noise_std_m,
++                scene_id=self._scenario.scenario_id if self._scenario else None,
++                episode_id=self._episode_id,
+             )
+             return
+         tcp = self.get_tcp_pose()
+--- before/scripts/verify_phase11_1_simulation_runtime.py
++++ after/scripts/verify_phase11_1_simulation_runtime.py
+@@ -631,6 +631,7 @@
+ ) -> dict[str, Any]:
+     return {
+         "backend": backend,
++        "input_mode": "LEGACY_PIPELINE",
+         "run_type": "SINGLE",
+         "scenarios": [scenario],
+         "control_modes": [mode],
+--- before/scripts/verify_rgbd_capture.py
++++ after/scripts/verify_rgbd_capture.py
+@@ -0,0 +1,75 @@
++"""Save one real MuJoCo RGB-D capture and an independent table-plane measurement."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++
++from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession, save_captured_frame
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument(
++        "--output",
++        type=Path,
++        default=Path("artifacts/research/process/20261003-phase1/capture"),
++    )
++    args = parser.parse_args()
++    with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++        captured = session.capture_with_instances()
++        paths = save_captured_frame(captured, args.output)
++    table_ids = [key for key, label in captured.instance_labels.items() if label == "table"]
++    if len(table_ids) != 1:
++        raise RuntimeError("expected one rendered table geom")
++    width = captured.observation.width
++    table_pixels = [
++        (index % width, index // width)
++        for index, geom_id in enumerate(captured.instance_ids)
++        if geom_id == table_ids[0]
++    ]
++    valid_mask = captured.observation.valid_mask_bytes()
++    valid_pixels = [
++        pixel
++        for pixel in table_pixels
++        if valid_mask[pixel[1] * width + pixel[0]]
++    ]
++    if len(valid_pixels) < 1000:
++        raise RuntimeError("too few valid rendered table pixels")
++    sampled = valid_pixels[:: max(1, len(valid_pixels) // 100)][:100]
++    # scene.xml: table centre z=-0.025 m, half-height=0.025 m, top plane z=0.
++    plane_z_m = 0.0
++    errors = [abs(captured.observation.world_point(pixel).z - plane_z_m) for pixel in sampled]
++    if max(errors) > 0.005:
++        raise RuntimeError(f"table-plane back-projection exceeds 5 mm: {max(errors):.6f} m")
++    measurement = {
++        "reference": "assets/robots/franka_panda/scene.xml table top plane z=0 m",
++        "sample_count": len(sampled),
++        "table_visible_valid_pixel_count": len(valid_pixels),
++        "max_abs_z_error_m": max(errors),
++        "mean_abs_z_error_m": sum(errors) / len(errors),
++        "threshold_m": 0.005,
++        "physics_state_hash": captured.physics_state_hash,
++        "pass_state_hashes": list(captured.pass_state_hashes),
++        "observation_id": captured.observation.observation_id,
++        "episode_id": captured.observation.episode_id,
++        "scene_id": captured.observation.scene_id,
++        "calibration_version": captured.observation.calibration_version,
++        "renderer_closed_after_session": session._backend._camera is None,
++        "file_sha256": {
++            name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in paths.items()
++        },
++    }
++    measurement_path = args.output / "measurement.json"
++    measurement_path.write_text(
++        json.dumps(measurement, ensure_ascii=False, indent=2) + "\n",
++        encoding="utf-8",
++    )
++    print(json.dumps({"measurement": str(measurement_path), **measurement}, ensure_ascii=False))
++
++
++if __name__ == "__main__":
++    main()
+--- before/tests/test_research_provenance.py
++++ after/tests/test_research_provenance.py
+@@ -0,0 +1,209 @@
++"""Research provenance counts only new, authentic physics evidence."""
++
++from __future__ import annotations
++
++from scripts.verify_phase11_1_simulation_runtime import _draft
++
++from cloud_edge_robot_arm.research.models import RunProvenance, StageEvidence, StageStatus
++from cloud_edge_robot_arm.research.provenance import audit_provenance
++
++
++def _record(**changes: object) -> RunProvenance:
++    values: dict[str, object] = {
++        "run_id": "new-1",
++        "source_tree_hash": "tree-1",
++        "scene_group_id": "scene-1",
++        "split_role": "TEST",
++        "model_snapshot_hash": "model-1",
++        "observation_hashes": ["rgb-1", "depth-1"],
++        "physics_steps": 5,
++        "evidence_kind": "PHYSICS",
++        "task_success": True,
++        "stages": [
++            StageEvidence(stage="PERCEPTION", status=StageStatus.REAL, source_hashes=["rgb-1"]),
++            StageEvidence(stage="INFERENCE", status=StageStatus.REAL, source_hashes=["vlm-1"]),
++            StageEvidence(stage="ACTION", status=StageStatus.REAL, source_hashes=["physics-1"]),
++        ],
++    }
++    values.update(changes)
++    return RunProvenance.model_validate(values)
++
++
++def test_mock_or_plan_is_not_physical_success() -> None:
++    records = [
++        _record(run_id="mock", evidence_kind="MOCK"),
++        _record(run_id="plan", evidence_kind="PLANNING"),
++        _record(run_id="physics"),
++    ]
++    audit = audit_provenance(records)
++    assert audit.success_denominator == 3
++    assert audit.physical_success_count == 1
++
++
++def test_missing_model_is_blocked() -> None:
++    record = _record(
++        model_snapshot_hash=None,
++        physics_steps=0,
++        task_success=False,
++        stages=[
++            StageEvidence(stage="INFERENCE", status=StageStatus.BLOCKED, reason="model unavailable")
++        ],
++    )
++    audit = audit_provenance([record])
++    assert audit.success_denominator == 1
++    assert audit.physical_success_count == 0
++    assert audit.blocked_reasons == {"new-1": "missing model snapshot"}
++
++
++def test_historical_runs_are_not_new_denominator() -> None:
++    audit = audit_provenance([_record(cohort="HISTORICAL", run_id="old-1")])
++    assert audit.historical_count == 1
++    assert audit.success_denominator == 0
++    assert audit.physical_success_count == 0
++
++
++def test_pre_action_block_keeps_denominator_without_fake_steps() -> None:
++    record = _record(
++        physics_steps=0,
++        task_success=False,
++        blocked_reason="model load failed",
++        stages=[
++            StageEvidence(stage="PERCEPTION", status=StageStatus.REAL, source_hashes=["rgb-1"]),
++            StageEvidence(
++                stage="INFERENCE", status=StageStatus.BLOCKED, reason="model load failed"
++            ),
++            StageEvidence(stage="ACTION", status=StageStatus.NOT_EXECUTED),
++        ],
++    )
++    audit = audit_provenance([record])
++    assert audit.success_denominator == 1
++    assert audit.physical_success_count == 0
++    assert audit.occurred_stage_count == 2
++    assert audit.real_stage_count == 1
++    assert audit.stage_coverage == 2 / 3
++    assert audit.stage_authenticity == 1 / 2
++    assert audit.stage_authenticity_by_name == {
++        "PERCEPTION": {"real": 1, "occurred": 1},
++        "INFERENCE": {"real": 0, "occurred": 1},
++    }
++
++
++def test_same_scene_across_methods_is_pairing_not_leakage() -> None:
++    audit = audit_provenance([_record(run_id="method-a"), _record(run_id="method-b")])
++    assert audit.cross_split_scene_groups == {}
++    assert audit.leakage_count == 0
++
++
++def test_same_scene_across_splits_is_leakage() -> None:
++    audit = audit_provenance([_record(run_id="train", split_role="TRAIN"), _record(run_id="test")])
++    assert audit.cross_split_scene_groups == {"scene-1": ["TEST", "TRAIN"]}
++    assert audit.leakage_count == 1
++
++
++def test_online_ground_truth_is_leakage() -> None:
++    audit = audit_provenance([_record(ground_truth_exposed_online=True)])
++    assert audit.leakage_count == 1
++    assert audit.physical_success_count == 0
++
++
++def test_missing_inference_stage_cannot_be_physical_success() -> None:
++    record = _record(
++        stages=[
++            StageEvidence(stage="PERCEPTION", status=StageStatus.REAL, source_hashes=["rgb-1"]),
++            StageEvidence(stage="ACTION", status=StageStatus.REAL, source_hashes=["physics-1"]),
++        ]
++    )
++    audit = audit_provenance([record])
++    assert audit.physical_success_count == 0
++    assert audit.audit_issues == {"new-1": ["missing INFERENCE stage"]}
++
++
++def test_duplicate_core_stage_cannot_be_physical_success() -> None:
++    record = _record(
++        stages=[
++            StageEvidence(stage="PERCEPTION", status=StageStatus.REAL, source_hashes=["rgb-1"]),
++            StageEvidence(stage="INFERENCE", status=StageStatus.REAL, source_hashes=["vlm-1"]),
++            StageEvidence(stage="INFERENCE", status=StageStatus.REAL, source_hashes=["vlm-2"]),
++            StageEvidence(stage="ACTION", status=StageStatus.REAL, source_hashes=["physics-1"]),
++        ]
++    )
++    audit = audit_provenance([record])
++    assert audit.physical_success_count == 0
++    assert audit.audit_issues == {"new-1": ["duplicate INFERENCE stage"]}
++
++
++def test_real_stage_without_source_is_not_authentic() -> None:
++    record = _record(
++        stages=[
++            StageEvidence(stage="PERCEPTION", status=StageStatus.REAL),
++            StageEvidence(stage="INFERENCE", status=StageStatus.REAL, source_hashes=["vlm-1"]),
++            StageEvidence(stage="ACTION", status=StageStatus.REAL, source_hashes=["physics-1"]),
++        ]
++    )
++    audit = audit_provenance([record])
++    assert audit.real_stage_count == 2
++    assert audit.stage_authenticity == 2 / 3
++    assert audit.physical_success_count == 0
++    assert audit.audit_issues == {"new-1": ["PERCEPTION REAL stage has no source hashes"]}
++
++
++def test_duplicate_run_id_does_not_expand_denominator() -> None:
++    audit = audit_provenance([_record(), _record()])
++    assert audit.success_denominator == 1
++    assert audit.physical_success_count == 1
++    assert audit.duplicate_run_ids == ["new-1"]
++
++
++def test_conflicting_duplicate_run_reports_leakage_and_invalidates_success() -> None:
++    audit = audit_provenance(
++        [
++            _record(split_role="TRAIN"),
++            _record(split_role="TEST", ground_truth_exposed_online=True),
++        ]
++    )
++    assert audit.success_denominator == 1
++    assert audit.physical_success_count == 0
++    assert audit.duplicate_run_ids == ["new-1"]
++    assert audit.cross_split_scene_groups == {"scene-1": ["TEST", "TRAIN"]}
++    assert audit.leakage_count == 2
++    assert audit.audit_issues == {"new-1": ["conflicting duplicate run ID"]}
++
++
++def test_missing_core_stage_reduces_coverage() -> None:
++    audit = audit_provenance(
++        [
++            _record(
++                stages=[
++                    StageEvidence(
++                        stage="PERCEPTION", status=StageStatus.REAL, source_hashes=["rgb-1"]
++                    ),
++                    StageEvidence(
++                        stage="ACTION", status=StageStatus.REAL, source_hashes=["physics-1"]
++                    ),
++                ]
++            )
++        ]
++    )
++    assert audit.expected_stage_count == 3
++    assert audit.stage_coverage == 2 / 3
++
++
++def test_blank_hash_entries_are_not_authentic_sources() -> None:
++    record = _record(
++        observation_hashes=[" "],
++        stages=[
++            StageEvidence(stage="PERCEPTION", status=StageStatus.REAL, source_hashes=[""]),
++            StageEvidence(stage="INFERENCE", status=StageStatus.REAL, source_hashes=["  "]),
++            StageEvidence(stage="ACTION", status=StageStatus.REAL, source_hashes=["\t"]),
++        ],
++    )
++    audit = audit_provenance([record])
++    assert audit.real_stage_count == 0
++    assert audit.stage_authenticity == 0
++    assert audit.physical_success_count == 0
++    assert audit.blocked_reasons == {"new-1": "missing RGB-D observation hashes"}
++
++
++def test_historical_verifier_draft_selects_legacy_pipeline() -> None:
++    assert _draft("MOCK", "S01_NORMAL_STATIC", "PCSC", 0)["input_mode"] == "LEGACY_PIPELINE"
++    assert _draft("MUJOCO", "S01_NORMAL_STATIC", "PCSC", 0)["input_mode"] == "LEGACY_PIPELINE"
+--- before/tests/test_rgbd_observations.py
++++ after/tests/test_rgbd_observations.py
+@@ -5,6 +5,7 @@
+ import base64
+ import io
+ import struct
++from dataclasses import replace
+ from datetime import UTC, datetime
+ 
+ import pytest
+@@ -12,7 +13,7 @@
+ from pydantic import ValidationError
+ 
+ from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+-from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
++from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig, SensorFrame
+ from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+ 
+ 
+@@ -33,6 +34,75 @@
+     }
+ 
+ 
++@pytest.fixture
++def sensor_frame() -> SensorFrame:
++    return SensorFrame(
++        frame_id="historical-camera-frame",
++        captured_at=datetime(2020, 1, 1, tzinfo=UTC),
++        sim_time_s=0.0,
++        width=2,
++        height=2,
++        rgb=bytes((255, 0, 0)) * 4,
++        depth=(2.0, 2.0, 2.0, 0.0),
++        intrinsics=(2.0, 2.0, 0.0, 0.0),
++        camera_to_world=(1, 0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 3, 0, 0, 0, 1),
++    )
++
++
++def test_sensor_frame_requires_acquisition_timestamp(sensor_frame: SensorFrame) -> None:
++    from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
++
++    with pytest.raises(ValueError, match="captured_at"):
++        observation_from_sensor_frame(replace(sensor_frame, captured_at=None), source="mujoco_camera")
++
++
++def test_historical_sensor_frame_preserves_acquisition_timestamp(sensor_frame: SensorFrame) -> None:
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation, observation_from_sensor_frame
++
++    observation = observation_from_sensor_frame(sensor_frame, source="mujoco_camera")
++    restored = RGBDObservation.model_validate_json(observation.model_dump_json())
++    assert restored.captured_at == datetime(2020, 1, 1, tzinfo=UTC)
++    assert restored.crop((0, 0, 1, 1)).captured_at == restored.captured_at
++
++
++@pytest.mark.parametrize("length", [11, 13])
++def test_sensor_frame_rejects_wrong_rgb_payload_length(
++    sensor_frame: SensorFrame, length: int
++) -> None:
++    from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
++
++    with pytest.raises(ValueError, match="RGB.*size"):
++        observation_from_sensor_frame(replace(sensor_frame, rgb=bytes(length)), source="mujoco_camera")
++
++
++@pytest.mark.parametrize(
++    "changes",
++    [
++        {"width": 0},
++        {"width": -1},
++        {"width": 1281},
++        {"height": 0},
++        {"height": 721},
++        {"width": 1.5},
++        {"rgb": bytes(11)},
++        {"rgb": bytes(13)},
++        {"depth": (2.0,) * 3},
++        {"depth": (2.0,) * 5},
++    ],
++)
++def test_sensor_frame_validates_bounds_and_payloads_before_encoding(
++    sensor_frame: SensorFrame, changes: dict[str, object], monkeypatch: pytest.MonkeyPatch
++) -> None:
++    from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
++
++    def unexpected_encoding(*args: object, **kwargs: object) -> None:
++        pytest.fail("invalid raw RGB-D reached image encoding")
++
++    monkeypatch.setattr(Image, "frombytes", unexpected_encoding)
++    with pytest.raises(ValueError):
++        observation_from_sensor_frame(replace(sensor_frame, **changes), source="mujoco_camera")
++
++
+ def test_mujoco_camera_produces_registered_rgb_and_metric_depth() -> None:
+     backend = MuJoCoPhysicsBackend()
+     try:
+@@ -60,13 +130,16 @@
+         observation.world_point((1, 1))
+ 
+ 
+-@pytest.mark.parametrize("field,value", [
+-    ("depth_float32_base64", "AAAA"),
+-    ("rgb_png_base64", "not-base64"),
+-    ("width", 1281),
+-    ("intrinsics", [0, 2, 0, 0]),
+-    ("camera_to_world", [0] * 16),
+-])
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("depth_float32_base64", "AAAA"),
++        ("rgb_png_base64", "not-base64"),
++        ("width", 1281),
++        ("intrinsics", [0, 2, 0, 0]),
++        ("camera_to_world", [0] * 16),
++    ],
++)
+ def test_invalid_rgbd_is_rejected(field: str, value: object) -> None:
+     from cloud_edge_robot_arm.vision.observations import RGBDObservation
+ 
+@@ -92,3 +165,51 @@
+     image = Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64)))
+     red_pixels = sum(1 for r, g, b in image.get_flattened_data() if r - g > 50 and r - b > 50)
+     assert red_pixels > 100, "the initial arm pose must not hide the cube from the visual planner"
++
++
++def test_legacy_observation_stays_unbound_and_crop_preserves_identity() -> None:
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    observation = RGBDObservation.model_validate(observation_payload())
++    assert observation.observation_id == observation.frame_id
++    assert observation.model_dump()["observation_id"] == "test-camera"
++    assert observation.scene_id is None and observation.episode_id is None
++    assert observation.calibration_version is None
++    assert observation.valid_mask_bytes() == bytes((1, 1, 1, 0))
++    assert observation.crop((0, 0, 1, 1)).observation_id == observation.observation_id
++
++
++def test_invalid_depth_and_calibration_rejected() -> None:
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    for value in (float("nan"), -1.0):
++        payload = observation_payload()
++        payload["depth_float32_base64"] = base64.b64encode(
++            struct.pack("<4f", 2, 2, 2, value)
++        ).decode()
++        with pytest.raises(ValidationError):
++            RGBDObservation.model_validate(payload)
++    payload = observation_payload()
++    payload["camera_to_world"] = [0] * 16
++    with pytest.raises(ValidationError):
++        RGBDObservation.model_validate(payload)
++    payload = observation_payload()
++    payload["valid_mask_base64"] = base64.b64encode(bytes((1, 1, 1, 1))).decode()
++    with pytest.raises(ValidationError):
++        RGBDObservation.model_validate(payload)
++    observation = RGBDObservation.model_validate(observation_payload())
++    with pytest.raises(ValueError, match="invalid depth"):
++        observation.world_point((1, 1))
++    payload = observation.model_dump()
++    payload["scene_id"] = "altered"
++    with pytest.raises(ValidationError, match="checksum"):
++        RGBDObservation.model_validate(payload)
++    for field, altered in (
++        ("captured_at", datetime(2020, 1, 1, tzinfo=UTC)),
++        ("sim_time_s", 3.0),
++        ("source", "isaac_camera"),
++    ):
++        payload = observation.model_dump()
++        payload[field] = altered
++        with pytest.raises(ValidationError, match="checksum"):
++            RGBDObservation.model_validate(payload)
+--- before/tests/test_rgbd_capture_session.py
++++ after/tests/test_rgbd_capture_session.py
+@@ -0,0 +1,114 @@
++"""A continuous camera session must produce synchronized, identifiable real frames."""
++
++from __future__ import annotations
++
++import json
++import math
++import struct
++
++import mujoco
++import pytest
++
++from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++
++
++def test_render_passes_share_frozen_state() -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++        first = session.capture_with_instances()
++        second = session.capture_with_instances()
++        assert len(first.pass_state_hashes) == 3
++        assert len(set(first.pass_state_hashes)) == 1
++        assert first.physics_state_hash == first.pass_state_hashes[0]
++        assert first.observation.sim_time_s == second.observation.sim_time_s == 0.0
++        assert first.observation.observation_id != second.observation.observation_id
++        assert first.observation.scene_id == "S01_NORMAL_STATIC"
++        assert first.observation.episode_id == second.observation.episode_id
++        assert first.observation.calibration_version
++        assert len(first.instance_ids) == 320 * 240
++
++
++def test_plane_back_projection_within_5mm() -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++        captured = session.capture_with_instances()
++        table_ids = [key for key, value in captured.instance_labels.items() if value == "table"]
++        assert len(table_ids) == 1
++        width = captured.observation.width
++        pixels = [
++            (index % width, index // width)
++            for index, geom_id in enumerate(captured.instance_ids)
++            if geom_id == table_ids[0]
++        ]
++        assert len(pixels) > 1000
++        samples = pixels[:: max(1, len(pixels) // 20)][:20]
++        errors = [abs(captured.observation.world_point(pixel).z) for pixel in samples]
++        assert max(errors) <= 0.005, f"table plane z=0 errors: {errors}"
++
++
++def test_capture_session_reuses_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    renderer = mujoco.Renderer
++    created = []
++
++    def counted_renderer(*args: object, **kwargs: object) -> mujoco.Renderer:
++        result = renderer(*args, **kwargs)
++        created.append(result)
++        return result
++
++    monkeypatch.setattr(mujoco, "Renderer", counted_renderer)
++    with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++        first = session.capture()
++        second = session.capture()
++        assert first.observation_id != second.observation_id
++        assert len(created) == 1
++    assert len(created) == 1
++    with pytest.raises(RuntimeError):
++        created[0].render()
++
++
++def test_capture_artifacts_include_raw_depth_mask_instances_and_calibration(tmp_path) -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession, save_captured_frame
++
++    with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++        frame = session.capture_with_instances()
++        assert math.isfinite(frame.observation.depth_range()[0])
++        assert frame.observation.checksum_sha256
++        paths = save_captured_frame(frame, tmp_path)
++    depth = struct.unpack(
++        f"<{frame.observation.width * frame.observation.height}f", paths["depth"].read_bytes()
++    )
++    assert max(depth) > 0
++    assert paths["mask"].read_bytes() == frame.observation.valid_mask_bytes()
++    assert len(paths["instances"].read_bytes()) == len(depth) * 4
++    metadata = json.loads(paths["observation"].read_text())
++    assert metadata["physics_state_hash"] == frame.physics_state_hash
++    assert metadata["pass_state_hashes"] == list(frame.pass_state_hashes)
++    assert "instance_ids" not in frame.observation.model_dump()
++
++
++def test_concurrent_physics_change_rejects_mixed_frame(monkeypatch: pytest.MonkeyPatch) -> None:
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    with pytest.raises(RuntimeError, match="physics state changed"):
++        with MuJoCoCaptureSession(SimulatorConfig(render_rgb=True, render_depth=True)) as session:
++            backend = session._backend
++            assert backend._camera is not None and backend._data is not None
++            renderer_type = type(backend._camera._renderer)
++            original_render = renderer_type.render
++            count = 0
++
++            def moved_render(renderer, *args, **kwargs):
++                nonlocal count
++                image = original_render(renderer, *args, **kwargs)
++                count += 1
++                if count == 1:
++                    backend._data.qpos[0] += 0.01
++                return image
++
++            monkeypatch.setattr(renderer_type, "render", moved_render)
++            session.capture_with_instances()
++    assert backend._camera is None

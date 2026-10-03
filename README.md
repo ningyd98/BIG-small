@@ -12,6 +12,8 @@ BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制�
 
 ## 2. 当前状态
 
+2026-10-03 已完成 RGB-D 改造首批 P1（来源审计、同步视觉/深度采集），88 项阶段合并回归通过。开发按[任务依赖](docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)推进，实际状态、命令和证据见[过程文档](docs/research/process/README.md)及[当前权威状态](docs/current_authoritative_status.md)。本轮尚未产生新的正式研究结果。
+
 以下是 2026-10-02 Ubuntu 本机验收快照；原分支成果及其原 verifier 状态保留在 [历史与当前状态](docs/current_authoritative_status.md)，完整证据范围见 [Ubuntu 交接报告](docs/handover/ubuntu_deployment_report.md)。
 
 | 能力层 | 本机状态 | 已验证范围 |

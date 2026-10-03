@@ -1,0 +1,62 @@
+............................FF.                                          [100%]
+=================================== FAILURES ===================================
+__________ test_numpy_header_shape_is_checked_before_loading_payload ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-93/test_numpy_header_shape_is_che0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x71802b3723c0>
+
+    def test_numpy_header_shape_is_checked_before_loading_payload(tmp_path, monkeypatch):
+        writer, _, _ = write_fixture(tmp_path)
+        record = writer.records[0]
+        payload = tmp_path / record.paths["depth"]
+        with payload.open("wb") as stream:
+            np.lib.format.write_array_header_1_0(stream, {
+                "descr": "<f4", "fortran_order": False, "shape": (999999999, 999999999)})
+        record.file_hashes["depth"] = hashlib.sha256(payload.read_bytes()).hexdigest()
+        original = np.load
+    
+        def reject_dangerous_allocation(*args, **kwargs):
+            pytest.fail("unsafe ndarray dimensions reached the allocating NumPy loader")
+    
+        monkeypatch.setattr(np, "load", reject_dangerous_allocation)
+        from cloud_edge_robot_arm.vision.offline_reader import load_offline_observation
+        with pytest.raises(ValueError, match="(?i)(shape|dimensions)"):
+>           load_offline_observation(record)
+
+tests/test_rgbd_dataset_integrity.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/offline_reader.py:98: in load_offline_observation
+    observation = _decode_observation(payloads, metadata)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/offline_reader.py:76: in _decode_observation
+    depth = load_numeric(payloads[prefix + "depth"], "<f4", shape, "depth")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/offline_reader.py:59: in load_numeric
+    array = np.load(io.BytesIO(payload), allow_pickle=False)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<_io.BytesIO object at 0x71802b376390>,)
+kwargs = {'allow_pickle': False}
+
+    def reject_dangerous_allocation(*args, **kwargs):
+>       pytest.fail("unsafe ndarray dimensions reached the allocating NumPy loader")
+E       Failed: unsafe ndarray dimensions reached the allocating NumPy loader
+
+tests/test_rgbd_dataset_integrity.py:245: Failed
+_______________ test_writer_rejects_inconsistent_positive_status _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-93/test_writer_rejects_inconsiste0')
+
+    def test_writer_rejects_inconsistent_positive_status(tmp_path):
+        config = models().DatasetConfig(dataset_id="ds", groups=1, min_free_bytes=0)
+        writer = storage().DatasetWriter(tmp_path, config)
+        inconsistent = sample_record().model_copy(update={"status": "POSITIVE"})
+>       with pytest.raises(ValueError, match="(?i)(positive|status)"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_dataset_integrity.py:258: Failed
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_dataset_integrity.py::test_numpy_header_shape_is_checked_before_loading_payload
+FAILED tests/test_rgbd_dataset_integrity.py::test_writer_rejects_inconsistent_positive_status
+2 failed, 29 passed in 2.16s

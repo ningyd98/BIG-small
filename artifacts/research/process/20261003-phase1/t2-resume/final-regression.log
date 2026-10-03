@@ -1,0 +1,47 @@
+........................................................................ [  9%]
+........................................................................ [ 18%]
+........................................................................ [ 27%]
+........................................................................ [ 37%]
+........................................................................ [ 46%]
+........................................................................ [ 55%]
+........................................................................ [ 65%]
+........................................................................ [ 74%]
+........................................................................ [ 83%]
+........F............................................................... [ 93%]
+......................................................                   [100%]
+=================================== FAILURES ===================================
+_____________ test_phase9_asset_manifest_records_hash_and_license ______________
+
+    def test_phase9_asset_manifest_records_hash_and_license() -> None:
+        registry = AssetRegistry.from_manifest(Path("assets/manifest.yaml"))
+>       asset = registry.require("franka_panda_mujoco_scene")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase9_asset_registry.py:12: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.simulation.asset_registry.AssetRegistry object at 0x7620d1438260>
+asset_id = 'franka_panda_mujoco_scene'
+
+    def require(self, asset_id: str) -> AssetRecord:
+        try:
+            asset = self._assets[asset_id]
+        except KeyError as exc:
+            raise KeyError(f"unknown asset {asset_id!r}") from exc
+        if not asset.path.exists():
+            raise FileNotFoundError(asset.path)
+        actual = self.compute_sha256(asset.path)
+        if actual != asset.sha256:
+>           raise ValueError(f"asset hash mismatch for {asset_id}: {actual} != {asset.sha256}")
+E           ValueError: asset hash mismatch for franka_panda_mujoco_scene: 6a7938709366801ed6e36c7c504da64a48b7b16bbc02adda2a31417c7ad5b1d1 != 74d2a3339df4d97a14d7d3d4c20c6879fe3cfa382e59e46569622fd2d5a8cfc1
+
+src/cloud_edge_robot_arm/simulation/asset_registry.py:57: ValueError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:45
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_phase9_asset_registry.py::test_phase9_asset_manifest_records_hash_and_license
+1 failed, 773 passed, 1 warning in 313.83s (0:05:13)

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import shlex
+import struct
+from datetime import datetime
 from typing import cast
 
 from cloud_edge_robot_arm.contracts import Pose
@@ -106,6 +109,8 @@ class IsaacSimBackend:
         return self._parse_contacts(self._require_telemetry())
 
     def get_sensor_frame(self) -> SensorFrame:
+        if self._config is not None and (self._config.render_rgb or self._config.render_depth):
+            return self._parse_sensor_frame(self._send("sensor_request", {}))
         return self._parse_sensor_frame(self._require_telemetry())
 
     def apply_joint_targets(self, targets: JointCommand) -> None:
@@ -186,11 +191,26 @@ class IsaacSimBackend:
 
     def _parse_sensor_frame(self, response: dict[str, object]) -> SensorFrame:
         payload = _required_dict(response, "sensor_frame")
+        rgb = None
+        depth: tuple[float, ...] = ()
+        if "rgb_base64" in payload:
+            width, height = _required_int(payload, "width"), _required_int(payload, "height")
+            if not 1 <= width <= 1280 or not 1 <= height <= 720:
+                raise IsaacProtocolError("RGBD dimensions outside supported bounds")
+            rgb = base64.b64decode(str(payload["rgb_base64"]), validate=True)
+            raw_depth = base64.b64decode(str(payload["depth_float32_base64"]), validate=True)
+            if len(rgb) != width * height * 3 or len(raw_depth) != width * height * 4:
+                raise IsaacProtocolError("RGBD pixel/depth size mismatch")
+            depth = struct.unpack(f"<{width * height}f", raw_depth)
         return SensorFrame(
             frame_id=str(payload["frame_id"]),
             sim_time_s=_required_float(response, "sim_time_s"),
             width=_required_int(payload, "width"),
             height=_required_int(payload, "height"),
+            rgb=rgb, depth=depth,
+            intrinsics=tuple(_required_float_list(payload, "intrinsics")) if rgb else (),
+            camera_to_world=tuple(_required_float_list(payload, "camera_to_world")) if rgb else (),
+            captured_at=datetime.fromisoformat(str(payload["captured_at"])) if rgb else None,
             object_detections=[
                 dict(cast(dict[str, object], item))
                 for item in _required_list(payload, "object_detections")
