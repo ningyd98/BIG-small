@@ -27,6 +27,25 @@ def test_sampler_reproducible_and_camera_variants_stay_in_group() -> None:
         assert obj["position"][2] > obj["half_size"][2]
 
 
+def test_offline_scene_initializes_open_gripper_for_teacher() -> None:
+    from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+
+    config = SimulatorConfig(render_rgb=False, render_depth=False)
+    scene = sample_scene(DatasetConfig(dataset_id="teacher-open", distractor_count=(0, 0)), 17)
+    with MuJoCoCaptureSession(config) as session:
+        session.apply_scene(scene)
+        model, data = session._backend._model, session._backend._data
+        assert model is not None and data is not None
+        finger_positions = [
+            float(data.qpos[model.jnt_qposadr[model.joint(name).id]])
+            for name in ("finger_left_joint", "finger_right_joint")
+        ]
+        assert min(finger_positions) >= 0.039
+        assert min(data.ctrl[7:9]) >= 0.039
+
+
 def test_capture_labels_use_real_instances_and_reuse_model() -> None:
     from cloud_edge_robot_arm.datasets.rgbd.capture import OfflineSceneAdapter
     from cloud_edge_robot_arm.datasets.rgbd.labels import label_frame

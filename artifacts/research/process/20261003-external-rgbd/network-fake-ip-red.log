@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_fake_ip_from_first_resolver_blocks_without_second_resolver_fallback ___
+
+mod = <module 'cloud_edge_robot_arm.datasets.external.network' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/datasets/external/network.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x73cbb00bb800>
+
+    def test_fake_ip_from_first_resolver_blocks_without_second_resolver_fallback(mod, monkeypatch):
+        responses = 0
+    
+        def first_fake_then_valid(query):
+            nonlocal responses
+            responses += 1
+            return dns_response(query, "198.18.0.1" if responses == 1 else "8.8.8.8")
+    
+        sockets = install_sockets(monkeypatch, dns_transform=first_fake_then_valid)
+>       with pytest.raises(mod.NetworkPolicyError, match="BLOCKED_NETWORK"):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.datasets.external.network.NetworkPolicyError'>
+
+tests/test_external_rgbd_network.py:323: Failed
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_network.py::test_fake_ip_from_first_resolver_blocks_without_second_resolver_fallback
+1 failed in 0.09s

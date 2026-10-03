@@ -1,0 +1,71 @@
+{
+  "RequestId": "424f2a6c-8d96-430f-a771-df73cd149086",
+  "Code": 200,
+  "Message": "success",
+  "Data": {
+    "isTop": null,
+    "relatedPaperId": [
+      240415
+    ],
+    "nexa": "{}",
+    "Id": 204259,
+    "Namespace": "Voxel51",
+    "Name": "IndustryShapes",
+    "CreatedBy": "systemd",
+    "ChineseName": "",
+    "License": "mit",
+    "Description": "",
+    "Visibility": 5,
+    "Type": 4,
+    "Owner": "Voxel51",
+    "UserDefineTags": "fiftyone,image,object-detection",
+    "Likes": 0,
+    "Downloads": 57770,
+    "Size": null,
+    "ReadmeContent": "\n# Dataset Card for IndustryShapes\n\n![image/png](industryshapes.gif)\n\nIndustryShapes is an RGB-D benchmark dataset for 6D object pose estimation of industrial assembly tools and components. It provides high-quality annotated data of five challenging industrial objects—characterized by weak texture, reflective surfaces, symmetries, and thin structures—captured in realistic industrial assembly environments. The dataset is designed to support both instance-level and novel-object pose estimation approaches, and is the first dataset to include RGB-D static onboarding sequences for model-free methods.\n\n\nThis is a [FiftyOne](https://github.com/voxel51/fiftyone) dataset with 13012 samples.\n\n## Installation\n\nIf you haven't already, install FiftyOne:\n\n```bash\npip install -U fiftyone\n```\n\n## Usage\n\n```python\nimport fiftyone as fo\nfrom fiftyone.utils.huggingface import load_from_hub\n\n# Load the dataset\n# Note: other available arguments include 'max_samples', etc\ndataset = load_from_hub(\"Voxel51/IndustryShapes\")\n\n# Launch the App\nsession = fo.launch_app(dataset)\n```\n\n### Dataset Sources\n- **Curated by:** Panagiotis Sapoutzoglou, Orestis Vaggelis, Athina Zacharia, Evangelos Sartinas, Maria Pateraki (National Technical University of Athens, Greece)\n- **Funded by:** European HEU programmes SOPRANO (GA No 101120990) and PANDORA (GA No 101135775); data collection supported by Stellantis — Centro Ricerche FIAT (CRF)\n- **License:** MIT\n- **Paper:** [arXiv:2602.05555](https://arxiv.org/abs/2602.05555)\n- **Repository:** [POSE-Lab/IndustryShapes on Hugging Face](https://huggingface.co/datasets/POSE-Lab/IndustryShapes)\n- **Paper:** Sapoutzoglou et al., *IndustryShapes: An RGB-D Benchmark dataset for 6D object pose estimation of industrial assembly components and tools*, arXiv 2602.05555, 2026\n- **Project page:** https://pose-lab.github.io/IndustryShapes\n\n---\n\n## Uses\n\n### Direct Use\n\n- **6D object pose estimation** — both instance-level (known CAD model) and novel-object (model-based and model-free)\n- **Object detection and instance segmentation** in industrial scenes\n- **Depth estimation research** and RGB-D sensor evaluation in industrial settings\n- **Robotic manipulation** — grasping and assembly tasks requiring precise 6D pose\n\n### Out-of-Scope Use\n\n- Not suitable for general consumer or household object recognition\n- Not designed for ego-centric or hand-held camera scenarios\n- The five objects are industrial-specific; generalization to other domains should be validated\n\n---\n\n## Dataset Structure\n\n\n### FiftyOne Sample Fields\n\nEach sample corresponds to one image. The `dataset_subset` field identifies which part of the dataset the image belongs to.\n\n| Field | Type | Description |\n|---|---|---|\n| `filepath` | `string` | Absolute path to the 640×480 RGB image |\n| `split` | `string` | `\"train\"` or `\"test\"` |\n| `dataset_subset` | `string` | `\"classic\"`, `\"extended_onboarding\"`, or `\"extended_office\"` |\n| `scene_id` | `string` | Zero-padded scene identifier (e.g. `\"000001\"`) |\n| `image_id` | `string` | Frame index within the scene |\n| `depth_scale` | `float` | Multiply raw depth values by this to get millimetres (1.0 for classic, 0.1 for extended) |\n| `camera_intrinsics` | `list[list[float]]` | 3×3 camera intrinsic matrix `[[fx,0,cx],[0,fy,cy],[0,0,1]]` |\n| `depth` | `fo.Heatmap` | Depth map in millimetres; pixel values encode distance in the App colormap |\n| `ground_truth` | `fo.Detections` | Per-instance annotations (see below) |\n| `axes` | `fo.Polylines` | Projected coordinate frame (X/Y/Z) at the object origin, for pose visualization |\n| `bbox3d` | `fo.Polylines` | 12-edge 3D bounding box wireframe projected into image space |\n\n### Detection Fields (`ground_truth`)\n\nEach `fo.Detection` inside `ground_truth` represents one annotated object instance.\n\n| Field | Type | Description |\n|---|---|---|\n| `label` | `string` | Object class: `object_01` … `object_05` |\n| `bounding_box` | `[x, y, w, h]` | Normalised 2D bounding box (top-left origin, values in [0, 1]) |\n| `mask` | `bool array` | Binary instance segmentation mask, cropped to the bounding box |\n| `rotation_matrix` | `list[list[float]]` | 3×3 rotation matrix **R** (BOP convention: maps object → camera frame) |\n| `translation_mm` | `[tx, ty, tz]` | Translation vector in **millimetres** (object origin in camera frame) |\n| `obj_id` | `int` | Numeric object ID (1–5) |\n| `visibility` | `float` | Fraction of object surface visible in the image [0, 1] |\n\n### Labels\n\n```\nobject_01, object_02, object_03, object_04, object_05\n```\n\n### Depth Heatmap\n\nThe `depth` field is a `fo.Heatmap` backed by a 16-bit PNG on disk. Each pixel stores the depth in millimetres after applying `depth_scale`. Invalid pixels (no sensor return, or beyond sensor range) are encoded as 0. The `range` stored on the heatmap is the 2nd–98th percentile of valid pixel values for that frame, used to set the colormap bounds in the FiftyOne App.\n\n### Pose Convention\n\nPoses follow the **BOP convention**:\n\n```\nx_camera = R @ x_object + t\n```\n\nwhere `R` is the 3×3 rotation matrix, `t` is the translation in millimetres, and `x_object` is a point in the object's coordinate frame.\n\n---\n\n## Dataset Creation\n\n### Curation Rationale\n\nMost existing 6D pose estimation datasets focus on household or consumer objects in controlled lab environments, which do not reflect the challenges of real-world industrial deployment. IndustryShapes was created to fill this gap by providing industrial objects with challenging physical properties (textureless surfaces, symmetries, thin and reflective parts) in realistic assembly environments, and by explicitly supporting modern model-free methods through the first publicly released RGB-D static onboarding sequences.\n\n### Source Data\n\n#### Data Collection\n\nRGB-D data were captured at 640×480 resolution using:\n- **Intel RealSense D455** — classic set (industrial and lab scenes)\n- **Intel RealSense D405** — extended set (onboarding and office sequences; closer range)\n\nSynthetic training images for Object 3 were generated with an OpenGL-based renderer using photorealistic CAD model textures. All data are formatted according to the BOP specification.\n\n#### Who are the source data producers?\n\nThe POSE Lab at the National Technical University of Athens (NTUA), Greece. Data were collected at a realistic industrial assembly facility with support from Stellantis — Centro Ricerche FIAT (CRF).\n\n### Annotations\n\n#### Annotation Process\n\nThree annotation approaches were used depending on the scene type:\n\n1. **Marker-based** (lab/turn-table scenes) — ArUco markers provided precise camera poses.\n2. **SfM-based semi-automatic** (industrial scenes) — Structure-from-Motion reconstruction combined with manually defined anchor points on the CAD model established 2D–3D correspondences; the PnP problem was then solved per frame.\n3. **Synthetic** — Ground-truth poses are exact by construction.\n\nAnnotation accuracy was validated by comparing captured depth against rendered depth at the annotated poses. The mean absolute depth error is **< 12 mm** for the classic set and **≈ 5 mm** for the extended set — a relative error under 5% of the mean object diameter (254 mm).\n\n### Recommendations\n\nBenchmark results should be interpreted per-object rather than only overall, as difficulty varies considerably (e.g. Object 5 consistently achieves lower AR than Object 1 across all methods). Users training instance-level methods should note the domain gap between the single-object training scenes and the cluttered multi-object test scenes.\n\n---\n\n## Citation\n\n**BibTeX:**\n\n```bibtex\n@article{sapoutzoglou2026industryshapes,\n  title   = {IndustryShapes: An RGB-D Benchmark dataset for 6D object pose\n             estimation of industrial assembly components and tools},\n  author  = {Sapoutzoglou, Panagiotis and Vaggelis, Orestis and Zacharia, Athina\n             and Sartinas, Evangelos and Pateraki, Maria},\n  journal = {arXiv preprint arXiv:2602.05555},\n  year    = {2026}\n}\n```\n\n**APA:**\n\nSapoutzoglou, P., Vaggelis, O., Zacharia, A., Sartinas, E., & Pateraki, M. (2026). *IndustryShapes: An RGB-D Benchmark dataset for 6D object pose estimation of industrial assembly components and tools*. arXiv:2602.05555.",
+    "AlreadyStar": false,
+    "GmtCreate": 1783076029,
+    "GmtModified": 1789456394,
+    "Tags": null,
+    "Status": 1,
+    "FullName": "Voxel51",
+    "Organization": {
+      "Id": 4347,
+      "GmtCreated": 1783029616,
+      "GmtModified": 1783029626,
+      "Name": "Voxel51",
+      "FullName": "Voxel51",
+      "Type": 1,
+      "Avatar": "",
+      "CreatedBy": "yingda",
+      "GithubAddress": "",
+      "Description": "[\"root\",{},[\"p\",{},[\"span\",{\"data-type\":\"text\"},[\"span\",{\"data-type\":\"leaf\"},\"This organization was created as a community mirror to host open artifacts including models and datasets. If you are the owner of these repos and would like to claim ownership and management right for this organization, please feel free to reach out to contact@modelscope.cn for ownership transfer.\"]]],[\"p\",{},[\"span\",{\"data-type\":\"text\"},[\"span\",{\"data-type\":\"leaf\"},\"\"]]],[\"p\",{},[\"span\",{\"data-type\":\"text\"},[\"span\",{\"data-type\":\"leaf\"},\"\"]]],[\"p\",{},[\"span\",{\"data-type\":\"text\"},[\"span\",{\"data-type\":\"leaf\"},\"Thank you for opening up these models and datasets and making them available to more audiences.\"]]]]",
+      "DatasetCount": null
+    },
+    "UsedFor": null,
+    "CertificationMark": 0,
+    "LastUpdatedTime": 1783563354,
+    "FromSite": "maas",
+    "SourcePlatform": null,
+    "topIndex": null,
+    "IsFlex": 0,
+    "StorageSize": 3436877084,
+    "RelateArxivId": [
+      "2602.05555"
+    ],
+    "Avatar": null,
+    "ProtectedMode": 2,
+    "ApprovalMode": 1,
+    "ApplyMeta": null,
+    "NEXA": {
+      "Source": null,
+      "DatasetCover": null,
+      "ScientificField": null,
+      "SubScientificField": null,
+      "Catalogues": []
+    }
+  },
+  "PageNumber": null,
+  "PageSize": null,
+  "TotalCount": null
+}

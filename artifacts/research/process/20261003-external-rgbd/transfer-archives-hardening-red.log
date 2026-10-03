@@ -1,0 +1,95 @@
+...................FF..F.......................F.                        [100%]
+=================================== FAILURES ===================================
+________ test_empty_completion_file_manifest_is_not_treated_as_success _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-150/test_empty_completion_file_man0')
+
+    def test_empty_completion_file_manifest_is_not_treated_as_success(tmp_path):
+        mod = archives()
+        path = make_tar(tmp_path)
+        destination = tmp_path / "raw"
+        mod.extract_archive([path], destination, minimum_free_bytes=0)
+        marker_path = destination / ".extraction-complete.json"
+        marker = json.loads(marker_path.read_text())
+        marker["files"] = []
+        marker_path.write_text(json.dumps(marker))
+>       with pytest.raises(RuntimeError, match="INCOMPLETE"):
+E       Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_external_rgbd_archives.py:186: Failed
+_______________ test_symlinked_published_parent_is_never_reused ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-150/test_symlinked_published_paren0')
+
+    def test_symlinked_published_parent_is_never_reused(tmp_path):
+        mod = archives()
+        path = make_tar(tmp_path)
+        destination = tmp_path / "raw"
+        mod.extract_archive([path], destination, minimum_free_bytes=0)
+        original = destination / "scene_0001"
+        relocated = tmp_path / "relocated"
+        original.rename(relocated)
+        original.symlink_to(relocated, target_is_directory=True)
+>       with pytest.raises(RuntimeError, match="INCOMPLETE"):
+E       Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_external_rgbd_archives.py:199: Failed
+______ test_declared_tar_expansion_cap_is_checked_before_skipping_payload ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-150/test_declared_tar_expansion_ca0')
+
+    def test_declared_tar_expansion_cap_is_checked_before_skipping_payload(tmp_path):
+        path = tmp_path / "synthetic_fixture.tar"
+        info = tarfile.TarInfo("huge.bin")
+        info.size = 1024**3
+        path.write_bytes(info.tobuf() + b"\0" * 1024)
+        with pytest.raises(RuntimeError, match="EXPANSION"):
+>           archives().inspect_archive([path], max_expanded_bytes=1024)
+
+tests/test_external_rgbd_archives.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:230: in inspect_archive
+    for info in archive:
+/usr/lib/python3.12/tarfile.py:2909: in __iter__
+    tarinfo = self.next()
+              ^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tarfile.TarFile object at 0x779c89f63e60>
+
+    def next(self):
+        """Return the next member of the archive as a TarInfo object, when
+           TarFile is opened for reading. Return None if there is no more
+           available.
+        """
+        self._check("ra")
+        if self.firstmember is not None:
+            m = self.firstmember
+            self.firstmember = None
+            return m
+    
+        # Advance the file pointer.
+        if self.offset != self.fileobj.tell():
+            if self.offset == 0:
+                return None
+            self.fileobj.seek(self.offset - 1)
+            if not self.fileobj.read(1):
+>               raise ReadError("unexpected end of data")
+E               tarfile.ReadError: unexpected end of data
+
+/usr/lib/python3.12/tarfile.py:2763: ReadError
+______ test_modelscope_verified_revision_cannot_escape_download_directory ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-150/test_modelscope_verified_revis0')
+
+    def test_modelscope_verified_revision_cannot_escape_download_directory(tmp_path):
+>       with pytest.raises(ValueError, match="revision"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_transfer.py:318: Failed
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_archives.py::test_empty_completion_file_manifest_is_not_treated_as_success
+FAILED tests/test_external_rgbd_archives.py::test_symlinked_published_parent_is_never_reused
+FAILED tests/test_external_rgbd_archives.py::test_declared_tar_expansion_cap_is_checked_before_skipping_payload
+FAILED tests/test_external_rgbd_transfer.py::test_modelscope_verified_revision_cannot_escape_download_directory
+4 failed, 45 passed in 1.22s

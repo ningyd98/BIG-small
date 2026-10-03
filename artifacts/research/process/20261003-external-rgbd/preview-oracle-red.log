@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________ test_oracle_preview_is_separate_from_original_rgb _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-169/test_oracle_preview_is_separat0')
+
+    def test_oracle_preview_is_separate_from_original_rgb(tmp_path):
+        from PIL import Image
+        mask_path=tmp_path/"visible.png"
+        Image.fromarray(np.array([[255,0],[0,0]],dtype=np.uint8)).save(mask_path)
+        sample=DatasetSample(dataset_id="synthetic_fixture",source_revision="a"*40,
+                             sample_kind="static_multiview_scene",source_file="test.png",
+                             relative_path="test.png",source_sha256="b"*64,frame_index=0,
+                             camera_id="top",official_split="train",
+                             rgb=np.zeros((2,2,3),dtype=np.uint8),
+                             depth_raw=np.ones((2,2),dtype=np.uint16),
+                             annotations={"instances":[{"instance_id":0,"obj_id":1,
+                                           "visible_mask":{"available":True,"path":str(mask_path)}}]})
+        report=save_preview(sample,tmp_path/"preview")
+>       assert report["oracle_overlay"]
+E       assert False
+
+tests/test_external_rgbd_deployment.py:215: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_deployment.py::test_oracle_preview_is_separate_from_original_rgb
+1 failed, 11 deselected in 0.49s

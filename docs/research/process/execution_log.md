@@ -104,3 +104,60 @@ T2 独立审查结论为 ready，未发现 Critical、Important 或实质 Minor�
 - [CLI审计](../../../artifacts/research/process/20261003-t6a/validation-cli-audit.json)确认导出800条train样本，其中562条负例；离线重建保留原采集时刻，RGB/depth字节一致，保留原始证据，`execution_verified=false`。
 - [1000组资源实测](../../../artifacts/research/process/20261003-t6a/validation-resources.json)：总计1,158,966,504字节，每组1,158,966.504字节；生成墙钟1331.885秒，CLI墙钟1332.669秒。按进程PID采样的显存观测峰值155 MiB（162,529,280字节）；0.5秒配置间隔加命令耗时可能漏过瞬时峰值，不作为连续峰值或绝对上限。
 - 下一就绪任务仅为T3/T4。T6a满足T5/T7/T8的数据前置；T5仍等待T4，T7仍等待T3/T5，T8仍等待T7。T6b保持TODO，10000组与教师整合未运行，等待T5/T8。未提交/推送，未调用VLM、训练模型、验收正式物理任务或启动真实硬件。
+
+## 2026-10-03 T4 控制器复验与 T5 离线教师验收
+
+T4 与 T6a 前置完成后实施 T5。只读逐物理步观察接口把场景、接触、关节及登记的33对自碰撞距离作为不可变快照交给独立评价器；教师只用离线真值形成显式目标，在线技能没有评价结果输入。新增失败反例先复现，再修复正常干扰物-桌面接触误报、沉降前悬空约8mm的抬升基线、非有限自碰撞距离、恢复未绑定评分源码版本和异常时丢失部分逐步证据。原 `datasets/rgbd-teacher-smoke` 20例保留为旧规则诊断，未覆写或伪装为新版验收。
+
+控制器单变量真实复现发现成功运动遗留目标使闭爪阶段 TCP 在同场景漂移79.32mm；成功后持位降至8.45mm。持物载荷下加入一次最多0.03rad的有界执行器目标补偿，实际最大0.01468rad，位置误差10.77→4.66mm；原5mm/5°及速度、加速度、超时门槛保持。T4 v2 正例显式增加0.5s post-lift稳定段，六类真实验收6/6 PASS、4358步；无额外持位的5/6失败轨迹另存。见[控制器因果复验](../../../artifacts/research/process/20261003-t4-physical-skills-v2/README.md)。触桌后自然失去右指末态接触的 PLACE 边界仍按原技能判据记录，不回流物体真值。
+
+新版 `datasets/rgbd-teacher-smoke-v2` 用协议和源码 SHA 指纹独立生成20/20例，结果7 `SUCCESS`、12 `FAILED`、1 `SAFETY_VIOLATION`；固定正例成功、固定无接触负例失败，只有7例 `execution_verified=true`。其104个动作帧及56,994个连续物理样本由[只读验证报告](../../../artifacts/research/process/20261003-t5-teacher-validation.json)逐例校验SHA、RGB-D帧链和独立 outcome，`valid=true, accepted=true, errors=[]`。跨T2/T4/T5/T6a合并回归251项通过，Ruff/mypy和独立复审通过；见[T5验收](../../../artifacts/research/process/20261003-t5-teacher-accepted/acceptance.md)。唯一限位事件按当前保守口径保留，不事后调整阈值。T5现为 `DONE`，这批离线开发冒烟不构成正式G1/在线视觉成功率；T3仍 `BLOCKED`，T7真实闭环尚不能验收，T6b仍等待T8预算。未提交/推送，未启动真实硬件。
+
+最终收尾再次运行只读轨迹验证器，20例均通过身份、散列、帧链和物理标签复算，结果仍为7/12/1、`errors=[]`；`tests/test_rgbd_teacher_validation.py` 与 `tests/test_rgbd_teacher_smoke.py` 合计17项通过（3.18秒）。12份入口/过程文档的211个本地链接均存在，`git diff --check` 通过。当前交接、项目状态与路线图已同步完成状态；历史日志保留原时点，不把 T3 阻塞改写为在线闭环成功。
+
+
+## 2026-10-03 T3 4B模型协议诊断、限定冻结与独立扩展
+
+在保留两候选原0/4失败报告的基础上，诊断确认同一Qwen3-VL 4B采用明确的normalized_1000坐标协议和简短完整的输出约束后可改善定位。本轮未训练、未更换更大模型、未下载新权重，推理仅经localhost直连且忽略代理。实现显式坐标回映、完整技能顺序、受限RGB-D顶抓TCP与批准资产校验；默认抓取配置unconfigured，未配置抓取标定时默认拒绝规划。离线实例检查只在真实输出之后用于评分，不向模型提供真值。
+
+新增失败反例先验证再修复：重复技能、表面点/TCP语义混用、默认配置误启用资产校准、逐次GPU证据不足、有效长度但错误的提示/schema/图像SHA、冻结落盘异常残留PASS。实际请求按指令、观测、冻结快照及schema重建对照；sidecar保存完整角色文本、显式和继承参数以及源码/资产指纹。只读加载验证核对快照、sidecar、报告SHA和当前源码。
+
+实际固定S01探针及只读复核命令：
+
+```bash
+MUJOCO_GL=egl .venv/bin/python scripts/probe_rgbd_model.py \
+  --config configs/research/model_qwen3vl_4b_normalized.yaml \
+  --output artifacts/research/process/20261003-t3-small-model-optimization/probe
+.venv/bin/python scripts/probe_rgbd_model.py --verify-frozen \
+  --output artifacts/research/process/20261003-t3-small-model-optimization/probe
+```
+
+真实320×240双图调用4/4通过，冻结包发布成功，复核返回VERIFIED；见[探针报告](../../../artifacts/research/process/20261003-t3-small-model-optimization/probe/probe-report.json)、[模型快照](../../../artifacts/research/process/20261003-t3-small-model-optimization/probe/model-frozen.json)与[冻结证据](../../../artifacts/research/process/20261003-t3-small-model-optimization/probe/model-frozen-evidence.json)。225项相关回归和6个source文件mypy通过，独立审查无阻断项；最终检查结果、冷/热时延及显存以[本轮验收](../../../artifacts/research/process/20261003-t3-small-model-optimization/acceptance.md)为准。T3按预先规定固定S01门槛记DONE，范围仅当前资产高5–10cm竖直方块，证据层级为SOFTWARE/REAL_CAPTURE/REAL_VLM，不包含物理动作执行或正式G1成功率。
+
+独立开发场景扩展与固定探针分开记账。第1批15/16符合判据（12/12有目标定位、3/4目标缺失明确拒绝），第2批14/16（11/12有目标定位、3/4目标缺失明确拒绝），合计29/32：定位23/24、明确拒绝6/8。两条缺失幻觉均被几何校验阻断，首批包含把机器人hand当目标的输出；另有一条有目标误拒绝，三条contract_step_count均为0。32个唯一scene/RGB，无error、missing或duplicate，all_cases_pass=false。未调阈值，不把几何阻断记为模型明确拒绝，也不把误拒绝冒充定位成功；逐例证据见本轮验收。历史0/4报告保留原结论。该次T3验收时T7前置满足，状态READY但尚未实现/验收；T8/T6b保持TODO。本轮未提交/推送，未启动真实硬件，历史PHASE12拒绝及权威论文运行数0不变。
+
+
+## 2026-10-04 T7 同 episode 在线闭环与收尾
+
+用户授权继续T7，在当前功能分支dirty工作区实施，未commit/push。完成借用capture ownership、同episode动作后新帧、统一三值在线条件、事件与有界路由、SafetyShield前后门禁、模型请求取消/超时控制、三种scope及独立DATASET_GENERATION。HTTP/WS共factory；研究入口以新MODEL_CONTROL_DB空profile消费BIGSMALL_VLM_FROZEN_DIR，不覆盖用户active profile。模型在[T7 model-probe](../../../artifacts/research/process/20261003-t7-visual-closed-loop/model-probe/)真实重探4/4并冻结；旧T3包及历史来源独立保留。
+
+共享vision/capture.py更新会影响旧T3/T5源码绑定，未追溯改写历史验收。[T5 preservation清单](../../../artifacts/research/process/20261003-t7-visual-closed-loop/t5-prerequisite-preservation.json)归档12份历史source，仅共享capture与现行不同，其余11份源码、控制器/教师/物理判据保持不变。
+
+第一版smoke的20例全部失败，34份source snapshot、22,147物理样本、105帧、33动作原样保留；[v1只读复算](../../../artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v1-validation.json)为valid=true、accepted=false。基于同一场景诊断修复时序色彩支持、遮挡深度边界、部分动作分母、初始急停和最短deadline，并增加0.6秒实际lift保持与新RGB-D稳定验证；diagnostic-03得到在线与独立物理成功。没有修改T4/T5物理判据来通过本批。
+
+冻结v2后运行同一批20 assignments，命令入口为：
+
+```bash
+MUJOCO_GL=egl .venv/bin/python scripts/run_rgbd_smoke.py \
+  --scope closed-loop --episodes 20 \
+  --config configs/research/visual_smoke.yaml \
+  --frozen-dir artifacts/research/process/20261003-t7-visual-closed-loop/model-probe \
+  --output artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v2
+```
+
+[v2摘要](../../../artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v2/summary.json)保留20/20：2正常成功、18失败、0blocked、0falsecompletion，正常2/12，全分配2/20（10%）。[独立复算](../../../artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v2-validation.json)覆盖34,353连续物理样本、154帧、52动作，valid=true、accepted=true、errors=[]。这是当前MuJoCo直立有色方块开发smoke，formal_g1=false；保留全部失败和未执行阶段，不能外推正式成功率。
+
+独立数据job真实生成1组，COMPLETE/SUCCEEDED、model_calls=0、task_success=false。阶段运行时95项、前置277项测试通过是当时证据，不是最终总数。最终取消/超时/租约与发布异常修复和454项回归已通过，T7为DONE，T8/T17a为READY，T6b为TODO；根任务已发布acceptance.md。10000组、正式G1、真实硬件均未运行。
+
+
+**T7 最终验收（2026-10-04）：DONE。** 最终 EGL 回归454 passed、1项已有依赖警告，30个源文件Ruff/mypy通过；独立runtime审查无开放P1/P2。真实worker复查1次模型调用、4动作后因抬升保持不足如实FAILED，归档无错误且终态一致。20场景仍为2成功/18失败，未扩大分母；非正式G1。T8/T17a为READY（未实施），T6b为TODO。详见[完整验收](../../../artifacts/research/process/20261003-t7-visual-closed-loop/acceptance.md)。

@@ -1,0 +1,96 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_materialization_preserves_partial_and_existing_output_before_storage_block[mask] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-201/test_materialization_preserves0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70be0012c770>
+kind = 'mask'
+
+    @pytest.mark.parametrize("kind", ["mask", "json"])
+    def test_materialization_preserves_partial_and_existing_output_before_storage_block(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+    ) -> None:
+        data = fixture(tmp_path)
+        if kind == "json":
+            data["record"]["detections"] = {"detections": []}
+            save_records(tmp_path, [data["record"]])
+        result = reader().materialize_curated_records(
+            tmp_path, REVISION, ["000000"], data["options"]
+        )
+        relative = next(
+            path for path in result["files"] if path.endswith(".png" if kind == "mask" else ".json")
+        )
+        existing = tmp_path / relative
+        original = existing.read_bytes()
+        partial = tmp_path / (relative + ".partial")
+        partial.write_bytes(b"existing interrupted write")
+>       monkeypatch.setattr(reader().shutil, "disk_usage", lambda path: SimpleNamespace(free=1000))
+                            ^^^^^^^^^^^^^^^
+E       AttributeError: module 'cloud_edge_robot_arm.datasets.external.fiftyone_curated' has no attribute 'shutil'
+
+tests/test_external_rgbd_curated.py:354: AttributeError
+_ test_materialization_preserves_partial_and_existing_output_before_storage_block[json] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-201/test_materialization_preserves1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70be02b6ff50>
+kind = 'json'
+
+    @pytest.mark.parametrize("kind", ["mask", "json"])
+    def test_materialization_preserves_partial_and_existing_output_before_storage_block(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+    ) -> None:
+        data = fixture(tmp_path)
+        if kind == "json":
+            data["record"]["detections"] = {"detections": []}
+            save_records(tmp_path, [data["record"]])
+        result = reader().materialize_curated_records(
+            tmp_path, REVISION, ["000000"], data["options"]
+        )
+        relative = next(
+            path for path in result["files"] if path.endswith(".png" if kind == "mask" else ".json")
+        )
+        existing = tmp_path / relative
+        original = existing.read_bytes()
+        partial = tmp_path / (relative + ".partial")
+        partial.write_bytes(b"existing interrupted write")
+>       monkeypatch.setattr(reader().shutil, "disk_usage", lambda path: SimpleNamespace(free=1000))
+                            ^^^^^^^^^^^^^^^
+E       AttributeError: module 'cloud_edge_robot_arm.datasets.external.fiftyone_curated' has no attribute 'shutil'
+
+tests/test_external_rgbd_curated.py:354: AttributeError
+________ test_materialization_checks_storage_again_during_chunked_write ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-201/test_materialization_checks_st0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70be02a20050>
+
+    def test_materialization_checks_storage_again_during_chunked_write(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        data = fixture(tmp_path)
+        capacity = iter([10**9, 0])
+        monkeypatch.setattr(
+>           reader().shutil, "disk_usage", lambda path: SimpleNamespace(free=next(capacity))
+            ^^^^^^^^^^^^^^^
+        )
+E       AttributeError: module 'cloud_edge_robot_arm.datasets.external.fiftyone_curated' has no attribute 'shutil'
+
+tests/test_external_rgbd_curated.py:369: AttributeError
+_____ test_materialization_reserve_parameter_requires_nonnegative_integer ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-201/test_materialization_reserve_p0')
+
+    def test_materialization_reserve_parameter_requires_nonnegative_integer(tmp_path: Path) -> None:
+        fixture(tmp_path)
+        with pytest.raises(ValueError, match="minimum_free_bytes"):
+>           reader().materialize_curated_records(
+                tmp_path, REVISION, ["000000"], minimum_free_bytes=-1
+            )
+E           TypeError: materialize_curated_records() got an unexpected keyword argument 'minimum_free_bytes'
+
+tests/test_external_rgbd_curated.py:382: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_curated.py::test_materialization_preserves_partial_and_existing_output_before_storage_block[mask]
+FAILED tests/test_external_rgbd_curated.py::test_materialization_preserves_partial_and_existing_output_before_storage_block[json]
+FAILED tests/test_external_rgbd_curated.py::test_materialization_checks_storage_again_during_chunked_write
+FAILED tests/test_external_rgbd_curated.py::test_materialization_reserve_parameter_requires_nonnegative_integer
+4 failed, 35 deselected in 0.15s

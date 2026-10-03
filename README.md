@@ -12,7 +12,9 @@ BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制�
 
 ## 2. 当前状态
 
-2026-10-03 已完成 RGB-D 改造首批 P1（来源审计、同步视觉/深度采集），88 项阶段合并回归通过。开发按[任务依赖](docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)推进，实际状态、命令和证据见[过程文档](docs/research/process/README.md)及[当前权威状态](docs/current_authoritative_status.md)。本轮尚未产生新的正式研究结果。
+2026-10-03 RGB-D 路线的 T1/T2/T3/T6a/T4/T5 已分别完成验收。T3 通过坐标协议、提示和顶抓几何适配，已将本地 Qwen3-VL 4B 的固定场景双图定位从 0/4 提升至 4/4，并冻结配置；范围限当前资产的竖直方块规划，独立场景中的拒答失败仍完整保留，见[T3 优化验收](artifacts/research/process/20261003-t3-small-model-optimization/acceptance.md)。T5 的20例离线教师为7成功、12失败、1安全违规。截至 2026-10-04，T7 在线视觉闭环为 `DONE`：v2 同 20 个预分配场景全保留，2 成功、18 失败、0 blocked、0 false completion（正常 2/12、全分配 10%）；[独立复算](artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v2-validation.json)核对 34,353 个物理样本、154 帧、52 动作，valid/accepted=true。最终454项回归及30个源文件Ruff/mypy通过，T8/T17a 为 `READY`，T6b 保持 `TODO`。该结果限当前 MuJoCo 直立有色方块的开发 smoke，不是正式 G1；[使用说明](docs/rgbd_visual_closed_loop.md)与 [T7 证据目录](artifacts/research/process/20261003-t7-visual-closed-loop/)分别记录入口和完整失败证据。开发按[任务依赖](docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)推进，范围以[当前权威状态](docs/current_authoritative_status.md)为准。
+
+第三方真实 RGB-D 精选已可用：魔搭 `Voxel51/graspclutter6d` 的 10 个场景、40 帧四相机数据完成校验、5 组预览与 CPU 0/2 worker 读取，状态为 `CURATED_RGBD_VERIFIED`。约 754 MiB 的来源文件通过物理网卡大陆直连下载，深度单位为毫米；精选导出缺少相机内参，不能生成可靠点云。见[精选使用说明](docs/rgbd_curated_quickstart.md)和[实际验收](artifacts/research/process/20261003-curated-rgbd/acceptance.md)。原 RoboMIND 完整目标仍为 `BLOCKED_BUDGET`，原 GraspClutter6D 完整归档仍为 `BLOCKED_NETWORK`，两者均未升级验收。
 
 以下是 2026-10-02 Ubuntu 本机验收快照；原分支成果及其原 verifier 状态保留在 [历史与当前状态](docs/current_authoritative_status.md)，完整证据范围见 [Ubuntu 交接报告](docs/handover/ubuntu_deployment_report.md)。
 
@@ -46,7 +48,7 @@ Phase12 的 runtime-completed 包括 Mock、synthetic dry-run 和 planner dry-ru
 - **仿真工作台**：Phase 11 提供 S01-S15 场景浏览、配置编辑、Batch、Sweep、多 seed、模式比较、跨后端比较、实时监控、指标分析、复现和导出。
 - **仿真运行时**：Phase 11.1 提供异步队列、SQLite 持久化、worker lease、cancel、timeout、retry、恢复、持久 WebSocket replay 和 MuJoCo runtime acceptance。
 - **Sim2Real 工具链**：支持 per-parameter domain randomization、MuJoCo `MjSpec` 动态模型参数、Isaac Lab 对等随机化计划、Rerun 轨迹/传感器对齐 Viewer，以及自动生成 Sim/Real gap report；同一份 run manifest、seed 和参数样本用于两套仿真后端与分析产物溯源；配置取值一致不等于两个后端已经实际应用了所有参数。
-- **模型控制中心**：Phase 11.2 提供 Planner profile、secret 安全、endpoint policy、Ollama 管理和 planner dry-run；本地模型 runtime 尚未接受。
+- **模型控制中心**：Phase 11.2 提供 Planner profile、secret 安全、endpoint policy、Ollama 管理和 planner dry-run；旧 Phase 11.2 verifier 未验收真实 runtime。本机 Ollama/Qwen3.5 文本与单图另已验收；T3 已另行冻结 Qwen3-VL 4B 的限定 RGB-D 规划配置；T7 使用新目录重探 4/4 后的冻结包接入在线执行，当前仍待最终 runtime 回归验收。
 - **最终评估**：Phase 12 提供 RQ1-RQ7、F01-F20、统计分析、图表、表格、论文素材和答辩包导出。Phase 12.2 clean validation 将 validation profile 接入 actual software runners，并把 synthetic smoke 数据排除出论文统计；本机 full 已运行，验收 REJECTED，当前不能形成最终论文统计结论。
 - **真机安全准备**：Phase 10 提供配置门禁、HardwareExecutionGate、OperatorConfirmation 和分级验收。
 
@@ -81,6 +83,21 @@ flowchart LR
 完整架构、时序图和边界说明见 [docs/architecture.md](docs/architecture.md)。
 
 ## 5. 快速开始
+
+### 第三方 RGB-D 数据入口
+
+新增三套来源已接入统一 reader：IndustryShapes 370 对、MicroAGI01 108 对、VINS-RGBD 973 对，共 1,451 对，支持固定来源核验、全帧校验、索引、CPU 0/2 worker、预览和离线回放。此次转换全部离线；原件约 927 MiB，保持已有大陆物理直连下载约束。Industry 官方 test 保持不变，另有 553 帧缺镜像文件；VINS 最后一张 RGB 未配对，包内内参和已核准深度单位缺失。命令见[统一读取说明](docs/rgbd_additional_readers.md)，证据见[读取器验收](artifacts/research/process/20261003-additional-rgbd-readers/acceptance.md)，原件获取见[下载说明](docs/rgbd_additional_downloads.md)。
+
+数据工具使用独立 `.venv-data`，默认目录为 `$HOME/datasets/BIGsmall`，详细安装、预算与续传步骤见[部署说明](docs/rgbd_datasets_deployment.md)。本机从项目根目录使用已验收的精选集：
+
+```bash
+python3.12 -m venv .venv-data
+.venv-data/bin/python -m pip install -e ".[rgbd-data]"
+.venv-data/bin/python scripts/rgbd_data.py doctor
+.venv-data/bin/python scripts/rgbd_data.py status --dataset graspclutter6d_curated
+.venv-data/bin/python scripts/rgbd_data.py smoke --dataset graspclutter6d_curated --profile curated --num-workers 2
+.venv-data/bin/python scripts/rgbd_data.py deploy --dataset graspclutter6d_curated --profile curated --num-workers 2
+```
 
 ### 5.0 Ubuntu 模拟设备开发
 
@@ -224,3 +241,6 @@ Simulation Workbench、Simulation Runtime、Model Control Center、Phase 12 Fina
 ## 9. 项目用途
 
 本仓库用于云边协同机械臂控制系统的研究、仿真验证、运行证据管理和真实硬件接入前安全门禁建设。仓库当前没有新增许可证声明；使用边界以本 README、文档和配置中的安全说明为准。
+
+
+**T7 最终验收（2026-10-04）：DONE。** 最终 EGL 回归454 passed、1项已有依赖警告，30个源文件Ruff/mypy通过；独立runtime审查无开放P1/P2。真实worker复查1次模型调用、4动作后因抬升保持不足如实FAILED，归档无错误且终态一致。20场景仍为2成功/18失败，未扩大分母；非正式G1。T8/T17a为READY（未实施），T6b为TODO。详见[完整验收](artifacts/research/process/20261003-t7-visual-closed-loop/acceptance.md)。

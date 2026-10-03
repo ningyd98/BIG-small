@@ -1,0 +1,288 @@
+......FF.FF                                                              [100%]
+=================================== FAILURES ===================================
+_______________ test_smoke_rejects_synthetic_index_as_real_data ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b2913976ed0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_smoke_rejects_synthetic_i0')
+
+    def test_smoke_rejects_synthetic_index_as_real_data(monkeypatch, tmp_path):
+        from cloud_edge_robot_arm.datasets.external import deployment
+    
+        sample = DatasetSample(
+            dataset_id="robomind",
+            source_revision="a" * 40,
+            sample_kind="trajectory_observation",
+            source_file="test.h5",
+            relative_path="test.h5",
+            source_sha256="b" * 64,
+            frame_index=0,
+            camera_id="top",
+            official_split="train",
+            rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+            depth_raw=np.ones((2, 2), dtype=np.uint16),
+            metadata={"sample_provenance": "synthetic_fixture"},
+        )
+        path = deployment.index_path(tmp_path, "robomind")
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"dataset_id": "robomind"}) + "\n")
+        monkeypatch.setattr(deployment, "read_sample", lambda _: sample)
+>       monkeypatch.setattr(deployment, "_verify_raw_marker", lambda _: {})
+E       AttributeError: <module 'cloud_edge_robot_arm.datasets.external.deployment' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/datasets/external/deployment.py'> has no attribute '_verify_raw_marker'
+
+tests/test_external_rgbd_deployment.py:88: AttributeError
+________ test_discovery_preserves_file_quarantine_even_when_all_invalid ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b29139c46b0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_discovery_preserves_file_0')
+
+    def test_discovery_preserves_file_quarantine_even_when_all_invalid(monkeypatch, tmp_path):
+        from cloud_edge_robot_arm.datasets.external import deployment, robomind
+    
+        raw = tmp_path / "raw/robomind"
+        raw.mkdir(parents=True)
+        (raw / "COMPLETE.json").write_text("{}")
+    
+        def fail_discovery(root, revision, metadata):
+            metadata["quarantine"] = [{"source_file": "broken.h5", "reason": "empty depth"}]
+            raise ValueError("no valid trajectories")
+    
+        monkeypatch.setattr(robomind, "discover_robomind_samples", fail_discovery)
+>       monkeypatch.setattr(deployment, "_verify_raw_marker", lambda _: {})
+E       AttributeError: <module 'cloud_edge_robot_arm.datasets.external.deployment' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/datasets/external/deployment.py'> has no attribute '_verify_raw_marker'
+
+tests/test_external_rgbd_deployment.py:112: AttributeError
+_____________ test_wrong_raw_revision_cannot_be_relabelled_by_plan _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_wrong_raw_revision_cannot0')
+
+    def test_wrong_raw_revision_cannot_be_relabelled_by_plan(tmp_path):
+        from cloud_edge_robot_arm.datasets.external.deployment import discover
+        raw=tmp_path/"raw/robomind"
+        raw.mkdir(parents=True)
+        (raw/"COMPLETE.json").write_text(json.dumps({"identity":{"revision":"a"*40}}))
+        with pytest.raises(ValueError,match="identity"):
+>           discover({"dataset_id":"robomind","data_root":str(tmp_path),"revision":"b"*40,
+                      "source":"modelscope","files":[]})
+
+tests/test_external_rgbd_deployment.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/deployment.py:199: in discover
+    return discover_robomind_samples(root, plan["revision"], metadata)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_wrong_raw_revision_cannot0/raw/robomind')
+source_revision = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+metadata = {'quarantine': []}
+
+    def discover_robomind_samples(
+        root: Path, source_revision: str, metadata: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        """索引真实轨迹；文件级异常隔离，帧解码由后续校验惰性执行。"""
+        revision = _revision(source_revision)
+        root = root.resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(f"RoboMIND dataset directory is missing: {root}")
+        metadata = metadata if metadata is not None else {}
+        quarantine = metadata.setdefault("quarantine", [])
+        if not isinstance(quarantine, list):
+            raise ValueError("metadata quarantine must be a list")
+        sample_metadata = {key: value for key, value in metadata.items() if key != "quarantine"}
+        references: list[dict[str, Any]] = []
+        candidates = sorted({*root.rglob("trajectory.hdf5"), *root.rglob("trajectory.h5")})
+        for file in candidates:
+            try:
+                if file.is_symlink() or not file.resolve().is_relative_to(root):
+                    raise ValueError("source trajectory symlink/path escape is forbidden")
+                # 实际原始目录可能省略 embodiment 层；遇到明确其他机器人目录必须拒绝。
+                if any(
+                    part.startswith("h5_") and part != "h5_franka_1rgb"
+                    for part in file.relative_to(root).parts
+                ):
+                    raise ValueError("trajectory is outside the requested h5_franka_1rgb subset")
+                relative = file.relative_to(root)
+                task, episode, split = _identity(relative)
+                digest = _sha256(file)
+                with h5py.File(file, "r") as h5:
+                    frames = _validate_trajectory(h5)
+                    local_metadata = dict(sample_metadata)
+                    if bool(h5.attrs.get("synthetic_fixture", False)):
+                        local_metadata["sample_provenance"] = "synthetic_fixture"
+                references.extend(
+                    {
+                        "dataset_id": "robomind",
+                        "source_revision": revision,
+                        "source_file": str(file.resolve()),
+                        "source_root": str(root),
+                        "relative_path": relative.as_posix(),
+                        "source_sha256": digest,
+                        "frame_index": frame,
+                        "camera_id": "camera_top",
+                        "episode_id": episode,
+                        "task_id": task,
+                        "official_split": split,
+                        "episode_length": frames,
+                        "metadata": dict(local_metadata),
+                    }
+                    for frame in range(frames)
+                )
+            except (ValueError, OSError, KeyError, RuntimeError) as exc:
+                quarantine.append(
+                    {
+                        "source_file": str(file),
+                        "reason": str(exc),
+                        "scope": "trajectory",
+                        "status": "QUARANTINED",
+                    }
+                )
+        if not references:
+>           raise ValueError("no valid real Franka trajectory was found in the dataset")
+E           ValueError: no valid real Franka trajectory was found in the dataset
+
+src/cloud_edge_robot_arm/datasets/external/robomind.py:158: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_wrong_raw_revision_cannot0')
+
+    def test_wrong_raw_revision_cannot_be_relabelled_by_plan(tmp_path):
+        from cloud_edge_robot_arm.datasets.external.deployment import discover
+        raw=tmp_path/"raw/robomind"
+        raw.mkdir(parents=True)
+        (raw/"COMPLETE.json").write_text(json.dumps({"identity":{"revision":"a"*40}}))
+>       with pytest.raises(ValueError,match="identity"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'identity'
+E        Input: 'no valid real Franka trajectory was found in the dataset'
+
+tests/test_external_rgbd_deployment.py:134: AssertionError
+_______ test_interrupted_bundle_assembly_rolls_forward_without_reextract _______
+
+destination = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_interrupted_bundle_assemb0/raw/.robomind-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.partial/.bundles/0')
+binding = {'archive_hashes': [{'path': '/tmp/pytest-of-ningyd/pytest-164/test_interrupted_bundle_assemb0/downloads/robomind/mode... 'sha256': '2ed6f4d58019ced9e45658de14c029072dd9fa995d8201a2fe69f9a0249528d2', 'size': 125}], 'selected_members': None}
+chosen = [{'path': 'data/a.txt', 'size': 1, 'source_name': 'data/a.txt', 'type': 'file'}, {'path': 'data/b.txt', 'size': 1, 'source_name': 'data/b.txt', 'type': 'file'}]
+
+    def _reused(
+        destination: Path,
+        binding: dict[str, Any],
+        chosen: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        marker = destination / _COMPLETE_MARKER
+        if destination.is_symlink() or marker.is_symlink() or not marker.is_file():
+            raise RuntimeError("INCOMPLETE: existing destination has no trusted completion marker")
+        try:
+            record = json.loads(marker.read_text())
+            if any(record.get(key) != value for key, value in binding.items()):
+                raise ValueError("archive or selection mismatch")
+            expected = {member["path"]: member["size"] for member in chosen if member["type"] == "file"}
+            recorded = {file["path"]: file["size"] for file in record["files"]}
+            if recorded != expected or len(recorded) != len(record["files"]):
+                raise ValueError("published file manifest does not match selected archive members")
+            for file in record["files"]:
+                relative = _member_path(file["path"])
+                path = destination / relative
+                if any(parent.is_symlink() for parent in path.parents if parent != destination.parent):
+                    raise ValueError("published symlink parent")
+                if (
+                    path.is_symlink()
+                    or not path.is_file()
+                    or path.stat().st_size != file["size"]
+                    or hash_file(path) != file["sha256"]
+                ):
+>                   raise ValueError("published HASH mismatch")
+E                   ValueError: published HASH mismatch
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:452: ValueError
+
+The above exception was the direct cause of the following exception:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b2910a4e3f0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_interrupted_bundle_assemb0')
+
+    def test_interrupted_bundle_assembly_rolls_forward_without_reextract(monkeypatch,tmp_path):
+        import hashlib
+        import io
+        import tarfile
+        from pathlib import Path
+        from cloud_edge_robot_arm.datasets.external.deployment import extract_dataset
+        directory=tmp_path/"downloads/robomind/modelscope"/("a"*40)
+        directory.mkdir(parents=True)
+        archive=directory/"fixture.tar.gz"
+        with tarfile.open(archive,"w:gz") as tar:
+            for name in ("data/a.txt","data/b.txt"):
+                info=tarfile.TarInfo(name);info.size=1
+                tar.addfile(info,io.BytesIO(b"x"))
+        plan={"data_root":str(tmp_path),"dataset_id":"robomind","source":"modelscope",
+              "revision":"a"*40,"minimum_free_bytes":0,"sample_provenance":"synthetic_fixture",
+              "files":[{"path":archive.name,"size":archive.stat().st_size,
+                        "sha256":hashlib.sha256(archive.read_bytes()).hexdigest()}]}
+        original=Path.replace
+        moved=[]
+        def interrupt(path,target):
+            if path.name=="b.txt" and ".bundles" in str(path):
+                raise OSError("synthetic interruption during assembly")
+            result=original(path,target)
+            if path.name=="a.txt":moved.append(str(target))
+            return result
+        monkeypatch.setattr(Path,"replace",interrupt)
+        with pytest.raises(OSError,match="interruption"):
+            extract_dataset(plan)
+        assert len(moved)==1
+        assert not (tmp_path/"raw/robomind/COMPLETE.json").exists()
+        monkeypatch.setattr(Path,"replace",original)
+>       result=extract_dataset(plan)
+               ^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_deployment.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/deployment.py:446: in extract_dataset
+    report = extract_archive(
+src/cloud_edge_robot_arm/datasets/external/archives.py:478: in extract_archive
+    return _reused(destination, binding, chosen)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+destination = PosixPath('/tmp/pytest-of-ningyd/pytest-164/test_interrupted_bundle_assemb0/raw/.robomind-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.partial/.bundles/0')
+binding = {'archive_hashes': [{'path': '/tmp/pytest-of-ningyd/pytest-164/test_interrupted_bundle_assemb0/downloads/robomind/mode... 'sha256': '2ed6f4d58019ced9e45658de14c029072dd9fa995d8201a2fe69f9a0249528d2', 'size': 125}], 'selected_members': None}
+chosen = [{'path': 'data/a.txt', 'size': 1, 'source_name': 'data/a.txt', 'type': 'file'}, {'path': 'data/b.txt', 'size': 1, 'source_name': 'data/b.txt', 'type': 'file'}]
+
+    def _reused(
+        destination: Path,
+        binding: dict[str, Any],
+        chosen: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        marker = destination / _COMPLETE_MARKER
+        if destination.is_symlink() or marker.is_symlink() or not marker.is_file():
+            raise RuntimeError("INCOMPLETE: existing destination has no trusted completion marker")
+        try:
+            record = json.loads(marker.read_text())
+            if any(record.get(key) != value for key, value in binding.items()):
+                raise ValueError("archive or selection mismatch")
+            expected = {member["path"]: member["size"] for member in chosen if member["type"] == "file"}
+            recorded = {file["path"]: file["size"] for file in record["files"]}
+            if recorded != expected or len(recorded) != len(record["files"]):
+                raise ValueError("published file manifest does not match selected archive members")
+            for file in record["files"]:
+                relative = _member_path(file["path"])
+                path = destination / relative
+                if any(parent.is_symlink() for parent in path.parents if parent != destination.parent):
+                    raise ValueError("published symlink parent")
+                if (
+                    path.is_symlink()
+                    or not path.is_file()
+                    or path.stat().st_size != file["size"]
+                    or hash_file(path) != file["sha256"]
+                ):
+                    raise ValueError("published HASH mismatch")
+            return {**record, "status": "REUSED", "destination": str(destination)}
+        except (ValueError, KeyError, TypeError) as exc:
+>           raise RuntimeError("INCOMPLETE: completion marker or published HASH mismatch") from exc
+E           RuntimeError: INCOMPLETE: completion marker or published HASH mismatch
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:455: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_deployment.py::test_smoke_rejects_synthetic_index_as_real_data
+FAILED tests/test_external_rgbd_deployment.py::test_discovery_preserves_file_quarantine_even_when_all_invalid
+FAILED tests/test_external_rgbd_deployment.py::test_wrong_raw_revision_cannot_be_relabelled_by_plan
+FAILED tests/test_external_rgbd_deployment.py::test_interrupted_bundle_assembly_rolls_forward_without_reextract
+4 failed, 7 passed in 0.57s

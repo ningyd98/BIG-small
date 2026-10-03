@@ -1,0 +1,34 @@
+........FF.......F                                                       [100%]
+=================================== FAILURES ===================================
+__________________________ test_empty_rgb_is_rejected __________________________
+
+    def test_empty_rgb_is_rejected():
+>       with pytest.raises(ValueError, match="nonempty"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_models.py:99: Failed
+_________ test_robot_base_requires_depth_geometry_and_camera_transform _________
+
+    def test_robot_base_requires_depth_geometry_and_camera_transform():
+        transform = {"matrix": np.eye(4).tolist(), "from_frame": "object_model",
+                     "to_frame": "robot_base", "translation_unit": "m"}
+>       assert not sample(transforms={"object_to_base": transform}).capabilities["robot_base_geometry"]
+E       assert not True
+
+tests/test_external_rgbd_models.py:111: AssertionError
+______________ test_same_episode_name_in_two_tasks_does_not_merge ______________
+
+    def test_same_episode_name_in_two_tasks_does_not_merge():
+        rows = [{**ref("same", frame), "task_id": task, "source_file": f"/{task}.h5"}
+                for task in ("task_a", "task_b") for frame in range(3)]
+        windows = time_windows(rows, length=2)
+>       assert len(windows) == 4
+E       AssertionError: assert 2 == 4
+E        +  where 2 = len([[{'camera_id': 'top', 'dataset_id': 'synthetic_fixture', 'episode_id': 'same', 'frame_index': 0, ...}, {'camera_id': ...index': 1, ...}, {'camera_id': 'top', 'dataset_id': 'synthetic_fixture', 'episode_id': 'same', 'frame_index': 2, ...}]])
+
+tests/test_external_rgbd_integration.py:91: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_models.py::test_empty_rgb_is_rejected - Faile...
+FAILED tests/test_external_rgbd_models.py::test_robot_base_requires_depth_geometry_and_camera_transform
+FAILED tests/test_external_rgbd_integration.py::test_same_episode_name_in_two_tasks_does_not_merge
+3 failed, 15 passed in 0.16s

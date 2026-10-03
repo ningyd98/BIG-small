@@ -1,0 +1,45 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_concurrent_process_cannot_overwrite_shared_budget_ledger _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-156/test_concurrent_process_cannot0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77dc239b0c80>
+
+    def test_concurrent_process_cannot_overwrite_shared_budget_ledger(tmp_path, monkeypatch):
+        import fcntl
+    
+        mod = transfer()
+        fake_hf(monkeypatch)
+        directory = tmp_path / "manifests"
+        directory.mkdir()
+        with (directory / ".download-ledger.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+>           with pytest.raises(RuntimeError, match="BUSY"):
+E           Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_external_rgbd_transfer.py:356: Failed
+______________ test_https_download_refuses_redirect_to_plain_http ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-156/test_https_download_refuses_re0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77dc233bd9d0>
+
+    def test_https_download_refuses_redirect_to_plain_http(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+    
+        def serve(request):
+            if request.url.host == "huggingface.co":
+                return httpx.Response(302, headers={"location": "http://cdn.example.test/file"})
+            return httpx.Response(200, content=b"rgbd01")
+    
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+>       with pytest.raises(RuntimeError, match="TLS"):
+E       Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_external_rgbd_transfer.py:372: Failed
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_transfer.py::test_concurrent_process_cannot_overwrite_shared_budget_ledger
+FAILED tests/test_external_rgbd_transfer.py::test_https_download_refuses_redirect_to_plain_http
+2 failed in 0.27s

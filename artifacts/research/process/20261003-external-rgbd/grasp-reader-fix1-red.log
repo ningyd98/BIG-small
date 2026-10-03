@@ -1,0 +1,20 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_different_rgb_depth_size_disables_alignment _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-152/test_different_rgb_depth_size_0')
+
+    def test_different_rgb_depth_size_disables_alignment(tmp_path: Path) -> None:
+        scene = fixture_scene(tmp_path)
+        Image.fromarray(np.ones((2, 2), dtype=np.uint16)).save(scene / "depth" / "000001.png")
+        sample = read_grasp_sample(refs(tmp_path)[0])
+        assert sample.rgb_depth_aligned is False
+        assert sample.K_rgb is not None
+>       assert sample.K_depth is None
+E       AssertionError: assert array([[100.,   0.,   2.],\n       [  0., 100.,   1.],\n       [  0.,   0.,   1.]]) is None
+E        +  where array([[100.,   0.,   2.],\n       [  0., 100.,   1.],\n       [  0.,   0.,   1.]]) = DatasetSample(dataset_id='graspclutter6d', source_revision='973a567efa2f8047e5a40c9113a672e8215bcc1b', sample_kind='st...'grasp_evaluation_available': False, 'temporal_note': 'image IDs identify camera/viewpoint, not robot execution time'}).K_depth
+
+tests/test_external_rgbd_graspclutter.py:161: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_graspclutter.py::test_different_rgb_depth_size_disables_alignment
+1 failed, 24 deselected in 0.14s

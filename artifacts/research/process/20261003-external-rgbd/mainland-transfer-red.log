@@ -1,0 +1,31 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_mainland_source_block_prevents_network_without_discarding_partials ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-174/test_mainland_source_block_pre0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x733f5159ed50>
+
+    def test_mainland_source_block_prevents_network_without_discarding_partials(tmp_path, monkeypatch):
+        mod = transfer()
+        calls = fake_hf(monkeypatch)
+        plan = make_plan(
+            tmp_path,
+            network={
+                "mode": "direct",
+                "interface": "enp7s0",
+                "dns_servers": ["223.5.5.5"],
+                "allowed_hosts": [],
+                "blocked_reason": "No verified mainland file mirror",
+            },
+        )
+        report = mod.plan_budget(plan, free_bytes=100)
+>       assert report["status"] == "BLOCKED_NETWORK"
+E       AssertionError: assert 'READY' == 'BLOCKED_NETWORK'
+E         
+E         - BLOCKED_NETWORK
+E         + READY
+
+tests/test_external_rgbd_transfer.py:546: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_transfer.py::test_mainland_source_block_prevents_network_without_discarding_partials
+1 failed, 35 deselected in 0.14s

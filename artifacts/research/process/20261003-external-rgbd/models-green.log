@@ -1,0 +1,54 @@
+...F.F..                                                                 [100%]
+=================================== FAILURES ===================================
+______________ test_metric_depth_needs_evidence_and_masks_invalid ______________
+
+    def test_metric_depth_needs_evidence_and_masks_invalid():
+        raw = np.array([[0, 1500, np.nan, np.inf, -1]], dtype=np.float32)
+        missing, mask = metric_depth(raw, None, None)
+        assert missing is None
+        assert mask.tolist() == [[False, True, False, False, False]]
+        metres, _ = metric_depth(raw, .001, "official BOP depth_scale=1")
+        assert metres.dtype == np.float32
+>       np.testing.assert_array_equal(metres, [[0, 1.5, 0, 0, 0]])
+E       AssertionError: 
+E       Arrays are not equal
+E       
+E       Mismatched elements: 1 / 5 (20%)
+E       Mismatch at index:
+E        [0, 1]: 1.5000001192092896 (ACTUAL), 1.5 (DESIRED)
+E       Max absolute difference among violations: 1.1920929e-07
+E       Max relative difference among violations: 7.94728597e-08
+E        ACTUAL: array([[0. , 1.5, 0. , 0. , 0. ]], dtype=float32)
+E        DESIRED: array([[0. , 1.5, 0. , 0. , 0. ]])
+
+tests/test_external_rgbd_models.py:59: AssertionError
+____________ test_backprojection_requires_corresponding_intrinsics _____________
+
+    def test_backprojection_requires_corresponding_intrinsics():
+        item = sample(depth_scale_m=.001, depth_scale_evidence="fixture explicit mm")
+        with pytest.raises(ValueError, match="intrinsics"):
+            backproject_depth(item)
+        calibrated = sample(depth_scale_m=.001, depth_scale_evidence="fixture explicit mm",
+                            K_depth=np.array([[2, 0, 1], [0, 2, 1], [0, 0, 1]], dtype=float))
+>       assert backproject_depth(calibrated).shape == (6, 3)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_models.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sample = DatasetSample(dataset_id='synthetic_fixture', source_revision='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', sample_kind=...dence=None, temporal_alignment=None, temporal_evidence=None, transforms={}, robot_state=None, action=None, metadata={})
+
+    def backproject_depth(sample: DatasetSample, *, with_rgb: bool = False) -> np.ndarray:
+        if sample.depth_m is None:
+            raise ValueError("metric depth requires verified units")
+        if sample.K_depth is None:
+            raise ValueError("depth camera intrinsics are unavailable")
+        if sample.depth_semantics != "optical_z":
+>           raise ValueError("depth optical-z semantics must be verified")
+E           ValueError: depth optical-z semantics must be verified
+
+src/cloud_edge_robot_arm/datasets/external/models.py:185: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_models.py::test_metric_depth_needs_evidence_and_masks_invalid
+FAILED tests/test_external_rgbd_models.py::test_backprojection_requires_corresponding_intrinsics
+2 failed, 6 passed in 0.12s

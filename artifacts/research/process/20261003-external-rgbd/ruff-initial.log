@@ -1,0 +1,263 @@
+E501 Line too long (108 > 100)
+  --> scripts/rgbd_data.py:31:86
+   |
+29 |     parser.add_argument("--config", type=Path)
+30 |     parser.add_argument("--num-workers", type=int, default=0)
+31 |     parser.add_argument("--offline", action="store_true", help="doctor不联网；其他命令不得借此替代真实数据")
+   |                                                                                                     ^^^^^^^^
+32 |     args = parser.parse_args(argv)
+33 |     root = data_root(args.data_root)
+   |
+
+E501 Line too long (102 > 100)
+  --> scripts/rgbd_data.py:48:101
+   |
+46 |                 exit_code = 3
+47 |         except KeyboardInterrupt:
+48 |             update_status(root, dataset, download_status="INTERRUPTED", verified_scope="NOT_VERIFIED",
+   |                                                                                                     ^^
+49 |                           reason="User cancellation; persistent partial files retained")
+50 |             print(json.dumps({"dataset_id": dataset, "status": "INTERRUPTED"}))
+   |
+
+E501 Line too long (101 > 100)
+  --> scripts/rgbd_data.py:59:101
+   |
+57 |                 blocked = "BLOCKED_NETWORK"
+58 |             failed = blocked or "FAILED"
+59 |             results[dataset] = {"status": failed, "error_type": type(exc).__name__, "reason": detail}
+   |                                                                                                     ^
+60 |             update_status(root, dataset, deployment_status=failed, reason=detail,
+61 |                           **({"download_status": failed} if args.command in {"download", "deploy"} else {}))
+   |
+
+E501 Line too long (108 > 100)
+  --> scripts/rgbd_data.py:61:101
+   |
+59 |             results[dataset] = {"status": failed, "error_type": type(exc).__name__, "reason": detail}
+60 |             update_status(root, dataset, deployment_status=failed, reason=detail,
+61 |                           **({"download_status": failed} if args.command in {"download", "deploy"} else {}))
+   |                                                                                                     ^^^^^^^^
+62 |             exit_code = max(exit_code, 3 if blocked else 2)
+63 |     print(json.dumps(results, ensure_ascii=False, indent=2, default=str))
+   |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:102:101
+    |
+100 |                 sources[name] = {"error_type": type(exc).__name__, "status": "BLOCKED_NETWORK"}
+101 |     return {"os": platform.platform(), "python": sys.version, "executable": sys.executable,
+102 |             "cpu_count": os.cpu_count(), "meminfo": Path("/proc/meminfo").read_text().splitlines()[:3],
+    |                                                                                                     ^^^
+103 |             "gpu": gpu, "data_root": str(root), "write_permission": os.access(probe, os.W_OK),
+104 |             "free_bytes": disk.free, "free_inodes": os.statvfs(probe).f_favail,
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:127:101
+    |
+125 |     download_dir = root / "downloads" / dataset
+126 |     result["partial_files"] = [{"path": str(p), "bytes": p.stat().st_size}
+127 |                                for p in download_dir.rglob("*.part")] if download_dir.exists() else []
+    |                                                                                                     ^^
+128 |     return result
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:177:101
+    |
+175 |             for name, available in sample.capabilities.items():
+176 |                 totals[name] = totals.get(name, 0) + int(available)
+177 |             ref["content_sha256"] = hashlib.sha256(sample.rgb.tobytes()+sample.depth_raw.tobytes()).hexdigest()
+    |                                                                                                     ^^^^^^^^^^^
+178 |             ref["quality"] = {"capabilities": sample.capabilities,
+179 |                               "valid_ratio": float(sample.depth_valid_mask.mean()),
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:217:101
+    |
+215 |                       f'<figcaption>{html.escape(row["sample_id"])}</figcaption></figure>'
+216 |                       for row in selected)
+217 |     (out / "index.html").write_text('<!doctype html><meta charset="utf-8"><title>RGBD offline</title>'
+    |                                                                                                     ^^
+218 |                                    '<h1>Dataset replay</h1><p>Offline observations; no execution evidence.</p>'
+219 |                                    + figures)
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:218:101
+    |
+216 |                       for row in selected)
+217 |     (out / "index.html").write_text('<!doctype html><meta charset="utf-8"><title>RGBD offline</title>'
+218 |                                    '<h1>Dataset replay</h1><p>Offline observations; no execution evidence.</p>'
+    |                                                                                                     ^^^^^^^^^^^
+219 |                                    + figures)
+220 |     return {"groups": len(reports), "previews": reports, "html": str(out / "index.html")}
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:238:101
+    |
+236 |         raise ValueError("oracle/action leakage into ordinary model observation")
+237 |     shape = {name: {"shape": list(value.shape), "dtype": str(value.dtype)}
+238 |              if isinstance(value, np.ndarray) else {"items": len(value), "nullable": any(v is None for v in value)}
+    |                                                                                                     ^^^^^^^^^^^^^^^
+239 |              for name, value in batch.items()}
+240 |     result = {"source": "real_dataset", "execution_verified": False,
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:247:101
+    |
+245 |               "peak_scope": "parent process lifetime; child worker peaks recorded separately",
+246 |               "child_peak_rss_bytes": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024,
+247 |               "depth_valid_ratios": [float(read_sample(row).depth_valid_mask.mean()) for row in rows[:count]],
+    |                                                                                                     ^^^^^^^^^^
+248 |               "calibration": [read_sample(row).capabilities for row in rows[:count]],
+249 |               "original_timestamp_preserved": True,
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:326:101
+    |
+324 |         wanted = [member for member in members if member["type"] == "file"
+325 |                   and (selection is None or any(member["path"] == name
+326 |                        or (name.endswith("/") and member["path"].startswith(name)) for name in selection))]
+    |                                                                                                     ^^^^^^^
+327 |         expanded = sum(member["size"] for member in wanted)
+328 |         if not wanted:
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:378:101
+    |
+376 |         return status(dataset, root)
+377 |     if command == "download":
+378 |         update_status(root, dataset, download_status="DOWNLOADING", source_revision=plan["revision"])
+    |                                                                                                     ^
+379 |         result = download_plan(plan, max_workers=plan["download_workers"], retries=plan["retries"])
+380 |         write_json(root / "reports" / dataset / "download.json", result)
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:386:101
+    |
+384 |     if command == "extract":
+385 |         result = extract_dataset(plan)
+386 |         update_status(root, dataset, extraction_status=result["status"], raw_path=result["raw_path"])
+    |                                                                                                     ^
+387 |         return result
+388 |     if command in {"validate", "index"}:
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:396:101
+    |
+394 |         groups = {row.get("episode_id") or row.get("scene_id") for row in result["rows"]}
+395 |         tasks = {row.get("task_id") for row in result["rows"] if row.get("task_id")}
+396 |         update_status(root, dataset, samples=result["samples"], groups=len(groups), tasks=len(tasks),
+    |                                                                                                     ^
+397 |                       quarantined=result["quarantined"], rgbd_status="RGBD_READABLE",
+398 |                       geometry_status="VERIFIED_CAMERA_GEOMETRY" if geometry else "RGBD_READABLE_GEOMETRY_UNVERIFIED",
+    |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:398:101
+    |
+396 |         update_status(root, dataset, samples=result["samples"], groups=len(groups), tasks=len(tasks),
+397 |                       quarantined=result["quarantined"], rgbd_status="RGBD_READABLE",
+398 |                       geometry_status="VERIFIED_CAMERA_GEOMETRY" if geometry else "RGBD_READABLE_GEOMETRY_UNVERIFIED",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+399 |                       temporal_status="VERIFIED" if counts.get("temporal_alignment", 0)==result["samples"] else "UNVERIFIED",
+400 |                       annotation_status="PARTIAL" if annotation_issues else "AVAILABLE_EVALUATION_NOT_RUN",
+    |
+
+E501 Line too long (125 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:399:101
+    |
+397 |                       quarantined=result["quarantined"], rgbd_status="RGBD_READABLE",
+398 |                       geometry_status="VERIFIED_CAMERA_GEOMETRY" if geometry else "RGBD_READABLE_GEOMETRY_UNVERIFIED",
+399 |                       temporal_status="VERIFIED" if counts.get("temporal_alignment", 0)==result["samples"] else "UNVERIFIED",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+400 |                       annotation_status="PARTIAL" if annotation_issues else "AVAILABLE_EVALUATION_NOT_RUN",
+401 |                       index=str(index_path(root, dataset)), quality_report=result["quality"],
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:400:101
+    |
+398 |                       geometry_status="VERIFIED_CAMERA_GEOMETRY" if geometry else "RGBD_READABLE_GEOMETRY_UNVERIFIED",
+399 |                       temporal_status="VERIFIED" if counts.get("temporal_alignment", 0)==result["samples"] else "UNVERIFIED",
+400 |                       annotation_status="PARTIAL" if annotation_issues else "AVAILABLE_EVALUATION_NOT_RUN",
+    |                                                                                                     ^^^^^^^
+401 |                       index=str(index_path(root, dataset)), quality_report=result["quality"],
+402 |                       split_audit=result["index_report"]["audit"], capability_counts=counts)
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:411:101
+    |
+409 |         result = smoke_dataset(plan, num_workers=num_workers)
+410 |         update_status(root, dataset, integration_status="OFFLINE_INTERFACE_VERIFIED",
+411 |                       smoke_report=str(root / "reports" / dataset / f"smoke-workers-{num_workers}.json"))
+    |                                                                                                     ^^^^^
+412 |         return result
+413 |     if command == "deploy":
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:416:101
+    |
+414 |         gate = run_operation("plan", plan)["budget"]
+415 |         if gate["status"] != "READY":
+416 |             update_status(root, dataset, download_status=gate["status"], verified_scope="NOT_VERIFIED",
+    |                                                                                                     ^^^
+417 |                           reason=plan.get("reason") or gate["status"])
+418 |             return status(dataset, root)
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/datasets/external/deployment.py:430:101
+    |
+428 |         return update_status(root, dataset, verified_scope=scope, software_ready=True,
+429 |                              deployment_status="COMPLETE" if verified else "PARTIAL",
+430 |                              verified_scene_ids=plan.get("smoke_selection", {}).get("scene_ids", []),
+    |                                                                                                     ^
+431 |                              evaluation_status="NOT_RUN", execution_verified=False)
+432 |     raise ValueError("unknown data command")
+    |
+
+E501 Line too long (103 > 100)
+  --> src/cloud_edge_robot_arm/datasets/external/index.py:60:101
+   |
+58 |         if split == "train" and group_key(row) in validation:
+59 |             split = "derived_val"
+60 |         identity = f"{row['source_revision']}:{group_key(row)}:{row['frame_index']}:{row['camera_id']}"
+   |                                                                                                     ^^^
+61 |         output.append({**row, "split": split,
+62 |                        "sample_id": hashlib.sha256(identity.encode()).hexdigest()[:32]})
+   |
+
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/datasets/external/index.py:71:101
+   |
+69 |               "derived_validation_groups": sorted(validation),
+70 |               "official_audit": original_audit, "audit": audit_splits(output)}
+71 |     path.with_suffix(".splits.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n")
+   |                                                                                                     ^^
+72 |     return report
+   |
+
+E501 Line too long (110 > 100)
+   --> tests/test_external_rgbd_integration.py:107:101
+    |
+105 |         h5.create_dataset("observations/rgb_images/camera_top",data=np.zeros((2,2,3,3),dtype=np.uint8))
+106 |         h5.create_dataset("observations/depth_images/camera_top",data=np.ones((2,2,3),dtype=np.uint16))
+107 |         for name,width in (("master/joint_position",8),("puppet/joint_position",8),("puppet/end_effector",6)):
+    |                                                                                                     ^^^^^^^^^^
+108 |             h5.create_dataset(name,data=np.zeros((2,width)))
+109 |     rows=discover_robomind_samples(tmp_path,"a"*40)
+    |
+
+Found 26 errors (2 fixed, 24 remaining).

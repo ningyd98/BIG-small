@@ -1,0 +1,567 @@
+...........................FFFFFF                                        [100%]
+=================================== FAILURES ===================================
+_____ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-401] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8abe180>
+status = 401, transport = 'hf_sdk'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+        with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+>           mod.download_plan(make_plan(tmp_path, transport=transport), retries=3)
+
+tests/test_external_rgbd_transfer.py:444: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:593: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 3
+
+    def _download_plan_locked(
+        plan: dict[str, Any],
+        max_workers: int,
+        retries: int,
+    ) -> dict[str, Any]:
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append(
+                {
+                    **file,
+                    "local_path": str(_directory(data) / file["path"]),
+                    "sha256": entry["sha256"],
+                    "verification": entry["verification"],
+                    "reused": True,
+                }
+            )
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_download_one, state, file, retries) for file in budget["pending"]
+            ]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: HTTPStatusError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:556: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8abe180>
+status = 401, transport = 'hf_sdk'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+>       with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'BLOCKED_AUTH'
+E        Input: 'NETWORK: HTTPStatusError'
+
+tests/test_external_rgbd_transfer.py:443: AssertionError
+_____ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-403] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8d167e0>
+status = 403, transport = 'hf_sdk'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+        with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+>           mod.download_plan(make_plan(tmp_path, transport=transport), retries=3)
+
+tests/test_external_rgbd_transfer.py:444: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:593: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_1', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 3
+
+    def _download_plan_locked(
+        plan: dict[str, Any],
+        max_workers: int,
+        retries: int,
+    ) -> dict[str, Any]:
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append(
+                {
+                    **file,
+                    "local_path": str(_directory(data) / file["path"]),
+                    "sha256": entry["sha256"],
+                    "verification": entry["verification"],
+                    "reused": True,
+                }
+            )
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_download_one, state, file, retries) for file in budget["pending"]
+            ]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: HTTPStatusError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:556: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8d167e0>
+status = 403, transport = 'hf_sdk'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+>       with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'BLOCKED_AUTH'
+E        Input: 'NETWORK: HTTPStatusError'
+
+tests/test_external_rgbd_transfer.py:443: AssertionError
+_ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-401] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8aae390>
+status = 401, transport = 'hf_sdk_metadata_http_range'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+        with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+>           mod.download_plan(make_plan(tmp_path, transport=transport), retries=3)
+
+tests/test_external_rgbd_transfer.py:444: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:593: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_2', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 3
+
+    def _download_plan_locked(
+        plan: dict[str, Any],
+        max_workers: int,
+        retries: int,
+    ) -> dict[str, Any]:
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append(
+                {
+                    **file,
+                    "local_path": str(_directory(data) / file["path"]),
+                    "sha256": entry["sha256"],
+                    "verification": entry["verification"],
+                    "reused": True,
+                }
+            )
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_download_one, state, file, retries) for file in budget["pending"]
+            ]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: HTTPStatusError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:556: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8aae390>
+status = 401, transport = 'hf_sdk_metadata_http_range'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+>       with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'BLOCKED_AUTH'
+E        Input: 'NETWORK: HTTPStatusError'
+
+tests/test_external_rgbd_transfer.py:443: AssertionError
+_ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-403] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8abddf0>
+status = 403, transport = 'hf_sdk_metadata_http_range'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+        with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+>           mod.download_plan(make_plan(tmp_path, transport=transport), retries=3)
+
+tests/test_external_rgbd_transfer.py:444: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:593: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_3', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 3
+
+    def _download_plan_locked(
+        plan: dict[str, Any],
+        max_workers: int,
+        retries: int,
+    ) -> dict[str, Any]:
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append(
+                {
+                    **file,
+                    "local_path": str(_directory(data) / file["path"]),
+                    "sha256": entry["sha256"],
+                    "verification": entry["verification"],
+                    "reused": True,
+                }
+            )
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_download_one, state, file, retries) for file in budget["pending"]
+            ]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: HTTPStatusError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:556: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_unauthorized_download_is_3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8abddf0>
+status = 403, transport = 'hf_sdk_metadata_http_range'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(tmp_path, monkeypatch, status, transport):
+        import huggingface_hub
+    
+        mod = transfer()
+        requests = []
+        original_client = httpx.Client
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(status, request=request)
+    
+        def failing_sdk(**_kwargs):
+            request = httpx.Request("GET", "https://huggingface.co/?token=SECRET_TOKEN")
+            serve(request).raise_for_status()
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", failing_sdk)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+>       with pytest.raises(RuntimeError, match="BLOCKED_AUTH") as exc:
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'BLOCKED_AUTH'
+E        Input: 'NETWORK: HTTPStatusError'
+
+tests/test_external_rgbd_transfer.py:443: AssertionError
+_ test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_partial _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_keyboard_interrupt_cancel0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8aad8b0>
+
+    def test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_partial(
+        tmp_path, monkeypatch,
+    ):
+        mod = transfer()
+        started = threading.Event()
+        requests = []
+        original_client = httpx.Client
+    
+        class SlowBody(httpx.SyncByteStream):
+            def __iter__(self):
+                yield b"r"
+                started.set()
+                for _ in range(20):
+                    time.sleep(0.005)
+                    yield b"x"
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(200, stream=SlowBody())
+    
+        def interrupted_iterator(_futures):
+            assert started.wait(2)
+            raise KeyboardInterrupt
+    
+        monkeypatch.setattr(mod, "as_completed", interrupted_iterator)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        plan = make_plan(
+            tmp_path, transport="hf_sdk_metadata_http_range",
+            files=[{"path": "trajectory.h5", "size": 21}, {"path": "queued.h5", "size": 21}],
+        )
+        with pytest.raises(KeyboardInterrupt):
+            mod.download_plan(plan, max_workers=1)
+        partials = list(tmp_path.rglob("trajectory.h5.part"))
+>       assert len(partials) == 1 and partials[0].read_bytes() == b"r"
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+tests/test_external_rgbd_transfer.py:486: AssertionError
+______ test_keyboard_interrupt_stops_sdk_progress_without_losing_partial _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-163/test_keyboard_interrupt_stops_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d50c8abc170>
+
+    def test_keyboard_interrupt_stops_sdk_progress_without_losing_partial(tmp_path, monkeypatch):
+        import huggingface_hub
+    
+        mod = transfer()
+        started = threading.Event()
+    
+        def slow_sdk(filename, **kwargs):
+            directory = Path(kwargs["local_dir"])
+            temporary = directory / ".cache/huggingface/download" / (filename + ".fixture.incomplete")
+            temporary.parent.mkdir(parents=True)
+            progress = kwargs["tqdm_class"](total=21, disable=True)
+            try:
+                with temporary.open("wb") as stream:
+                    stream.write(b"r")
+                    stream.flush()
+                    progress.update(1)
+                    started.set()
+                    for _ in range(20):
+                        time.sleep(0.005)
+                        stream.write(b"x")
+                        stream.flush()
+                        progress.update(1)
+                target = directory / filename
+                temporary.replace(target)
+                return str(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+                progress.close()
+    
+        def interrupted_iterator(_futures):
+            assert started.wait(2)
+            raise KeyboardInterrupt
+    
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", slow_sdk)
+        monkeypatch.setattr(mod, "as_completed", interrupted_iterator)
+        with pytest.raises(KeyboardInterrupt):
+            mod.download_plan(make_plan(tmp_path, files=[{"path": "trajectory.h5", "size": 21}]))
+        partials = list(tmp_path.rglob("trajectory.h5.part"))
+>       assert len(partials) == 1 and 0 < partials[0].stat().st_size < 21
+E       assert (0 == 1)
+E        +  where 0 = len([])
+
+tests/test_external_rgbd_transfer.py:530: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-401]
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-403]
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-401]
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-403]
+FAILED tests/test_external_rgbd_transfer.py::test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_partial
+FAILED tests/test_external_rgbd_transfer.py::test_keyboard_interrupt_stops_sdk_progress_without_losing_partial
+6 failed, 27 passed in 2.23s

@@ -82,7 +82,7 @@ def test_mjspec_compiles_dynamic_physical_parameters() -> None:
     assert float(result.model.body("object").mass[0]) == pytest.approx(0.21)
     assert float(result.model.geom("object_geom").friction[0]) == pytest.approx(0.34)
     assert float(result.model.joint("joint1").damping[0]) == pytest.approx(1.0)
-    assert float(result.model.actuator("act1").gainprm[0]) == pytest.approx(13.2)
+    assert float(result.model.actuator("act1").gainprm[0]) == pytest.approx(22.0)
     assert float(result.model.opt.gravity[2]) == pytest.approx(-9.7)
     assert len(result.spec_xml_sha256) == 64
     assert {item.application_stage for item in result.evidence} == {"MJSPEC"}

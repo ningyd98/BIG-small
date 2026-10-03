@@ -1,0 +1,975 @@
+FFFFFFFFFFF                                                              [100%]
+=================================== FAILURES ===================================
+____ test_zip_complete_crc_and_hash_inspection_then_selected_atomic_publish ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_complete_crc_and_hash0')
+
+    def test_zip_complete_crc_and_hash_inspection_then_selected_atomic_publish(tmp_path):
+        mod = archives()
+        path = make_zip(tmp_path)
+>       inspected = mod.inspect_archive([path])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_archives.py:268: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_complete_crc_and_hash0/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+______ test_zip_unsafe_member_is_rejected_even_when_unselected[../escape] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje0')
+name = '../escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+        with pytest.raises(ValueError, match="path"):
+>           archives().extract_archive(
+                [path], tmp_path / "raw", selected_members=["task/"], minimum_free_bytes=0
+            )
+
+tests/test_external_rgbd_archives.py:290: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:469: in extract_archive
+    info = inspect_archive(parts)
+           ^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje0/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje0')
+name = '../escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+>       with pytest.raises(ValueError, match="path"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'path'
+E        Input: 'unsupported archive format'
+
+tests/test_external_rgbd_archives.py:289: AssertionError
+_______ test_zip_unsafe_member_is_rejected_even_when_unselected[/escape] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje1')
+name = '/escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+        with pytest.raises(ValueError, match="path"):
+>           archives().extract_archive(
+                [path], tmp_path / "raw", selected_members=["task/"], minimum_free_bytes=0
+            )
+
+tests/test_external_rgbd_archives.py:290: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:469: in extract_archive
+    info = inspect_archive(parts)
+           ^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje1/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje1')
+name = '/escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+>       with pytest.raises(ValueError, match="path"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'path'
+E        Input: 'unsupported archive format'
+
+tests/test_external_rgbd_archives.py:289: AssertionError
+______ test_zip_unsafe_member_is_rejected_even_when_unselected[C:/escape] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje2')
+name = 'C:/escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+        with pytest.raises(ValueError, match="path"):
+>           archives().extract_archive(
+                [path], tmp_path / "raw", selected_members=["task/"], minimum_free_bytes=0
+            )
+
+tests/test_external_rgbd_archives.py:290: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:469: in extract_archive
+    info = inspect_archive(parts)
+           ^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje2/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje2')
+name = 'C:/escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+>       with pytest.raises(ValueError, match="path"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'path'
+E        Input: 'unsupported archive format'
+
+tests/test_external_rgbd_archives.py:289: AssertionError
+______ test_zip_unsafe_member_is_rejected_even_when_unselected[x\\escape] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje3')
+name = 'x\\escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+        with pytest.raises(ValueError, match="path"):
+>           archives().extract_archive(
+                [path], tmp_path / "raw", selected_members=["task/"], minimum_free_bytes=0
+            )
+
+tests/test_external_rgbd_archives.py:290: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:469: in extract_archive
+    info = inspect_archive(parts)
+           ^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje3/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unsafe_member_is_reje3')
+name = 'x\\escape'
+
+    @pytest.mark.parametrize("name", ["../escape", "/escape", "C:/escape", "x\\escape"])
+    def test_zip_unsafe_member_is_rejected_even_when_unselected(tmp_path, name):
+        path = make_zip(tmp_path, names=("task/real.hdf5", name))
+>       with pytest.raises(ValueError, match="path"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'path'
+E        Input: 'unsupported archive format'
+
+tests/test_external_rgbd_archives.py:289: AssertionError
+________ test_zip_unix_symlink_and_special_members_are_rejected[40960] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec0')
+kind = 40960
+
+    @pytest.mark.parametrize("kind", [0o120000, 0o020000, 0o010000])
+    def test_zip_unix_symlink_and_special_members_are_rejected(tmp_path, kind):
+        import zipfile
+    
+        path = tmp_path / "synthetic_fixture.zip"
+        info = zipfile.ZipInfo("task/link")
+        info.create_system = 3
+        info.external_attr = (kind | 0o777) << 16
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(info, b"../../escape")
+        with pytest.raises(ValueError, match="link|special"):
+>           archives().inspect_archive([path])
+
+tests/test_external_rgbd_archives.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec0/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec0')
+kind = 40960
+
+    @pytest.mark.parametrize("kind", [0o120000, 0o020000, 0o010000])
+    def test_zip_unix_symlink_and_special_members_are_rejected(tmp_path, kind):
+        import zipfile
+    
+        path = tmp_path / "synthetic_fixture.zip"
+        info = zipfile.ZipInfo("task/link")
+        info.create_system = 3
+        info.external_attr = (kind | 0o777) << 16
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(info, b"../../escape")
+>       with pytest.raises(ValueError, match="link|special"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'link|special'
+E        Input: 'unsupported archive format'
+
+tests/test_external_rgbd_archives.py:306: AssertionError
+_________ test_zip_unix_symlink_and_special_members_are_rejected[8192] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec1')
+kind = 8192
+
+    @pytest.mark.parametrize("kind", [0o120000, 0o020000, 0o010000])
+    def test_zip_unix_symlink_and_special_members_are_rejected(tmp_path, kind):
+        import zipfile
+    
+        path = tmp_path / "synthetic_fixture.zip"
+        info = zipfile.ZipInfo("task/link")
+        info.create_system = 3
+        info.external_attr = (kind | 0o777) << 16
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(info, b"../../escape")
+        with pytest.raises(ValueError, match="link|special"):
+>           archives().inspect_archive([path])
+
+tests/test_external_rgbd_archives.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec1/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec1')
+kind = 8192
+
+    @pytest.mark.parametrize("kind", [0o120000, 0o020000, 0o010000])
+    def test_zip_unix_symlink_and_special_members_are_rejected(tmp_path, kind):
+        import zipfile
+    
+        path = tmp_path / "synthetic_fixture.zip"
+        info = zipfile.ZipInfo("task/link")
+        info.create_system = 3
+        info.external_attr = (kind | 0o777) << 16
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(info, b"../../escape")
+>       with pytest.raises(ValueError, match="link|special"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'link|special'
+E        Input: 'unsupported archive format'
+
+tests/test_external_rgbd_archives.py:306: AssertionError
+_________ test_zip_unix_symlink_and_special_members_are_rejected[4096] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec2')
+kind = 4096
+
+    @pytest.mark.parametrize("kind", [0o120000, 0o020000, 0o010000])
+    def test_zip_unix_symlink_and_special_members_are_rejected(tmp_path, kind):
+        import zipfile
+    
+        path = tmp_path / "synthetic_fixture.zip"
+        info = zipfile.ZipInfo("task/link")
+        info.create_system = 3
+        info.external_attr = (kind | 0o777) << 16
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(info, b"../../escape")
+        with pytest.raises(ValueError, match="link|special"):
+>           archives().inspect_archive([path])
+
+tests/test_external_rgbd_archives.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec2/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_unix_symlink_and_spec2')
+kind = 4096
+
+    @pytest.mark.parametrize("kind", [0o120000, 0o020000, 0o010000])
+    def test_zip_unix_symlink_and_special_members_are_rejected(tmp_path, kind):
+        import zipfile
+    
+        path = tmp_path / "synthetic_fixture.zip"
+        info = zipfile.ZipInfo("task/link")
+        info.create_system = 3
+        info.external_attr = (kind | 0o777) << 16
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(info, b"../../escape")
+>       with pytest.raises(ValueError, match="link|special"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'link|special'
+E        Input: 'unsupported archive format'
+
+tests/test_external_rgbd_archives.py:306: AssertionError
+_________ test_zip_expansion_cap_checks_listing_before_reading_payload _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_expansion_cap_checks_0')
+
+    def test_zip_expansion_cap_checks_listing_before_reading_payload(tmp_path):
+        path = make_zip(tmp_path)
+        with pytest.raises(RuntimeError, match="EXPANSION"):
+>           archives().inspect_archive([path], max_expanded_bytes=7)
+
+tests/test_external_rgbd_archives.py:313: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_expansion_cap_checks_0/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+_____ test_zip_bad_crc_in_unselected_member_is_rejected_before_publication _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_bad_crc_in_unselected0')
+
+    def test_zip_bad_crc_in_unselected_member_is_rejected_before_publication(tmp_path):
+        import struct
+        import zipfile
+    
+        path = tmp_path / "synthetic_fixture.zip"
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr("task/real.hdf5", b"rgbd")
+            archive.writestr("extra.bin", b"rgbd")
+        with zipfile.ZipFile(path) as archive:
+            info = archive.getinfo("extra.bin")
+        body = bytearray(path.read_bytes())
+        offset = info.header_offset
+        name_size, extra_size = struct.unpack_from("<HH", body, offset + 26)
+        content = offset + 30 + name_size + extra_size
+        body[content] ^= 0x40
+        path.write_bytes(body)
+        with pytest.raises(zipfile.BadZipFile, match="CRC"):
+>           archives().extract_archive(
+                [path], tmp_path / "raw", selected_members=["task/"], minimum_free_bytes=0
+            )
+
+tests/test_external_rgbd_archives.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:469: in extract_archive
+    info = inspect_archive(parts)
+           ^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_bad_crc_in_unselected0/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+__________ test_zip_interrupted_extraction_never_publishes_completion __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_interrupted_extractio0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77af83210d10>
+
+    def test_zip_interrupted_extraction_never_publishes_completion(tmp_path, monkeypatch):
+        mod = archives()
+        path = make_zip(tmp_path)
+    
+        def interrupted(_archive, _chosen, stage, _guard):
+            (stage / "partial").write_bytes(b"rgbd")
+            raise InterruptedError("synthetic_fixture ZIP interruption")
+    
+        monkeypatch.setattr(mod, "_extract_zip", interrupted, raising=False)
+        with pytest.raises(InterruptedError):
+>           mod.extract_archive([path], tmp_path / "raw", minimum_free_bytes=0)
+
+tests/test_external_rgbd_archives.py:349: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/archives.py:469: in extract_archive
+    info = inspect_archive(parts)
+           ^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/archives.py:226: in inspect_archive
+    ordered, kind, base = _parts(parts)
+                          ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+paths = [PosixPath('/tmp/pytest-of-ningyd/pytest-184/test_zip_interrupted_extractio0/synthetic_fixture.zip')]
+
+    def _parts(paths: Sequence[str | Path]) -> tuple[list[Path], str, Path]:
+        if not paths:
+            raise ValueError("archive parts are required")
+        parts = [Path(path).absolute() for path in paths]
+        if len(set(parts)) != len(parts):
+            raise ValueError("duplicate archive part")
+        for path in parts:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                raise ValueError("missing, empty or unsafe archive part")
+        match = _PART.fullmatch(parts[0].name)
+        if not match:
+            if len(parts) != 1:
+                raise ValueError("unrecognized archive part names")
+            base = parts[0]
+        else:
+            base = parts[0].with_name(match[1])
+            suffix = match[2] or ""
+            numbers = []
+            for path in parts:
+                current = _PART.fullmatch(path.name)
+                if (
+                    path.parent != base.parent
+                    or current is None
+                    or current[1] != base.name
+                    or (current[2] or "") != suffix
+                    or len(current[3]) != len(match[3])
+                    or current[3].isdecimal() != match[3].isdecimal()
+                ):
+                    raise ValueError("archive parts must belong to one source group")
+                numbers.append(_number(current[3]))
+            if numbers != list(range(1, len(parts) + 1)):
+                raise ValueError("archive parts are missing or not in complete order")
+            present = {
+                path
+                for path in base.parent.glob(base.name + "." + suffix + "*")
+                if _PART.fullmatch(path.name)
+            }
+            if present != set(parts):
+                raise ValueError("archive part list omits an available required volume")
+        if base.name.endswith(".7z"):
+            kind = "7z"
+        elif base.name.endswith((".tar.gz", ".tgz")):
+            kind = "tar.gz"
+        elif base.name.endswith(".tar"):
+            kind = "tar"
+        else:
+>           raise ValueError("unsupported archive format")
+E           ValueError: unsupported archive format
+
+src/cloud_edge_robot_arm/datasets/external/archives.py:112: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_archives.py::test_zip_complete_crc_and_hash_inspection_then_selected_atomic_publish
+FAILED tests/test_external_rgbd_archives.py::test_zip_unsafe_member_is_rejected_even_when_unselected[../escape]
+FAILED tests/test_external_rgbd_archives.py::test_zip_unsafe_member_is_rejected_even_when_unselected[/escape]
+FAILED tests/test_external_rgbd_archives.py::test_zip_unsafe_member_is_rejected_even_when_unselected[C:/escape]
+FAILED tests/test_external_rgbd_archives.py::test_zip_unsafe_member_is_rejected_even_when_unselected[x\\escape]
+FAILED tests/test_external_rgbd_archives.py::test_zip_unix_symlink_and_special_members_are_rejected[40960]
+FAILED tests/test_external_rgbd_archives.py::test_zip_unix_symlink_and_special_members_are_rejected[8192]
+FAILED tests/test_external_rgbd_archives.py::test_zip_unix_symlink_and_special_members_are_rejected[4096]
+FAILED tests/test_external_rgbd_archives.py::test_zip_expansion_cap_checks_listing_before_reading_payload
+FAILED tests/test_external_rgbd_archives.py::test_zip_bad_crc_in_unselected_member_is_rejected_before_publication
+FAILED tests/test_external_rgbd_archives.py::test_zip_interrupted_extraction_never_publishes_completion
+11 failed, 24 deselected in 0.24s

@@ -1,0 +1,106 @@
+....FF                                                                   [100%]
+=================================== FAILURES ===================================
+_______________ test_validation_preserves_curated_mask_failures ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dc154105190>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-196/test_validation_preserves_cura0')
+
+    def test_validation_preserves_curated_mask_failures(monkeypatch, tmp_path):
+        """损坏 GT 不妨碍读取 RGB-D，但必须阻止精选标注验收。"""
+        import numpy as np
+    
+        from cloud_edge_robot_arm.datasets.external import deployment
+        from cloud_edge_robot_arm.datasets.external.models import DatasetSample
+    
+        ref = {
+            "dataset_id": "graspclutter6d_curated",
+            "scene_id": "000001",
+            "camera_id": "top",
+            "frame_index": 0,
+            "official_split": None,
+        }
+        sample = DatasetSample(
+            dataset_id="graspclutter6d_curated",
+            source_revision="a" * 40,
+            sample_kind="static_multiview_scene",
+            source_file="synthetic_fixture.png",
+            relative_path="synthetic_fixture.png",
+            source_sha256="b" * 64,
+            frame_index=0,
+            camera_id="top",
+            official_split=None,
+            rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+            depth_raw=np.ones((2, 2), dtype=np.float32),
+            annotations={
+                "instances": [{"visible_mask": {"available": False}}],
+                "issues": ["instance 0: crop dimensions differ"],
+            },
+        )
+        monkeypatch.setattr(deployment, "discover", lambda _: [ref])
+        monkeypatch.setattr(deployment, "read_sample", lambda _: sample)
+>       result = deployment.validate_dataset(
+            {
+                "dataset_id": "graspclutter6d_curated",
+                "data_root": str(tmp_path),
+                "profile_config": {"validation_fraction": 0.2},
+            }
+        )
+
+tests/test_external_rgbd_curated_deployment.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/deployment.py:359: in validate_dataset
+    result = build_index(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rows = [{'camera_id': 'top', 'content_sha256': 'da787b9b7d749ccd8a6c9912b9fa6ae185fa64a87d2c93dd56046a835c8947f6', 'dataset_id': 'graspclutter6d_curated', 'frame_index': 0, ...}]
+path = PosixPath('/tmp/pytest-of-ningyd/pytest-196/test_validation_preserves_cura0/manifests/graspclutter6d_curated-index.jsonl')
+
+    def build_index(
+        rows: list[dict[str, Any]],
+        path: Path,
+        *,
+        validation_fraction: float = 0.2,
+        seed: int = 20261003,
+    ) -> dict[str, Any]:
+        if not rows:
+            raise ValueError("dataset has no real indexed samples")
+        if not 0 <= validation_fraction < 1:
+            raise ValueError("validation fraction must be in [0,1)")
+        original_audit = audit_splits(rows)
+        # 上游异常保留于报告，不重命名官方成员来掩盖泄漏。
+        train_groups = sorted({group_key(row) for row in rows if row.get("official_split") == "train"})
+        random.Random(seed).shuffle(train_groups)
+        count = min(max(len(train_groups) - 1, 0), int(len(train_groups) * validation_fraction))
+        validation = set(train_groups[:count])
+        output = []
+        for row in rows:
+            split = row.get("official_split") or "unknown"
+            if split == "train" and group_key(row) in validation:
+                split = "derived_val"
+            identity = (
+>               f"{row['source_revision']}:{group_key(row)}:{row['frame_index']}:{row['camera_id']}"
+                   ^^^^^^^^^^^^^^^^^^^^^^
+            )
+E           KeyError: 'source_revision'
+
+src/cloud_edge_robot_arm/datasets/external/index.py:69: KeyError
+____________ test_curated_reuse_identity_binds_depth_interpretation ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-196/test_curated_reuse_identity_bi0')
+
+    def test_curated_reuse_identity_binds_depth_interpretation(tmp_path):
+        from cloud_edge_robot_arm.datasets.external.deployment import _plan_identity
+    
+        plan = fixture_plan(tmp_path)
+>       assert _plan_identity(plan) != _plan_identity(
+            {**plan, "reader_metadata": {"source_depth_evidence": "pinned millimetre evidence"}}
+        )
+E       AssertionError: assert {'files': [{'path': 'samples.json', 'sha256': '326dab9b2d3559662cb0c44a8d1f9fc261d208f505804f074778fe8c85734495'}], 'r...aaaaaaaaaaaaaaaaaaaaaaaaa', 'selection': {'expected_rgbd_samples': 4, 'scene_ids': ['000001']}, 'source': 'modelscope'} != {'files': [{'path': 'samples.json', 'sha256': '326dab9b2d3559662cb0c44a8d1f9fc261d208f505804f074778fe8c85734495'}], 'r...aaaaaaaaaaaaaaaaaaaaaaaaa', 'selection': {'expected_rgbd_samples': 4, 'scene_ids': ['000001']}, 'source': 'modelscope'}
+E        +  where {'files': [{'path': 'samples.json', 'sha256': '326dab9b2d3559662cb0c44a8d1f9fc261d208f505804f074778fe8c85734495'}], 'r...aaaaaaaaaaaaaaaaaaaaaaaaa', 'selection': {'expected_rgbd_samples': 4, 'scene_ids': ['000001']}, 'source': 'modelscope'} = <function _plan_identity at 0x7dc154100ae0>({'data_root': '/tmp/pytest-of-ningyd/pytest-196/test_curated_reuse_identity_bi0', 'dataset_id': 'graspclutter6d_curate...ha256': '326dab9b2d3559662cb0c44a8d1f9fc261d208f505804f074778fe8c85734495', 'size': 17}], 'minimum_free_bytes': 0, ...})
+E        +  and   {'files': [{'path': 'samples.json', 'sha256': '326dab9b2d3559662cb0c44a8d1f9fc261d208f505804f074778fe8c85734495'}], 'r...aaaaaaaaaaaaaaaaaaaaaaaaa', 'selection': {'expected_rgbd_samples': 4, 'scene_ids': ['000001']}, 'source': 'modelscope'} = <function _plan_identity at 0x7dc154100ae0>({'data_root': '/tmp/pytest-of-ningyd/pytest-196/test_curated_reuse_identity_bi0', 'dataset_id': 'graspclutter6d_curate...ha256': '326dab9b2d3559662cb0c44a8d1f9fc261d208f505804f074778fe8c85734495', 'size': 17}], 'minimum_free_bytes': 0, ...})
+
+tests/test_external_rgbd_curated_deployment.py:149: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_curated_deployment.py::test_validation_preserves_curated_mask_failures
+FAILED tests/test_external_rgbd_curated_deployment.py::test_curated_reuse_identity_binds_depth_interpretation
+2 failed, 4 passed in 0.15s

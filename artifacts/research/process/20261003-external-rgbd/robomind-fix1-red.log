@@ -1,0 +1,584 @@
+FFFFFFFFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/rgb_images/camera_top-external] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap0')
+storage = 'external', field = 'observations/rgb_images/camera_top'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/rgb_images/camera_top-virtual] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap1')
+storage = 'virtual', field = 'observations/rgb_images/camera_top'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/depth_images/camera_top-external] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap2')
+storage = 'external', field = 'observations/depth_images/camera_top'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/depth_images/camera_top-virtual] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap3')
+storage = 'virtual', field = 'observations/depth_images/camera_top'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[master/joint_position-external] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap4')
+storage = 'external', field = 'master/joint_position'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[master/joint_position-virtual] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap5')
+storage = 'virtual', field = 'master/joint_position'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/joint_position-external] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap6')
+storage = 'external', field = 'puppet/joint_position'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/joint_position-virtual] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap7')
+storage = 'virtual', field = 'puppet/joint_position'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/end_effector-external] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap8')
+storage = 'external', field = 'puppet/end_effector'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/end_effector-virtual] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap9')
+storage = 'virtual', field = 'puppet/end_effector'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/timestamp-external] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap10')
+storage = 'external', field = 'observations/timestamp'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+_ test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/timestamp-virtual] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_hdf5_payload_cannot_escap11')
+storage = 'virtual', field = 'observations/timestamp'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    @pytest.mark.parametrize("field", [
+        "observations/rgb_images/camera_top", "observations/depth_images/camera_top",
+        "master/joint_position", "puppet/joint_position", "puppet/end_effector",
+        "observations/timestamp",
+    ])
+    def test_hdf5_payload_cannot_escape_the_hashed_source_file(tmp_path, storage, field):
+        file = _trajectory(tmp_path, raw=True)
+        metadata = _metadata()
+        if field == "observations/timestamp":
+            metadata.update({"timestamp_path": field, "timestamp_time_basis": "fixture clock",
+                             "timestamp_evidence": "synthetic_fixture"})
+            with h5py.File(file, "a") as h5:
+                h5.create_dataset(field, data=np.array([1.0, 2.0]))
+        ref = discover_robomind_samples(tmp_path, "a" * 40, metadata)[0]
+        with h5py.File(file, "a") as h5:
+            values = h5[field][:]
+            del h5[field]
+            if storage == "external":
+                raw_payload = tmp_path / "external_payload.bin"
+                dataset = h5.create_dataset(
+                    field, shape=values.shape, dtype=values.dtype,
+                    external=[(str(raw_payload), 0, values.nbytes)],
+                )
+                dataset[:] = values
+            else:
+                source_file = tmp_path / "external_payload.h5"
+                with h5py.File(source_file, "w") as payload:
+                    payload.create_dataset("values", data=values)
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(source_file), "values", shape=values.shape)
+                h5.create_virtual_dataset(field, layout)
+        # 外部数据的摘要未进入源HDF5摘要，故单靠wrapper摘要仍不能绑定观察。
+        ref["source_sha256"] = hashlib.sha256(file.read_bytes()).hexdigest()
+>       with pytest.raises(ValueError, match="external.*storage|virtual.*dataset"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:209: Failed
+__________ test_discovery_quarantines_unbound_hdf5_storage[external] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_discovery_quarantines_unb0')
+storage = 'external'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    def test_discovery_quarantines_unbound_hdf5_storage(tmp_path, storage):
+        file = _trajectory(tmp_path, raw=True)
+        with h5py.File(file, "a") as h5:
+            name = "puppet/joint_position"
+            values = h5[name][:]
+            del h5[name]
+            if storage == "external":
+                h5.create_dataset(name, shape=values.shape, dtype=values.dtype,
+                                  external=[(str(tmp_path / "state.bin"), 0, values.nbytes)])
+            else:
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(tmp_path / "state.h5"), "values",
+                                              shape=values.shape)
+                h5.create_virtual_dataset(name, layout)
+        metadata = _metadata()
+>       with pytest.raises(ValueError, match="no valid real Franka trajectory"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:229: Failed
+___________ test_discovery_quarantines_unbound_hdf5_storage[virtual] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-154/test_discovery_quarantines_unb1')
+storage = 'virtual'
+
+    @pytest.mark.parametrize("storage", ["external", "virtual"])
+    def test_discovery_quarantines_unbound_hdf5_storage(tmp_path, storage):
+        file = _trajectory(tmp_path, raw=True)
+        with h5py.File(file, "a") as h5:
+            name = "puppet/joint_position"
+            values = h5[name][:]
+            del h5[name]
+            if storage == "external":
+                h5.create_dataset(name, shape=values.shape, dtype=values.dtype,
+                                  external=[(str(tmp_path / "state.bin"), 0, values.nbytes)])
+            else:
+                layout = h5py.VirtualLayout(shape=values.shape, dtype=values.dtype)
+                layout[:] = h5py.VirtualSource(str(tmp_path / "state.h5"), "values",
+                                              shape=values.shape)
+                h5.create_virtual_dataset(name, layout)
+        metadata = _metadata()
+>       with pytest.raises(ValueError, match="no valid real Franka trajectory"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_external_rgbd_robomind.py:229: Failed
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/rgb_images/camera_top-external]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/rgb_images/camera_top-virtual]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/depth_images/camera_top-external]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/depth_images/camera_top-virtual]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[master/joint_position-external]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[master/joint_position-virtual]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/joint_position-external]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/joint_position-virtual]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/end_effector-external]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[puppet/end_effector-virtual]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/timestamp-external]
+FAILED tests/test_external_rgbd_robomind.py::test_hdf5_payload_cannot_escape_the_hashed_source_file[observations/timestamp-virtual]
+FAILED tests/test_external_rgbd_robomind.py::test_discovery_quarantines_unbound_hdf5_storage[external]
+FAILED tests/test_external_rgbd_robomind.py::test_discovery_quarantines_unbound_hdf5_storage[virtual]
+14 failed, 15 deselected in 0.28s

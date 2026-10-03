@@ -1,0 +1,313 @@
+................FF.FFF                                                   [100%]
+=================================== FAILURES ===================================
+___ test_modelscope_partial_resume_survives_interruption_and_binds_revision ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-136/test_modelscope_partial_resume0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da252dc32f0>
+
+    def test_modelscope_partial_resume_survives_interruption_and_binds_revision(tmp_path, monkeypatch):
+        mod = transfer()
+        requests = []
+    
+        def serve(request):
+            requests.append(request)
+            if len(requests) == 1:
+                return httpx.Response(200, stream=InterruptedBody())
+            assert request.headers["range"] == "bytes=3-"
+            return httpx.Response(206, content=b"d01", headers={"content-range": "bytes 3-5/6"})
+    
+        original_client = httpx.Client
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        plan = make_plan(
+            tmp_path,
+            source="modelscope",
+            files=[{
+                "path": "trajectory.h5", "size": 6,
+                "sha256": hashlib.sha256(b"rgbd01").hexdigest(),
+                "url": "https://modelscope.cn/synthetic_fixture?Revision=" + "a" * 40,
+            }],
+        )
+        with pytest.raises(RuntimeError):
+            mod.download_plan(plan, retries=1)
+>       result = mod.download_plan(plan, retries=1)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:191: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-136/test_modelscope_partial_resume0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 1
+
+    def download_plan(plan: dict[str, Any], max_workers: int = 4, retries: int = 3) -> dict[str, Any]:
+        """执行已锁定清单；保留续传状态，所有重传量纳入同一账本。"""
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append({**file, "local_path": str(_directory(data) / file["path"]),
+                            "sha256": entry["sha256"], "verification": entry["verification"],
+                            "reused": True})
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_download_one, state, file, retries) for file in budget["pending"]]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: StreamConsumed
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:450: RuntimeError
+__________ test_modelscope_ignoring_range_restarts_without_appending ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-136/test_modelscope_ignoring_range0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da252dc1dc0>
+
+    def test_modelscope_ignoring_range_restarts_without_appending(tmp_path, monkeypatch):
+        mod = transfer()
+        requests = []
+    
+        def serve(request):
+            requests.append(request)
+            if len(requests) == 1:
+                return httpx.Response(200, stream=InterruptedBody())
+            return httpx.Response(200, content=b"rgbd01")
+    
+        original_client = httpx.Client
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+        plan = make_plan(
+            tmp_path, source="modelscope",
+            files=[{"path": "trajectory.h5", "size": 6,
+                    "url": "https://modelscope.cn/synthetic_fixture?Revision=" + "a" * 40}],
+        )
+>       result = mod.download_plan(plan, retries=2)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:218: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-136/test_modelscope_ignoring_range0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 2
+
+    def download_plan(plan: dict[str, Any], max_workers: int = 4, retries: int = 3) -> dict[str, Any]:
+        """执行已锁定清单；保留续传状态，所有重传量纳入同一账本。"""
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append({**file, "local_path": str(_directory(data) / file["path"]),
+                            "sha256": entry["sha256"], "verification": entry["verification"],
+                            "reused": True})
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_download_one, state, file, retries) for file in budget["pending"]]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: StreamConsumed
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:450: RuntimeError
+_______________ test_ongoing_disk_reserve_blocks_http_body_write _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-136/test_ongoing_disk_reserve_bloc0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da252ddd970>
+
+    def test_ongoing_disk_reserve_blocks_http_body_write(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, content=b"rgbd01")), **kw
+            )
+        )
+        free_values = iter([100, 100, 100, 9])
+        monkeypatch.setattr(mod, "_free_bytes", lambda _path: next(free_values, 9))
+        plan = make_plan(
+            tmp_path, source="modelscope",
+            files=[{"path": "trajectory.h5", "size": 6,
+                    "url": "https://modelscope.cn/synthetic_fixture?Revision=" + "a" * 40}],
+        )
+        with pytest.raises(RuntimeError, match="BLOCKED_STORAGE"):
+>           mod.download_plan(plan, retries=1)
+
+tests/test_external_rgbd_transfer.py:262: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-136/test_ongoing_disk_reserve_bloc0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 1
+
+    def download_plan(plan: dict[str, Any], max_workers: int = 4, retries: int = 3) -> dict[str, Any]:
+        """执行已锁定清单；保留续传状态，所有重传量纳入同一账本。"""
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append({**file, "local_path": str(_directory(data) / file["path"]),
+                            "sha256": entry["sha256"], "verification": entry["verification"],
+                            "reused": True})
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_download_one, state, file, retries) for file in budget["pending"]]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: StreamConsumed
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:450: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-136/test_ongoing_disk_reserve_bloc0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da252ddd970>
+
+    def test_ongoing_disk_reserve_blocks_http_body_write(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, content=b"rgbd01")), **kw
+            )
+        )
+        free_values = iter([100, 100, 100, 9])
+        monkeypatch.setattr(mod, "_free_bytes", lambda _path: next(free_values, 9))
+        plan = make_plan(
+            tmp_path, source="modelscope",
+            files=[{"path": "trajectory.h5", "size": 6,
+                    "url": "https://modelscope.cn/synthetic_fixture?Revision=" + "a" * 40}],
+        )
+>       with pytest.raises(RuntimeError, match="BLOCKED_STORAGE"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'BLOCKED_STORAGE'
+E        Input: 'NETWORK: StreamConsumed'
+
+tests/test_external_rgbd_transfer.py:261: AssertionError
+_____ test_hf_persistent_transport_pins_revision_and_records_actual_bytes ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-136/test_hf_persistent_transport_p0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da2535f8bc0>
+
+    def test_hf_persistent_transport_pins_revision_and_records_actual_bytes(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+        requests = []
+    
+        def serve(request):
+            requests.append(request)
+            assert "/resolve/" + "a" * 40 + "/trajectory.h5" in str(request.url)
+            return httpx.Response(200, content=b"rgbd01")
+    
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        plan = make_plan(tmp_path, transport="hf_sdk_metadata_http_range")
+>       result = mod.download_plan(plan, retries=1)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:279: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-136/test_hf_persistent_transport_p0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 1
+
+    def download_plan(plan: dict[str, Any], max_workers: int = 4, retries: int = 3) -> dict[str, Any]:
+        """执行已锁定清单；保留续传状态，所有重传量纳入同一账本。"""
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append({**file, "local_path": str(_directory(data) / file["path"]),
+                            "sha256": entry["sha256"], "verification": entry["verification"],
+                            "reused": True})
+        failures = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_download_one, state, file, retries) for file in budget["pending"]]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        if failures:
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: LocalEntryNotFoundError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:450: RuntimeError
+_______ test_resume_budget_counts_remaining_partial_bytes_not_full_file ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-136/test_resume_budget_counts_rema0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da2536374d0>
+
+    def test_resume_budget_counts_remaining_partial_bytes_not_full_file(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+        requests = []
+    
+        def serve(request):
+            requests.append(request)
+            if len(requests) == 1:
+                return httpx.Response(200, stream=InterruptedBody())
+            return httpx.Response(206, content=b"d01", headers={"content-range": "bytes 3-5/6"})
+    
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        plan = make_plan(
+            tmp_path, source="modelscope", budget_bytes=6,
+            files=[{"path": "trajectory.h5", "size": 6,
+                    "url": "https://modelscope.cn/synthetic_fixture?Revision=" + "a" * 40}],
+        )
+        with pytest.raises(RuntimeError):
+            mod.download_plan(plan, retries=1)
+>       assert mod.plan_budget(plan, free_bytes=100)["network_bytes"] == 3
+E       assert 6 == 3
+
+tests/test_external_rgbd_transfer.py:306: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_external_rgbd_transfer.py::test_modelscope_partial_resume_survives_interruption_and_binds_revision
+FAILED tests/test_external_rgbd_transfer.py::test_modelscope_ignoring_range_restarts_without_appending
+FAILED tests/test_external_rgbd_transfer.py::test_ongoing_disk_reserve_blocks_http_body_write
+FAILED tests/test_external_rgbd_transfer.py::test_hf_persistent_transport_pins_revision_and_records_actual_bytes
+FAILED tests/test_external_rgbd_transfer.py::test_resume_budget_counts_remaining_partial_bytes_not_full_file
+5 failed, 17 passed in 0.63s
