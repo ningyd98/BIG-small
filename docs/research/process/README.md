@@ -2,7 +2,7 @@
 
 本目录记录本轮分阶段实施的**过程与证据边界**。2026-10-03 首批 P1（T1/T2）已完成：88 项合并回归通过，真实采集平面高度误差最大 2.728 mm，独立审查无未关闭实质问题。验收摘要见[阶段报告](../../../artifacts/research/process/20261003-phase1/phase1-report.json)。实施依据是[研究设计](../../superpowers/specs/2026-10-03-rgbd-evidence-research-design.md)和[依赖驱动执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)；历史事实以[当前权威状态](../../current_authoritative_status.md)为准。计划中的接口、命令和产物不因写入本文档而成为已实现功能。
 
-当前 P2 的 **T6a 为 `IN_PROGRESS`**：无模型静态数据工厂与四个 CLI 已实现，124 项数据测试、123 项旧路径回归、定向 Ruff/mypy（18 个 source 文件）及独立代码审查通过。真实 100 组已完成并通过 generate/validate/export/replay，含 35 正例、65 负例，独立分组为 80/5/5/10；1000 组仍在真实生成，尚未完成 T6a 全部验收。见[阶段进展](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)和[当前交接](handover.md)。T6b 的 10000 组未运行；不将静态感知数据记为物理任务成功。
+当前 P2 的 **T6a 为 `DONE`**：无模型静态数据工厂与四个 CLI 已实现，124 项数据测试、123 项旧路径回归、定向 Ruff/mypy（18 个 source 文件）及独立代码审查通过。真实 100/1000 组均完成 generate/validate/export/replay：分别为 35正/65负、301正/699负，独立划分分别为 80/5/5/10、800/50/50/100，无重复、校验错误或警告。见[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)和[当前交接](handover.md)。下一就绪任务仅为 T3/T4；T6b 的 10000 组未运行，不将静态感知数据记为物理任务成功。
 
 | 文档 | 用途 |
 |---|---|

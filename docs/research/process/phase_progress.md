@@ -1,11 +1,11 @@
 # 阶段进度
 
-截至 2026-10-03，P1 的 T1 来源审计与 T2 同步 RGB-D 已完成并通过独立复核。P2 的 **T6a 为 `IN_PROGRESS`**：真实 100 组已通过四个 CLI 验收，1000 组仍在生成；T3/T4 保持 `READY`，其余任务尚未实施。六阶段是实际工作分组，依赖满足时允许跨组穿插，不能把表格顺序视为日程或完成声明。详细依赖和验收见[执行计划 §2—3](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)。
+截至 2026-10-03，P1 的 T1 来源审计与 T2 同步 RGB-D 已完成并通过独立复核。P2 的 **T6a 为 `DONE`**：真实 100/1000 组均通过四个 CLI 验收；下一就绪任务仅为 T3/T4，其余任务尚未实施。六阶段是实际工作分组，依赖满足时允许跨组穿插，不能把表格顺序视为日程或完成声明。详细依赖和验收见[执行计划 §2—3](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)。
 
 | 阶段 | 覆盖任务 | 出口证据 | 当前状态 |
 |---|---|---|---|
 | P1 来源与观测 | T1、T2 | 来源契约、历史边界、同步 RGB/depth/mask、标定与采集会话；分别记录 SOFTWARE 和 REAL_CAPTURE | T1 `DONE`；T2 `DONE` |
-| P2 基础真实闭环 | T6a、T3、T4、T5、T7、T8 | 数据/真实VLM/物理技能；同episode新帧、三值验证与有界路由、独立评价；20场景闭环、120先导及初次冻结 | T6a `IN_PROGRESS`（100组通过，1000组生成中）；T3/T4 `READY`；其余 `TODO` |
+| P2 基础真实闭环 | T6a、T3、T4、T5、T7、T8 | 数据/真实VLM/物理技能；同episode新帧、三值验证与有界路由、独立评价；20场景闭环、120先导及初次冻结 | T6a `DONE`（100/1000组四入口通过）；T3/T4 `READY`；其余 `TODO` |
 | P3 方法与公平基线 | T6b、T9、T10、T11、T12 | 有预算才做10000组；校准风险、决策提交复核、公平事件与B0/B1/B2、候选/provider契约、完整成本账本 | `TODO` |
 | P4 恢复与正式协议准备 | T13、T15a、T16a、T17a、T15b | 验证后解决/预算持久化、候选/ACK/启动协调、局部修复/B4、统计工具与界面；独立120先导和最终hash | `TODO` |
 | P5 正式评测与结果 | T15c、T16b、T17b | 冻结后 N 场景主比较与消融、固定机会回放、200 故障、区间判定和结果界面 | `TODO` |
@@ -19,4 +19,4 @@
 
 P1 验收：来源审计 15 个反例/行为测试、阶段合并 88 项回归、定向 Ruff/mypy 均通过；实际采集 320×240，同一状态三 pass，100 桌面点最大高度误差 2.728 mm，正常及异常退出释放资源。见[机器可读报告](../../../artifacts/research/process/20261003-phase1/phase1-report.json)和[独立审查](../../../artifacts/research/process/20261003-phase1/task-2-review.md)。
 
-T6a 进展：124 项数据测试、123 项既有路径回归、定向 Ruff/mypy（18 文件）及[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)通过。真实 100 个独立组为 35 正例/65 负例，train/calibration/selection/test=80/5/5/10；validate/export/replay 均通过。[当前进展](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)仍为 `IN_PROGRESS`，等待 1000 组完整验收。T6b 的 10000 组仍未运行；T5、T7、T8 还须分别满足 T4、T3/T5、T7 等其余前置条件。
+T6a 验收：124 项数据测试、123 项既有路径回归、定向 Ruff/mypy（18 文件）及[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)通过。100/1000个独立组分别为35正/65负、301正/699负，划分为80/5/5/10、800/50/50/100；两批validate/export/replay均通过，见[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)。1000组CLI墙钟1332.669秒，显存采样观测峰值155MiB。T6b的10000组仍为TODO且未运行；T6a只满足数据前置，T5、T7、T8还须分别满足T4、T3/T5、T7等其余依赖。

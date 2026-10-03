@@ -85,7 +85,7 @@ T2 独立审查结论为 ready，未发现 Critical、Important 或实质 Minor�
 
 ## 2026-10-03 T6a 实施与100组验收进展
 
-本节是后续产品实施记录，保留前述 P1/T2 各轮验收及 Jev 路线文档修订历史。当前 T6a 为 `IN_PROGRESS`；[进展摘要](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)记录真实100组通过、1000组仍在生成。尚未声明 T6a 完成或生成10000组。
+本节保留100组阶段的产品实施记录及前述 P1/T2 各轮验收、Jev 路线文档修订历史。当时 T6a 为 `IN_PROGRESS`；[进展摘要](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)记录真实100组通过、1000组仍在生成。该阶段尚未声明 T6a 完成或生成10000组；最终结果见下节。
 
 - 已交付共享场景/数据契约、真实场景应用与离线标签、raw扰动证据、episode原子发布、分组/近重复审计、预算/取消/恢复、四个CLI及对应配置。各模块按分工先跑失败反例再实现。软件fixture只用于边界验证，不冒充真实采集或动作示范。
 - 跨模块审查发现并关闭：转动中的物体被误判稳定、旋转后的桌面边界计算、缺少/不足三pass证据、深度可视化与原始深度不一致、来源摘要遗漏运行时契约、最终落盘与拒绝日志可能越过预算。见[采集审查](../../../artifacts/research/process/20261003-t6a/capture-review.md)、[存储审查](../../../artifacts/research/process/20261003-t6a/storage-review.md)及[独立最终代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)。最终代码审查为PASS，无未关闭的范围内实质问题；该结论不替代真实数据运行。
@@ -94,4 +94,13 @@ T2 独立审查结论为 ready，未发现 Critical、Important 或实质 Minor�
 - 实际100组命令：`MUJOCO_GL=egl .venv/bin/python scripts/generate_rgbd_dataset.py --config configs/rgbd/dataset_smoke.yaml --output datasets/rgbd-smoke-20261003`，退出0、状态COMPLETE。独立[validate](../../../artifacts/research/process/20261003-t6a/smoke-validate.json)确认100个独立组，35正例/65负例，train/calibration/selection/test=80/5/5/10，重复数0，无错误或警告。
 - [export](../../../artifacts/research/process/20261003-t6a/smoke-export.json)导出80条train样本；[replay](../../../artifacts/research/process/20261003-t6a/smoke-replay.json)完成单样本重建。[CLI审计](../../../artifacts/research/process/20261003-t6a/smoke-cli-audit.json)核对其中55条训练负例、user只有instruction/images、重建时间戳保留且RGB/depth完全一致，`execution_verified=false`。
 - [100组资源实测](../../../artifacts/research/process/20261003-t6a/smoke-resources.json)：CLI墙钟56.56秒，按该进程PID采样到的framebuffer显存峰值155 MiB（162,529,280字节）。配置采样间隔0.5秒，实际还受nvidia-smi命令耗时影响，可能漏过瞬时峰值；不将该数写成绝对显存上限。
-- 根代理继续串行运行真实1000组；本次记录不填尚未生成的正负例、分组、耗时或质量结论。1000组四入口验收完成后再追加最终结果。T6b等待T5/T8；T3/T4仍就绪，T5/T7/T8须等待各自全部前置条件。未提交或推送，未调用视觉模型、未启动真实硬件，未改变历史PHASE12拒绝与权威论文运行数0。
+- 当时根代理继续串行运行真实1000组；本阶段记录不填尚未生成的正负例、分组、耗时或质量结论，最终结果在下节追加。T6b等待T5/T8；T3/T4仍就绪，T5/T7/T8须等待各自全部前置条件。未提交或推送，未调用视觉模型、未启动真实硬件，未改变历史PHASE12拒绝与权威论文运行数0。
+
+## 2026-10-03 T6a 最终验收
+
+[最终验收报告](../../../artifacts/research/process/20261003-t6a/acceptance.json)将 T6a 标为 `DONE`。真实100与1000组均完成 generate/validate/export/replay 四入口；前述124项数据测试、123项旧路径回归、Ruff/mypy及独立审查通过，不声称完整全仓测试通过。
+
+- 1000组数据位于 `datasets/rgbd-validation-20261003`，1000次尝试得到1000个独立组、301正例/699负例，train/calibration/selection/test=800/50/50/100。[独立校验](../../../artifacts/research/process/20261003-t6a/validation-validate.json)确认重复数0、无错误或警告。
+- [CLI审计](../../../artifacts/research/process/20261003-t6a/validation-cli-audit.json)确认导出800条train样本，其中562条负例；离线重建保留原采集时刻，RGB/depth字节一致，保留原始证据，`execution_verified=false`。
+- [1000组资源实测](../../../artifacts/research/process/20261003-t6a/validation-resources.json)：总计1,158,966,504字节，每组1,158,966.504字节；生成墙钟1331.885秒，CLI墙钟1332.669秒。按进程PID采样的显存观测峰值155 MiB（162,529,280字节）；0.5秒配置间隔加命令耗时可能漏过瞬时峰值，不作为连续峰值或绝对上限。
+- 下一就绪任务仅为T3/T4。T6a满足T5/T7/T8的数据前置；T5仍等待T4，T7仍等待T3/T5，T8仍等待T7。T6b保持TODO，10000组与教师整合未运行，等待T5/T8。未提交/推送，未调用VLM、训练模型、验收正式物理任务或启动真实硬件。

@@ -12,7 +12,7 @@
 
 **执行规则：** 本文是给开发代理使用的工作清单，按前置产物和验收结果推进，不按周次、日期或人工工时推进。研究设计与开题报告中的学术周期仅用于材料说明，不是代理调度条件。任务编号保持稳定以便追溯，实际执行顺序以第 2 节为准。
 
-**状态：** 2026-10-03 用户已授权分阶段启动实施并重建过程文档。P1 的 T1/T2 已完成并通过独立审查；P2 的 T6a 为 `IN_PROGRESS`，实现、软件测试及真实100组已通过，1000组仍在生成。T3/T4保持就绪。各项只在对应验收证据通过后勾选；已实现但尚未全部验收的任务单独记录，文件已存在不表示完成。任务完成后记录差异与证据，不将其他用户改动一并暂存或提交。
+**状态：** 2026-10-03 用户已授权分阶段启动实施并重建过程文档。P1 的 T1/T2 已完成并通过独立审查；P2 的 T6a 为 `DONE`，实现、软件测试及真实100/1000组四入口验收通过。下一READY仅T3/T4，T6b保持TODO。各项只在对应验收证据通过后勾选；已实现但尚未全部验收的任务单独记录，文件已存在不表示完成。任务完成后记录差异与证据，不将其他用户改动一并暂存或提交。
 
 **路线修订记录：** 2026-10-03 按用户要求优化执行决策闭环。T1—T18 编号、G0—G5/B0—B5 和当时已验收状态保持稳定；主要加强 T7、T10—T13 的接口与失败路径，以及 T8/T15—T17 的证据账本。该次仅更新文档，未启动实现、模型调用或实验，当时就绪队列为 T6a/T3/T4；后续T6a实施与验收在Task6及过程日志另记。
 
@@ -108,9 +108,9 @@ flowchart TD
 
 ### 2.1 当前入口与完成规则
 
-T1、T2 已验收，**T6a正在实施验收，T3/T4保持就绪**。T6a真实100组及四入口已通过，1000组仍在生成，全部完成前不关闭任务。启动时先读取 `docs/current_authoritative_status.md` 与工作区差异，核验已有 RGB-D 原型及相关回归，建立证据清单；不能因文件已存在就将任务勾选完成，也不覆盖已有用户改动。后续依据下面的前置条件选择可执行项。
+T1、T2、T6a 已验收，**下一READY仅T3/T4**。T6a真实100/1000组及四入口均通过；T6b保持TODO，T5/T7/T8仍须其余依赖齐备。启动时先读取 `docs/current_authoritative_status.md` 与工作区差异，核验已有 RGB-D 原型及相关回归，建立证据清单；不能因文件已存在就将任务勾选完成，也不覆盖已有用户改动。后续依据下面的前置条件选择可执行项。
 
-状态只使用 `TODO / READY / IN_PROGRESS / BLOCKED / DONE`；当前 T1/T2 为 `DONE`，T6a为`IN_PROGRESS`，T3/T4 为 `READY`，其余任务为 `TODO` 且尚未验收，表中顺序不是完成声明。每个子项结束时在对应任务下记录：状态、实际改动、验证命令及结果、产物路径、阻塞原因和下一个可执行项。依赖产物经验证后才将任务标为 `READY`；代码与该项要求的真实运行证据全部通过才能标 `DONE`。报告 `BLOCKED` 时继续处理无关的就绪分支，不用假模型或软件状态替代真实结果。
+状态只使用 `TODO / READY / IN_PROGRESS / BLOCKED / DONE`；当前 T1/T2/T6a 为 `DONE`，T3/T4 为 `READY`，其余任务为 `TODO` 且尚未验收，表中顺序不是完成声明。每个子项结束时在对应任务下记录：状态、实际改动、验证命令及结果、产物路径、阻塞原因和下一个可执行项。依赖产物经验证后才将任务标为 `READY`；代码与该项要求的真实运行证据全部通过才能标 `DONE`。报告 `BLOCKED` 时继续处理无关的就绪分支，不用假模型或软件状态替代真实结果。
 
 T6、T15、T16、T17 分成可独立验收的子项；只有全部必需子项完成才能关闭父任务。T14、Isaac 和缓存是可选扩展，不在核心完成路径中。单个子项内部仍按第 3 节的文件、接口和复选步骤实施。
 
@@ -256,10 +256,10 @@ T7 先交付不依赖 T9/T12/T13 的基础事件与规则验证路由；缺恢�
 - [x] 写 `test_group_split_80_5_5_10`（100 组 train/calibration/selection/test=80/5/5/10）、`test_same_scene_different_seed_is_duplicate`、`test_episode_augmentations_keep_split`、`test_atomic_publish_survives_disk_failure`（半成品不进索引/恢复无重复）、`test_negative_conditions_are_retained`（低于100像素或95%深度的研究负例保留且非正例）。
 - [x] 写 `test_generator_without_model`、`test_sampling_stops_at_five_times_budget`（100组至多500次尝试，不足 INCOMPLETE）、`test_test_split_export_is_denied`、`test_offline_reader_preserves_timestamp`；运行 `.venv/bin/python -m pytest -q tests/test_rgbd_dataset_labels.py tests/test_rgbd_dataset_integrity.py tests/test_rgbd_dataset_splits.py tests/test_rgbd_dataset_generation.py tests/test_rgbd_dataset_export.py`。
 - [x] 实现真实场景/实例标签、float32 无损与禁 pickle/object dtype、schema `rgbd.dataset.v1`、episode 原子发布、checksum、断点、磁盘/取消状态；以基础参数/资产族 hash 加近重复图像检查划分，不按 seed 代替去重。SFT user 只含指令/图像路径，标签在 assistant；导出不代表本计划要微调基础 VLM。
-- [ ] **T6a 验收：** 重跑测试，依次运行已实现的 generate/validate/export/replay CLI，先 100 组再 1000 组；记录每组字节、生成秒数、显存峰值，交付共享模型、离线读取器和校验通过的 manifest。此项满足T5/T7/T8所需的数据前置，后续任务仍须满足其余依赖。
+- [x] **T6a 验收：** 重跑测试，依次运行已实现的 generate/validate/export/replay CLI，先 100 组再 1000 组；记录每组字节、生成秒数、显存峰值，交付共享模型、离线读取器和校验通过的 manifest。此项满足T5/T7/T8所需的数据前置，后续任务仍须满足其余依赖。
 - [ ] **T6b 验收：** T5 轨迹可用且 T8 实测预算通过后再运行 10000 组、整合教师记录并复核划分/来源；100 组仅深度为 30.72 MB、10000 帧为 3.072 GB，不将其当总磁盘需求。资源不足时保留已验收小批数据与真实 INCOMPLETE 原因。
 
-**实际进展（2026-10-03）：** T6a `IN_PROGRESS`。124项数据测试、123项旧路径回归、定向Ruff/mypy（18 source文件）与[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)通过。真实100个独立组已COMPLETE，35正/65负，80/5/5/10划分，validate/export/replay通过；CLI墙钟56.56秒，独立采样显存观测峰值155MiB。1000组仍在生成，当前不关闭T6a；T6b未运行。具体证据与测量边界见[进展摘要](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)及[执行日志](../../research/process/execution_log.md)。
+**实际验收（2026-10-03）：** T6a `DONE`。124项数据测试、123项旧路径回归、定向Ruff/mypy（18 source文件）与[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)通过。真实100/1000个独立组均COMPLETE并通过generate/validate/export/replay：100组为35正/65负、80/5/5/10划分；1000组为301正/699负、800/50/50/100划分。1000组总计1,158,966,504字节、每组1,158,966.504字节，生成墙钟1331.885秒、CLI墙钟1332.669秒；100组CLI墙钟56.56秒，两批独立采样显存观测峰值均155MiB，采样可能漏过瞬时峰值。具体证据与测量边界见[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)及[执行日志](../../research/process/execution_log.md)。下一READY仅T3/T4；T5/T7/T8仍须其余依赖齐备，T6b保持TODO且未运行。
 
 ### Task 7：同一 episode 视觉闭环、三值验证与默认作业
 

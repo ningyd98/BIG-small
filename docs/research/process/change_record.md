@@ -1,6 +1,6 @@
 # 变更记录
 
-本记录区分文档工作与产品实现。T1/T2 已完成；T6a 实现和真实 100 组已通过，1000 组仍在生成，任务保持 `IN_PROGRESS`。下列文件依据实际工作区差异登记，不能根据计划中的 Files 栏倒推“已变更”。
+本记录区分文档工作与产品实现。T1/T2 已完成；T6a 实现及真实100/1000组四入口验收通过，状态为 `DONE`；T6b保持 `TODO`。下列文件依据实际工作区差异登记，不能根据计划中的 Files 栏倒推“已变更”。
 
 | 日期/任务 | 已确认变更 | 验证与证据 | 待回填 |
 |---|---|---|---|
@@ -24,4 +24,4 @@
 - 新增 `datasets/rgbd/` 的共享 models、scene_sampler、离线 capture、labels、writer、quality、splitter、generator、exporters 及包入口，新增 `vision/offline_reader.py`；扩展连续采集会话的场景应用及 MuJoCo backend 的数据场景准备入口。冻结文件以[源码摘要](../../../artifacts/research/process/20261003-t6a/frozen-source-hashes.json)为准，不把旧工作区 RGB-D/API/UI 改动归入本批。
 - 新增 generate/validate/export/replay 四个脚本、100/1000/10000 三个 YAML 和五份 dataset 测试。实现来源/组隔离、raw扰动对应、原子发布/恢复、5倍尝试上限、磁盘/取消状态、禁止test导出及保留时间戳的离线重建。
 - 审查发现的转动稳定性、旋转桌面边界、三pass证据、深度可视化一致性、完整来源依赖、最终落盘与尝试日志预算均已修复并复核；[最终独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)为PASS。数据124项、旧路径123项回归及定向Ruff/mypy（18文件）通过。
-- 真实100组完成，35正/65负，独立80/5/5/10划分；generate/validate/export/replay通过。1000组仍在生成，T6a尚未关闭，T6b未运行。[当前进展](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)逐项保留证据。未提交/推送，原P1/T2及Jev路线修订历史保持独立。
+- 真实100组完成，35正/65负，独立80/5/5/10划分；1000组完成，301正/699负，独立800/50/50/100划分。两批generate/validate/export/replay通过，T6a为DONE，T6b为TODO且未运行。[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)逐项保留证据；下一READY仅T3/T4，T5/T7/T8仍须其余依赖齐备。未提交/推送，原P1/T2及Jev路线修订历史保持独立。

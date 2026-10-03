@@ -31,7 +31,7 @@ async function main() {
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForFunction(()=>Boolean(window.mermaid));
     await page.addStyleTag({content:'body{margin:20px;background:#fff;font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif}#diagram{display:inline-block;}'});
-    await page.evaluate(()=>window.mermaid.initialize({startOnLoad:false,securityLevel:'strict',theme:'base',fontFamily:'Noto Sans CJK SC, Microsoft YaHei, sans-serif',themeVariables:{fontSize:'18px',primaryColor:'#edf4fc',primaryTextColor:'#17283d',primaryBorderColor:'#537799',lineColor:'#537799',secondaryColor:'#f2f6ec',tertiaryColor:'#fff3de'},flowchart:{htmlLabels:false,useMaxWidth:false,nodeSpacing:35,rankSpacing:45,curve:'linear'}}));
+    await page.evaluate(()=>window.mermaid.initialize({startOnLoad:false,securityLevel:'strict',htmlLabels:false,theme:'base',fontFamily:'Noto Sans CJK SC, Microsoft YaHei, sans-serif',themeVariables:{fontSize:'18px',primaryColor:'#edf4fc',primaryTextColor:'#17283d',primaryBorderColor:'#537799',lineColor:'#537799',secondaryColor:'#f2f6ec',tertiaryColor:'#fff3de'},flowchart:{htmlLabels:false,useMaxWidth:false,nodeSpacing:35,rankSpacing:45,curve:'linear'}}));
     const results=[];
     for(let n=1;n<=9;n++){
       const source=await fs.readFile(path.join(qa,`figure-${n}.mmd`),'utf8');
@@ -41,11 +41,18 @@ async function main() {
         document.getElementById('diagram').innerHTML=svg;
         const el=document.querySelector('#diagram svg');
         const box=el.getBoundingClientRect();
-        return {svg,width:box.width,height:box.height};
+        return {svg:new XMLSerializer().serializeToString(el),width:box.width,height:box.height};
       },{source,n});
       await fs.writeFile(path.join(assets,`figure-${n}.svg`),out.svg);
+      await page.evaluate(async(svg)=>{
+        const img=new Image();
+        const loaded=new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('Standalone SVG failed to load'));});
+        img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+        document.getElementById('diagram').replaceChildren(img);
+        await loaded;
+      },out.svg);
       await page.locator('#diagram').screenshot({path:path.join(qa,`figure-${n}.png`)});
-      results.push({figure:n,width:out.width,height:out.height,parsed:true,rendered:true});
+      results.push({figure:n,width:out.width,height:out.height,parsed:true,rendered:true,standaloneSvgLoaded:true});
     }
     await fs.writeFile(path.join(qa,'diagram-render-check.json'),JSON.stringify({renderer:'mermaid 11.4.1',results},null,2));
     console.log(JSON.stringify(results));

@@ -1,6 +1,6 @@
 # 验证矩阵
 
-命令取自[执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)，含待新增测试或 CLI；列在此处不表示当前可运行。`TODO` 表示未取得本轮验收证据；T1/T2 已验收，T6a 的四个 CLI 已实现且真实 100 组通过，1000 组仍在生成。软件通过只能证明相应代码契约，真实采集、模型和物理结果须分别出示原始证据。
+命令取自[执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)，含待新增测试或CLI；列在此处不表示当前可运行。`TODO`表示未取得本轮验收证据；T1/T2已验收，T6a真实100/1000组与四个CLI均通过，状态DONE。软件通过只能证明相应代码契约，真实采集、模型和物理结果须分别出示原始证据。
 
 | 任务 | 关键能力及证据层级 | 主要命令/检查 | 必需原始证据 | 状态 |
 |---|---|---|---|---|
@@ -8,7 +8,7 @@
 | T2 | 同状态 RGB/depth/mask、标定、session；SOFTWARE + REAL_CAPTURE | `MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_observations.py tests/test_rgbd_capture_session.py`；Phase9 MuJoCo 回归 | 原始三图、帧/时间/hash、≤5 mm 平面反投影、资源释放 | DONE；三 pass 同状态，100点最大误差2.728 mm，独立审查通过 |
 | T3 | 真双图请求、严格解析、模型冻结；SOFTWARE + REAL_VLM | `.venv/bin/python -m pytest -q tests/test_rgbd_planning.py`；待在脚本目录实现 `probe_rgbd_model.py` | 真实请求摘要、权重/配置 hash、延迟/显存 | TODO |
 | T4—T5 | actuator/step 抓放；独立评价/教师；SOFTWARE + PHYSICS | `MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_physical_skills.py tests/test_rgbd_trajectory_dataset.py` | 步数、接触/抬升/稳定、20 episode 正反例及真值隔离 | TODO |
-| T6a | 静态数据生产、原子写入、组划分；SOFTWARE + REAL_CAPTURE | 五份 `test_rgbd_dataset_{labels,integrity,splits,generation,export}.py`；已实现 generate/validate/export/replay CLI | 100/1000组 manifest、正负例/拒绝项、资源与分组审计 | IN_PROGRESS；124项数据测试通过，100组35正65负、80/5/5/10及四入口通过；1000组生成中 |
+| T6a | 静态数据生产、原子写入、组划分；SOFTWARE + REAL_CAPTURE | 五份 `test_rgbd_dataset_{labels,integrity,splits,generation,export}.py`；已实现 generate/validate/export/replay CLI | 100/1000组 manifest、正负例/拒绝项、资源与分组审计 | DONE；124项数据测试通过；两批35正65负/301正699负，独立80/5/5/10及800/50/50/100，四入口均通过 |
 | T6b | 全量数据与教师轨迹整合；REAL_CAPTURE + PHYSICS | 已有 `dataset_full.yaml`；待T5/T8后运行10000组并整合教师 | 10000组manifest、轨迹、分组与实测预算 | TODO；未运行，不因配置已存在而验收 |
 | T7—T8 | 同episode反馈、三值验证、账本与基础先导；REAL_CAPTURE + REAL_VLM + PHYSICS | `pytest` 的 `test_rgbd_{runtime,closed_loop,online_verification}.py`、`test_research_{protocol,network,pilot,cost_ledger}.py`；待实现 smoke/pilot CLI | 前后帧/在线与独立判定、20闭环、120先导、全部请求/字节、初次hash | TODO |
 | T9—T10 | 校准风险与动作证据/B3；SOFTWARE + 实际来源记录 | `pytest` 的 `test_rgbd_risk_calibration.py test_visual_evidence_contract.py` | 分组隔离、校准图、固定机会 ID/UNKNOWN/误放行原始记录 | TODO |
@@ -25,4 +25,4 @@
 
 本次文档修订补充误完成率、UNKNOWN/拒答/回退率、端到端决策与故障响应延迟、无进展终止率；G2 云请求包含远程判断调用。文档检查通过不代表上述新增测试已存在或通过，状态仍为 TODO。
 
-T6a 当前证据：[进展摘要](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)、[100组校验](../../../artifacts/research/process/20261003-t6a/smoke-validate.json)、[CLI审计](../../../artifacts/research/process/20261003-t6a/smoke-cli-audit.json)、[资源测量](../../../artifacts/research/process/20261003-t6a/smoke-resources.json)、[独立代码审查PASS](../../../artifacts/research/process/20261003-t6a/final-review.md)。定向 Ruff/mypy（18文件）和123项旧路径回归通过；1000组及T6a总体验收尚未完成。
+T6a最终证据：[验收报告](../../../artifacts/research/process/20261003-t6a/acceptance.json)、[100组校验](../../../artifacts/research/process/20261003-t6a/smoke-validate.json)、[1000组校验](../../../artifacts/research/process/20261003-t6a/validation-validate.json)、[1000组CLI审计](../../../artifacts/research/process/20261003-t6a/validation-cli-audit.json)、[1000组资源](../../../artifacts/research/process/20261003-t6a/validation-resources.json)、[独立代码审查PASS](../../../artifacts/research/process/20261003-t6a/final-review.md)。定向Ruff/mypy（18文件）和123项旧路径回归通过；T6a已关闭，T6b仍TODO。

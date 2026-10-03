@@ -8,7 +8,7 @@
 
 本轮过程记录统一位于 `docs/research/process/`，启动基线位于 `artifacts/research/process/20261003-phase1/`。历史 Phase 验收保留，以下 Ubuntu 快照不自动升级为新研究方法的验收。软件契约通过、真实图像采集、真实模型调用和物理任务成功分别记账。
 
-后续 **T6a 静态数据工厂为 `IN_PROGRESS`**。共享数据契约、原子恢复/来源与分组校验、四个CLI已实现；124项数据测试、123项旧路径回归、定向Ruff/mypy（18 source文件）及[独立代码审查](../artifacts/research/process/20261003-t6a/final-review.md)通过。真实100个独立组已完成生成、校验、导出与离线重建，35正例/65负例，train/calibration/selection/test=80/5/5/10；1000组仍在真实生成，尚未通过全部T6a验收。见[进展摘要](../artifacts/research/process/20261003-t6a/acceptance-progress.json)。T6b的10000组未运行；静态感知记录均不作为动作成功证据，真实VLM、研究物理抓放、正式研究结果与硬件状态未因此升级。
+后续 **T6a 静态数据工厂为 `DONE`**。共享数据契约、原子恢复/来源与分组校验、四个CLI已实现；124项数据测试、123项旧路径回归、定向Ruff/mypy（18 source文件）及[独立代码审查](../artifacts/research/process/20261003-t6a/final-review.md)通过。真实100/1000个独立组均完成生成、校验、导出与离线重建：100组为35正例/65负例、train/calibration/selection/test=80/5/5/10；1000组为301正例/699负例、800/50/50/100。见[最终验收](../artifacts/research/process/20261003-t6a/acceptance.json)。下一READY仅T3/T4；T5/T7/T8的数据前置已满足，但仍须其余依赖齐备。T6b保持TODO，10000组与教师整合未运行；静态感知记录均不作为动作成功证据，真实VLM、研究物理抓放、正式研究结果与硬件状态未因此升级。
 
 ## 2026-10-02 Ubuntu 当前快照
 
