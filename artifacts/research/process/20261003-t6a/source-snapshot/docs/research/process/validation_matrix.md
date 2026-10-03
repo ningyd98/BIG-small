@@ -1,0 +1,28 @@
+# 验证矩阵
+
+命令取自[执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)，含待新增测试或CLI；列在此处不表示当前可运行。`TODO`表示未取得本轮验收证据；T1/T2已验收，T6a真实100/1000组与四个CLI均通过，状态DONE。软件通过只能证明相应代码契约，真实采集、模型和物理结果须分别出示原始证据。
+
+| 任务 | 关键能力及证据层级 | 主要命令/检查 | 必需原始证据 | 状态 |
+|---|---|---|---|---|
+| T1 | 历史来源、分母与失败口径；SOFTWARE | `.venv/bin/python -m pytest -q tests/test_research_provenance.py tests/test_phase11_1_simulation_runtime.py` | 审计、回归日志、历史 5580 排除证明 | DONE；15项新单测，合并35项回归，独立复审通过 |
+| T2 | 同状态 RGB/depth/mask、标定、session；SOFTWARE + REAL_CAPTURE | `MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_observations.py tests/test_rgbd_capture_session.py`；Phase9 MuJoCo 回归 | 原始三图、帧/时间/hash、≤5 mm 平面反投影、资源释放 | DONE；三 pass 同状态，100点最大误差2.728 mm，独立审查通过 |
+| T3 | 真双图请求、严格解析、模型冻结；SOFTWARE + REAL_VLM | `.venv/bin/python -m pytest -q tests/test_rgbd_planning.py`；待在脚本目录实现 `probe_rgbd_model.py` | 真实请求摘要、权重/配置 hash、延迟/显存 | TODO |
+| T4—T5 | actuator/step 抓放；独立评价/教师；SOFTWARE + PHYSICS | `MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_physical_skills.py tests/test_rgbd_trajectory_dataset.py` | 步数、接触/抬升/稳定、20 episode 正反例及真值隔离 | TODO |
+| T6a | 静态数据生产、原子写入、组划分；SOFTWARE + REAL_CAPTURE | 五份 `test_rgbd_dataset_{labels,integrity,splits,generation,export}.py`；已实现 generate/validate/export/replay CLI | 100/1000组 manifest、正负例/拒绝项、资源与分组审计 | DONE；124项数据测试通过；两批35正65负/301正699负，独立80/5/5/10及800/50/50/100，四入口均通过 |
+| T6b | 全量数据与教师轨迹整合；REAL_CAPTURE + PHYSICS | 已有 `dataset_full.yaml`；待T5/T8后运行10000组并整合教师 | 10000组manifest、轨迹、分组与实测预算 | TODO；未运行，不因配置已存在而验收 |
+| T7—T8 | 同episode反馈、三值验证、账本与基础先导；REAL_CAPTURE + REAL_VLM + PHYSICS | `pytest` 的 `test_rgbd_{runtime,closed_loop,online_verification}.py`、`test_research_{protocol,network,pilot,cost_ledger}.py`；待实现 smoke/pilot CLI | 前后帧/在线与独立判定、20闭环、120先导、全部请求/字节、初次hash | TODO |
+| T9—T10 | 校准风险与动作证据/B3；SOFTWARE + 实际来源记录 | `pytest` 的 `test_rgbd_risk_calibration.py test_visual_evidence_contract.py` | 分组隔离、校准图、固定机会 ID/UNKNOWN/误放行原始记录 | TODO |
+| T11—T12 | 公平事件、B0/B1/B2、有限候选/provider；SOFTWARE + PHYSICS | `pytest` 的 `test_runtime_auto_baselines.py test_joint_visual_policy.py test_decision_judgment.py` | 成功后再判断、候选/概率语义/提交关联、拒答与完整账本、B0扫描 | TODO |
+| T13 | 验证后恢复、有界预算、契约激活、局部修复/B4；SOFTWARE + PHYSICS | `pytest` 的 `test_visual_local_repair.py test_verified_recovery_lifecycle.py test_replan_activation.py` | 最终失败再路由、重启预算、ACK/启动区分、无重放、开发故障轨迹 | TODO |
+| T15a、T16a | 分配/功效/统计与分母反例；SOFTWARE | `pytest` 的 `test_research_{assignments,runner,power,statistics,acceptance}.py` | 固定分配、零事件/失败/BLOCKED 反例、区间算法 | TODO |
+| T17a/b | 数据与结果界面；SOFTWARE + 实际 E2E | 后端 API 测试；`npm --prefix dashboard run api:generate` 后 typecheck/lint/test/build | 真实 MuJoCo E2E、模型缺失路径；T17b 核对实际结果 | TODO |
+| T15b/c、T16b | 最终冻结、正式物理评测、统计；REAL_CAPTURE + REAL_VLM + PHYSICS | 待实现 power/formal/gate-replay/analyze CLI | 独立 120 功效先导、最终 hash、N 全分母、200 故障、区间与负结果 | TODO |
+| T18 | 原始记录重建、复现、回归；SOFTWARE + 小批 PHYSICS | 待在脚本目录实现 `reproduce_rgbd_research.py`；ruff/mypy/指定 pytest 与前端检查 | bundle hash、重建一致性、审查记录与限制 | TODO |
+| T14（可选） | G5 三采样策略与域外；独立扩展 | 待实现训练 CLI、`test_targeted_rgbd_sampling.py` | 300 域外组×3 seed、同预算及模型 hash；未开展记 NOT_RUN | TODO/可选 |
+| 判断 provider（可选） | Jev/其他模型影子与配对闭环；独立扩展 | 待实现 `test_optional_judge_provider.py`；T12可选对照协议 | 影子无dispatch、版本/候选/阈值、全成本、实际闭环与失败；未尝试为NOT_RUN | TODO/可选 |
+
+阶段验收判据：G0 已发生阶段真实路径、泄露和跨集合组重复审计；G1 独立标称层；G2/G2a 对公平 B0；G3 固定机会回放且不冒充物理成功；G4 完整 200 故障；G5 独立扩展。目标数值、区间和统计规则以[研究设计](../../superpowers/specs/2026-10-03-rgbd-evidence-research-design.md)为准。`MOCK`、规划 dry-run、旧 Phase 记录、软件测试均不得填 PHYSICS 分子；硬件列始终 `NOT_STARTED`。
+
+本次文档修订补充误完成率、UNKNOWN/拒答/回退率、端到端决策与故障响应延迟、无进展终止率；G2 云请求包含远程判断调用。文档检查通过不代表上述新增测试已存在或通过，状态仍为 TODO。
+
+T6a最终证据：[验收报告](../../../artifacts/research/process/20261003-t6a/acceptance.json)、[100组校验](../../../artifacts/research/process/20261003-t6a/smoke-validate.json)、[1000组校验](../../../artifacts/research/process/20261003-t6a/validation-validate.json)、[1000组CLI审计](../../../artifacts/research/process/20261003-t6a/validation-cli-audit.json)、[1000组资源](../../../artifacts/research/process/20261003-t6a/validation-resources.json)、[独立代码审查PASS](../../../artifacts/research/process/20261003-t6a/final-review.md)。定向Ruff/mypy（18文件）和123项旧路径回归通过；T6a已关闭，T6b仍TODO。

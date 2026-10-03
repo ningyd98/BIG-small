@@ -1,0 +1,292 @@
+--- a/docs/research/process/handover.md
++++ b/docs/research/process/handover.md
+@@ -1,6 +1,6 @@
+ # 当前交接
+ 
+-**截至 2026-10-03：P1 已完成，P2 的 T6a、T3、T4 就绪但尚未执行。** T1 来源审计及 T2 同步 RGB-D 已通过软件、真实采集和独立审查门槛；本轮无真实 VLM 验收、研究物理抓放或新正式实验结果。历史 `PHASE12_REJECTED`、旧 5,580 行排除边界与权威论文运行数 0 保持不变。
++**截至 2026-10-03：P1 已完成；P2 的 T6a 为 `DONE`，下一就绪任务仅为 T3/T4。** T6a 的真实100/1000组均完成generate/validate/export/replay及资源核对。T1来源审计及T2同步RGB-D的原验收继续保留；本轮无真实VLM验收、研究物理抓放或新正式实验结果。历史 `PHASE12_REJECTED`、旧5,580行排除边界与权威论文运行数0保持不变。
+ 
+ ## 先读
+ 
+@@ -8,14 +8,16 @@
+ - [执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)：按依赖和验收推进，不按十二周排代理工作。
+ - [执行日志](execution_log.md)、[验证矩阵](validation_matrix.md)、[决策风险](decisions_and_risks.md)、[变更记录](change_record.md)：实际命令、原始证据和责任范围。
+ - [本轮补丁](../../../artifacts/research/process/20261003-phase1/implementation.patch)及[源码摘要](../../../artifacts/research/process/20261003-phase1/source-manifest.json)：区分本批改动与已有未提交原型。
++- [T6a最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)、[冻结源码摘要](../../../artifacts/research/process/20261003-t6a/frozen-source-hashes.json)及[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)：真实100/1000组与四入口全部通过，T6a已关闭，T6b未运行。
+ 
+ ## 下一批按依赖执行
+ 
+-1. **T6a 静态数据工厂**：先定义共享 SceneSpec，再完成随机化、离线标签、原子落盘、组划分和导出；验收 100 组后再做 1000 组。不能把单场景捕获样本当训练/测试集；多 geom 物体须合并为对象实例。该任务不依赖 VLM。
+-2. **T3 真实视觉模型**：双图输入、严格输出、像素映射、模型快照及本机延迟/显存。候选模型尚未验收，不可用记 BLOCKED；同时处理已知 planner.py 类型检查问题。保持在线模型与离线实例/真值隔离。
+-3. **T4 物理技能**：IK、关节与夹爪驱动、接触抓放；动作必须产生 actuator/step 记录和独立可检查结果。先自由空间，再接触；无成功证据不能用脚本完成代替。
++T6a静态数据工厂已完成，共享SceneSpec及100/1000组数据可供后续任务按来源与split规则消费。
+ 
+-上述任务可以按文件责任并行；共享 backend.py 单写者，GPU/渲染任务串行。T6a 创建的 SceneSpec 由后续 T5 消费；T5 等待 T4/T6a，T7 等待 T3/T5/T6a，T8 等待 T6a/T7。模型受阻时继续独立物理/数据分支。
++1. **T3 真实视觉模型**：双图输入、严格输出、像素映射、模型快照及本机延迟/显存。候选模型尚未验收，不可用记 BLOCKED；同时处理已知 planner.py 类型检查问题。保持在线模型与离线实例/真值隔离。
++2. **T4 物理技能**：IK、关节与夹爪驱动、接触抓放；动作必须产生 actuator/step 记录和独立可检查结果。先自由空间，再接触；无成功证据不能用脚本完成代替。
++
++上述任务可以按文件责任并行；共享 backend.py 单写者，GPU/渲染任务串行。T6a数据前置已满足，创建的SceneSpec由后续T5消费；T5仍等待T4，T7仍等待T3/T5，T8仍等待T7。模型受阻时继续独立物理分支。
+ 
+ ## 本次路线优化的交接要求
+ 
+@@ -26,7 +28,7 @@
+ - T13 将最终验证失败接回恢复，验证后解决事件；持久化预算与无进展限制；修复候选、接受ACK、激活、实际启动分别记录。完成动作不可重放。
+ - T8/T15—T17 记录在线与独立判断分歧、全部远程判断成本和恢复时间线。Jev接入仅为可选对照，当前没有相关实现或实验结果。
+ 
+-G0—G5、B0—B5和正式样本规则不变；T1/T2仍DONE，T6a/T3/T4仍READY。本次路线修订与原P1实施补丁分别登记，不能把新文档归入旧验收产物。
++G0—G5、B0—B5和正式样本规则不变；该次路线修订时 T1/T2 为 DONE、T6a/T3/T4 为 READY。路线修订与原 P1 实施补丁及后续 T6a 实施分别登记，不能把新文档归入旧验收产物。
+ 
+ ## 继续工作边界
+ 
+@@ -39,3 +41,29 @@
+ 继续开发时优先参考[增补验收报告](../../../artifacts/research/process/20261003-phase1/t2-resume/acceptance.json)和[最新源码摘要](../../../artifacts/research/process/20261003-phase1/t2-resume/final-source-hashes.json)：新增边界修复后，T2 定向 42 项、最终合并 123 项通过，独立复审关闭最大分辨率和深度标定两项发现。资产清单已同步现有 RGB-D 场景（phase9.reference.v2）。原 P1 报告保留作先前快照。
+ 
+ T6a/T3/T4 的依赖与入口不变。完整套件未完成，两组耗时较长的 Phase12 历史运行器测试留待后续全量质量门；文档检查仍为 30 项既有问题。单个采集会话保持单写者使用。
++
++## T6a 当前数据入口（2026-10-03）
++
++真实数据位于 `datasets/rgbd-smoke-20261003`：100 个独立组、35 正例/65 负例，分组为 80/5/5/10，质量校验无错误或警告；train 导出 80 条，其中 55 条为负例。单样本重建的原采集时刻、RGB 与深度均已核对一致，`execution_verified=false`。见[校验结果](../../../artifacts/research/process/20261003-t6a/smoke-validate.json)及[CLI 审计](../../../artifacts/research/process/20261003-t6a/smoke-cli-audit.json)。
++
++已实现的调用方式如下；重复生成命令会按原配置/来源核对后请求恢复，不重置尝试预算：
++
++```bash
++MUJOCO_GL=egl .venv/bin/python scripts/generate_rgbd_dataset.py \
++  --config configs/rgbd/dataset_smoke.yaml --output datasets/rgbd-smoke-20261003
++.venv/bin/python scripts/validate_rgbd_dataset.py --dataset datasets/rgbd-smoke-20261003
++.venv/bin/python scripts/export_rgbd_training.py \
++  --dataset datasets/rgbd-smoke-20261003 --split train \
++  --output artifacts/research/process/20261003-t6a/smoke-train.jsonl
++.venv/bin/python scripts/replay_rgbd_sample.py \
++  --dataset datasets/rgbd-smoke-20261003 --sample-id s-dead1e56ae7a37a367c6694a8bd90d81 \
++  --output artifacts/research/process/20261003-t6a/smoke-replay
++```
++
++export 仅允许 train/calibration/selection，禁止 test；export/replay 输出必须在原数据集外。生成器总尝试上限为目标组数的 5 倍，取消/磁盘不足保留已发布 episode，配置/源码/资产不兼容不静默续跑。生成退出码 0/2/3/4/130 分别表示完成、输入无效、环境阻塞、运行未完成或质量未通过、用户取消。
++
++本次100组CLI墙钟为56.56秒，独立显存采样观测峰值155MiB（162,529,280字节）；采样配置间隔0.5秒，命令延迟与离散采样可能漏过瞬时峰值，见[资源记录](../../../artifacts/research/process/20261003-t6a/smoke-resources.json)。124项数据测试、123项旧路径回归、Ruff/mypy（18 source文件）和独立代码审查通过。
++
++1000组位于 `datasets/rgbd-validation-20261003`，1000次尝试得到1000个独立组，301正例/699负例，划分800/50/50/100；独立校验无重复、错误或警告，见[1000组校验](../../../artifacts/research/process/20261003-t6a/validation-validate.json)。800条train导出含562条负例，回放字节与原采集时刻一致、raw证据保留，见[CLI审计](../../../artifacts/research/process/20261003-t6a/validation-cli-audit.json)。总大小1,158,966,504字节，每组1,158,966.504字节；生成器墙钟1331.885秒、CLI墙钟1332.669秒，显存采样观测峰值同为155MiB，测量限制同上。精确值见[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)和[1000组资源](../../../artifacts/research/process/20261003-t6a/validation-resources.json)。
++
++T6b的10000组配置仅已交付，任务为TODO且未运行，必须等待T5/T8。T6a只满足数据前置；T5仍等待T4，T7等待T3/T5，T8等待T7。静态标签和源图像不作为动作示范或G1—G5的物理结果；Jev/provider可选边界保持原路线要求。
+--- a/docs/research/process/README.md
++++ b/docs/research/process/README.md
+@@ -1,6 +1,8 @@
+ # RGB-D 研究开发过程文档
+ 
+ 本目录记录本轮分阶段实施的**过程与证据边界**。2026-10-03 首批 P1（T1/T2）已完成：88 项合并回归通过，真实采集平面高度误差最大 2.728 mm，独立审查无未关闭实质问题。验收摘要见[阶段报告](../../../artifacts/research/process/20261003-phase1/phase1-report.json)。实施依据是[研究设计](../../superpowers/specs/2026-10-03-rgbd-evidence-research-design.md)和[依赖驱动执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)；历史事实以[当前权威状态](../../current_authoritative_status.md)为准。计划中的接口、命令和产物不因写入本文档而成为已实现功能。
++
++当前 P2 的 **T6a 为 `DONE`**：无模型静态数据工厂与四个 CLI 已实现，124 项数据测试、123 项旧路径回归、定向 Ruff/mypy（18 个 source 文件）及独立代码审查通过。真实 100/1000 组均完成 generate/validate/export/replay：分别为 35正/65负、301正/699负，独立划分分别为 80/5/5/10、800/50/50/100，无重复、校验错误或警告。见[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)和[当前交接](handover.md)。下一就绪任务仅为 T3/T4；T6b 的 10000 组未运行，不将静态感知数据记为物理任务成功。
+ 
+ | 文档 | 用途 |
+ |---|---|
+--- a/docs/research/process/execution_log.md
++++ b/docs/research/process/execution_log.md
+@@ -82,3 +82,25 @@
+ - T13 增加验证后解决事件、持久化预算/无进展终止、候选/真实ACK/启动协调；T8/T15—T17补完整成本与误完成/回退等诊断。模拟云使用本机VLM仍计云请求。
+ - 验证：`python3 scripts/check_docs.py --json` 退出1，修改前后均为30项既有问题，无新增；针对九份文档的链接、Mermaid围栏、内容模式、空白与冲突标记检查通过。依赖图23个执行单元无环、18个任务编号连续，已完成复选项及目标/基线表保持不变；`git diff --check` 退出0。见[文档检查记录](../../../artifacts/research/process/20261003-roadmap-loop-review/documentation-check.json)。
+ - 本次只改文档并做文档验证，未运行产品测试、模型、训练或物理实验，未提交/推送。新接口和具名测试仍待实现；T1/T2仍DONE，下一就绪队列仍为T6a/T3/T4。
++
++## 2026-10-03 T6a 实施与100组验收进展
++
++本节保留100组阶段的产品实施记录及前述 P1/T2 各轮验收、Jev 路线文档修订历史。当时 T6a 为 `IN_PROGRESS`；[进展摘要](../../../artifacts/research/process/20261003-t6a/acceptance-progress.json)记录真实100组通过、1000组仍在生成。该阶段尚未声明 T6a 完成或生成10000组；最终结果见下节。
++
++- 已交付共享场景/数据契约、真实场景应用与离线标签、raw扰动证据、episode原子发布、分组/近重复审计、预算/取消/恢复、四个CLI及对应配置。各模块按分工先跑失败反例再实现。软件fixture只用于边界验证，不冒充真实采集或动作示范。
++- 跨模块审查发现并关闭：转动中的物体被误判稳定、旋转后的桌面边界计算、缺少/不足三pass证据、深度可视化与原始深度不一致、来源摘要遗漏运行时契约、最终落盘与拒绝日志可能越过预算。见[采集审查](../../../artifacts/research/process/20261003-t6a/capture-review.md)、[存储审查](../../../artifacts/research/process/20261003-t6a/storage-review.md)及[独立最终代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)。最终代码审查为PASS，无未关闭的范围内实质问题；该结论不替代真实数据运行。
++- 数据测试命令：`MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_dataset_labels.py tests/test_rgbd_dataset_integrity.py tests/test_rgbd_dataset_splits.py tests/test_rgbd_dataset_generation.py tests/test_rgbd_dataset_export.py`。根代理[最终数据测试](../../../artifacts/research/process/20261003-t6a/dataset-acceptance-tests.log)为 **124 passed，103.63秒**；[旧路径回归](../../../artifacts/research/process/20261003-t6a/regression-123.log)为 **123 passed / 1条既有Starlette弃用警告，51.35秒**。不把两次运行混称为一次完整全仓回归。
++- [定向Ruff](../../../artifacts/research/process/20261003-t6a/final-ruff.log)通过；[mypy](../../../artifacts/research/process/20261003-t6a/final-mypy.log)覆盖18个source文件通过，仅有既有unused override说明。[冻结源码摘要](../../../artifacts/research/process/20261003-t6a/frozen-source-hashes.json)与对应source-snapshot保存本次版本；不是干净Git提交。
++- 实际100组命令：`MUJOCO_GL=egl .venv/bin/python scripts/generate_rgbd_dataset.py --config configs/rgbd/dataset_smoke.yaml --output datasets/rgbd-smoke-20261003`，退出0、状态COMPLETE。独立[validate](../../../artifacts/research/process/20261003-t6a/smoke-validate.json)确认100个独立组，35正例/65负例，train/calibration/selection/test=80/5/5/10，重复数0，无错误或警告。
++- [export](../../../artifacts/research/process/20261003-t6a/smoke-export.json)导出80条train样本；[replay](../../../artifacts/research/process/20261003-t6a/smoke-replay.json)完成单样本重建。[CLI审计](../../../artifacts/research/process/20261003-t6a/smoke-cli-audit.json)核对其中55条训练负例、user只有instruction/images、重建时间戳保留且RGB/depth完全一致，`execution_verified=false`。
++- [100组资源实测](../../../artifacts/research/process/20261003-t6a/smoke-resources.json)：CLI墙钟56.56秒，按该进程PID采样到的framebuffer显存峰值155 MiB（162,529,280字节）。配置采样间隔0.5秒，实际还受nvidia-smi命令耗时影响，可能漏过瞬时峰值；不将该数写成绝对显存上限。
++- 当时根代理继续串行运行真实1000组；本阶段记录不填尚未生成的正负例、分组、耗时或质量结论，最终结果在下节追加。T6b等待T5/T8；T3/T4仍就绪，T5/T7/T8须等待各自全部前置条件。未提交或推送，未调用视觉模型、未启动真实硬件，未改变历史PHASE12拒绝与权威论文运行数0。
++
++## 2026-10-03 T6a 最终验收
++
++[最终验收报告](../../../artifacts/research/process/20261003-t6a/acceptance.json)将 T6a 标为 `DONE`。真实100与1000组均完成 generate/validate/export/replay 四入口；前述124项数据测试、123项旧路径回归、Ruff/mypy及独立审查通过，不声称完整全仓测试通过。
++
++- 1000组数据位于 `datasets/rgbd-validation-20261003`，1000次尝试得到1000个独立组、301正例/699负例，train/calibration/selection/test=800/50/50/100。[独立校验](../../../artifacts/research/process/20261003-t6a/validation-validate.json)确认重复数0、无错误或警告。
++- [CLI审计](../../../artifacts/research/process/20261003-t6a/validation-cli-audit.json)确认导出800条train样本，其中562条负例；离线重建保留原采集时刻，RGB/depth字节一致，保留原始证据，`execution_verified=false`。
++- [1000组资源实测](../../../artifacts/research/process/20261003-t6a/validation-resources.json)：总计1,158,966,504字节，每组1,158,966.504字节；生成墙钟1331.885秒，CLI墙钟1332.669秒。按进程PID采样的显存观测峰值155 MiB（162,529,280字节）；0.5秒配置间隔加命令耗时可能漏过瞬时峰值，不作为连续峰值或绝对上限。
++- 下一就绪任务仅为T3/T4。T6a满足T5/T7/T8的数据前置；T5仍等待T4，T7仍等待T3/T5，T8仍等待T7。T6b保持TODO，10000组与教师整合未运行，等待T5/T8。未提交/推送，未调用VLM、训练模型、验收正式物理任务或启动真实硬件。
+--- a/docs/research/process/validation_matrix.md
++++ b/docs/research/process/validation_matrix.md
+@@ -1,6 +1,6 @@
+ # 验证矩阵
+ 
+-命令取自[执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)，含待新增测试或 CLI；列在此处不表示当前可运行。`TODO` 表示未取得本轮验收证据；T1 已验收，T2 软件与真实采集均已通过独立审查。软件通过只能证明相应代码契约，真实采集、模型和物理结果须分别出示原始证据。
++命令取自[执行计划](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)，含待新增测试或CLI；列在此处不表示当前可运行。`TODO`表示未取得本轮验收证据；T1/T2已验收，T6a真实100/1000组与四个CLI均通过，状态DONE。软件通过只能证明相应代码契约，真实采集、模型和物理结果须分别出示原始证据。
+ 
+ | 任务 | 关键能力及证据层级 | 主要命令/检查 | 必需原始证据 | 状态 |
+ |---|---|---|---|---|
+@@ -8,7 +8,8 @@
+ | T2 | 同状态 RGB/depth/mask、标定、session；SOFTWARE + REAL_CAPTURE | `MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_observations.py tests/test_rgbd_capture_session.py`；Phase9 MuJoCo 回归 | 原始三图、帧/时间/hash、≤5 mm 平面反投影、资源释放 | DONE；三 pass 同状态，100点最大误差2.728 mm，独立审查通过 |
+ | T3 | 真双图请求、严格解析、模型冻结；SOFTWARE + REAL_VLM | `.venv/bin/python -m pytest -q tests/test_rgbd_planning.py`；待在脚本目录实现 `probe_rgbd_model.py` | 真实请求摘要、权重/配置 hash、延迟/显存 | TODO |
+ | T4—T5 | actuator/step 抓放；独立评价/教师；SOFTWARE + PHYSICS | `MUJOCO_GL=egl .venv/bin/python -m pytest -q tests/test_rgbd_physical_skills.py tests/test_rgbd_trajectory_dataset.py` | 步数、接触/抬升/稳定、20 episode 正反例及真值隔离 | TODO |
+-| T6a/b | 数据生产、原子写入、组划分；SOFTWARE + REAL_CAPTURE | `pytest` 的 `test_rgbd_dataset_{labels,integrity,splits,generation,export}.py`；待实现生成/校验 CLI | 100→1000→有预算后10000组 manifest、拒绝项、资源与划分审计 | TODO |
++| T6a | 静态数据生产、原子写入、组划分；SOFTWARE + REAL_CAPTURE | 五份 `test_rgbd_dataset_{labels,integrity,splits,generation,export}.py`；已实现 generate/validate/export/replay CLI | 100/1000组 manifest、正负例/拒绝项、资源与分组审计 | DONE；124项数据测试通过；两批35正65负/301正699负，独立80/5/5/10及800/50/50/100，四入口均通过 |
++| T6b | 全量数据与教师轨迹整合；REAL_CAPTURE + PHYSICS | 已有 `dataset_full.yaml`；待T5/T8后运行10000组并整合教师 | 10000组manifest、轨迹、分组与实测预算 | TODO；未运行，不因配置已存在而验收 |
+ | T7—T8 | 同episode反馈、三值验证、账本与基础先导；REAL_CAPTURE + REAL_VLM + PHYSICS | `pytest` 的 `test_rgbd_{runtime,closed_loop,online_verification}.py`、`test_research_{protocol,network,pilot,cost_ledger}.py`；待实现 smoke/pilot CLI | 前后帧/在线与独立判定、20闭环、120先导、全部请求/字节、初次hash | TODO |
+ | T9—T10 | 校准风险与动作证据/B3；SOFTWARE + 实际来源记录 | `pytest` 的 `test_rgbd_risk_calibration.py test_visual_evidence_contract.py` | 分组隔离、校准图、固定机会 ID/UNKNOWN/误放行原始记录 | TODO |
+ | T11—T12 | 公平事件、B0/B1/B2、有限候选/provider；SOFTWARE + PHYSICS | `pytest` 的 `test_runtime_auto_baselines.py test_joint_visual_policy.py test_decision_judgment.py` | 成功后再判断、候选/概率语义/提交关联、拒答与完整账本、B0扫描 | TODO |
+@@ -23,3 +24,5 @@
+ 阶段验收判据：G0 已发生阶段真实路径、泄露和跨集合组重复审计；G1 独立标称层；G2/G2a 对公平 B0；G3 固定机会回放且不冒充物理成功；G4 完整 200 故障；G5 独立扩展。目标数值、区间和统计规则以[研究设计](../../superpowers/specs/2026-10-03-rgbd-evidence-research-design.md)为准。`MOCK`、规划 dry-run、旧 Phase 记录、软件测试均不得填 PHYSICS 分子；硬件列始终 `NOT_STARTED`。
+ 
+ 本次文档修订补充误完成率、UNKNOWN/拒答/回退率、端到端决策与故障响应延迟、无进展终止率；G2 云请求包含远程判断调用。文档检查通过不代表上述新增测试已存在或通过，状态仍为 TODO。
++
++T6a最终证据：[验收报告](../../../artifacts/research/process/20261003-t6a/acceptance.json)、[100组校验](../../../artifacts/research/process/20261003-t6a/smoke-validate.json)、[1000组校验](../../../artifacts/research/process/20261003-t6a/validation-validate.json)、[1000组CLI审计](../../../artifacts/research/process/20261003-t6a/validation-cli-audit.json)、[1000组资源](../../../artifacts/research/process/20261003-t6a/validation-resources.json)、[独立代码审查PASS](../../../artifacts/research/process/20261003-t6a/final-review.md)。定向Ruff/mypy（18文件）和123项旧路径回归通过；T6a已关闭，T6b仍TODO。
+--- a/docs/research/process/decisions_and_risks.md
++++ b/docs/research/process/decisions_and_risks.md
+@@ -12,6 +12,7 @@
+ | 2026-10-03 执行决策闭环修订 | 用户要求修改当前路线图；保持T1—T18、G/B编号和已验收状态。T7先补同episode反馈/三值验证，T10—T13再完成候选判断、提交与有界恢复。本次仅文档变更。 |
+ | Jev思路与provider接入分开 | 有限候选和代码编排纳入核心设计；具体Jev/其他判断模型为可选对照。规则/成本provider先行，远程判断计入云总成本，模型概率不解释为物理成功率。 |
+ | 完成与恢复必须有后置证据 | 在线完成与独立物理成功共同决定正式成功；独立评价不反馈策略。恢复授权不关闭事件；候选、接受、启动分阶段，dry-run不伪造真实ACK。 |
++| 2026-10-03 T6a按100→1000分批验收 | 无模型静态数据工厂及100/1000组四入口通过，T6a为DONE。10000组属于T6b，保持TODO，等待T5/T8。静态标签保持execution_verified=false。 |
+ 
+ ## 持续风险与触发动作
+ 
+@@ -19,8 +20,8 @@
+ |---|---|---|
+ | 本地视觉模型未获真实验收 | 历史状态记录 local model runtime `NOT_ACCEPTED`；候选 `qwen3-vl:4b-instruct` 尚未实测冻结 | T3 真实调用失败即 `BLOCKED`，继续独立 T4/T6a/T5；不得用文本或 mock 补足 REAL_VLM。当前风险开放。 |
+ | RGB/depth/实例图跨 pass 或标定错位 | T2 已有真实三 pass 同状态、100 桌面点最大高度误差 2.728 mm、异常关闭与变化拒绝回归 | 当前静态场景证据已通过独立审查；不替代 T6 场景变化、T7/G1 定位或运动中闭环验收。 |
+-| 渲染/GPU/磁盘与长作业预算 | T8 尚无每 episode 实测机器时/字节 | GPU/渲染串行调度；T8 后估 120/正式 N/200/扩展成本。资源不足记 `INCOMPLETE` 或 `BLOCKED`，不删失败样本或缩减后冒称完整。当前风险开放。 |
+-| 真值/数据分组泄露及晚到结果 | 后续任务尚未实现隔离与竞态验证 | T3/T5/T6/T7/T10/T13 的诱饵、分组和版本测试；正式池与先导/训练/恢复/OOD 互斥。当前风险开放。 |
++| 渲染/GPU/磁盘与长作业预算 | T6a100/1000组CLI实测56.56/1332.669秒，两批采样显存观测峰值均155MiB；T8尚无每episode成本 | 最终落盘/日志/终态预算反例已修复复核；GPU/渲染仍串行。采样可能漏过瞬时峰值；T8后估正式运行成本，资源不足保留INCOMPLETE/BLOCKED与失败证据，不外推当前峰值。 |
++| 真值/数据分组泄露及晚到结果 | T6a静态来源/内容分组、test禁导出和离线真值隔离已测；100组80/5/5/10、1000组800/50/50/100均通过 | 现有静态证据不覆盖T3/T5/T7/T10/T13在线诱饵、正式池互斥与版本竞态；这些后续风险继续开放。 |
+ | 无可行 B0 或恢复闭环缺失 | 需 T8/T11/T13 的实测 | 无合格 B0 不声称节省；T13 未闭环则 C2 未完成。当前风险开放。 |
+ | 观察重置场景、条件代理或误完成 | RGB-D入口止于规划；部分条件仅验高度/恒真 | T7同backend新帧、三值条件、在线与独立验证分离；当前风险开放，未因计划修改而修复。 |
+ | 恢复空转、事件提前解决、云边版本分歧 | 恢复授权和验证解决未分层，提交/ACK边界需完善 | T13持久化次数/时间/无进展预算与状态；真实ACK后激活、启动回执后记执行，重启协调。当前风险开放。 |
+@@ -40,3 +41,9 @@
+ - 全仓文档检查仍有既有报告内容模式和待实现脚本引用问题；阶段文档单独核验。完整 vision 包的 3 处 planner mypy 问题留待 T3 触及该模块时处理，阶段定向检查通过不等于全仓通过。
+ 
+ 最终源码核对发现并发变化时，保留当前工作区，单独记录差异并补做审查及同范围验证；不把先前通过外推到变化后的源码。当前 SensorFrame 转观测要求真实 captured_at，缺失即拒绝，禁止以转换时刻替代采集时刻；兼容的旧 RGBDObservation JSON 则保留其原有时刻。
++
++## T6a 审查与来源边界（2026-10-03）
++
++当前[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)已关闭范围内实质发现。主/原始观测保存恰三pass状态证据，深度可视化需对应米制深度；来源绑定包括运行时Pose契约。预算覆盖初始元数据、尝试/拒绝日志、split/audit/quality及终态manifest，临时原子写入另受空闲空间检查；不足时保留真实未完成状态，不假报COMPLETE。
++
++近重复筛查是确定性的局部RGB-D方法，不能视为任意语义重复的完备检测。只读真值用于离线标签，不进入在线观测或SFT user内容；负例保留、不因目标不可用而清洗掉困难样本。[100/1000组最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)通过，T6a为DONE；下一READY仅T3/T4，T5/T7/T8仍须其余依赖齐备，T6b保持TODO。本轮未训练VLM、未产生教师抓放轨迹、未验证真实模型/正式物理任务；Jev可选对照与G/B口径不变。
+--- a/docs/research/process/change_record.md
++++ b/docs/research/process/change_record.md
+@@ -1,6 +1,6 @@
+ # 变更记录
+ 
+-本记录区分文档工作与产品实现。当前过程文档已创建，T1 已完成，T2 已实现并通过独立审查。下列文件依据实际工作区差异登记，不能根据计划中的 Files 栏倒推“已变更”。
++本记录区分文档工作与产品实现。T1/T2 已完成；T6a 实现及真实100/1000组四入口验收通过，状态为 `DONE`；T6b保持 `TODO`。下列文件依据实际工作区差异登记，不能根据计划中的 Files 栏倒推“已变更”。
+ 
+ | 日期/任务 | 已确认变更 | 验证与证据 | 待回填 |
+ |---|---|---|---|
+@@ -18,3 +18,10 @@
+ ## 2026-10-03 T2 增补差异
+ 
+ [本轮补丁](../../../artifacts/research/process/20261003-phase1/t2-resume/continuation.patch)仅包含六个相对恢复起点发生变化的文件：observations.py、MuJoCo camera.py、两份 RGB-D 测试、model_control/service.py 的一行中文说明及 assets/manifest.yaml 的场景 hash/version。前四项修复缺时间戳、异常载荷、采集时间、跨 pass 标定和分辨率边界；后两项关闭较大回归发现的既有集成问题。[验收报告](../../../artifacts/research/process/20261003-phase1/t2-resume/acceptance.json)记录 123 项最终通过、实采与测试边界。原 P1 文档/产物的并行更新予以保留，不归入本轮代码差异；未提交 Git。
++
++## 2026-10-03 T6a 实施与分批验收
++
++- 新增 `datasets/rgbd/` 的共享 models、scene_sampler、离线 capture、labels、writer、quality、splitter、generator、exporters 及包入口，新增 `vision/offline_reader.py`；扩展连续采集会话的场景应用及 MuJoCo backend 的数据场景准备入口。冻结文件以[源码摘要](../../../artifacts/research/process/20261003-t6a/frozen-source-hashes.json)为准，不把旧工作区 RGB-D/API/UI 改动归入本批。
++- 新增 generate/validate/export/replay 四个脚本、100/1000/10000 三个 YAML 和五份 dataset 测试。实现来源/组隔离、raw扰动对应、原子发布/恢复、5倍尝试上限、磁盘/取消状态、禁止test导出及保留时间戳的离线重建。
++- 审查发现的转动稳定性、旋转桌面边界、三pass证据、深度可视化一致性、完整来源依赖、最终落盘与尝试日志预算均已修复并复核；[最终独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)为PASS。数据124项、旧路径123项回归及定向Ruff/mypy（18文件）通过。
++- 真实100组完成，35正/65负，独立80/5/5/10划分；1000组完成，301正/699负，独立800/50/50/100划分。两批generate/validate/export/replay通过，T6a为DONE，T6b为TODO且未运行。[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)逐项保留证据；下一READY仅T3/T4，T5/T7/T8仍须其余依赖齐备。未提交/推送，原P1/T2及Jev路线修订历史保持独立。
+--- a/docs/research/process/phase_progress.md
++++ b/docs/research/process/phase_progress.md
+@@ -1,11 +1,11 @@
+ # 阶段进度
+ 
+-截至 2026-10-03，本轮获授权启动 **P1：T1 来源审计与 T2 同步 RGB-D 采集**。T1、T2 均已完成并通过独立复核；下一就绪任务是 T6a、T3、T4，其余任务均未执行。六阶段是实际工作分组，依赖满足时允许跨组穿插，不能把表格顺序视为日程或完成声明。详细依赖和验收见[执行计划 §2—3](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)。
++截至 2026-10-03，P1 的 T1 来源审计与 T2 同步 RGB-D 已完成并通过独立复核。P2 的 **T6a 为 `DONE`**：真实 100/1000 组均通过四个 CLI 验收；下一就绪任务仅为 T3/T4，其余任务尚未实施。六阶段是实际工作分组，依赖满足时允许跨组穿插，不能把表格顺序视为日程或完成声明。详细依赖和验收见[执行计划 §2—3](../../superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)。
+ 
+ | 阶段 | 覆盖任务 | 出口证据 | 当前状态 |
+ |---|---|---|---|
+ | P1 来源与观测 | T1、T2 | 来源契约、历史边界、同步 RGB/depth/mask、标定与采集会话；分别记录 SOFTWARE 和 REAL_CAPTURE | T1 `DONE`；T2 `DONE` |
+-| P2 基础真实闭环 | T6a、T3、T4、T5、T7、T8 | 数据/真实VLM/物理技能；同episode新帧、三值验证与有界路由、独立评价；20场景闭环、120先导及初次冻结 | T6a/T3/T4 `READY`；其余 `TODO` |
++| P2 基础真实闭环 | T6a、T3、T4、T5、T7、T8 | 数据/真实VLM/物理技能；同episode新帧、三值验证与有界路由、独立评价；20场景闭环、120先导及初次冻结 | T6a `DONE`（100/1000组四入口通过）；T3/T4 `READY`；其余 `TODO` |
+ | P3 方法与公平基线 | T6b、T9、T10、T11、T12 | 有预算才做10000组；校准风险、决策提交复核、公平事件与B0/B1/B2、候选/provider契约、完整成本账本 | `TODO` |
+ | P4 恢复与正式协议准备 | T13、T15a、T16a、T17a、T15b | 验证后解决/预算持久化、候选/ACK/启动协调、局部修复/B4、统计工具与界面；独立120先导和最终hash | `TODO` |
+ | P5 正式评测与结果 | T15c、T16b、T17b | 冻结后 N 场景主比较与消融、固定机会回放、200 故障、区间判定和结果界面 | `TODO` |
+@@ -13,8 +13,10 @@
+ 
+ 跨组依赖：T6a 先定义 `SceneSpec`，T5 消费；T8 先接成本账本，T12 复用；T15a 在 T8/T10 后即可与 T11—T13 并行，T16a 随后可做；T17a 在 T6a/T7 后即可做。T15b 必须等待 T13/T15a/T16a；T15c→T16b 严格串行。T17b 的真实结果验收等待 T16b。T14、Isaac 和缓存扩展不阻塞核心 MuJoCo 结论。
+ 
+-闭环修订（2026-10-03）：T7 先定义在线条件、基础事件和有界验证路由，不等待 T12/T13；T11 复用事件，T12 先实现规则/成本 provider，T13 再接入完整恢复。Jev/其他判断模型在 T12/T13 后按独立配置做可选影子/配对实验，不阻塞主方法冻结。当前只修订路线和验收，所有任务状态保持原记录。
++闭环修订（2026-10-03）：T7 先定义在线条件、基础事件和有界验证路由，不等待 T12/T13；T11 复用事件，T12 先实现规则/成本 provider，T13 再接入完整恢复。Jev/其他判断模型在 T12/T13 后按独立配置做可选影子/配对实验，不阻塞主方法冻结。该次只修订路线和验收，未改变当时任务状态；后续 T6a 实施另行登记。
+ 
+ 阶段状态仅用 `TODO / READY / IN_PROGRESS / BLOCKED / DONE`。`DONE` 必须同时具备所要求的软件验证和对应真实运行证据；模型或渲染不可用时，相关真实验收保持 `BLOCKED`。下一次更新应填写每个已处理任务的实际改动、命令与结果、原始产物、阻塞原因和下一就绪任务，参见[执行日志](execution_log.md)。
+ 
+ P1 验收：来源审计 15 个反例/行为测试、阶段合并 88 项回归、定向 Ruff/mypy 均通过；实际采集 320×240，同一状态三 pass，100 桌面点最大高度误差 2.728 mm，正常及异常退出释放资源。见[机器可读报告](../../../artifacts/research/process/20261003-phase1/phase1-report.json)和[独立审查](../../../artifacts/research/process/20261003-phase1/task-2-review.md)。
++
++T6a 验收：124 项数据测试、123 项既有路径回归、定向 Ruff/mypy（18 文件）及[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)通过。100/1000个独立组分别为35正/65负、301正/699负，划分为80/5/5/10、800/50/50/100；两批validate/export/replay均通过，见[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)。1000组CLI墙钟1332.669秒，显存采样观测峰值155MiB。T6b的10000组仍为TODO且未运行；T6a只满足数据前置，T5、T7、T8还须分别满足T4、T3/T5、T7等其余依赖。
+--- a/docs/current_authoritative_status.md
++++ b/docs/current_authoritative_status.md
+@@ -7,6 +7,8 @@
+ 用户已授权按[代理执行计划](superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)启动实施并重建过程文档。当前首批 P1 的 T1 来源审计、T2 同步 RGB-D 采集均已完成并通过独立审查；88 项合并回归通过，真实采集 100 个桌面点的最大高度反投影误差为 2.728 mm（门槛 5 mm）；尚未接受真实 VLM、视觉驱动物理抓放或新正式实验结果。
+ 
+ 本轮过程记录统一位于 `docs/research/process/`，启动基线位于 `artifacts/research/process/20261003-phase1/`。历史 Phase 验收保留，以下 Ubuntu 快照不自动升级为新研究方法的验收。软件契约通过、真实图像采集、真实模型调用和物理任务成功分别记账。
++
++后续 **T6a 静态数据工厂为 `DONE`**。共享数据契约、原子恢复/来源与分组校验、四个CLI已实现；124项数据测试、123项旧路径回归、定向Ruff/mypy（18 source文件）及[独立代码审查](../artifacts/research/process/20261003-t6a/final-review.md)通过。真实100/1000个独立组均完成生成、校验、导出与离线重建：100组为35正例/65负例、train/calibration/selection/test=80/5/5/10；1000组为301正例/699负例、800/50/50/100。见[最终验收](../artifacts/research/process/20261003-t6a/acceptance.json)。下一READY仅T3/T4；T5/T7/T8的数据前置已满足，但仍须其余依赖齐备。T6b保持TODO，10000组与教师整合未运行；静态感知记录均不作为动作成功证据，真实VLM、研究物理抓放、正式研究结果与硬件状态未因此升级。
+ 
+ ## 2026-10-02 Ubuntu 当前快照
+ 
+--- a/docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md
++++ b/docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md
+@@ -12,9 +12,9 @@
+ 
+ **执行规则：** 本文是给开发代理使用的工作清单，按前置产物和验收结果推进，不按周次、日期或人工工时推进。研究设计与开题报告中的学术周期仅用于材料说明，不是代理调度条件。任务编号保持稳定以便追溯，实际执行顺序以第 2 节为准。
+ 
+-**状态：** 2026-10-03 用户已授权分阶段启动实施并重建过程文档。首批 P1 包含 T1 来源审计与 T2 同步 RGB-D 采集，两项已完成并通过独立审查；各项只在对应验收证据通过后勾选。下文尚未勾选的“新增”文件、接口、测试和 CLI 仍为待实现；文件已存在不表示目标行为已验收。任务完成后记录差异与证据，不将其他用户改动一并暂存或提交。
+-
+-**本次修订：** 2026-10-03 按用户要求优化执行决策闭环。T1—T18 编号、G0—G5/B0—B5 和已验收状态保持稳定；主要加强 T7、T10—T13 的接口与失败路径，以及 T8/T15—T17 的证据账本。仅更新文档，不启动后续实现、模型调用或实验；当前就绪队列仍为 T6a/T3/T4。
++**状态：** 2026-10-03 用户已授权分阶段启动实施并重建过程文档。P1 的 T1/T2 已完成并通过独立审查；P2 的 T6a 为 `DONE`，实现、软件测试及真实100/1000组四入口验收通过。下一READY仅T3/T4，T6b保持TODO。各项只在对应验收证据通过后勾选；已实现但尚未全部验收的任务单独记录，文件已存在不表示完成。任务完成后记录差异与证据，不将其他用户改动一并暂存或提交。
++
++**路线修订记录：** 2026-10-03 按用户要求优化执行决策闭环。T1—T18 编号、G0—G5/B0—B5 和当时已验收状态保持稳定；主要加强 T7、T10—T13 的接口与失败路径，以及 T8/T15—T17 的证据账本。该次仅更新文档，未启动实现、模型调用或实验，当时就绪队列为 T6a/T3/T4；后续T6a实施与验收在Task6及过程日志另记。
+ 
+ ## Global Constraints
+ 
+@@ -108,9 +108,9 @@
+ 
+ ### 2.1 当前入口与完成规则
+ 
+-T1、T2 已验收，当前就绪项为 **T6a、T3、T4**，均尚未开始。启动时先读取 `docs/current_authoritative_status.md` 与工作区差异，核验已有 RGB-D 原型及相关回归，建立证据清单；不能因文件已存在就将任务勾选完成，也不覆盖已有用户改动。后续依据下面的前置条件选择可执行项。
+-
+-状态只使用 `TODO / READY / IN_PROGRESS / BLOCKED / DONE`；当前 T1/T2 为 `DONE`，T6a/T3/T4 为 `READY`，其余任务为 `TODO` 且尚未验收，表中顺序不是完成声明。每个子项结束时在对应任务下记录：状态、实际改动、验证命令及结果、产物路径、阻塞原因和下一个可执行项。依赖产物经验证后才将任务标为 `READY`；代码与该项要求的真实运行证据全部通过才能标 `DONE`。报告 `BLOCKED` 时继续处理无关的就绪分支，不用假模型或软件状态替代真实结果。
++T1、T2、T6a 已验收，**下一READY仅T3/T4**。T6a真实100/1000组及四入口均通过；T6b保持TODO，T5/T7/T8仍须其余依赖齐备。启动时先读取 `docs/current_authoritative_status.md` 与工作区差异，核验已有 RGB-D 原型及相关回归，建立证据清单；不能因文件已存在就将任务勾选完成，也不覆盖已有用户改动。后续依据下面的前置条件选择可执行项。
++
++状态只使用 `TODO / READY / IN_PROGRESS / BLOCKED / DONE`；当前 T1/T2/T6a 为 `DONE`，T3/T4 为 `READY`，其余任务为 `TODO` 且尚未验收，表中顺序不是完成声明。每个子项结束时在对应任务下记录：状态、实际改动、验证命令及结果、产物路径、阻塞原因和下一个可执行项。依赖产物经验证后才将任务标为 `READY`；代码与该项要求的真实运行证据全部通过才能标 `DONE`。报告 `BLOCKED` 时继续处理无关的就绪分支，不用假模型或软件状态替代真实结果。
+ 
+ T6、T15、T16、T17 分成可独立验收的子项；只有全部必需子项完成才能关闭父任务。T14、Isaac 和缓存是可选扩展，不在核心完成路径中。单个子项内部仍按第 3 节的文件、接口和复选步骤实施。
+ 
+@@ -247,17 +247,19 @@
+ 
+ ### Task 6：无模型数据工厂、分组与原子恢复
+ 
+-**Files:** T6a 创建 `src/cloud_edge_robot_arm/datasets/rgbd/models.py`；新增该目录的 `scene_sampler.py`、`labels.py`、`writer.py`、`quality.py`、`splitter.py`、`generator.py`、`exporters.py`；新增 `vision/offline_reader.py`、`scripts/{generate_rgbd_dataset,validate_rgbd_dataset,export_rgbd_training,replay_rgbd_sample}.py`、`configs/rgbd/{dataset_smoke,dataset_validation,dataset_full}.yaml`、`tests/test_rgbd_dataset_{labels,integrity,splits,generation,export}.py`。共享 models.py 先由 T6a 交付，再由 T5 增加轨迹类型，禁止重复定义 SceneSpec。
++**Files:** T6a 创建 `src/cloud_edge_robot_arm/datasets/rgbd/models.py`；新增该目录的 `scene_sampler.py`、`capture.py`、`labels.py`、`writer.py`、`quality.py`、`splitter.py`、`generator.py`、`exporters.py`；新增 `vision/offline_reader.py`、`scripts/{generate_rgbd_dataset,validate_rgbd_dataset,export_rgbd_training,replay_rgbd_sample}.py`、`configs/rgbd/{dataset_smoke,dataset_validation,dataset_full}.yaml`、`tests/test_rgbd_dataset_{labels,integrity,splits,generation,export}.py`。共享 models.py 先由 T6a 交付，再由 T5 增加轨迹类型，禁止重复定义 SceneSpec。
+ 
+ **Interfaces:** models.py 增加 `DatasetConfig`（组数/seed/范围/预算）、`SampleRecord`（组/episode/帧/路径/来源/hash/标签/状态）、`DatasetManifest`、`QualityReport`、`SplitManifest`。`sample_scene(config: DatasetConfig, seed: int) -> SceneSpec`；采集会话增加 `apply_scene(scene: SceneSpec) -> None`，离线能力适配器提供 `capture_ground_truth() -> Mapping[str,object]`，仅标注/教师/评价可访问；`label_frame(frame: CapturedFrame, truth: Mapping[str, object]) -> Mapping[str, object]` 仅离线调用。`DatasetWriter(root: Path, config: DatasetConfig).write_episode(records: Sequence[SampleRecord]) -> None`；`assign_splits(records: Sequence[SampleRecord], seed: int) -> SplitManifest`；`validate_dataset(root: Path) -> QualityReport`；`generate_dataset(config: DatasetConfig, output: Path, cancel: Callable[[],bool]) -> DatasetManifest`；`export_grounding_sft(root: Path, split: Literal['train','calibration','selection'], output: Path) -> int`；`load_offline_observation(record: SampleRecord) -> RGBDObservation`。
+ 
+ **依赖/验收：** T6a 仅依赖 T2，先定义上述共享 `SceneSpec` 并完成 100/1000 组；T6b 依赖 T6a/T5/T8，负责教师整合与预算通过后的 10000 组。T8 只依赖 T6a，不等待 T6b。默认每 GPU 一个渲染进程；VLM 离线仍可生产。
+ 
+-- [ ] 写 `test_group_split_80_5_5_10`（100 组 train/calibration/selection/test=80/5/5/10）、`test_same_scene_different_seed_is_duplicate`、`test_episode_augmentations_keep_split`、`test_atomic_publish_survives_disk_failure`（半成品不进索引/恢复无重复）、`test_negative_conditions_are_retained`（低于100像素或95%深度的研究负例保留且非正例）。
+-- [ ] 写 `test_generator_without_model`、`test_sampling_stops_at_five_times_budget`（100组至多500次尝试，不足 INCOMPLETE）、`test_test_split_export_is_denied`、`test_offline_reader_preserves_timestamp`；运行 `.venv/bin/python -m pytest -q tests/test_rgbd_dataset_labels.py tests/test_rgbd_dataset_integrity.py tests/test_rgbd_dataset_splits.py tests/test_rgbd_dataset_generation.py tests/test_rgbd_dataset_export.py`。
+-- [ ] 实现真实场景/实例标签、float32 无损与禁 pickle/object dtype、schema `rgbd.dataset.v1`、episode 原子发布、checksum、断点、磁盘/取消状态；以基础参数/资产族 hash 加近重复图像检查划分，不按 seed 代替去重。SFT user 只含指令/图像路径，标签在 assistant；导出不代表本计划要微调基础 VLM。
+-- [ ] **T6a 验收：** 重跑测试，依次运行待提供的 generate/validate/export/replay CLI，先 100 组再 1000 组；记录每组字节、生成秒数、显存峰值，交付共享模型、离线读取器和校验通过的 manifest。此项通过即可放行 T5/T7/T8。
++- [x] 写 `test_group_split_80_5_5_10`（100 组 train/calibration/selection/test=80/5/5/10）、`test_same_scene_different_seed_is_duplicate`、`test_episode_augmentations_keep_split`、`test_atomic_publish_survives_disk_failure`（半成品不进索引/恢复无重复）、`test_negative_conditions_are_retained`（低于100像素或95%深度的研究负例保留且非正例）。
++- [x] 写 `test_generator_without_model`、`test_sampling_stops_at_five_times_budget`（100组至多500次尝试，不足 INCOMPLETE）、`test_test_split_export_is_denied`、`test_offline_reader_preserves_timestamp`；运行 `.venv/bin/python -m pytest -q tests/test_rgbd_dataset_labels.py tests/test_rgbd_dataset_integrity.py tests/test_rgbd_dataset_splits.py tests/test_rgbd_dataset_generation.py tests/test_rgbd_dataset_export.py`。
++- [x] 实现真实场景/实例标签、float32 无损与禁 pickle/object dtype、schema `rgbd.dataset.v1`、episode 原子发布、checksum、断点、磁盘/取消状态；以基础参数/资产族 hash 加近重复图像检查划分，不按 seed 代替去重。SFT user 只含指令/图像路径，标签在 assistant；导出不代表本计划要微调基础 VLM。
++- [x] **T6a 验收：** 重跑测试，依次运行已实现的 generate/validate/export/replay CLI，先 100 组再 1000 组；记录每组字节、生成秒数、显存峰值，交付共享模型、离线读取器和校验通过的 manifest。此项满足T5/T7/T8所需的数据前置，后续任务仍须满足其余依赖。
+ - [ ] **T6b 验收：** T5 轨迹可用且 T8 实测预算通过后再运行 10000 组、整合教师记录并复核划分/来源；100 组仅深度为 30.72 MB、10000 帧为 3.072 GB，不将其当总磁盘需求。资源不足时保留已验收小批数据与真实 INCOMPLETE 原因。
++
++**实际验收（2026-10-03）：** T6a `DONE`。124项数据测试、123项旧路径回归、定向Ruff/mypy（18 source文件）与[独立代码审查](../../../artifacts/research/process/20261003-t6a/final-review.md)通过。真实100/1000个独立组均COMPLETE并通过generate/validate/export/replay：100组为35正/65负、80/5/5/10划分；1000组为301正/699负、800/50/50/100划分。1000组总计1,158,966,504字节、每组1,158,966.504字节，生成墙钟1331.885秒、CLI墙钟1332.669秒；100组CLI墙钟56.56秒，两批独立采样显存观测峰值均155MiB，采样可能漏过瞬时峰值。具体证据与测量边界见[最终验收](../../../artifacts/research/process/20261003-t6a/acceptance.json)及[执行日志](../../research/process/execution_log.md)。下一READY仅T3/T4；T5/T7/T8仍须其余依赖齐备，T6b保持TODO且未运行。
+ 
+ ### Task 7：同一 episode 视觉闭环、三值验证与默认作业
+ 
+@@ -455,9 +457,9 @@
+ - [ ] 完成静态与软件回归：`.venv/bin/python -m ruff check src tests scripts`、`.venv/bin/python -m mypy src`、`MUJOCO_GL=egl .venv/bin/python -m pytest -q -m 'not isaac and not isaac_runtime and not real_robot_runtime and not ros2 and not benchmark'`；运行T17前端各检查。硬件/重型/Isaac排除项逐项列出，不写“所有测试通过”。
+ - [ ] 完成一次独立最终代码/证据审查，重点核对真值隔离、物理真实性、统计分母、版本竞态和测试泄露；修复实质问题后只重跑相关回归。整理论文/开题后续材料、目标对照、方法局限、演示与数据包，所有“已提升”陈述指向实际记录，未达标给负结果与区间。
+ 
+-## 4. 运行入口与冻结产物（均待对应任务实现）
+-
+-不复制一次性长命令作为手工流程；CLI均支持 `--help`，输出实际参数、版本、成功/失败/BLOCKED/INCOMPLETE状态以及产物目录。退出码固定为0成功、2配置/数据无效、3环境阻塞、4运行或质量未通过、130用户取消；状态细节同时写JSON。
++## 4. 运行入口与冻结产物
++
++不复制一次性长命令作为手工流程；CLI均支持 `--help`，输出实际参数、版本、成功/失败/BLOCKED/INCOMPLETE状态以及产物目录。退出码固定为0成功、2配置/数据无效、3环境阻塞、4运行或质量未通过、130用户取消；状态细节同时写JSON。当前T6a的generate/validate/export/replay已实现，其他入口是否实现与验收仍以对应任务记录为准。
+ 
+ | 阶段 | 入口/配置 | 必须保留的证据 |
+ |---|---|---|
