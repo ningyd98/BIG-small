@@ -186,13 +186,14 @@ def create_app(
             capabilities=body.capabilities,
             safety_policy=body.safety_policy,
         )
+        request_planner = None
         if default_visual_pipeline and body.observation is not None:
             from cloud_edge_robot_arm.cloud.api.model_control import _service
             try:
-                pipeline._planner = _service(request).visual_planner()
+                request_planner = _service(request).visual_planner()
             except RuntimeError as exc:
                 return PlanningResponse(request_id=body.request_id, outcome="PLANNER_FAILED", reason=str(exc), created_at=datetime.now(UTC).isoformat())
-        result = pipeline.process(ireq)
+        result = pipeline.process(ireq, planner=request_planner)
         return _planning_response(result)
 
     # ── Get plan ─────────────────────────────────────────────────────────

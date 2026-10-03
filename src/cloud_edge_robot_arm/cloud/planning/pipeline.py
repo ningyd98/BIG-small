@@ -457,8 +457,11 @@ class PlanningPipeline:
     def process(
         self,
         request: InitialPlanningRequest,
+        *,
+        planner: PlannerAdapter | None = None,
     ) -> InitialPlanningResponse:
         """Run the full planning pipeline."""
+        active_planner = planner if planner is not None else self._planner
         created_at = datetime.now(UTC)
 
         # --- Idempotency ---
@@ -476,9 +479,9 @@ class PlanningPipeline:
                 )
 
         # --- Scene sufficiency ---
-        if getattr(self._planner, "requires_rgbd", False) and request.observation is None:
+        if getattr(active_planner, "requires_rgbd", False) and request.observation is None:
             insufficiency = "RGBD observation required: provide registered RGB, depth and calibration"
-        elif request.observation is not None and not getattr(self._planner, "requires_rgbd", False):
+        elif request.observation is not None and not getattr(active_planner, "requires_rgbd", False):
             insufficiency = "RGBD observation requires a visual planner; text-only fallback is disabled"
         else:
             insufficiency = check_scene_sufficiency(request, scene_staleness_ms=self._scene_staleness_ms)
@@ -495,7 +498,7 @@ class PlanningPipeline:
         # --- Call planner ---
         started = time.monotonic()
         try:
-            draft = self._planner.plan(request)
+            draft = active_planner.plan(request)
         except Exception as exc:
             response = InitialPlanningResponse(
                 request_id=request.request_id,
@@ -522,8 +525,8 @@ class PlanningPipeline:
                 attempts=[
                     PlanningAttempt(
                         attempt=1,
-                        planner_name=self._planner.planner_name,
-                        model_name=self._planner.model_name,
+                        planner_name=active_planner.planner_name,
+                        model_name=active_planner.model_name,
                         prompt_version="1.0",
                         prompt_hash="",
                         temperature=0.0,
@@ -547,8 +550,8 @@ class PlanningPipeline:
                 attempts=[
                     PlanningAttempt(
                         attempt=1,
-                        planner_name=self._planner.planner_name,
-                        model_name=self._planner.model_name,
+                        planner_name=active_planner.planner_name,
+                        model_name=active_planner.model_name,
                         prompt_version="1.0",
                         prompt_hash="",
                         temperature=0.0,
@@ -655,8 +658,8 @@ class PlanningPipeline:
 
         attempt_record = PlanningAttempt(
             attempt=1,
-            planner_name=self._planner.planner_name,
-            model_name=self._planner.model_name,
+            planner_name=active_planner.planner_name,
+            model_name=active_planner.model_name,
             prompt_version="1.0",
             prompt_hash="",
             temperature=0.0,
