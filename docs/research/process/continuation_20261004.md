@@ -356,3 +356,5 @@ worker fix1完整复审已关闭lexical问题，但发现str subclass可覆盖�
 用户新增Git管理与推送要求：已整理既有互相依赖的研发代码、测试、配置、必要原始fixture、阶段49报告与冻结文本源；虚拟环境/下载权重/运行数据库不提交，既有批量原始资料原地保留，不用报告hash冒称完整远端复现。研发快照提交为d3472a562356e6edc3dc1da2aa07a45096b54e5c；本模块及本步报告另按独立交付提交。实际远端结果以[Git记录](git_delivery_20261005.md)为准，分支research/20261004-continuation，未来每项验证交付后提交推送。
 
 [第50步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step50.json)保留本步严格范围。独立分析量化了原统一运动量的主动搬运矛盾：LIFT位移87.8mm、搬运345.2mm，均大于10mm；[动作参照设计](../../../artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/design.md)提出源绑定的实际编译参照及独立全horizon误差校准，当前尚未实现或授予权限。主线仍T12/18、T13并行，真实Max、基本几何/运动来源、完整身份/范围、风险校准、机会/200故障、合格B0、INITIAL/METHOD/FINAL及较早依赖复审继续，边缘型号后置，formal_accepted=false。
+
+Git交付核验：阶段49快照d3472a5与本步记录器f7860ffd已推送研发分支，上游已设置；`git ls-remote`远端SHA与本地/上游f7860ffd551cf663ffd78f683f7df616da70d98f一致。必要fixture与逐项来源/排除清单随提交交付，非必要批量原始资料保持本地；[交付记录](git_delivery_20261005.md)保留命令、范围及检查结果。本段记录随独立文档提交推送。

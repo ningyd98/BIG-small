@@ -52,3 +52,17 @@ Older T7 retest/larger-model runs, T8 foundation's 120-trial bulk raw JSON/RGBD,
 For this backlog, one coherent implementation/test/config/assets/default-fixture commit followed by a documentation/evidence-archive commit is reasonable if both are delivered together; one scoped backlog snapshot commit is also coherent. Future bounded changes should commit their code, relevant tests, docs, immutable input/source hashes and validation result together after checks, then push the branch. Preserve failures and exclusions in the evidence inventory. Use Git history for source versioning instead of continually copying the entire project and its old raw payloads into new module directories. A new actual trial needs its own exact source, group identity, protocol and raw inventory; a software-only change needs no repeated physical run unless its claims require one.
 
 This audit inspected filenames, sizes, content hashes, current literal source/test/config references and Git status. It ran no broad suites, simulation, rendering, model/provider calls or historical trial replay. The delivery commit and push result must be recorded by the root agent after its staged-tree review and required validation.
+
+
+## 实际交付结果
+
+2026-10-05已完成提交并推送到[研发分支](https://github.com/ningyd98/BIG-small/tree/research/20261004-continuation)，上游为 `origin/research/20261004-continuation`。推送退出0；2026-10-05 08:52:07 UTC以 `git ls-remote` 核对远端，远端SHA与本地HEAD及上游均为 `f7860ffd551cf663ffd78f683f7df616da70d98f`。本段与机器记录作为后续文档提交交付，其提交号见Git历史。
+
+- `d3472a562356e6edc3dc1da2aa07a45096b54e5c`：阶段49研发快照，44037个所选路径、664996295字节；代码、测试、配置、资产、报告、冻结文本源和九个必要原始根及单个provenance输入一并交付。
+- `f7860ffd551cf663ffd78f683f7df616da70d98f`：阶段50逐步RGB-D研究记录器，34个路径；含实现、测试、原失败/初版及最终源、限定独审、阶段总结和Git清单。
+
+定向七文件81项通过；本模块17项和独立17项通过，集合重叠不相加。所提交范围的差异、12份当前文本与26个本地链接检查通过；未宣称全仓测试通过。新完整动作内采集脚本仍未实际运行，尚未通过的脚本和后续native参照工作未进入上述实现提交。保持真实Max、native与正式验收的原缺项口径。
+
+[tmp审计输入的完整交付副本](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/packaging-manifest.json)、[快照范围](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/backlog-scope.json)及[远端交付记录](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/delivery-record.json)已进入仓库。manifest逐项记录本次选择的哈希与留在本地的路径/原因；真实`.env`/凭据、环境、模型权重、数据库及非必要批量原始数据留在本地。该Git交付包含必要运行fixture，不等于所有历史大体积实验载荷的远端备份。
+
+后续每项可交付变更在验证后，把实现、相关测试、步骤报告与阶段总结一并按明确路径提交并推送；推送后核验远端SHA与上游。使用Git版本管理源代码，实际实验只归档该次必要来源及完整原始清单。保持独立研发分支，待整体验收后再按用户指令合并；本次没有合并主分支或改写远端历史。
