@@ -8,7 +8,7 @@
 
 用户选择增加可见姿态标记并保留顶视相机与控制器。独立开发v1资产/检测已通过73项CPU及源/原始帧hash独审；同一物理相机的320×240严格识别UNKNOWN，新640×480单帧OBSERVED。第二版本保留原红色边缘，17份源与77项CPU独审通过，新的实际静态帧识别ID7并看到红色边缘；完整目标关联和连续/校准/native证书仍缺，不自动切换默认配置或抓取profile。一次开发搬运的147份产物/完整raw重建独审通过，离线物理评分成功，但全部9个动作后边界标记UNKNOWN，不能以物理成功代替视觉可观测性。
 
-阶段总结已到第49步：在原640×480顶视相机和控制器下，新独立可见标记资产完成一次实际仿真搬运，初始与全部九个动作后帧均OBSERVED（10/10）；旧中心标记九个动作后UNKNOWN保留。独立复算确认4807个完整物理状态除episode_id外与旧运行一致，9动作/743命令/4806物理步，评分为限定SUCCESS。另补目标边界RGB-D数据及点运动校准输入；不将离散帧或采样速度视为连续证书。主线仍T12/18、T13并行，真实Max、基本几何/连续证书、风险校准及INITIAL/METHOD/FINAL未验收，边缘型号后置。详见[实测报告](../artifacts/research/process/20261004-ced-development/t7b-visible-marker-next/report.md)与[阶段总结](research/process/continuation_20261004.md)。
+阶段总结已到第50步：已交付逐物理步无损RGB-D记录器，保留0.005秒最大模拟采样间隔及完整终态；两项独审P2经四项RED关闭，最终17项与独立17项通过。推送前七文件定向检查81通过。上一轮实测10/10边界可见及4807完整物理状态复算保留，本轮完整动作内采集脚本准备中，尚未实际运行。主线仍T12/18、T13并行，真实Max、基本几何/连续证书、风险校准及INITIAL/METHOD/FINAL未验收，边缘型号后置。用户已授权Git提交推送，交付状态以[Git记录](research/process/git_delivery_20261005.md)为准；详见[本步模块报告](../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/module-report.md)与[阶段总结](research/process/continuation_20261004.md)。
 
 ## 2026-10-04 夹爪修复应用到全项目
 

@@ -1,6 +1,6 @@
 # 阶段进度
 
-接续记录已到第49步：同一顶视相机和控制器完成新标记资产实际仿真搬运，初始及全部九个动作后帧10/10可见；原九个动作后UNKNOWN的失败保留。9动作/743命令/4806物理步，4807完整状态独立复算与旧物理路径一致。另补边界RGB-D数据和点运动校准输入。主线仍T12/18、T13并行；离散可见性不等于连续或基本几何证书，真实Max、风险校准及INITIAL/METHOD/FINAL仍未验收，边缘型号后置。见[实测报告](../../../artifacts/research/process/20261004-ced-development/t7b-visible-marker-next/report.md)及[阶段总结](continuation_20261004.md)。
+接续记录已到第50步：逐物理步RGB-D记录器17项回归及17项独审通过，原episode/gap不可变和首个日志失败终止已验证；推送前七文件定向81通过。完整逐步实测尚未执行，上一轮10/10边界可见保留。主线T12/18、T13并行，实际native/Max/INITIAL/METHOD/FINAL继续实施，边缘型号后置。见[本步报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/module-report.md)、[Git记录](git_delivery_20261005.md)与[阶段总结](continuation_20261004.md)。
 
 **当前持续实施：** 按[云、边、端总计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)执行，边缘模型T12b后置。角色、OpenCV三值证据、动作硬停止、共同基线/模式CAS、规则判断、局部修复候选、持久恢复消费者、统计、只读结果页和复现已取得各自软件审查证据；T8/资源修复129项及184项下游、INITIAL来源审计160项、色边标记77项范围内回归/静态独审PASS，各套件有重叠。标记新640×480静态实帧单帧OBSERVED；一次9动作开发搬运经raw重建物理评分成功，但全部动作后边界标记UNKNOWN。完整目标关联、连续/校准证书、独立计费、实际风险来源和owner/方法接入按[阶段总结](continuation_20261004.md)继续记录。真实Max、native几何/运动与连续效果、完整机会/200故障、合格B0及INITIAL仍缺，不能将P2—P6整阶段标DONE。
 

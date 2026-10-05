@@ -347,3 +347,12 @@ worker fix1完整复审已关闭lexical问题，但发现str subclass可覆盖�
 [第49步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step49.json)保存局部报告与限定独审来源。本步实际新增1次仿真动作实验、11次相机采集调用，远端/Max调用为0，无实际硬件。离散动作后可见性不等于连续角速度、完整身份/范围、跨组误差覆盖或native基本证书；这些来源仍需独立校准和真实接入。主线T12/18、T13并行，真实Max、基本几何/运动证书、风险校准、完整机会/200故障、合格B0、INITIAL/METHOD/FINAL及较早冻结依赖复审继续实施，边缘型号后置，formal_accepted=false。
 
 本步12份当前文本/局部报告的链接、围栏、尾部空白检查通过；36份当前源码、28份实际运行来源及对应归档、79份原始文件与最终三份独审hash一致，第48步机器索引未改变。见[第49步定向检查](../../../artifacts/research/process/20261004-ced-development/documentation-check-step49.json)。本步明确范围的git diff --check退出0；这些检查不扩大为全仓或正式研究验收。
+
+
+步骤50（2026-10-05）：交付逐物理步RGB-D研究记录器并落实Git管理。新记录器连续核对step0至完整终态、原episode及0.005秒最大模拟gap，保存同状态双pass、同进程monotonic/名义UTC括号和无损完整RGBDObservation。13项缺模块合格RED后修正了一处合法source枚举fixture错误；独审另发现BEGIN首写失败可重试和原episode/gap可变两项P2，经四项RED修复，最终17项与独立17项均通过（各0.18秒），source/test Ruff/format与source mypy通过。原初版两源文件、REQUEST_FIX、反例及失败日志保持。详见[局部报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/module-report.md)、[独立审查](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/independent-module-review.md)与[机器验证](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/module-verification.json)。
+
+推送前七文件定向检查81通过（16.36秒）；集合有重叠，不相加为研究次数。此步实际渲染、物理步、动作实验、模型及硬件为0。完整动作内采集脚本正准备，资源估计不是已发生的4807帧。私人相机采集需另列来源，不能称typed raw-v3 COMPLETE；外部UTC不确定度仍UNAVAILABLE，采样不授连续未来速度/native证书。上一轮实际10/10边界可见与完整4807物理状态复算保留。
+
+用户新增Git管理与推送要求：已整理既有互相依赖的研发代码、测试、配置、必要原始fixture、阶段49报告与冻结文本源；虚拟环境/下载权重/运行数据库不提交，既有批量原始资料原地保留，不用报告hash冒称完整远端复现。研发快照提交为d3472a562356e6edc3dc1da2aa07a45096b54e5c；本模块及本步报告另按独立交付提交。实际远端结果以[Git记录](git_delivery_20261005.md)为准，分支research/20261004-continuation，未来每项验证交付后提交推送。
+
+[第50步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step50.json)保留本步严格范围。独立分析量化了原统一运动量的主动搬运矛盾：LIFT位移87.8mm、搬运345.2mm，均大于10mm；[动作参照设计](../../../artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/design.md)提出源绑定的实际编译参照及独立全horizon误差校准，当前尚未实现或授予权限。主线仍T12/18、T13并行，真实Max、基本几何/运动来源、完整身份/范围、风险校准、机会/200故障、合格B0、INITIAL/METHOD/FINAL及较早依赖复审继续，边缘型号后置，formal_accepted=false。
