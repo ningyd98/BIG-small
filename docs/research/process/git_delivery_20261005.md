@@ -66,3 +66,5 @@ This audit inspected filenames, sizes, content hashes, current literal source/te
 [tmp审计输入的完整交付副本](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/packaging-manifest.json)、[快照范围](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/backlog-scope.json)及[远端交付记录](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/delivery-record.json)已进入仓库。manifest逐项记录本次选择的哈希与留在本地的路径/原因；真实`.env`/凭据、环境、模型权重、数据库及非必要批量原始数据留在本地。该Git交付包含必要运行fixture，不等于所有历史大体积实验载荷的远端备份。
 
 后续每项可交付变更在验证后，把实现、相关测试、步骤报告与阶段总结一并按明确路径提交并推送；推送后核验远端SHA与上游。使用Git版本管理源代码，实际实验只归档该次必要来源及完整原始清单。保持独立研发分支，待整体验收后再按用户指令合并；本次没有合并主分支或改写远端历史。
+
+交付记录提交 `93e3222131d9400684ce99046c81fa4ea5a10ec9` 已再次推送，并经 `git ls-remote` 核对。其所附 `push-initial.log` 保留GitHub原始输出的4行尾部空格，该提交的含原始日志差异检查退出2；源码/报告推送前限定检查退出0的记录保持不变，不宣称包含该原始日志的差异检查通过。本补记保留原日志与原提交，后续文档差异单独核对。
