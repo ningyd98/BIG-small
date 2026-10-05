@@ -1,0 +1,825 @@
+FFFFFFFFFFFF.FFF                                                         [100%]
+=================================== FAILURES ===================================
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[physics_begin_step] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_0')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'physics_begin_step'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[control_begin_kind] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_1')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'control_begin_kind'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[control_end_episode] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_2')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'control_end_episode'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[actuator_episode] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_3')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'actuator_episode'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[actuator_time] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_4')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'actuator_time'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[control_begin_time] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_5')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'control_begin_time'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[operation_error] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_6')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'operation_error'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[acquisition_begin_operation] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_7')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'acquisition_begin_operation'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[acquisition_failed_extra] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_8')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'acquisition_failed_extra'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[acquisition_begin_extra] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_9')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'acquisition_begin_extra'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[action_failed_extra] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_10')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'action_failed_extra'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[action_begin_extra] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_11')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'action_begin_extra'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+E       AssertionError: []
+E       assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:760: AssertionError
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[orphan_end] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_full_source_identity_and_13')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+kind = 'orphan_end'
+
+    @pytest.mark.parametrize("kind", ["physics_begin_step", "control_begin_kind", "control_end_episode", "actuator_episode", "actuator_time", "control_begin_time", "operation_error", "acquisition_begin_operation", "acquisition_failed_extra", "acquisition_begin_extra", "action_failed_extra", "action_begin_extra", "duplicate_acquisition", "orphan_end"])
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2)
+            else:
+                event = "ACQUISITION_FAILED" if "failed" in kind else "ACQUISITION_END" if kind == "orphan_end" else "ACQUISITION_BEGIN"
+                row.update(event=event, physics_step=0 if kind == "duplicate_acquisition" else 3,
+                           episode_id="episode", sim_time_s=3 / 240, action_ordinal=None)
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if kind == "physics_begin_step" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "BEGIN":
+                    source_row["physics_step"] = 999
+                elif kind == "control_begin_kind" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["kind"] = "COMMAND"
+                elif kind == "control_end_episode" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "END":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "control_begin_time" and row["event"] == "OPERATION" and source_row.get("kind") == "CONTROL" and source_row.get("phase") == "BEGIN":
+                    source_row["sim_time_s"] = 9.0
+                elif kind == "operation_error" and row["event"] == "OPERATION" and source_row.get("kind") == "PHYSICS" and source_row.get("phase") == "END":
+                    source_row["error_type"] = "ValueError"
+                elif kind == "acquisition_begin_operation" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+        assert result["integrity_status"] == "INCOMPLETE_OR_INVALID", result["failures"]
+        assert old.hashes(source) == before
+        if kind in {"acquisition_failed_extra", "acquisition_begin_extra", "orphan_end"}:
+>           assert result["allocated_steps"] >= 4
+E           assert 3 >= 4
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:763: AssertionError
+_ test_declared_original_recipe_cannot_be_promoted_from_three_frame_one_action_trace _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_declared_original_recipe_0')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/verify_offline.py'>
+
+    def test_declared_original_recipe_cannot_be_promoted_from_three_frame_one_action_trace(tmp_path, runner, reader):
+        source = tmp_path / "input"
+        source.mkdir()
+        v3_attempt(source, runner)
+        path = source / "execution-header.json"
+        header = json.loads(path.read_text())
+        header.update(settle_steps=120, planned_teacher_actions=9)
+        path.write_text(json.dumps(header))
+        path = source / "summary.json"
+        summary = json.loads(path.read_text())
+        summary["execution_header_sha256"] = hashlib.sha256((source / "execution-header.json").read_bytes()).hexdigest()
+        path.write_text(json.dumps(summary))
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:781: AssertionError
+_______ test_bad_imported_runtime_is_refused_before_first_model_context ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1205/test_bad_imported_runtime_is_r0')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/baseline/run_once.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7234fbd0d880>
+
+    def test_bad_imported_runtime_is_refused_before_first_model_context(tmp_path, runner, monkeypatch):
+        # The fake session signals the earliest possible model context. It never creates a model.
+        import types
+        header = {"scope": "SOFTWARE_ONLY", "raw_v3_status": "CUSTOM_PROTOCOL_NOT_RAW_V3"}
+        (tmp_path / "header.json").write_text(json.dumps(header))
+        monkeypatch.setattr(runner, "HERE", tmp_path)
+        monkeypatch.setattr(runner, "source_preflight", lambda *args: None)
+        scene = SimpleNamespace(group_id="fake", scene_hash="fake", model_dump=lambda **kwargs: {})
+        config = SimpleNamespace(model_dump=lambda **kwargs: {})
+        header.update(scene={}, config={})
+        (tmp_path / "header.json").write_text(json.dumps(header))
+        monkeypatch.setattr(runner, "specification", lambda: (scene, config))
+        fake_runtime = types.ModuleType("mujoco")
+        fake_runtime.__version__ = "3.3.6"
+        monkeypatch.setitem(sys.modules, "mujoco", fake_runtime)
+        calls = []
+        class FakeSession:
+            def __init__(self, *args):
+                pass
+            def __enter__(self):
+                calls.append("first-model-context")
+                raise RuntimeError("fake model context reached")
+            def __exit__(self, *args):
+                pass
+        monkeypatch.setattr(runner, "MuJoCoCaptureSession", FakeSession)
+        with pytest.raises(RuntimeError):
+            runner.execute_once()
+>       assert calls == [], "wrong runtime must be rejected before model/reset/camera context"
+E       AssertionError: wrong runtime must be rejected before model/reset/camera context
+E       assert ['first-model-context'] == []
+E         
+E         Left contains one more item: 'first-model-context'
+E         Use -v to get more diff
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:813: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{
+  "scope": "SOFTWARE_ONLY",
+  "protocol": "research.custom-whole-step-guarded-rgbd.v3",
+  "component": "t7b-continuous-visibility",
+  "independent_calibration_group": false,
+  "source_authenticity": "UNKNOWN",
+  "execution_header_sha256": "77e91151c4c14ff9357e68fb5e6f422cbd2f02915fec3540e22712344db9a8c8",
+  "acquisition_allocated": 0,
+  "acquisition_completed": 0,
+  "acquisition_failed": 0,
+  "acquisition_failure_journal_errors": [],
+  "group_id": "fake",
+  "scene_hash": "fake",
+  "run_status": "PARTIAL_OR_FAILED",
+  "wall_elapsed_s": 0.000548288,
+  "counts": {
+    "session_setup_capture_calls": 0,
+    "bootstrap_capture_calls": 0,
+    "teacher_boundary_capture_calls": 0,
+    "cached_updates_suppressed": 0
+  },
+  "whole_step_capture_calls": 0,
+  "action_begins": 0,
+  "action_ends": 0,
+  "action_failed": 0,
+  "action_delegated": 0,
+  "action_failure_journal_errors": [],
+  "framed_actions": 0,
+  "unframed_actions": 0,
+  "nominal_journal_failure": null,
+  "formal_accepted": false,
+  "native_admission": "NOT_PROMOTED",
+  "continuous_motion": "NOT_CERTIFIED",
+  "future_stability": "UNAVAILABLE",
+  "raw_v3_status": "CUSTOM_PROTOCOL_NOT_RAW_V3",
+  "decoder_calls": 0
+}
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[physics_begin_step]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[control_begin_kind]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[control_end_episode]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[actuator_episode]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[actuator_time]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[control_begin_time]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[operation_error]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[acquisition_begin_operation]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[acquisition_failed_extra]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[acquisition_begin_extra]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[action_failed_extra]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[action_begin_extra]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[orphan_end]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_declared_original_recipe_cannot_be_promoted_from_three_frame_one_action_trace
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_bad_imported_runtime_is_refused_before_first_model_context
+15 failed, 1 passed, 61 deselected in 1.85s

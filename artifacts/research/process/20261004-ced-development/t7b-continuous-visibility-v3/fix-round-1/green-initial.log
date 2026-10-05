@@ -1,0 +1,326 @@
+........................................................................ [ 93%]
+.F...                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_full_source_identity_and_all_journal_allocations_fail_closed[duplicate_acquisition] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1206/test_full_source_identity_and_12')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/verify_offline.py'>
+kind = 'duplicate_acquisition'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "physics_begin_step",
+            "control_begin_kind",
+            "control_end_episode",
+            "actuator_episode",
+            "actuator_time",
+            "control_begin_time",
+            "operation_error",
+            "acquisition_begin_operation",
+            "acquisition_failed_extra",
+            "acquisition_begin_extra",
+            "action_failed_extra",
+            "action_begin_extra",
+            "duplicate_acquisition",
+            "orphan_end",
+        ],
+    )
+    def test_full_source_identity_and_all_journal_allocations_fail_closed(
+        tmp_path, runner, reader, kind
+    ):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        if kind.endswith("_extra") or kind in {"duplicate_acquisition", "orphan_end"}:
+            row = copy.deepcopy(records[-1])
+            last = records[-1]["clock"]["monotonic_after_ns"]
+            row["clock"].update(monotonic_before_ns=last + 1, monotonic_after_ns=last + 2)
+            if kind.startswith("action_"):
+                row.update(
+                    event="ACTION_FAILED" if "failed" in kind else "ACTION_BEGIN", action_ordinal=2
+                )
+            else:
+                event = (
+                    "ACQUISITION_FAILED"
+                    if "failed" in kind
+                    else "ACQUISITION_END"
+                    if kind == "orphan_end"
+                    else "ACQUISITION_BEGIN"
+                )
+                row.update(
+                    event=event,
+                    physics_step=0 if kind == "duplicate_acquisition" else 3,
+                    episode_id="episode",
+                    sim_time_s=3 / 240,
+                    action_ordinal=None,
+                )
+            records.append(row)
+        else:
+            for row in records:
+                source_row = row.get("source", {})
+                if (
+                    kind == "physics_begin_step"
+                    and row["event"] == "OPERATION"
+                    and source_row.get("kind") == "PHYSICS"
+                    and source_row.get("phase") == "BEGIN"
+                ):
+                    source_row["physics_step"] = 999
+                elif (
+                    kind == "control_begin_kind"
+                    and row["event"] == "OPERATION"
+                    and source_row.get("kind") == "CONTROL"
+                    and source_row.get("phase") == "BEGIN"
+                ):
+                    source_row["kind"] = "COMMAND"
+                elif (
+                    kind == "control_end_episode"
+                    and row["event"] == "OPERATION"
+                    and source_row.get("kind") == "CONTROL"
+                    and source_row.get("phase") == "END"
+                ):
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_episode" and row["event"] == "ACTUATOR":
+                    source_row["episode_id"] = "wrong-episode"
+                elif kind == "actuator_time" and row["event"] == "ACTUATOR":
+                    source_row["sim_time_s"] = 9.0
+                elif (
+                    kind == "control_begin_time"
+                    and row["event"] == "OPERATION"
+                    and source_row.get("kind") == "CONTROL"
+                    and source_row.get("phase") == "BEGIN"
+                ):
+                    source_row["sim_time_s"] = 9.0
+                elif (
+                    kind == "operation_error"
+                    and row["event"] == "OPERATION"
+                    and source_row.get("kind") == "PHYSICS"
+                    and source_row.get("phase") == "END"
+                ):
+                    source_row["error_type"] = "ValueError"
+                elif (
+                    kind == "acquisition_begin_operation"
+                    and row["event"] == "ACQUISITION_BEGIN"
+                    and row["physics_step"] == 1
+                ):
+                    row["control_operation_id"] = 999
+        old.write_rows(source, records)
+        before = old.hashes(source)
+>       result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:865: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input_directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1206/test_full_source_identity_and_12/input')
+
+    def verify_attempt(input_directory: Path, *, output_directory: Path, decode=False):
+        """Replay existing bytes; write derived evidence only outside the input tree."""
+        directory = input_directory.resolve(strict=True)
+        output_directory = output_directory.resolve()
+        if output_directory == directory or directory in output_directory.parents:
+            raise ValueError("output directory must be outside input directory")
+        output_directory.mkdir(parents=True, exist_ok=False)
+        summary = json.loads((directory / "summary.json").read_text())
+        terminal = json.loads((directory / "terminal.json").read_text())
+        contract = None
+        header = None
+        preflight_failures = []
+        try:
+            contract, header = verify_execution_header(directory, summary)
+        except (OSError, ValueError, TypeError, KeyError, state_guard.StateGuardError) as error:
+            preflight_failures.append("execution header/source preflight: " + str(error))
+        dimensions = (
+            None
+            if header is None
+            else (header["config"]["camera_width"], header["config"]["camera_height"])
+        )
+        report = verify_series(
+            directory / "whole-step",
+            decode=False,
+            output=output_directory / "offline-observations.jsonl",
+            expected_dimensions=dimensions,
+        )
+        failures = report["failures"]
+        failures.extend(preflight_failures)
+        series_summary = json.loads((directory / "whole-step/summary.json").read_text())
+        index_ends = {}
+        for line in (directory / "whole-step/index.jsonl").read_text().splitlines():
+            source_row = json.loads(line)
+            if source_row["event"] == "END":
+                index_ends[source_row["physics_step"]] = source_row
+        final_identity = {
+            "episode_id": series_summary["episode_id"],
+            "physics_step": series_summary["final_step"],
+            "sim_time_s": series_summary["final_sim_time_s"],
+        }
+        if not same_json(
+            final_identity,
+            {
+                "episode_id": terminal.get("episode_id"),
+                "physics_step": terminal.get("final_step"),
+                "sim_time_s": terminal.get("final_sim_time_s"),
+            },
+        ):
+            failures.append("terminal episode/step/time differs from continuous sequence")
+        if not same_json(
+            frame_identity(index_ends.get(series_summary["final_step"], {})), final_identity
+        ):
+            failures.append("terminal continuous sequence/index identity mismatch")
+        actions, operations, acquisitions, acquisition_begins, teacher_actions, actuators = (
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+        )
+        original_commands = []
+        sequence = 0
+        last_ns = None
+        records = list(read_jsonl_gzip(directory / "nominal-journal.jsonl.gz"))
+        for row in records:
+            clock = row["clock"]
+            before, after = clock["monotonic_before_ns"], clock["monotonic_after_ns"]
+            if (
+                type(row["record_seq"]) is not int
+                or type(before) is not int
+                or type(after) is not int
+                or row["record_seq"] != sequence + 1
+                or before > after
+                or last_ns is not None
+                and before < last_ns
+            ):
+                failures.append("nominal event sequence/clock bracket invalid")
+            sequence, last_ns = row["record_seq"], after
+            if row["event"] == "OPERATION":
+                source = row["source"]
+                key = (source["operation_id"], source["phase"])
+                if key in operations:
+                    failures.append("duplicate operation boundary")
+                operations[key] = row
+                if source["kind"] == "COMMAND" and source["phase"] == "END":
+                    original_commands.extend((source.get("result") or {}).get("command_records", []))
+            elif row["event"] in {"ACTION_BEGIN", "ACTION_END"}:
+                key = (row["action_ordinal"], row["event"])
+                if key in actions:
+                    failures.append("duplicate original action boundary")
+                actions[key] = row
+            elif row["event"] == "TEACHER_ACTION":
+                teacher_actions[row["action_ordinal"]] = row
+            elif row["event"] == "ACTUATOR":
+                step = row["source"]["physics_step"]
+                if step in actuators:
+                    failures.append("duplicate pre-physics actuator source")
+                actuators[step] = row
+            elif row["event"] == "ACQUISITION_BEGIN":
+                step = row["physics_step"]
+                if step in acquisition_begins:
+                    failures.append("duplicate acquisition BEGIN")
+                acquisition_begins[step] = row
+            elif row["event"] == "ACQUISITION_END":
+                if row["physics_step"] in acquisitions:
+                    failures.append("duplicate acquisition END")
+                acquisitions[row["physics_step"]] = row
+        derived = reconcile_journal(
+            records, series_summary["episode_id"], summary, terminal, report["allocated_steps"]
+        )
+        failures.extend(derived.pop("failures"))
+        if (
+            summary["run_status"] != "COMPLETED_SINGLE_ATTEMPT"
+            or terminal["operation_observer_failures"]
+        ):
+            failures.append("attempt or operation association remained partial")
+        if summary["action_begins"] != summary["action_ends"]:
+            failures.append("original action BEGIN/END count mismatch")
+        if original_commands != terminal["commands"]:
+            failures.append("original command source differs from terminal command journal")
+        if report["allocated_steps"] != terminal["final_step"] + 1:
+            failures.append("terminal and declared frame horizons differ")
+        action_spans = {}
+        for ordinal in range(1, summary["action_begins"] + 1):
+            begin, end = actions.get((ordinal, "ACTION_BEGIN")), actions.get((ordinal, "ACTION_END"))
+            teacher_action = teacher_actions.get(ordinal)
+            if begin is None or end is None or teacher_action is None:
+                failures.append(f"action {ordinal}: original/teacher span missing")
+                continue
+            start_step, end_step = begin["start_step"], end["end_step"]
+            if (
+                type(start_step) is not int
+                or type(end_step) is not int
+                or not 0 <= start_step <= end_step <= terminal["final_step"]
+                or end["start_step"] != start_step
+            ):
+                failures.append(f"action {ordinal}: invalid original physical span")
+            else:
+                action_spans[ordinal] = (start_step, end_step)
+            start, stop = begin["command_seq_start"], end["command_seq_end"]
+            if (
+                not 1 <= start <= stop <= len(terminal["commands"]) + 1
+                or end["command_seq_start"] != start
+            ):
+                failures.append(f"action {ordinal}: half-open command span invalid")
+            expected = {
+                "start_step": begin["start_step"],
+                "end_step": end["end_step"],
+                "command_seq_start": start,
+                "command_seq_end": stop,
+            }
+            if any(teacher_action["source"][key] != value for key, value in expected.items()):
+                failures.append(f"action {ordinal}: teacher/original span mismatch")
+            result = end.get("result")
+            if result is None or end.get("error_type"):
+                failures.append(f"action {ordinal}: original action did not return")
+            else:
+                start_utc, finish_utc = (
+                    datetime.fromisoformat(result["started_at"]),
+                    datetime.fromisoformat(result["finished_at"]),
+                )
+                if not (
+                    datetime.fromisoformat(begin["clock"]["utc"])
+                    <= start_utc
+                    <= finish_utc
+                    <= datetime.fromisoformat(end["clock"]["utc"])
+                ):
+                    failures.append(f"action {ordinal}: original wall interval outside nominal wrapper")
+        for step in range(report["allocated_steps"]):
+            row = acquisitions.get(step)
+            if row is None:
+                failures.append(f"step {step}: missing saved acquisition association")
+                continue
+            begin = acquisition_begins.get(step)
+            authoritative = index_ends.get(step, {})
+            if not same_json(row["saved"], authoritative):
+                failures.append(f"step {step}: saved acquisition differs from complete index END")
+            identity = frame_identity(authoritative)
+            if (
+                not same_json(frame_identity(row), identity)
+                or begin is None
+                or not same_json(frame_identity(begin), identity)
+                or not same_json(frame_identity(begin.get("physical_source", {})), identity)
+            ):
+                failures.append(f"step {step}: acquisition/raw physical identity mismatch")
+            owners = [
+                ordinal
+                for ordinal, (start_step, end_step) in action_spans.items()
+                if start_step < step <= end_step
+            ]
+            if len(owners) > 1 or row["action_ordinal"] != (owners[0] if owners else None):
+                failures.append(f"step {step}: action ownership not unique or incorrectly bound")
+            if (
+                begin is None
+                or begin["action_ordinal"] != row["action_ordinal"]
+>               or begin["control_operation_id"] != row["control_operation_id"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                or begin["physics_operation_id"] != row["physics_operation_id"]
+                or begin["clock"]["monotonic_after_ns"] > row["saved"]["monotonic_begin_ns"]
+                or row["saved"]["monotonic_end_ns"] > row["clock"]["monotonic_before_ns"]
+            ):
+E           KeyError: 'control_operation_id'
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/verify_offline.py:774: KeyError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_source_identity_and_all_journal_allocations_fail_closed[duplicate_acquisition]
+1 failed, 76 passed in 5.02s

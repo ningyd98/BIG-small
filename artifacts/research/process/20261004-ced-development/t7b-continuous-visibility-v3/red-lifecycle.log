@@ -1,0 +1,78 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+______ test_BEGIN_failure_keeps_allocation_and_marks_failed_before_camera ______
+
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/legacy_lifecycle_baseline.py'>
+
+    def test_BEGIN_failure_keeps_allocation_and_marks_failed_before_camera(runner):
+        owner, journal, series = coordinator(runner, "ACQUISITION_BEGIN")
+        with pytest.raises(OSError, match="ACQUISITION_BEGIN"):
+            owner.record(step())
+>       assert (owner.allocated, owner.completed, owner.failed, series.calls) == (1, 0, 1, 0)
+E       assert (1, 0, 0, 0) == (1, 0, 1, 0)
+E         
+E         At index 2 diff: 0 != 1
+E         Use -v to get more diff
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:76: AssertionError
+____ test_END_failure_preserves_saved_frame_without_completed_double_count _____
+
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/legacy_lifecycle_baseline.py'>
+
+    def test_END_failure_preserves_saved_frame_without_completed_double_count(runner):
+        owner, journal, series = coordinator(runner, "ACQUISITION_END")
+        with pytest.raises(OSError, match="ACQUISITION_END"):
+            owner.record(step())
+>       assert (owner.allocated, owner.completed, owner.failed, series.calls, series.saved) == (
+            1, 0, 1, 1, 1
+        )
+E       assert (1, 1, 1, 1, 1) == (1, 0, 1, 1, 1)
+E         
+E         At index 1 diff: 1 != 0
+E         Use -v to get more diff
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:84: AssertionError
+_____________ test_FAILED_publication_does_not_mask_original_error _____________
+
+self = <test_cpu.FakeSeries object at 0x75bdb9697a40>
+identity = {'episode_id': 'cpu-episode', 'physics_step': 0, 'sim_time_s': 0.0}
+
+    def record_step(self, **identity):
+        self.calls += 1
+        if self.error is not None:
+>           raise self.error
+E           ValueError: original capture interruption
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:54: ValueError
+
+During handling of the above exception, another exception occurred:
+
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/legacy_lifecycle_baseline.py'>
+
+    def test_FAILED_publication_does_not_mask_original_error(runner):
+        original = ValueError("original capture interruption")
+        owner, journal, series = coordinator(runner, "ACQUISITION_FAILED", original)
+        with pytest.raises(ValueError, match="original capture interruption") as caught:
+>           owner.record(step())
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:93: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/legacy_lifecycle_baseline.py:23: in record
+    self.journal.emit("ACQUISITION_FAILED", error=str(error))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_cpu.FakeJournal object at 0x75bdb9697ad0>
+event = 'ACQUISITION_FAILED'
+payload = {'error': 'original capture interruption'}
+
+    def emit(self, event, **payload):
+        if event == self.fault:
+>           raise OSError("journal " + event)
+E           OSError: journal ACQUISITION_FAILED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:40: OSError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_BEGIN_failure_keeps_allocation_and_marks_failed_before_camera
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_END_failure_preserves_saved_frame_without_completed_double_count
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_FAILED_publication_does_not_mask_original_error
+3 failed, 3 deselected in 0.06s

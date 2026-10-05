@@ -1,0 +1,54 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_____ test_action_BEGIN_failure_retains_allocated_attempt_without_delegate _____
+
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/legacy_action_baseline.py'>
+
+    def test_action_BEGIN_failure_retains_allocated_attempt_without_delegate(runner):
+        tracker, journal = action_tracker(runner, "ACTION_BEGIN")
+        calls = []
+        with pytest.raises(OSError, match="ACTION_BEGIN"):
+            tracker.invoke("LIFT", lambda: calls.append(1))
+        assert calls == []
+>       assert (tracker.begins, tracker.ends, tracker.failed, tracker.delegated) == (1, 0, 1, 0)
+                                              ^^^^^^^^^^^^^^
+E       AttributeError: 'ActionTracker' object has no attribute 'failed'
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:127: AttributeError
+___ test_action_END_failure_does_not_count_completed_end_or_repeat_delegate ____
+
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/legacy_action_baseline.py'>
+
+    def test_action_END_failure_does_not_count_completed_end_or_repeat_delegate(runner):
+        tracker, journal = action_tracker(runner, "ACTION_END")
+        calls = []
+        with pytest.raises(OSError, match="ACTION_END"):
+            tracker.invoke("LIFT", lambda: calls.append(1))
+        assert calls == [1]
+>       assert (tracker.begins, tracker.ends, tracker.failed, tracker.delegated) == (1, 0, 1, 1)
+                                              ^^^^^^^^^^^^^^
+E       AttributeError: 'ActionTracker' object has no attribute 'failed'
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:137: AttributeError
+_________ test_action_FAILED_publication_preserves_original_exception __________
+
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/legacy_action_baseline.py'>
+
+    def test_action_FAILED_publication_preserves_original_exception(runner):
+        tracker, journal = action_tracker(runner, "ACTION_FAILED")
+        original = ValueError("original action interruption")
+        def fail():
+            raise original
+        with pytest.raises(ValueError) as caught:
+            tracker.invoke("LIFT", fail)
+        assert caught.value is original
+>       assert tracker.failure_journal_errors
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'ActionTracker' object has no attribute 'failure_journal_errors'
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:152: AttributeError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_action_BEGIN_failure_retains_allocated_attempt_without_delegate
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_action_END_failure_does_not_count_completed_end_or_repeat_delegate
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_action_FAILED_publication_preserves_original_exception
+3 failed, 6 deselected in 0.06s

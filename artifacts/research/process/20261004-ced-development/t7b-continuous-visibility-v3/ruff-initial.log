@@ -1,0 +1,470 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py:7:1
+   |
+ 5 |   """
+ 6 |
+ 7 | / from __future__ import annotations
+ 8 | |
+ 9 | | import argparse
+10 | | import base64
+11 | | import gzip
+12 | | import hashlib
+13 | | import importlib.util
+14 | | import json
+15 | | import time
+16 | | import traceback
+17 | | from collections.abc import Mapping
+18 | | from contextlib import contextmanager
+19 | | from dataclasses import fields, is_dataclass
+20 | | from datetime import UTC, datetime
+21 | | from pathlib import Path
+22 | |
+23 | | import numpy as np
+24 | |
+25 | | from cloud_edge_robot_arm.datasets.rgbd import teacher
+26 | | from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec
+27 | | from cloud_edge_robot_arm.research.step_rgbd import StepRGBDRecorder
+28 | | from cloud_edge_robot_arm.research import mujoco_state_guard as state_guard
+29 | | from cloud_edge_robot_arm.simulation.mujoco.camera import MuJoCoRGBDCamera
+30 | | from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
+31 | |     CompletionCriteria,
+32 | |     evaluate_episode,
+33 | | )
+34 | | from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+35 | | from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+36 | | from cloud_edge_robot_arm.vision.observations import observation_from_sensor_frame
+   | |__________________________________________________________________________________^
+37 |
+38 |   HERE = Path(__file__).resolve().parent
+   |
+help: Organize imports
+
+E501 Line too long (101 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py:432:101
+    |
+430 |         raise RuntimeError("prepared manifest/archive index changed")
+431 |     sources, archives = json.loads(manifest_path.read_text()), json.loads(index_path.read_text())
+432 |     if set(sources) != set(archives) or len(sources) != header["source_count"] or len(sources) != 32:
+    |                                                                                                     ^
+433 |         raise RuntimeError("prepared source inventory differs")
+434 |     for name, expected in sources.items():
+    |
+
+E501 Line too long (110 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py:492:101
+    |
+490 |     write_new(HERE / "execution-source-hashes.json", sources)
+491 |     write_new(HERE / "execution-archive-index.json", indices)
+492 |     environment = json.loads((HERE.parent / "capture-state-diagnosis/header.json").read_text())["environment"]
+    |                                                                                                     ^^^^^^^^^^
+493 |     helper = ROOT / ".venv/lib/python3.12/site-packages/numpy/lib/_format_impl.py"
+494 |     environment["files"]["numpy/lib/_format_impl.py"] = {
+    |
+
+E501 Line too long (108 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py:510:101
+    |
+508 |         "source_manifest_sha256": digest((HERE / "execution-source-hashes.json").read_bytes()),
+509 |         "source_archive_index_sha256": digest((HERE / "execution-archive-index.json").read_bytes()),
+510 |         "source_count": len(sources), "source_bytes": sum((ROOT / name).stat().st_size for name in sources),
+    |                                                                                                     ^^^^^^^^
+511 |         "source_root": str(ROOT), "archive_root": str(HERE.parent),
+512 |         "raw_v3_status": "CUSTOM_PROTOCOL_NOT_RAW_V3", "source_authenticity": "UNKNOWN",
+    |
+
+E501 Line too long (108 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py:755:101
+    |
+753 |             "acquisition_completed": coordinator.completed if coordinator else 0,
+754 |             "acquisition_failed": coordinator.failed if coordinator else 0,
+755 |             "acquisition_failure_journal_errors": coordinator.failure_journal_errors if coordinator else [],
+    |                                                                                                     ^^^^^^^^
+756 |             "group_id": scene.group_id,
+757 |             "scene_hash": scene.scene_hash,
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:3:1
+   |
+ 1 |   """V3 SOFTWARE_ONLY lifecycle/source/guard/association tests; no actual calls."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import importlib.util
+ 6 | | import copy
+ 7 | | import hashlib
+ 8 | | import json
+ 9 | |
+10 | | import numpy as np
+11 | | import os
+12 | | from pathlib import Path
+13 | | from types import SimpleNamespace
+14 | |
+15 | | import pytest
+   | |_____________^
+16 |
+17 |   HERE = Path(__file__).resolve().parent
+   |
+help: Organize imports
+
+E501 Line too long (101 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:159:101
+    |
+157 |         tracker.invoke("LIFT", fail)
+158 |     assert caught.value is original
+159 |     assert getattr(original, "__notes__", []), "publication failure must remain attached to original"
+    |                                                                                                     ^
+160 |     assert tracker.failure_journal_errors
+161 |     assert (tracker.begins, tracker.ends) == (1, 0)
+    |
+
+E501 Line too long (106 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:208:101
+    |
+206 |     for row in records:
+207 |         if row["event"] == "ACQUISITION_END":
+208 |             camera = guarded_camera(runner, contract, model, data, row["physics_step"], row["sim_time_s"])
+    |                                                                                                     ^^^^^^
+209 |             for key in ("capture_monotonic_begin_ns", "capture_monotonic_end_ns"):
+210 |                 camera[key] = row["camera"][key]
+    |
+
+E501 Line too long (106 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:218:101
+    |
+216 |                 protected = json.loads(camera[key]["protected_json"])
+217 |                 protected["physics_state_sha256"] = row["saved"]["pass_state_hashes"][0]
+218 |                 arrays = api.snapshot_data_arrays(data, model, contract=contract, runtime_version="3.3.7")
+    |                                                                                                     ^^^^^^
+219 |                 camera[key] = runner.plain(api.attach_protected_state(arrays, protected))
+220 |             camera["pass_state_hashes"] = row["saved"]["pass_state_hashes"]
+    |
+
+E501 Line too long (103 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:229:101
+    |
+227 |     guard_name = "src/cloud_edge_robot_arm/research/mujoco_state_guard.py"
+228 |     members = {guard_name: (runner.ROOT / guard_name).read_bytes()}
+229 |     members.update({f"fixture_{i}.py": b"fixture software only " + str(i).encode() for i in range(31)})
+    |                                                                                                     ^^^
+230 |     manifest, index = {}, {}
+231 |     for i, (name, raw) in enumerate(members.items()):
+    |
+
+E501 Line too long (126 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:238:101
+    |
+236 |         manifest[name] = hashlib.sha256(raw).hexdigest()
+237 |         index[name] = {"sha256": manifest[name], "bytes": len(raw), "archive": str(i)}
+238 |     manifest_path, index_path = source.parent / "execution-source-hashes.json", source.parent / "execution-archive-index.json"
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+239 |     manifest_path.write_text(json.dumps(manifest))
+240 |     index_path.write_text(json.dumps(index))
+    |
+
+E501 Line too long (112 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:244:101
+    |
+242 |     header = dict(protocol=runner.PROTOCOL, guard_protocol=runner.GUARD_PROTOCOL,
+243 |                   raw_v3_status="CUSTOM_PROTOCOL_NOT_RAW_V3", source_authenticity="UNKNOWN",
+244 |                   independent_calibration_group=False, source_root=str(fixture_root), archive_root=str(archive),
+    |                                                                                                     ^^^^^^^^^^^^
+245 |                   source_manifest_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+246 |                   source_archive_index_sha256=hashlib.sha256(index_path.read_bytes()).hexdigest(),
+    |
+
+E501 Line too long (103 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:248:101
+    |
+246 |                   source_archive_index_sha256=hashlib.sha256(index_path.read_bytes()).hexdigest(),
+247 |                   source_count=len(manifest), guard_core_sha256=manifest[guard_name],
+248 |                   guard_headers={name: str(header_root / name) for name in ("mjxmacro.h", "mjdata.h")},
+    |                                                                                                     ^^^
+249 |                   guard_binding_sha256=api.BINDING_SHA256, environment={"mujoco_version": "3.3.7", "files": {}})
+250 |     header_path = source / "execution-header.json"
+    |
+
+E501 Line too long (112 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:249:101
+    |
+247 |                   source_count=len(manifest), guard_core_sha256=manifest[guard_name],
+248 |                   guard_headers={name: str(header_root / name) for name in ("mjxmacro.h", "mjdata.h")},
+249 |                   guard_binding_sha256=api.BINDING_SHA256, environment={"mujoco_version": "3.3.7", "files": {}})
+    |                                                                                                     ^^^^^^^^^^^^
+250 |     header_path = source / "execution-header.json"
+251 |     header_path.write_text(json.dumps(header))
+    |
+
+E501 Line too long (119 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:258:101
+    |
+256 |                    acquisition_allocated=3, acquisition_completed=3, acquisition_failed=0,
+257 |                    whole_step_capture_calls=3, acquisition_failure_journal_errors=[],
+258 |                    action_failed=0, action_delegated=1, action_failure_journal_errors=[], nominal_journal_failure=None)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+259 |     summary_path.write_text(json.dumps(summary))
+260 |     return old
+    |
+
+E501 Line too long (101 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:263:101
+    |
+263 | def test_complete_custom_trace_verifies_without_source_or_native_promotion(tmp_path, runner, reader):
+    |                                                                                                     ^
+264 |     source = tmp_path / "input"
+265 |     source.mkdir()
+    |
+
+E501 Line too long (128 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:274:101
+    |
+274 | @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+275 | def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+276 |     source = tmp_path / "input"
+    |
+
+E501 Line too long (117 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:280:101
+    |
+278 |     old = v3_attempt(source, runner)
+279 |     records = old.rows(source)
+280 |     camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+281 |     if kind == "missing":
+282 |         camera.pop("before_guard")
+    |
+
+E501 Line too long (139 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:293:101
+    |
+291 | …"dtype_descr_json"] = "0"
+292 | …
+293 | …ra["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+294 | …
+295 | …
+    |
+
+E501 Line too long (106 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:302:101
+    |
+300 |     result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+301 |     assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+302 |     assert any("guarded acquisition invalid" in error for error in result["failures"]), result["failures"]
+    |                                                                                                     ^^^^^^
+303 |     old.assert_authority_closed(result)
+    |
+
+E501 Line too long (176 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:306:101
+    |
+306 | …ownership", "camera_step", "capture_clock", "physics_time", "overlap", "missing_begin", "old_actuator"])
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+307 | …ader, kind):
+308 | …
+    |
+
+E501 Line too long (119 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:315:101
+    |
+313 |         path = source / "terminal.json"
+314 |         terminal = json.loads(path.read_text())
+315 |         terminal["episode_id" if kind == "episode" else "final_sim_time_s"] = "unrelated" if kind == "episode" else 9.0
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+316 |         path.write_text(json.dumps(terminal))
+317 |     else:
+    |
+
+E501 Line too long (108 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:320:101
+    |
+318 |         updated = []
+319 |         for row in records:
+320 |             if kind == "missing_begin" and row["event"] == "ACQUISITION_BEGIN" and row["physics_step"] == 1:
+    |                                                                                                     ^^^^^^^^
+321 |                 continue
+322 |             if kind == "old_actuator" and row["event"] == "ACTUATOR":
+    |
+
+E501 Line too long (130 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:326:101
+    |
+324 |             if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1:
+325 |                 if kind == "saved_identity":
+326 |                     row["saved"].update(observation_id="wrong", observation_checksum_sha256="b" * 64, file="frames/wrong.json.gz")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+327 |                 elif kind == "camera_step":
+328 |                     for key in ("before_state", "after_state"):
+    |
+
+E501 Line too long (125 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:332:101
+    |
+330 | …         elif kind == "capture_clock":
+331 | …             row["camera"]["capture_monotonic_end_ns"] = row["saved"]["monotonic_end_ns"] + 1
+332 | …     if kind == "ownership" and row["event"] in {"ACQUISITION_BEGIN", "ACQUISITION_END"} and row["physics_step"] == 1:
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^
+333 | …         row["action_ordinal"] = None
+334 | …     if kind == "physics_time" and row["event"] == "OPERATION" and row["source"]["kind"] == "PHYSICS" and row["source"]["phase"] == …
+    |
+
+E501 Line too long (184 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:334:101
+    |
+332 | … "ACQUISITION_END"} and row["physics_step"] == 1:
+333 | …
+334 | …w["source"]["kind"] == "PHYSICS" and row["source"]["phase"] == "END" and row["source"]["physics_step"] == 2:
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+335 | …
+336 | …
+    |
+
+E501 Line too long (102 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:337:101
+    |
+335 |                 row["source"]["result"]["physics_state"]["sim_time_s"] = 9.0
+336 |             updated.append(row)
+337 |             if kind == "overlap" and row["event"] in {"ACTION_BEGIN", "ACTION_END", "TEACHER_ACTION"}:
+    |                                                                                                     ^^
+338 |                 duplicate = copy.deepcopy(row)
+339 |                 duplicate["action_ordinal"] = 2
+    |
+
+E501 Line too long (118 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:354:101
+    |
+354 | @pytest.mark.parametrize("kind", ["source", "archive", "manifest", "index", "inventory", "header", "version", "core"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+355 | def test_source_preflight_and_offline_pins_fail_closed(tmp_path, runner, reader, monkeypatch, kind):
+356 |     source = tmp_path / "input"
+    |
+
+E501 Line too long (103 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:368:101
+    |
+366 |         target.write_bytes(b"changed source")
+367 |     elif kind in {"manifest", "index"}:
+368 |         name = "execution-source-hashes.json" if kind == "manifest" else "execution-archive-index.json"
+    |                                                                                                     ^^^
+369 |         with (source.parent / name).open("a") as stream:
+370 |             stream.write(" ")
+    |
+
+E501 Line too long (105 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:415:101
+    |
+413 |     camera._capture = capture
+414 |     backend._camera = camera
+415 |     monkeypatch.setattr(runner, "observation_from_sensor_frame", lambda frame, source: "cpu-observation")
+    |                                                                                                     ^^^^^
+416 |     return runner.CaptureAdapter(backend, FakeJournal(), contract), data, backend, camera
+    |
+
+E501 Line too long (105 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:419:101
+    |
+419 | def test_same_camera_capture_ignores_only_legal_allocation_bytes_and_delegates_once(runner, monkeypatch):
+    |                                                                                                     ^^^^^
+420 |     adapter, data, backend, camera = fake_adapter(runner, monkeypatch)
+421 |     value, hashes = adapter()
+    |
+
+E501 Line too long (122 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:430:101
+    |
+430 | @pytest.mark.parametrize("kind", ["active", "support", "inventory", "owning", "rng", "control", "cache", "model", "step"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+431 | def test_capture_side_effects_fail_closed_after_one_original_delegate(runner, monkeypatch, kind):
+432 |     def mutate(data, backend):
+    |
+
+E731 Do not assign a `lambda` expression, use a `def`
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:483:5
+    |
+481 |         setattr(Robot, name, lambda self, _name=name: calls.append(_name))
+482 |     robot = Robot()
+483 |     original_override = lambda: calls.append("existing override")
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+484 |     robot.lift = original_override
+485 |     original_dwell = lambda *args, **kwargs: calls.append("dwell")
+    |
+help: Rewrite `original_override` as a `def`
+
+E731 Do not assign a `lambda` expression, use a `def`
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:485:5
+    |
+483 |     original_override = lambda: calls.append("existing override")
+484 |     robot.lift = original_override
+485 |     original_dwell = lambda *args, **kwargs: calls.append("dwell")
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+486 |     teacher = SimpleNamespace(_dwell=original_dwell)
+487 |     tracker = SimpleNamespace(invoke=lambda kind, original, *args, **kwargs: original(*args, **kwargs))
+    |
+help: Rewrite `original_dwell` as a `def`
+
+E501 Line too long (103 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:487:101
+    |
+485 |     original_dwell = lambda *args, **kwargs: calls.append("dwell")
+486 |     teacher = SimpleNamespace(_dwell=original_dwell)
+487 |     tracker = SimpleNamespace(invoke=lambda kind, original, *args, **kwargs: original(*args, **kwargs))
+    |                                                                                                     ^^^
+488 |     try:
+489 |         with runner.wrap_original_actions(robot, teacher, tracker):
+    |
+
+E501 Line too long (106 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:510:101
+    |
+508 |     old.write_rows(source, records)
+509 |     before = old.hashes(source)
+510 |     monkeypatch.setattr(reader, "detect_pose_marker", lambda *args: pytest.fail("invalid source decoded"))
+    |                                                                                                     ^^^^^^
+511 |     result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=True)
+512 |     assert result["decoder_blocked_by_integrity_failure"]
+    |
+
+E501 Line too long (117 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:516:101
+    |
+516 | @pytest.mark.parametrize("kind", ["enlarged_gap", "missing_frame", "extra_horizon", "terminal_time", "failed_index"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+517 | def test_every_step_original_cadence_and_terminal_denominator_remain_required(tmp_path, runner, reader, kind):
+518 |     source = tmp_path / "input"
+    |
+
+E501 Line too long (110 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:517:101
+    |
+516 | @pytest.mark.parametrize("kind", ["enlarged_gap", "missing_frame", "extra_horizon", "terminal_time", "failed_index"])
+517 | def test_every_step_original_cadence_and_terminal_denominator_remain_required(tmp_path, runner, reader, kind):
+    |                                                                                                     ^^^^^^^^^^
+518 |     source = tmp_path / "input"
+519 |     source.mkdir()
+    |
+
+E501 Line too long (101 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/verify_offline.py:297:101
+    |
+295 |         raise ValueError("execution source manifest/index pin mismatch")
+296 |     sources, archives = json.loads(manifest_raw), json.loads(index_raw)
+297 |     if set(sources) != set(archives) or len(sources) != header["source_count"] or len(sources) != 32:
+    |                                                                                                     ^
+298 |         raise ValueError("execution source inventory mismatch")
+299 |     for name, expected in sources.items():
+    |
+
+E501 Line too long (108 > 100)
+   --> artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/verify_offline.py:300:101
+    |
+298 |         raise ValueError("execution source inventory mismatch")
+299 |     for name, expected in sources.items():
+300 |         live, archived = (root / name).read_bytes(), (archive_root / archives[name]["archive"]).read_bytes()
+    |                                                                                                     ^^^^^^^^
+301 |         if (sha(live) != expected or sha(archived) != expected
+302 |                 or archives[name]["sha256"] != expected or len(live) != archives[name]["bytes"]):
+    |
+
+Found 40 errors.
+[*] 2 fixable with the `--fix` option (2 hidden fixes can be enabled with the `--unsafe-fixes` option).

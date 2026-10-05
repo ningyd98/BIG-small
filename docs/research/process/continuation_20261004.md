@@ -386,3 +386,11 @@ Git交付核验：阶段49快照d3472a5与本步记录器f7860ffd已推送研发
 本步新增实际采集、physics、renderer、decoder、模型/provider及硬件调用均为0。本机NTP报告同步的只读原件已保存，但未取得每pair UTC误差界。完整V3采集器和真实RESET/UTC v2设计未纳入本步软件交付，运行前复核与后续完整动作采集继续；软件CPU通过不作连续观测或校准覆盖验收。
 
 第53步Git交付：五个已审源码/测试及相关报告、原始RED/失败记录已提交 `486ec6eef6acaf3158e33add238b4067ae3e0aeb` 并推送；本地、上游与远端SHA一致，push退出0。207个变更路径/1,428,344字节；新V3和RESET/UTC设计未混入。完整差异检查退出2，301处尾空白仅在保留的原始日志及其检查日志中，非日志检查退出0。见[交付记录](../../../artifacts/research/process/20261004-ced-development/git-delivery-step53.json)。本段随后续文档提交推送，软件交付不表示完整实测或正式验收通过。
+
+## 第54步：Astra修复计划与完整采集启动（2026-10-05）
+
+第54步由用户指定Astra制定10项修复任务、48个执行步骤；V3两项软件P2独审关闭，90项CPU及未改六反例通过。唯一完整仿真采集session75370退出0，运行摘要记录4807次保存/0失败及9动作完成（915.765秒）；原件完整性与条件离线decoder session60356仍在运行，尚不报告连续证明。RESET/UTC先验证真实区间宽度能否满足原TTL，再决定至少9独立组；Max配置预检、固定Go工具链与设计独审已形成报告，活动R2代码未验收。主线T12/18、T13并行，native、INITIAL/METHOD/FINAL和正式研究未验收，边缘型号后置。
+
+[修复计划](../../superpowers/plans/2026-10-05-astra-repair-plan.md)沿原18主任务保留所有验收门；先唯一120/9/2完整采集与离线decoder，时钟/RESET及Max并行，不作为本轮V3的前置。软件90项与作者重叠，不相加；六项原反例仍拒绝，旧失败原件和失败分母保留。
+
+Astra明确在九组前先验证秒级量化与整段slab对原TTL/deadline的可用性；仅签名、NTP同步标志或caller数值均不构成精度证明。Max当前可启动配置缺件与历史35调用分别记录。详见[本步报告](../../../artifacts/research/process/20261004-ced-development/report-step54.md)、[V3修复独审](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/fix-round-1/independent-review.md)、[第54步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step54.json)。活动raw/执行日志与未验证R2源码不混入本步静止交付，终态另记下一报告。

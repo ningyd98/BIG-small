@@ -8,7 +8,7 @@
 
 用户选择增加可见姿态标记并保留顶视相机与控制器。独立开发v1资产/检测已通过73项CPU及源/原始帧hash独审；同一物理相机的320×240严格识别UNKNOWN，新640×480单帧OBSERVED。第二版本保留原红色边缘，17份源与77项CPU独审通过，新的实际静态帧识别ID7并看到红色边缘；完整目标关联和连续/校准/native证书仍缺，不自动切换默认配置或抓取profile。一次开发搬运的147份产物/完整raw重建独审通过，离线物理评分成功，但全部9个动作后边界标记UNKNOWN，不能以物理成功代替视觉可观测性。
 
-第53步关闭状态保护dtype记录与校准UTC读取器的两项软件缺陷：root新复跑分别62项、61项CPU通过，独审限定软件范围通过，失败/UNKNOWN组不缩减。新V3核验器独审发现操作身份和额外失败/悬挂采集未拒绝，六个软件反例已复现待修复，尚未完整实测；旧11/10/1及诊断copy失败不升级。真实RESET/独立UTC原件、至少9个独立校准组和有限界正分支仍缺，Max、风险、机会/200故障及INITIAL/METHOD/FINAL未验收。主线T12/18、T13并行，边缘型号后置。 见[本步报告](../artifacts/research/process/20261004-ced-development/report-step53.md)、[阶段总结](research/process/continuation_20261004.md)与[Git记录](research/process/git_delivery_20261005.md)。
+第54步由用户指定Astra制定10项修复任务、48个执行步骤；V3两项软件P2独审关闭，90项CPU及未改六反例通过。唯一完整仿真采集session75370退出0，运行摘要记录4807次保存/0失败及9动作完成（915.765秒）；原件完整性与条件离线decoder session60356仍在运行，尚不报告连续证明。RESET/UTC先验证真实区间宽度能否满足原TTL，再决定至少9独立组；Max配置预检、固定Go工具链与设计独审已形成报告，活动R2代码未验收。主线T12/18、T13并行，native、INITIAL/METHOD/FINAL和正式研究未验收，边缘型号后置。 见[本步报告](../artifacts/research/process/20261004-ced-development/report-step54.md)、[阶段总结](research/process/continuation_20261004.md)与[Git记录](research/process/git_delivery_20261005.md)。
 
 ## 2026-10-04 夹爪修复应用到全项目
 

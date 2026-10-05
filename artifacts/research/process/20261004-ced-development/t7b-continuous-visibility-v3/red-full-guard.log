@@ -1,0 +1,340 @@
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+__________ test_full_guard_tamper_cannot_verify_custom_trace[missing] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_0')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'missing'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+__________ test_full_guard_tamper_cannot_verify_custom_trace[active] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_1')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'active'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+__________ test_full_guard_tamper_cannot_verify_custom_trace[status] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_2')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'status'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+_________ test_full_guard_tamper_cannot_verify_custom_trace[inventory] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_3')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'inventory'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+________ test_full_guard_tamper_cannot_verify_custom_trace[descriptor] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_4')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'descriptor'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+_________ test_full_guard_tamper_cannot_verify_custom_trace[protected] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_5')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'protected'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+__________ test_full_guard_tamper_cannot_verify_custom_trace[bridge] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_6')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'bridge'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+_________ test_full_guard_tamper_cannot_verify_custom_trace[pass_hash] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1196/test_full_guard_tamper_cannot_7')
+runner = <module 'custom_v3_cpu_runner' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/run_once.py'>
+reader = <module 'custom_v3_cpu_reader' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/verify_offline.py'>
+kind = 'pass_hash'
+
+    @pytest.mark.parametrize("kind", ["missing", "active", "status", "inventory", "descriptor", "protected", "bridge", "pass_hash"])
+    def test_full_guard_tamper_cannot_verify_custom_trace(tmp_path, runner, reader, kind):
+        source = tmp_path / "input"
+        source.mkdir()
+        old = v3_attempt(source, runner)
+        records = old.rows(source)
+        camera = next(row["camera"] for row in records if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1)
+        if kind == "missing":
+            camera.pop("before_guard")
+        elif kind == "active":
+            camera["after_guard"]["arrays"]["fields"][-1]["byte_sha256"] = "b" * 64
+        elif kind == "status":
+            field = camera["after_guard"]["arrays"]["fields"][-1]
+            field.update(status="UNSUPPORTED_NULL_ALLOCATION", storage="OWNING", byte_sha256=None)
+        elif kind == "inventory":
+            camera["after_guard"]["arrays"]["fields"].pop()
+        elif kind == "descriptor":
+            camera["after_guard"]["arrays"]["fields"][-1]["dtype_descr_json"] = "0"
+        elif kind == "protected":
+            camera["after_guard"]["protected_json"] = camera["after_guard"]["protected_json"].replace('"command_count":0', '"command_count":1')
+        elif kind == "bridge":
+            for key in ("before_state", "after_state"):
+                camera[key]["rng_state_sha256"] = "b" * 64
+        else:
+            camera["pass_state_hashes"] = ["b" * 64] * 2
+        old.write_rows(source, records)
+        result = reader.verify_attempt(source, output_directory=tmp_path / "output", decode=False)
+>       assert result["integrity_status"] == "INCOMPLETE_OR_INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INCOMPLETE_OR_INVALID'
+E         
+E         - INCOMPLETE_OR_INVALID
+E         + VERIFIED
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py:300: AssertionError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[missing]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[active]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[status]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[inventory]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[descriptor]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[protected]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[bridge]
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v3/test_cpu.py::test_full_guard_tamper_cannot_verify_custom_trace[pass_hash]
+8 failed, 10 deselected in 0.87s
