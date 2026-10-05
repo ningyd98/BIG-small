@@ -2,7 +2,7 @@
 
 **当前新路径验收入口：** [云、边、端总计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)及[逐步阶段总结](continuation_20261004.md)。下表分列软件交付和真实未满足项；T8父任务保持IN_PROGRESS，边缘模型T12b后置。历史验证表保留原验收时点。
 
-**第50步端侧更新：** 逐步原始RGB-D记录器17项及独立17项通过；推送前定向81通过，原最大模拟gap0.005秒及完整horizon不变。真实动作内采集尚未运行，上一轮10/10边界可见保留。无连续/native/真实Max或INITIAL/METHOD/FINAL验收。见[模块报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/module-report.md)与[Git记录](git_delivery_20261005.md)。
+**第51步端侧更新：** 源冻结后的实际attempt只完成10/120 settling步，原数据数组保护在第11次逐步capture拒绝；10saved/1failed、0教师动作及全部原始来源保留。前缀十帧可见不算完整连续证书。动作参照29新项/93定向项及root独立29通过，不给motion/error界或native权限。真实ACTUATOR步n关联P2另修，逐数组诊断准备中；Max/基本几何/风险/INITIAL/METHOD/FINAL未验收。见[本步报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/report-step51.md)与[Git记录](git_delivery_20261005.md)。
 
 | 新执行单元 | 计划验证与原始证据 | 状态 |
 |---|---|---|

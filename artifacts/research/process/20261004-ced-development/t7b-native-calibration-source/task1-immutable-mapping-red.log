@@ -1,0 +1,72 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_read_only_nested_input_mappings_rebuild_the_same_reference ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1162/test_read_only_nested_input_ma0')
+
+    def test_read_only_nested_input_mappings_rebuild_the_same_reference(tmp_path):
+        from types import MappingProxyType
+    
+        module = api()
+        inputs = sample(tmp_path)
+        reference = module.resolve_native_reference(**inputs)
+        inputs["grounding"] = MappingProxyType({
+            key: MappingProxyType(value) if isinstance(value, dict) else value
+            for key, value in inputs["grounding"].items()
+        })
+        facts = MappingProxyType({
+            key: MappingProxyType(value) for key, value in inputs["online"].visual_facts.items()
+        })
+        inputs["online"] = replace(inputs["online"], visual_facts=facts)
+>       assert module.resolve_native_reference(**inputs) == reference
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_native_references.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/native_references.py:141: in resolve_native_reference
+    detached_grounding = json.loads(_json(dict(grounding)))
+                                    ^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/native_references.py:46: in _json
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x77e02b457350>
+o = mappingproxy({'x': 0.2, 'y': 0.25, 'z': 0.004})
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type mappingproxy is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_native_references.py::test_read_only_nested_input_mappings_rebuild_the_same_reference
+1 failed, 28 deselected in 0.50s

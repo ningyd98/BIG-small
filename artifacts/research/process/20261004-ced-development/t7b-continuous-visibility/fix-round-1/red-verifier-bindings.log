@@ -1,0 +1,71 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_independent_p2_saved_terminal_and_unique_action_bindings _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1158/test_independent_p2_saved_term0')
+
+    def test_independent_p2_saved_terminal_and_unique_action_bindings(tmp_path):
+        import copy
+    
+        accepted = []
+        cases = ("saved_payload_identity", "terminal_episode", "terminal_time", "action_ownership",
+                 "acquisition_episode", "camera_step", "final_physics_time", "overlapping_actions")
+        for kind in cases:
+            directory = tmp_path / kind
+            directory.mkdir()
+            synthetic_attempt(directory)
+            if kind.startswith("terminal_"):
+                path = directory / "terminal.json"
+                terminal = json.loads(path.read_text())
+                key,value = ("episode_id","unrelated-episode") if kind == "terminal_episode" else ("final_sim_time_s",9.0)
+                terminal[key] = value
+                path.write_text(json.dumps(terminal))
+            else:
+                path = directory / "nominal-journal.jsonl.gz"
+                rows = list(runner_api().read_jsonl_gzip(path))
+                rewritten = []
+                for row in rows:
+                    if row["event"] == "ACQUISITION_END" and row["physics_step"] == 1:
+                        if kind == "saved_payload_identity":
+                            row["saved"].update(observation_id="unrelated-frame",
+                                observation_checksum_sha256="b"*64,file="frames/unrelated.json.gz")
+                        elif kind == "camera_step":
+                            for state in ("before_state","after_state"):
+                                row["camera"][state]["physical_step"] = 99
+                    if row["event"] in {"ACQUISITION_BEGIN","ACQUISITION_END"} and row["physics_step"] == 1:
+                        if kind == "action_ownership":
+                            row["action_ordinal"] = None
+                        elif kind == "acquisition_episode":
+                            row["episode_id"] = "unrelated-episode"
+                    if (kind == "final_physics_time" and row["event"] == "OPERATION"
+                        and row["source"]["kind"] == "PHYSICS" and row["source"]["phase"] == "END"
+                        and row["source"]["physics_step"] == 2):
+                        row["source"]["result"]["physics_state"]["sim_time_s"] = 9.0
+                    rewritten.append(row)
+                    if kind == "overlapping_actions" and row["event"] in {"ACTION_BEGIN","ACTION_END","TEACHER_ACTION"}:
+                        duplicate = copy.deepcopy(row)
+                        duplicate["action_ordinal"] = 2
+                        duplicate["clock"]["monotonic_before_ns"] = duplicate["clock"]["monotonic_after_ns"]
+                        rewritten.append(duplicate)
+                for sequence,row in enumerate(rewritten,1):
+                    row["record_seq"] = sequence
+                path.write_bytes(gzip.compress(b"".join(json.dumps(row).encode()+b"\n" for row in rewritten),mtime=0))
+                if kind == "overlapping_actions":
+                    summary_path=directory/"summary.json"
+                    summary=json.loads(summary_path.read_text())
+                    summary.update(action_begins=2,action_ends=2)
+                    summary_path.write_text(json.dumps(summary))
+            result = verify_attempt(directory,decode=False)
+            if result["integrity_status"] != "INCOMPLETE_OR_INVALID":
+                accepted.append(kind)
+            assert result["allocated_steps"] == result["verified_frames"] == 3
+            assert result["source_authenticity"] == "UNKNOWN"
+            assert result["formal_accepted"] is False
+>       assert not accepted,accepted
+E       AssertionError: ['saved_payload_identity', 'terminal_episode', 'terminal_time', 'action_ownership', 'acquisition_episode', 'camera_step', ...]
+E       assert not ['saved_payload_identity', 'terminal_episode', 'terminal_time', 'action_ownership', 'acquisition_episode', 'camera_step', ...]
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/verify_offline.py:783: AssertionError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/verify_offline.py::test_independent_p2_saved_terminal_and_unique_action_bindings
+1 failed, 1 passed, 8 deselected in 0.39s

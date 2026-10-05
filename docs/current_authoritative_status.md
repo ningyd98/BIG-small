@@ -4,11 +4,11 @@
 
 当前按[ced.research.v2总计划](superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)持续实施，边缘模型型号后置。已独立审查的软件范围包括角色/wire绑定、原生三值条件、T10提交与硬停止、共同基线/模式CAS、规则成本边界、视觉修复候选、stage/activation/start接口、持久恢复及完成/预算消费者、运行组合、Max角色局部修复、T8先导/完整资源冻结补修、INITIAL来源审计、完整分配/统计/复现及只读研究页。实际风险来源、owner登记和方法接入继续实施，不登记整体完成。
 
-当前没有新Max key/profile、经独立验收的native几何/运动界或连续效果证书；JOINT/LOCAL_RECOVER及真实INITIAL/FINAL保持关闭。新100组开发采集与1组教师故障原始来源不能替代完整机会/200组证明。研究页面的4200条软件BLOCKED记录不计物理结果，formal_accepted=false。历史限定DONE与原始失败保持原口径。每步报告和审查见[阶段总结](research/process/continuation_20261004.md)，操作入口见[复现说明](research/reproduction.md)，未满足门见[结果与限制](research/results_and_limits.md)。
+尚未记录经独立验收的Max真实调用、native几何/运动界或连续效果证书；JOINT/LOCAL_RECOVER及真实INITIAL/FINAL保持关闭。新100组开发采集与1组教师故障原始来源不能替代完整机会/200组证明。研究页面的4200条软件BLOCKED记录不计物理结果，formal_accepted=false。历史限定DONE与原始失败保持原口径。每步报告和审查见[阶段总结](research/process/continuation_20261004.md)，操作入口见[复现说明](research/reproduction.md)，未满足门见[结果与限制](research/results_and_limits.md)。
 
 用户选择增加可见姿态标记并保留顶视相机与控制器。独立开发v1资产/检测已通过73项CPU及源/原始帧hash独审；同一物理相机的320×240严格识别UNKNOWN，新640×480单帧OBSERVED。第二版本保留原红色边缘，17份源与77项CPU独审通过，新的实际静态帧识别ID7并看到红色边缘；完整目标关联和连续/校准/native证书仍缺，不自动切换默认配置或抓取profile。一次开发搬运的147份产物/完整raw重建独审通过，离线物理评分成功，但全部9个动作后边界标记UNKNOWN，不能以物理成功代替视觉可观测性。
 
-阶段总结已到第50步：已交付逐物理步无损RGB-D记录器，保留0.005秒最大模拟采样间隔及完整终态；两项独审P2经四项RED关闭，最终17项与独立17项通过。推送前七文件定向检查81通过。上一轮实测10/10边界可见及4807完整物理状态复算保留，本轮完整动作内采集脚本准备中，尚未实际运行。主线仍T12/18、T13并行，真实Max、基本几何/连续证书、风险校准及INITIAL/METHOD/FINAL未验收，边缘型号后置。用户已授权Git提交推送，交付状态以[Git记录](research/process/git_delivery_20261005.md)为准；详见[本步模块报告](../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/module-report.md)与[阶段总结](research/process/continuation_20261004.md)。
+阶段总结已到第51步：源冻结后唯一逐步实测在step10被data数组一致性保护终止，原120步settling未完成；13次camera调用（setup1/bootstrap1/逐步11），10帧保存、1失败、0教师动作，原attempt保留且不重跑。十份成功前缀仅为OBSERVED，不证明完整horizon。动作参照新模块29项及含旧范围的93项CPU通过，root独立29通过；来源/参数/完整时长重建已实现，但无界/VALID/准入。真实日志揭示ACTUATOR登记upcoming步n，原reader n-1误关联另行修正；逐数组诊断准备中。主线T12/18、T13并行，真实Max、基本/连续来源、风险及INITIAL/METHOD/FINAL未验收，边缘型号后置。见[本步报告](../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/report-step51.md)、[阶段总结](research/process/continuation_20261004.md)与[Git记录](research/process/git_delivery_20261005.md)。
 
 ## 2026-10-04 夹爪修复应用到全项目
 

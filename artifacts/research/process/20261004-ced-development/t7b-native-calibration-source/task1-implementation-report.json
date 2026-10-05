@@ -1,0 +1,158 @@
+{
+  "schema_version": "native.reference.task1.report.v1",
+  "status": "SOFTWARE_SOURCE_REFERENCE_ONLY_NOT_NATIVE_ADMISSION",
+  "scope": {
+    "added_source_and_tests": [
+      {
+        "path": "src/cloud_edge_robot_arm/vision/native_references.py",
+        "bytes": 11089,
+        "sha256": "3bba0206ec529c84fdf7e4fd2592a538a4036bcba626772986cf25f5a2d99ff9"
+      },
+      {
+        "path": "tests/test_native_references.py",
+        "bytes": 12972,
+        "sha256": "1180e3105884ead4771d45d93a40673679618ea3ac2a82487d60acaae9121409"
+      }
+    ],
+    "consumers_changed": false,
+    "empirical_bounds_produced": false,
+    "physical_render_model_provider_runs": 0,
+    "stage_commit_push_by_agent": false,
+    "git_delivery": "Root pushed 9387d99147c77487c74163be9cfd11ca9591bc2b; Task1 files remain untracked and outside that delivery."
+  },
+  "interfaces": [
+    "resolve_native_reference(online, contract, step, *, resolved, grounding, role_binding, effective_duration_s=None) -> NativeActionReference",
+    "validate_native_reference(reference, online, contract, step, *, resolved, grounding, role_binding, effective_duration_s=None) -> None"
+  ],
+  "semantics_version": "native.action_reference.v1",
+  "software_behaviour": [
+    "Reconstruct detached validated original contract/step/RGBD/robot state and JSON grounding; rerun existing execution.resolved_step.",
+    "Require role-bound resolver/registry/MuJoCo robot/controller and model sources to match registered on-disk hashes AND currently executing repository source bytes; a rehashed modified copy fails.",
+    "Bind exact original contract, resolved execution payload, validated registry parameters, MotionTarget endpoint/downward orientation, current observation checksum, robot/facts, separate context and role bundle, and source identities.",
+    "LIFT/RETREAT/MOVE_TO_REGION/PLACE fixed command coordinate invariant; MOVE_ABOVE/APPROACH/GRASP remain OBJECT_CONTACT, even when an approach command has an absolute endpoint.",
+    "Use max(original/resolved expected_duration_ms/timeout_ms) as duration floor; retain a greater explicit effective_duration_s. Reject shortened, nonfinite or boolean durations.",
+    "Recompute exact reference at validation; caller relabelling, stale/nested mutation or rehashed mismatched source/endpoint cannot validate."
+  ],
+  "verification": [
+    {
+      "phase": "qualified RED",
+      "command": "PYTHONPATH=src:. .venv/bin/python -m pytest -q tests/test_native_references.py",
+      "result": "28 failed assertions: production module absent, no import collection error"
+    },
+    {
+      "phase": "first implementation attempt",
+      "result": "26 fixture failures from dataclasses.replace retaining nested mappingproxy policy; 2 actual displacement diagnostics passed. Corrected fixture by using detached public binding.evidence()[edge_policy]; no production policy change."
+    },
+    {
+      "phase": "corrected fixture GREEN",
+      "result": "28 passed in 0.88s"
+    },
+    {
+      "phase": "immutable mapping RED",
+      "result": "1 failed / 28 deselected; readonly nested Mapping input could not serialize. Added recursive detached Mapping/tuple/list reconstruction with finite JSON enforcement."
+    },
+    {
+      "phase": "final new tests GREEN",
+      "result": "29 passed in 0.91s"
+    },
+    {
+      "phase": "directed regression",
+      "command": "PYTHONPATH=src:. .venv/bin/python -m pytest -q tests/test_native_references.py tests/test_native_action_submit.py tests/test_visual_evidence_contract.py tests/test_ced_runtime_binding.py",
+      "result": "93 passed in 1.48s, exit 0"
+    },
+    {
+      "phase": "Ruff",
+      "command": ".venv/bin/python -m ruff check src/cloud_edge_robot_arm/vision/native_references.py tests/test_native_references.py",
+      "result": "PASS, exit 0; initial 6 test-format findings corrected and both files formatted"
+    },
+    {
+      "phase": "mypy",
+      "command": ".venv/bin/python -m mypy --follow-imports=skip src/cloud_edge_robot_arm/vision/native_references.py",
+      "result": "PASS, 1 source file, exit 0; existing unused override note retained. Imported project modules were not typechecked."
+    }
+  ],
+  "evidence_logs": [
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-red.log",
+      "bytes": 34781,
+      "sha256": "1ce377fa8401f1a69a4c39f0257e93cd65f2b519138b8814063ca8d10f7720c0"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-green.log",
+      "bytes": 72068,
+      "sha256": "388ece2a12913111814842262777d523d76df26af051ece78d4d1effe7b28b0d"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-green-fixture-corrected.log",
+      "bytes": 99,
+      "sha256": "d589f186307078c01cbf7d3777e058cf3bdc7314e7b6648a3a20dd8db5be3548"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-immutable-mapping-red.log",
+      "bytes": 3358,
+      "sha256": "16a27446cc96d3de9ddf1d801dbb069240486d66de8b95eb6e175e55039531a2"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-green-final.log",
+      "bytes": 99,
+      "sha256": "506d02a9f3b409f1b3464aa0d4e86dd87e5cea4b911220c832fe72678a3bf53c"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-directed-regression.log",
+      "bytes": 179,
+      "sha256": "3d99b1beb95a14d21c3c13d74c6d1bc2d08614da5936d0cc4b5f027580eb6286"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-ruff-initial.log",
+      "bytes": 2993,
+      "sha256": "556a46c00ff091cf1f03ecb0ec0d5200e1d1a0c47a2de8b2c4f07ee1eee1286e"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-ruff-final.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-mypy-final.log",
+      "bytes": 146,
+      "sha256": "8cde79af0d2c76a033243719a7e0a4e076c5da480e95e21d86488beceebba522"
+    }
+  ],
+  "actual_counterexample": {
+    "source": {
+      "path": "artifacts/research/process/20261004-ced-development/t7b-visible-marker-next/attempt-1/raw-physics.jsonl",
+      "bytes": 16333165,
+      "sha256": "e8abb17e87b81e987c20e9fb5dada90c038b5a4e416a6decc59df83d088db416"
+    },
+    "scope": "Read-only offline original endpoint rows; diagnostic necessary displacement/time lower bound, NOT a continuous/future speed certificate.",
+    "lift": {
+      "start_step": 1534,
+      "end_step": 2229,
+      "duration_s": 2.8958333565,
+      "object_displacement_m": 0.0878292524,
+      "minimum_speed_m_s": 0.0303295258,
+      "minimum_motion_term_at_10s_m": 0.3032952577
+    },
+    "move_to_region": {
+      "start_step": 2349,
+      "end_step": 3554,
+      "duration_s": 5.0208333735,
+      "object_displacement_m": 0.345221469,
+      "minimum_speed_m_s": 0.0687578024,
+      "minimum_motion_term_at_10s_m": 0.687578024
+    },
+    "criterion": "Existing unchanged validator at zero geometric error and zero age still rejects both with allowed_error_m=0.01 and full duration=10. Intentional transport cannot fit total-object-motion semantics."
+  },
+  "rulings_and_limits": [
+    "Root approved explicit versioned action-reference semantics. No 0.01 criterion or duration/condition/safety gate was edited.",
+    "A public NativeActionReference/RoleRuntimeBinding and content hashes are not an authenticated native calibration publisher/provider. validate_native_reference proves only exact current structural/source reconstruction.",
+    "Grounding geometry is an input diagnostic source in Task1; independent marker/full-object/TCP/asset/camera/region calibration registration, heldout provenance/group audit and empirical completion error are NOT implemented.",
+    "effective_duration_s is explicitly a diagnostic public scalar, not an authenticated receipt. Later consumers must recompute actual owner bind_step_grounding/duration_check from original owned data, including clocks/current source/deadlines.",
+    "Existing StepGroundingBinding preserves original step policy whereas legacy resolved_step overwrites moving timeout=10000; Task1 does not assert these are already the same authenticated endpoint receipt.",
+    "Checkpoint context_hash and role bundle hash are bound separately, because they represent different identities.",
+    "A fixed coordinate invariant does not prove zero physical object/TCP motion, attachment/holding, controller tracking, goal localization, future mutable/contact drift or successful completion. No numeric motion/error bound or VALID token is returned.",
+    "SUPPORTED resolver target IDs remain exact object/target_region. Unsupported skills or missing source registration reject; no caller-selected reference kind/provider is accepted.",
+    "Only Task1 was implemented. Tasks2+ and independent empirical proof remain required for the full native objective. No broad suite was run under the explicitly bounded root scope."
+  ],
+  "independent_review": "Root owns independent full source review, 29 CPU tests and supplemental MOVE_ABOVE/RETREAT/changed-input probes. Our risk_motion_next request is withdrawn; its root runner closure remains prioritized."
+}

@@ -1,6 +1,6 @@
 # 当前交接
 
-**2026-10-05 第50步：** 新逐物理步原始采集模块17项和独立17项通过，完整episode/step/horizon及0.005秒模拟gap约束保持，首日志失败不重试。完整动作内实际采集尚未运行；上一轮标记10/10边界可见和4807物理状态复算保留。先读[模块报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/module-report.md)与[Git交付](git_delivery_20261005.md)。主线T12/18、T13并行，实际Max、基本/连续证书、风险及INITIAL/METHOD/FINAL仍未验收，边缘型号后置。下文旧快照保留原时点。
+**2026-10-05 第51步：** 唯一真实逐步采集FAILED，settling10/120，11逐步calls/10saved/1failed，setup/bootstrap各1、0教师动作，原分母保留且不重跑。动作参照29/93 CPU及root独立29通过，无几何/运动界或native权限；未来source必须核验authenticated owner receipt和独立原始校准。真实ACTUATOR步n关联误用已发现，逐数组诊断准备中。先读[本步报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/report-step51.md)与[Git交付](git_delivery_20261005.md)。主线T12/18、T13并行，Max、基本/连续来源、风险及INITIAL/METHOD/FINAL仍未验收；边缘型号后置，下文旧快照保留。
 
 **当前持续研发入口：** [新总计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)、[逐步阶段总结](continuation_20261004.md)、[复现说明](../reproduction.md)和[结果/限制](../results_and_limits.md)。多项云、边、端软件已通过独立审查，当前继续资源冻结、恢复消费者、Max局部修复及真实准入/方法接口。边缘模型型号后置；真实Max凭据、端侧校准/连续证据、完整机会/200故障和合格B0仍缺。不得重用旧模型probe或软件恢复状态解除实际准入。
 

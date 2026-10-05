@@ -226,4 +226,4 @@ T8a的离线可恢复性证明由T5教师/独立评价提供，不等待T13在�
 
 阶段汇总入口为[2026-10-04阶段总结](../../research/process/continuation_20261004.md)；当前执行状态同步 `phase_progress.md`、`validation_matrix.md`、`handover.md` 与权威状态。每次模型/视觉/恢复/冻结变更保存独立版本，不覆盖T7、T8 v1/v2及探索性对比。
 
-当前更新至[第50步](../../research/process/continuation_20261004.md)：完整逐物理步采集记录器17项及独立17项通过，连续step/episode、原0.005秒间隔、双pass状态、无损完整观测及终态核对已实现；实际逐步采集仍在准备。上一轮10/10动作边界实测及4807完整状态复算保留。原统一总物体运动项在主动搬运下超过10mm，动作参照修正仅设计，尚未实施；容差、完整horizon及安全条件不放宽。主线T12/18、T13并行，真实Max、基本校准、完整机会/200故障、合格B0、INITIAL/METHOD/FINAL及较早冻结依赖复审继续。用户已授权按步骤提交推送，见[Git记录](../../research/process/git_delivery_20261005.md)；边缘型号后置。
+当前更新至[第51步](../../research/process/continuation_20261004.md)：逐步真实attempt在settling第10步被data数组保护终止，保留11capture/10saved/1failed，未执行教师动作；不重跑、不删失败，不宣称完整horizon。动作参照实现29/93 CPU及root独立29通过，只绑定实际编译端点/来源/role/context/完整horizon，不给误差、速度界或native权限。真实ACTUATOR upcoming步n的reader误关联另修，逐数组/渲染phase诊断准备中。主线T12/18、T13并行；真实Max、基本/连续来源、独立校准、机会/200故障、合格B0、INITIAL/METHOD/FINAL与较早复审继续，边缘型号后置。每项验证交付后按授权提交推送，见[Git记录](../../research/process/git_delivery_20261005.md)。

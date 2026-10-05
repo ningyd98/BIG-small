@@ -358,3 +358,10 @@ worker fix1完整复审已关闭lexical问题，但发现str subclass可覆盖�
 [第50步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step50.json)保留本步严格范围。独立分析量化了原统一运动量的主动搬运矛盾：LIFT位移87.8mm、搬运345.2mm，均大于10mm；[动作参照设计](../../../artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/design.md)提出源绑定的实际编译参照及独立全horizon误差校准，当前尚未实现或授予权限。主线仍T12/18、T13并行，真实Max、基本几何/运动来源、完整身份/范围、风险校准、机会/200故障、合格B0、INITIAL/METHOD/FINAL及较早依赖复审继续，边缘型号后置，formal_accepted=false。
 
 Git交付核验：阶段49快照d3472a5与本步记录器f7860ffd已推送研发分支，上游已设置；`git ls-remote`远端SHA与本地/上游f7860ffd551cf663ffd78f683f7df616da70d98f一致。必要fixture与逐项来源/排除清单随提交交付，非必要批量原始资料保持本地；[交付记录](git_delivery_20261005.md)保留命令、范围及检查结果。本段记录随独立文档提交推送。
+
+
+步骤51（2026-10-05）：完成源冻结后的唯一真实逐步采集attempt，实际FAILED/INCOMPLETE：稳定等待10/120物理步，setup1/bootstrap1/逐步11共13camera calls，10帧保存、1失败、0教师动作/运动命令/模型/硬件。step10采集后仅data_arrays整体hash改变，原状态保护拒绝；全部原始文件及未完成分母保留，不重跑或补位。成功前缀十帧严格离线OBSERVED只覆盖0.0375秒，不授连续/完整horizon。32执行来源/408064字节保持原值。真实ACTUATOR登记upcoming步n，原reader/fake fixture用n-1；独立CPU原始前缀重放修正一处lookup后九条误关联消失，整体仍INCOMPLETE。新逐数组/phase诊断尚未运行，不先弱化保护。
+
+并行实现native动作参照模块：原resolved_step和真实registry重建当前payload、契约/步骤、TCP/grounding、role/context/九项source及完整horizon；fixed endpoint与object contact区分，无运动/几何界、VALID或准入。29新测试和含既有范围的93定向CPU通过，root独立29通过；MOVE_ABOVE/RETREAT补充probe端点转发正确、重哈希替换拒绝。两次独立probe fixture错误保留、不计moduleRED或物理次数。真正基本校准/owner receipt认证与实际消费者后续接入继续，不能把参照模块当完整目标完成。
+
+详见[第51步报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/report-step51.md)、[真实失败审查](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/independent-actual-failure-review.md)、[参照独审](../../../artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-independent-review.md)与[第51步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step51.json)。本实测为上一outboard场景的开发衍生component，新名字不等于新独立校准组。主线T12/18、T13并行，Max、真实几何/完整动作/连续-contact支持、风险、机会/200故障、合格B0及INITIAL/METHOD/FINAL继续，边缘型号后置，formal_accepted=false。验证后的实现、报告、相关失败证据按用户授权提交推送，活动中未审查的新代码不混入该交付。
