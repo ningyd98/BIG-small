@@ -1,0 +1,718 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:8:1
+   |
+ 6 |   """
+ 7 |
+ 8 | / from __future__ import annotations
+ 9 | |
+10 | | import itertools
+11 | | import base64
+12 | | import hashlib
+13 | | import math
+14 | | from collections.abc import Mapping, Sequence
+15 | | from dataclasses import dataclass
+16 | | from datetime import datetime
+17 | | from types import MappingProxyType
+18 | | from typing import Any
+19 | |
+20 | | import numpy as np
+21 | |
+22 | | from cloud_edge_robot_arm.contracts import RobotState
+23 | | from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint, TaskStep
+24 | | from cloud_edge_robot_arm.edge.evidence.conditions import OnlineEvidenceSnapshot
+25 | | from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+26 | | from cloud_edge_robot_arm.research.raw_episode_v3 import (
+27 | |     RawEpisodeEnvelopeV3, RawEpisodeRecordsV3, _digest, _owner_decode, validate_raw_episode_v3,
+28 | | )
+29 | | from cloud_edge_robot_arm.vision.native_calibration import (
+30 | |     NativeCalibrationRegistration, NativeGeometryRegistration, _hash, _json, _load, _rigid, _safe,
+31 | |     _vector, _sha,
+32 | | )
+33 | | from cloud_edge_robot_arm.vision.observations import RGBDObservation
+34 | | from cloud_edge_robot_arm.vision.owner_registration import (
+35 | |     DeterministicGroundingPolicy, GroundingDurationCheck, GroundingFrameInputs, VisualOriginalPlan,
+36 | |     VisualOwnerIdentity, bind_step_grounding,
+37 | | )
+38 | | from cloud_edge_robot_arm.vision.pose_markers import detect_pose_marker
+   | |_______________________________________________________________________^
+   |
+help: Organize imports
+
+E501 Line too long (111 > 100)
+  --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:57:101
+   |
+55 |     data = scope.to_payload()
+56 |     ec, tc = _vector(list(estimated_center), 3), _vector(list(truth_center), 3)
+57 |     er, tr = _vector(list(estimated_rotation), 9).reshape(3, 3), _vector(list(truth_rotation), 9).reshape(3, 3)
+   |                                                                                                     ^^^^^^^^^^^
+58 |     for r in (er, tr):
+59 |         if not np.allclose(r.T @ r, np.eye(3), atol=1e-7, rtol=0) or not math.isclose(float(np.linalg.det(r)), 1, abs_tol=1e-7):
+   |
+
+E501 Line too long (128 > 100)
+  --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:59:101
+   |
+57 |     er, tr = _vector(list(estimated_rotation), 9).reshape(3, 3), _vector(list(truth_rotation), 9).reshape(3, 3)
+58 |     for r in (er, tr):
+59 |         if not np.allclose(r.T @ r, np.eye(3), atol=1e-7, rtol=0) or not math.isclose(float(np.linalg.det(r)), 1, abs_tol=1e-7):
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 |             raise ValueError("original/estimated rigid rotation invalid")
+61 |     vertices = np.array(list(itertools.product(*[(-h, h) for h in data["object_half_extent_m"]])))
+   |
+
+E501 Line too long (103 > 100)
+  --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:84:101
+   |
+82 |     center = np.array(estimate.marker_center_world_m) - rotation @ transform[:3, 3]
+83 |     return full_rigid_geometry_errors(scope, center.tolist(), rotation.ravel().tolist(),
+84 |         original_physics["object_geom_position_m"], original_physics["object_geom_rotation_row_major"])
+   |                                                                                                     ^^^
+   |
+
+E501 Line too long (108 > 100)
+  --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:95:101
+   |
+95 | def conformal_group_quantile(groups: Mapping[str, float | None], *, coverage: float = 0.9) -> GroupQuantile:
+   |                                                                                                     ^^^^^^^^
+96 |     """Pure arithmetic diagnostics; retain unavailable/failed groups as +infinity."""
+97 |     if type(coverage) not in {int, float} or coverage != 0.9:
+   |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:114:101
+    |
+112 |     rank = math.ceil((len(values) + 1) * coverage)
+113 |     bound = values[rank - 1] if len(values) >= 9 and rank <= len(values) else math.inf
+114 |     return GroupQuantile(bound if math.isfinite(bound) else None, len(values), rank, tuple(sorted(missing)))
+    |                                                                                                     ^^^^^^^^
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:182:101
+    |
+180 |         for bound in (lower, upper):
+181 |             delta = abs(bound - local)
+182 |             uncertainty = max(uncertainty, (delta.days * 86400 + delta.seconds) * 10**9 + delta.microseconds * 1000)
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+183 |     return uncertainty
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:190:101
+    |
+188 |     """Recompute original receipt/horizon; a public carrier is not owner authentication."""
+189 |     data = _load(_json(payload))
+190 |     keys = {"original", "source_checkpoint", "current_identity", "owner_revision", "state_generation",
+    |                                                                                                     ^^
+191 |             "grounding_inputs", "grounding_policy", "required_duration_s", "duration_check"}
+192 |     if set(data) != keys:
+    |
+
+E501 Line too long (114 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:206:101
+    |
+204 |     from cloud_edge_robot_arm.vision.owner_registration import _resolved_parameters
+205 |     step = original.requirements[checkpoint.current_step_id].original_step
+206 |     grounded = step.model_copy(update={"parameters": _resolved_parameters(step, original, online, inputs, policy),
+    |                                                                                                     ^^^^^^^^^^^^^^
+207 |                                       "preconditions": [], "success_conditions": []})
+208 |     return bind_step_grounding(original, original_step_id=step.step_id, grounded_step=grounded,
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:243:101
+    |
+241 | def _group(registration: NativeCalibrationRegistration, registry: Mapping[str, Any],
+242 |            group: Mapping[str, Any], scope: NativeGeometryRegistration) -> CalibrationGroupResult:
+243 |     envelope = RawEpisodeEnvelopeV3.from_json(_safe(registration.artifact_root, group["envelope_path"]).read_text())
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+244 |     records = RawEpisodeRecordsV3.from_json(_safe(registration.artifact_root, group["records_path"]).read_text())
+245 |     if registry["source_scope"] == "REGISTERED_SIMULATION_CALIBRATION" and envelope.identity.source_kind == "SOFTWARE_ONLY":
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:244:101
+    |
+242 |            group: Mapping[str, Any], scope: NativeGeometryRegistration) -> CalibrationGroupResult:
+243 |     envelope = RawEpisodeEnvelopeV3.from_json(_safe(registration.artifact_root, group["envelope_path"]).read_text())
+244 |     records = RawEpisodeRecordsV3.from_json(_safe(registration.artifact_root, group["records_path"]).read_text())
+    |                                                                                                     ^^^^^^^^^^^^^
+245 |     if registry["source_scope"] == "REGISTERED_SIMULATION_CALIBRATION" and envelope.identity.source_kind == "SOFTWARE_ONLY":
+246 |         raise ValueError("synthetic origins cannot be upgraded by a rehashed scope label")
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:245:101
+    |
+243 |     envelope = RawEpisodeEnvelopeV3.from_json(_safe(registration.artifact_root, group["envelope_path"]).read_text())
+244 |     records = RawEpisodeRecordsV3.from_json(_safe(registration.artifact_root, group["records_path"]).read_text())
+245 |     if registry["source_scope"] == "REGISTERED_SIMULATION_CALIBRATION" and envelope.identity.source_kind == "SOFTWARE_ONLY":
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+246 |         raise ValueError("synthetic origins cannot be upgraded by a rehashed scope label")
+247 |     view = validate_raw_episode_v3(envelope, records)
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:259:101
+    |
+257 |             raise ValueError("independent UTC acquisition source is not registered")
+258 |         declared = envelope.clock_descriptor.utc_uncertainty_ns
+259 |         clock_supported = view.utc_mapping == "BRACKETED" and declared is not None and declared >= measured
+    |                                                                                                     ^^^^^^^
+260 |     if not clock_supported:
+261 |         reasons.append("clock_mapping_unavailable")
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:275:101
+    |
+273 |     unknown = 0
+274 |     point_errors = []
+275 |     fingerprints = ["episode:" + envelope.identity.episode_id, "scene:" + envelope.identity.scene_hash]
+    |                                                                                                     ^^^
+276 |     for frame in records.frames:
+277 |         if frame.observation_payload is None or frame.joined_physics_observation_hash not in by_hash:
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:277:101
+    |
+275 |     fingerprints = ["episode:" + envelope.identity.episode_id, "scene:" + envelope.identity.scene_hash]
+276 |     for frame in records.frames:
+277 |         if frame.observation_payload is None or frame.joined_physics_observation_hash not in by_hash:
+    |                                                                                                     ^
+278 |             unknown += 1
+279 |             continue
+    |
+
+E501 Line too long (123 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:284:101
+    |
+282 |         truth = by_hash[frame.joined_physics_observation_hash]
+283 |         descriptor = {k: observation.model_dump(mode="json")[k] for k in geometry["camera"]}
+284 |         if descriptor != geometry["camera"] or not math.isclose(observation.sim_time_s, truth["sim_time_s"], abs_tol=1e-9):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+285 |             unknown += 1
+286 |             continue
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:292:101
+    |
+290 |         else:
+291 |             point_errors.append(errors.joint_geometry_error_m)
+292 |     geo = max(point_errors) if point_errors and not missing and not unknown and view.status == "COMPLETE" else None
+    |                                                                                                     ^^^^^^^^^^^^^^^
+293 |     failed = sum(a.disposition != "RETURNED" or a.returned_result is None or not a.returned_result["success"]
+294 |                  for a in records.actions)
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:293:101
+    |
+291 |             point_errors.append(errors.joint_geometry_error_m)
+292 |     geo = max(point_errors) if point_errors and not missing and not unknown and view.status == "COMPLETE" else None
+293 |     failed = sum(a.disposition != "RETURNED" or a.returned_result is None or not a.returned_result["success"]
+    |                                                                                                     ^^^^^^^^^
+294 |                  for a in records.actions)
+295 |     action_errors = {}
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:297:101
+    |
+295 |     action_errors = {}
+296 |     for skill, horizon in registry["supported_actions"].items():
+297 |         actions = [a for a in records.actions if a.original_plan.requirements[a.step_id].original_step.skill.value == skill]
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+298 |         values = []
+299 |         unavailable = geo is None or view.status != "COMPLETE" or not clock_supported or not actions
+    |
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:302:101
+    |
+300 |         for action in actions:
+301 |             owner_path = group["owner_inputs_paths"].get(action.span_id)
+302 |             before = [j for j in records.joins if j.span_id == action.span_id and j.relation == "BEFORE_SUBMIT"]
+    |                                                                                                     ^^^^^^^^^^^^
+303 |             interval = intervals.get(action.interval_id)
+304 |             if (action.disposition != "RETURNED" or action.returned_result is None or not action.returned_result["success"]
+    |
+
+E501 Line too long (123 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:304:101
+    |
+302 | …     before = [j for j in records.joins if j.span_id == action.span_id and j.relation == "BEFORE_SUBMIT"]
+303 | …     interval = intervals.get(action.interval_id)
+304 | …     if (action.disposition != "RETURNED" or action.returned_result is None or not action.returned_result["success"]
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^
+305 | …         or action.grounding is None or owner_path is None or len(before) != 1 or interval is None or interval.end_step is None):
+306 | …         unavailable = True
+    |
+
+E501 Line too long (136 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:305:101
+    |
+303 | …_id)
+304 | …action.returned_result is None or not action.returned_result["success"]
+305 | …_path is None or len(before) != 1 or interval is None or interval.end_step is None):
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+306 | …
+307 | …
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:322:101
+    |
+320 |                 k: v for k, v in zip("xyz", state["tcp_position_m"], strict=True)},
+321 |                 gripper_open=state["gripper_open"], connected=True), {},
+322 |                 action.original_plan.contract.plan_version, action.original_plan.contract.command_seq,
+    |                                                                                                     ^^
+323 |                 checkpoint_digest(checkpoint))
+324 |             rebound = rebuild_owner_binding(owner, online, now=action.grounding.created_at)
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:325:101
+    |
+323 |                 checkpoint_digest(checkpoint))
+324 |             rebound = rebuild_owner_binding(owner, online, now=action.grounding.created_at)
+325 |             if rebound.digest() != action.grounding.digest() or rebound.original_plan_hash != action.original_plan.digest():
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+326 |                 raise ValueError("original action owner receipt differs from source reconstruction")
+327 |             duration = rebound.expected_duration_s
+    |
+
+E501 Line too long (137 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:328:101
+    |
+326 | …er receipt differs from source reconstruction")
+327 | …
+328 | …ebound.grounded_step.timeout_ms, rebound.grounded_step.expected_duration_ms) / 1000:
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+329 | …
+330 | …
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:334:101
+    |
+332 |             start_time = interval.start_sim_time_s
+333 |             end_time = start_time + horizon
+334 |             terminal = [s for s in raw.values() if math.isclose(s["sim_time_s"], end_time, abs_tol=1e-8)]
+    |                                                                                                     ^^^^^
+335 |             if len(terminal) != 1 or any(i.kind == "EXECUTOR_ATTEMPT" and i.interval_id != interval.interval_id
+336 |                                        and start_time < i.start_sim_time_s < end_time for i in records.intervals):
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:335:101
+    |
+333 |             end_time = start_time + horizon
+334 |             terminal = [s for s in raw.values() if math.isclose(s["sim_time_s"], end_time, abs_tol=1e-8)]
+335 |             if len(terminal) != 1 or any(i.kind == "EXECUTOR_ATTEMPT" and i.interval_id != interval.interval_id
+    |                                                                                                     ^^^^^^^^^^^
+336 |                                        and start_time < i.start_sim_time_s < end_time for i in records.intervals):
+337 |                 unavailable = True
+    |
+
+E501 Line too long (114 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:336:101
+    |
+334 |             terminal = [s for s in raw.values() if math.isclose(s["sim_time_s"], end_time, abs_tol=1e-8)]
+335 |             if len(terminal) != 1 or any(i.kind == "EXECUTOR_ATTEMPT" and i.interval_id != interval.interval_id
+336 |                                        and start_time < i.start_sim_time_s < end_time for i in records.intervals):
+    |                                                                                                     ^^^^^^^^^^^^^^
+337 |                 unavailable = True
+338 |                 continue
+    |
+
+E501 Line too long (120 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:352:101
+    |
+350 |                 region = geometry["region_world_m"]
+351 |                 true_goal = [region[0], region[1], max(0.16, true_grasp[2] + 0.1)
+352 |                              if skill == "MOVE_TO_REGION" else region[2] + true_grasp[2] - geometry["support_height_m"]]
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+353 |             else:
+354 |                 true_goal = true_grasp.tolist()
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:359:101
+    |
+357 |             # Joint completion quantity already includes localization + actual terminal tracking.
+358 |             goal_error = float(np.linalg.norm(np.array([target[k] for k in "xyz"]) - true_goal))
+359 |             terminal_error = float(np.linalg.norm(np.array(terminal[0]["tcp_position_m"]) - true_goal))
+    |                                                                                                     ^^^
+360 |             values.append(max(geo, goal_error, terminal_error))
+361 |         action_errors[skill] = max(values) if values and not unavailable else None
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:362:101
+    |
+360 |             values.append(max(geo, goal_error, terminal_error))
+361 |         action_errors[skill] = max(values) if values and not unavailable else None
+362 |     return CalibrationGroupResult(group["group_id"], view.status, len(envelope.allocated_acquisition_ids),
+    |                                                                                                     ^^^^^^
+363 |         missing, unknown, failed, geo, MappingProxyType(action_errors), tuple(dict.fromkeys(reasons)), tuple(fingerprints))
+    |
+
+E501 Line too long (123 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:363:101
+    |
+361 |         action_errors[skill] = max(values) if values and not unavailable else None
+362 |     return CalibrationGroupResult(group["group_id"], view.status, len(envelope.allocated_acquisition_ids),
+363 |         missing, unknown, failed, geo, MappingProxyType(action_errors), tuple(dict.fromkeys(reasons)), tuple(fingerprints))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:366:101
+    |
+366 | def reconstruct_registered_calibration(registration: NativeCalibrationRegistration) -> NativeCalibrationDiagnostics:
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+367 |     if type(registration) is not NativeCalibrationRegistration:
+368 |         raise ValueError("concrete original registration required, never finite result/provider")
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:372:101
+    |
+370 |     scope = NativeGeometryRegistration(data["geometry"])
+371 |     groups = tuple(_group(registration, data, g, scope) for g in data["groups"])
+372 |     graph = [dict(group_id=g.group_id, ancestor_ids=allocation["ancestor_ids"], fingerprints=g.fingerprints)
+    |                                                                                                     ^^^^^^^^
+373 |              for g, allocation in zip(groups, data["groups"], strict=True)]
+374 |     components = independent_components(graph)
+    |
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:381:101
+    |
+379 |     geometry = conformal_group_quantile({"|".join(c): joint([by_id[k].geometry_error_m for k in c])
+380 |                                          for c in components})
+381 |     actions = {skill: conformal_group_quantile({"|".join(c): joint([by_id[k].action_errors_m[skill] for k in c])
+    |                                                                                                     ^^^^^^^^^^^^
+382 |                                                for c in components}) for skill in data["supported_actions"]}
+383 |     return NativeCalibrationDiagnostics(data["source_scope"], len(groups), len(components), groups,
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/research/native_geometry_calibration.py:382:101
+    |
+380 |                                          for c in components})
+381 |     actions = {skill: conformal_group_quantile({"|".join(c): joint([by_id[k].action_errors_m[skill] for k in c])
+382 |                                                for c in components}) for skill in data["supported_actions"]}
+    |                                                                                                     ^^^^^^^^
+383 |     return NativeCalibrationDiagnostics(data["source_scope"], len(groups), len(components), groups,
+384 |         components, geometry, MappingProxyType(actions))
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:238:101
+    |
+236 |             raise ValueError("pinned original registry changed")
+237 |         data = _load(path.read_text())
+238 |         if (set(data) != _REGISTRY_KEYS or data["schema_version"] != "native.calibration.registry.v1"
+    |                                                                                                     ^
+239 |             or data["recipe"] != "FULL_RIGID_GEOMETRY_AND_TERMINAL_JOINT_V1"
+240 |             or data["source_scope"] not in {"SOFTWARE_ONLY", "REGISTERED_SIMULATION_CALIBRATION"}
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:243:101
+    |
+241 |             or type(data["coverage"]) not in {int, float} or data["coverage"] != 0.9):
+242 |             raise ValueError("exact registered original recipe/schema required")
+243 |         if not data["groups"] or len({g["group_id"] for g in data["groups"]}) != len(data["groups"]):
+    |                                                                                                     ^
+244 |             raise ValueError("complete distinct group allocations required")
+245 |         for group in data["groups"]:
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:266:101
+    |
+264 |         geometry.validate_asset(self.source_root)
+265 |         for skill, horizon in data["supported_actions"].items():
+266 |             if skill not in {"MOVE_ABOVE", "APPROACH", "GRASP", "LIFT", "RETREAT", "MOVE_TO_REGION", "PLACE"}:
+    |                                                                                                     ^^^^^^^^^^
+267 |                 raise ValueError("unsupported native calibration action")
+268 |             if _number(horizon, 0) == 0:
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:302:101
+    |
+300 |             if _hash(_safe(self.source_root, name)) != expected:
+301 |                 raise ValueError("registered native source drift")
+302 |             if name in required_native_source_paths() and _hash(_safe(executing_root, name)) != expected:
+    |                                                                                                     ^^^^^
+303 |                 raise ValueError("rehashed copy differs from current native implementation")
+304 |         return data
+    |
+
+E501 Line too long (114 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:334:101
+    |
+332 |             raise ValueError("application-owned exact role binding required")
+333 |         root = Path(__file__).resolve().parents[3]
+334 |         if role_binding.root.resolve() != root or APPLICATION_INDEX_PATH not in role_binding.device_source_hashes:
+    |                                                                                                     ^^^^^^^^^^^^^^
+335 |             raise ValueError("native source is not anchored by the actual application")
+336 |         role_binding._validate_sources(role_binding.device_source_hashes)
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:339:101
+    |
+337 |         index_path = _safe(root, APPLICATION_INDEX_PATH)
+338 |         index = _load(index_path.read_text())
+339 |         if set(index) != {"schema_version", "registry_path", "registry_sha256", "capture_catalog_path",
+    |                                                                                                     ^^^
+340 |                           "capture_catalog_sha256"} or index["schema_version"] != "native.calibration.application.v1":
+341 |             raise ValueError("exact application source anchor required")
+    |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:340:101
+    |
+338 |         index = _load(index_path.read_text())
+339 |         if set(index) != {"schema_version", "registry_path", "registry_sha256", "capture_catalog_path",
+340 |                           "capture_catalog_sha256"} or index["schema_version"] != "native.calibration.application.v1":
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+341 |             raise ValueError("exact application source anchor required")
+342 |         registry_path = _relative(index["registry_path"])
+    |
+
+E501 Line too long (130 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:350:101
+    |
+348 |         data = registration.revalidate()
+349 |         catalog = _load(catalog_path.read_text())
+350 |         if (set(catalog) != {"schema_version", "publisher", "preregistered_at", "groups", "original_file_hashes", "source_hashes"}
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+351 |             or catalog["schema_version"] != "native.calibration.capture-catalog.v1"
+352 |             or catalog["publisher"] != "APP_OWNED_RAW_V3_CALIBRATION"
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:354:101
+    |
+352 |             or catalog["publisher"] != "APP_OWNED_RAW_V3_CALIBRATION"
+353 |             or data["source_scope"] != "REGISTERED_SIMULATION_CALIBRATION"
+354 |             or any(catalog[k] != data[k] for k in ("preregistered_at", "groups", "original_file_hashes", "source_hashes"))):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+355 |             raise ValueError("registry differs from independently anchored complete acquisition catalog")
+356 |         from cloud_edge_robot_arm.research.native_geometry_calibration import reconstruct_registered_calibration
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:355:101
+    |
+353 |             or data["source_scope"] != "REGISTERED_SIMULATION_CALIBRATION"
+354 |             or any(catalog[k] != data[k] for k in ("preregistered_at", "groups", "original_file_hashes", "source_hashes"))):
+355 |             raise ValueError("registry differs from independently anchored complete acquisition catalog")
+    |                                                                                                     ^^^^^
+356 |         from cloud_edge_robot_arm.research.native_geometry_calibration import reconstruct_registered_calibration
+357 |         reconstruct_registered_calibration(registration)
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:356:9
+    |
+354 |             or any(catalog[k] != data[k] for k in ("preregistered_at", "groups", "original_file_hashes", "source_hashes"))):
+355 |             raise ValueError("registry differs from independently anchored complete acquisition catalog")
+356 |         from cloud_edge_robot_arm.research.native_geometry_calibration import reconstruct_registered_calibration
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+357 |         reconstruct_registered_calibration(registration)
+358 |         source = object.__new__(cls)
+    |
+help: Organize imports
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:356:101
+    |
+354 |             or any(catalog[k] != data[k] for k in ("preregistered_at", "groups", "original_file_hashes", "source_hashes"))):
+355 |             raise ValueError("registry differs from independently anchored complete acquisition catalog")
+356 |         from cloud_edge_robot_arm.research.native_geometry_calibration import reconstruct_registered_calibration
+    |                                                                                                     ^^^^^^^^^^^^
+357 |         reconstruct_registered_calibration(registration)
+358 |         source = object.__new__(cls)
+    |
+
+E501 Line too long (154 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:366:101
+    |
+365 | … Any:
+366 | …role_binding) is not RoleRuntimeBinding or role_binding.bundle.digest() != self._role_digest:
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+367 | …")
+368 | …
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:372:9
+    |
+370 |             self._index_sha, self._catalog_sha, self._registration.registry_sha256):
+371 |             raise ValueError("native application source anchor changed")
+372 |         from cloud_edge_robot_arm.research.native_geometry_calibration import reconstruct_registered_calibration
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+373 |         return reconstruct_registered_calibration(self._registration)
+    |
+help: Organize imports
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:372:101
+    |
+370 |             self._index_sha, self._catalog_sha, self._registration.registry_sha256):
+371 |             raise ValueError("native application source anchor changed")
+372 |         from cloud_edge_robot_arm.research.native_geometry_calibration import reconstruct_registered_calibration
+    |                                                                                                     ^^^^^^^^^^^^
+373 |         return reconstruct_registered_calibration(self._registration)
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:387:101
+    |
+385 |         data = self._registration.read_registry()
+386 |         binding = rebuild_owner_binding(owner_inputs, online, now=now)
+387 |         if binding.original_requirements.original_step.model_dump(mode="json") != step.model_dump(mode="json"):
+    |                                                                                                     ^^^^^^^^^^^
+388 |             raise ValueError("native current original action differs from owner receipt")
+389 |         grounding = {"resolved_top_grasp_tcp": owner_inputs["grounding_inputs"]["grasp_tcp"],
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:391:101
+    |
+389 |         grounding = {"resolved_top_grasp_tcp": owner_inputs["grounding_inputs"]["grasp_tcp"],
+390 |                      "grounded_destination": owner_inputs["grounding_inputs"]["destination"],
+391 |                      "top_grasp_support_height_m": owner_inputs["grounding_inputs"]["support_height_m"]}
+    |                                                                                                     ^^^^
+392 |         current = resolve_native_reference(online, contract, step, resolved=binding.grounded_step,
+393 |             grounding=grounding, role_binding=role_binding, effective_duration_s=binding.expected_duration_s)
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:393:101
+    |
+391 |                      "top_grasp_support_height_m": owner_inputs["grounding_inputs"]["support_height_m"]}
+392 |         current = resolve_native_reference(online, contract, step, resolved=binding.grounded_step,
+393 |             grounding=grounding, role_binding=role_binding, effective_duration_s=binding.expected_duration_s)
+    |                                                                                                     ^^^^^^^^^
+394 |         validate_native_reference(reference, online, contract, step, resolved=binding.grounded_step,
+395 |             grounding=grounding, role_binding=role_binding, effective_duration_s=binding.expected_duration_s)
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:395:101
+    |
+393 |             grounding=grounding, role_binding=role_binding, effective_duration_s=binding.expected_duration_s)
+394 |         validate_native_reference(reference, online, contract, step, resolved=binding.grounded_step,
+395 |             grounding=grounding, role_binding=role_binding, effective_duration_s=binding.expected_duration_s)
+    |                                                                                                     ^^^^^^^^^
+396 |         scope = NativeGeometryRegistration(data["geometry"])
+397 |         observation = RGBDObservation.model_validate(online.observation.model_dump())
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:407:101
+    |
+405 |         else:
+406 |             transform = _rigid(data["geometry"]["marker_to_object"])
+407 |             rotation = np.array(estimate.rotation_marker_to_world).reshape(3, 3) @ transform[:3, :3].T
+    |                                                                                                     ^^
+408 |             center = np.array(estimate.marker_center_world_m) - rotation @ transform[:3, 3]
+409 |             grasp = center + rotation @ _rigid(data["geometry"]["object_to_tcp"])[:3, 3]
+    |
+
+E501 Line too long (114 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:410:101
+    |
+408 |             center = np.array(estimate.marker_center_world_m) - rotation @ transform[:3, 3]
+409 |             grasp = center + rotation @ _rigid(data["geometry"]["object_to_tcp"])[:3, 3]
+410 |             if (not np.allclose(grasp, [grounding["resolved_top_grasp_tcp"][k] for k in "xyz"], atol=1e-9, rtol=0)
+    |                                                                                                     ^^^^^^^^^^^^^^
+411 |                 or [grounding["grounded_destination"][k] for k in "xyz"] != data["geometry"]["region_world_m"]
+412 |                 or grounding["top_grasp_support_height_m"] != data["geometry"]["support_height_m"]):
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:411:101
+    |
+409 |             grasp = center + rotation @ _rigid(data["geometry"]["object_to_tcp"])[:3, 3]
+410 |             if (not np.allclose(grasp, [grounding["resolved_top_grasp_tcp"][k] for k in "xyz"], atol=1e-9, rtol=0)
+411 |                 or [grounding["grounded_destination"][k] for k in "xyz"] != data["geometry"]["region_world_m"]
+    |                                                                                                     ^^^^^^^^^^
+412 |                 or grounding["top_grasp_support_height_m"] != data["geometry"]["support_height_m"]):
+413 |                 reasons.append("owner_geometry_recipe_differs_from_registered_estimator")
+    |
+
+E501 Line too long (132 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:414:101
+    |
+412 |                 or grounding["top_grasp_support_height_m"] != data["geometry"]["support_height_m"]):
+413 |                 reasons.append("owner_geometry_recipe_differs_from_registered_estimator")
+414 |             elif np.any(center < data["support"]["object_center_min_m"]) or np.any(center > data["support"]["object_center_max_m"]):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+415 |                 reasons.append("current_geometry_outside_registered_support")
+416 |             elif (estimate.measured_min_side_px is None or estimate.measured_min_side_px < data["support"]["min_marker_side_px"]
+    |
+
+E501 Line too long (128 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:416:101
+    |
+414 |             elif np.any(center < data["support"]["object_center_min_m"]) or np.any(center > data["support"]["object_center_max_m"]):
+415 |                 reasons.append("current_geometry_outside_registered_support")
+416 |             elif (estimate.measured_min_side_px is None or estimate.measured_min_side_px < data["support"]["min_marker_side_px"]
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+417 |                   or current.endpoint_xyz is not None and (
+418 |                       np.any(np.array(current.endpoint_xyz) < data["support"]["endpoint_min_m"])
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:419:101
+    |
+417 |                   or current.endpoint_xyz is not None and (
+418 |                       np.any(np.array(current.endpoint_xyz) < data["support"]["endpoint_min_m"])
+419 |                       or np.any(np.array(current.endpoint_xyz) > data["support"]["endpoint_max_m"]))):
+    |                                                                                                     ^^
+420 |                 reasons.append("current_marker_or_endpoint_outside_registered_support")
+421 |             elif current.full_horizon_s > data["supported_actions"].get(step.skill.value, 0):
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/native_calibration.py:430:101
+    |
+428 |                     bound = quantile.bound_m
+429 |                     if current.fixed_goal_coordinate_invariant:
+430 |                         # This is source-proved fixed command coordinate speed, never body/TCP speed.
+    |                                                                                                     ^
+431 |                         motion = 0.0
+432 |                     else:
+    |
+
+E501 Line too long (103 > 100)
+  --> tests/test_native_calibration_source.py:90:101
+   |
+88 |     path = tmp_path / "registry.json"
+89 |     path.write_text(json.dumps(payload))
+90 |     return module.NativeCalibrationRegistration(tmp_path, ROOT, "registry.json", digest(path)), payload
+   |                                                                                                     ^^^
+   |
+
+E501 Line too long (105 > 100)
+  --> tests/test_native_calibration_source.py:97:101
+   |
+95 |     path = reg.artifact_root / reg.registry_path
+96 |     path.write_text(json.dumps(payload))
+97 |     return module.NativeCalibrationRegistration(reg.artifact_root, ROOT, reg.registry_path, digest(path))
+   |                                                                                                     ^^^^^
+   |
+
+Found 64 errors.
+[*] 3 fixable with the `--fix` option.

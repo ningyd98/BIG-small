@@ -1,6 +1,6 @@
 # 当前交接
 
-**2026-10-05 当前第52步：** 第52步完成一次有界逐数组诊断及v2离线核验器：新诊断10被动步、11实时采集/11保存/0失败，末尾copy guard退出1、未验证clone；旧11/10/1和未完成horizon不改写。142份原始文件/7,876,865字节、33来源/19依赖及旧保护件独审匹配；读取新owning数组的具名差异支持限定假阳性解释。v2核验器17项及独立同范围17项通过，重放保留六条真实失败；新11帧离线OBSERVED只限被动前缀。native来源适用性与新guard继续开发，活动源码未纳入本步交付。主线T12/18、T13并行，Max/native/风险及INITIAL/METHOD/FINAL未验收，边缘型号后置。 先读[本步报告](../../../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/report-step52.md)及[Git交付](git_delivery_20261005.md)。下文旧快照保留。
+**2026-10-05 当前第53步：** 第53步关闭状态保护dtype记录与校准UTC读取器的两项软件缺陷：root新复跑分别62项、61项CPU通过，独审限定软件范围通过，失败/UNKNOWN组不缩减。新V3核验器独审发现操作身份和额外失败/悬挂采集未拒绝，六个软件反例已复现待修复，尚未完整实测；旧11/10/1及诊断copy失败不升级。真实RESET/独立UTC原件、至少9个独立校准组和有限界正分支仍缺，Max、风险、机会/200故障及INITIAL/METHOD/FINAL未验收。主线T12/18、T13并行，边缘型号后置。 先读[本步报告](../../../artifacts/research/process/20261004-ced-development/report-step53.md)及[Git交付](git_delivery_20261005.md)。下文旧快照保留。
 
 **当前持续研发入口：** [新总计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)、[逐步阶段总结](continuation_20261004.md)、[复现说明](../reproduction.md)和[结果/限制](../results_and_limits.md)。多项云、边、端软件已通过独立审查，当前继续资源冻结、恢复消费者、Max局部修复及真实准入/方法接口。边缘模型型号后置；真实Max凭据、端侧校准/连续证据、完整机会/200故障和合格B0仍缺。不得重用旧模型probe或软件恢复状态解除实际准入。
 

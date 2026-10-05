@@ -2,7 +2,7 @@
 
 **当前新路径验收入口：** [云、边、端总计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)及[逐步阶段总结](continuation_20261004.md)。下表分列软件交付和真实未满足项；T8父任务保持IN_PROGRESS，边缘模型T12b后置。历史验证表保留原验收时点。
 
-**第52步端侧更新：** 第52步完成一次有界逐数组诊断及v2离线核验器：新诊断10被动步、11实时采集/11保存/0失败，末尾copy guard退出1、未验证clone；旧11/10/1和未完成horizon不改写。142份原始文件/7,876,865字节、33来源/19依赖及旧保护件独审匹配；读取新owning数组的具名差异支持限定假阳性解释。v2核验器17项及独立同范围17项通过，重放保留六条真实失败；新11帧离线OBSERVED只限被动前缀。native来源适用性与新guard继续开发，活动源码未纳入本步交付。主线T12/18、T13并行，Max/native/风险及INITIAL/METHOD/FINAL未验收，边缘型号后置。 见[本步报告](../../../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/report-step52.md)。
+**第53步端侧更新：** 第53步关闭状态保护dtype记录与校准UTC读取器的两项软件缺陷：root新复跑分别62项、61项CPU通过，独审限定软件范围通过，失败/UNKNOWN组不缩减。新V3核验器独审发现操作身份和额外失败/悬挂采集未拒绝，六个软件反例已复现待修复，尚未完整实测；旧11/10/1及诊断copy失败不升级。真实RESET/独立UTC原件、至少9个独立校准组和有限界正分支仍缺，Max、风险、机会/200故障及INITIAL/METHOD/FINAL未验收。主线T12/18、T13并行，边缘型号后置。 见[本步报告](../../../artifacts/research/process/20261004-ced-development/report-step53.md)。
 
 | 新执行单元 | 计划验证与原始证据 | 状态 |
 |---|---|---|

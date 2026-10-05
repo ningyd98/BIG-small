@@ -1,0 +1,136 @@
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/mujoco_state_guard.py:302:101
+    |
+300 | ) -> None:
+301 |     """Reject byte, support, type, shape, inventory or protected-state changes."""
+302 |     if type(before) not in {DataArraySnapshot, GuardedStateSnapshot} or type(after) is not type(before):
+    |                                                                                                     ^^^^
+303 |         raise StateGuardError("matching exact immutable snapshots required")
+304 |     if replace(before).digest != replace(after).digest:
+    |
+
+E501 Line too long (113 > 100)
+  --> tests/test_mujoco_state_guard.py:19:101
+   |
+17 | HEADER_ROOT = ROOT / ".venv/lib/python3.12/site-packages/mujoco/include/mujoco"
+18 | BINDING_SHA = "8fd6c4e9e92676f4175cde18bebb3d354d3e85aac6971cb194f66be20ff9ecc8"
+19 | RAW = ROOT / "artifacts/research/process/20261004-ced-development/capture-state-diagnosis/diagnostic-1/snapshots"
+   |                                                                                                     ^^^^^^^^^^^^^
+   |
+
+E501 Line too long (111 > 100)
+  --> tests/test_mujoco_state_guard.py:52:101
+   |
+50 |         body = text.split("#define MJDATA_ARENA_POINTERS_" + family, 1)[1].split("\n\n", 1)[0]
+51 |         for line in body.splitlines():
+52 |             match = re.search(r"X(?:NV)?\s*\(\s*(int|mjtNum),\s*(\w+),\s*(MJ_[MD]\(\w+\)),\s*(\d+)\s*\)", line)
+   |                                                                                                     ^^^^^^^^^^^
+53 |             if match:
+54 |                 dtype, name, dimension, width = match.groups()
+   |
+
+E501 Line too long (174 > 100)
+   --> tests/test_mujoco_state_guard.py:169:101
+    |
+167 | …ding_sha256", "version"])
+168 | …
+169 | …s(), mjdata_bytes=(HEADER_ROOT / "mjdata.h").read_bytes(), binding_sha256=BINDING_SHA, version="3.3.7")
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+170 | …
+171 | …
+    |
+
+E501 Line too long (288 > 100)
+   --> tests/test_mujoco_state_guard.py:190:101
+    |
+189 | …
+190 | …ha256="c" * 64, rng_state_sha256="d" * 64, physics_state_sha256="e" * 64, sensor_cache_object_id=1, camera_object_id=2, physical_step=0, command_count=0, sensor_noise_std_m=0.0, sim_time_s=0.0)
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (134 > 100)
+   --> tests/test_mujoco_state_guard.py:211:101
+    |
+209 |     payload["extra"][0] = 2
+210 |     assert json.loads(before.protected_json)["extra"] == [1]
+211 |     for invalid in [protected() | {"sim_time_s": float("nan")}, {"physical_step": 0}, protected() | {"data_arrays_sha256": "legacy"}]:
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+212 |         with pytest.raises(api.StateGuardError):
+213 |             api.attach_protected_state(data, invalid)
+    |
+
+E501 Line too long (134 > 100)
+   --> tests/test_mujoco_state_guard.py:234:101
+    |
+234 | @pytest.mark.parametrize("left_file,right_file", [("0001-snapshot.gz", "0002-snapshot.gz"), ("0122-snapshot.gz", "0123-snapshot.gz")])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+235 | def test_original_saved_snapshot_null_semantics_software_only(api, contract, left_file, right_file):
+236 |     snapshots = [json.loads(gzip.decompress((RAW / f).read_bytes())) for f in (left_file, right_file)]
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_mujoco_state_guard.py:236:101
+    |
+234 | @pytest.mark.parametrize("left_file,right_file", [("0001-snapshot.gz", "0002-snapshot.gz"), ("0122-snapshot.gz", "0123-snapshot.gz")])
+235 | def test_original_saved_snapshot_null_semantics_software_only(api, contract, left_file, right_file):
+236 |     snapshots = [json.loads(gzip.decompress((RAW / f).read_bytes())) for f in (left_file, right_file)]
+    |                                                                                                     ^^
+237 |     import base64
+    |
+
+E501 Line too long (187 > 100)
+   --> tests/test_mujoco_state_guard.py:242:101
+    |
+240 | …
+241 | …
+242 | …">", "|", "=")) and not desc["dtype"].startswith("|V") else np.dtype([tuple(x) for x in desc["dtype_descr"]])
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+243 | …[name]), dtype=dtype).copy().reshape(desc["shape"])
+244 | …ata"] else value.view()
+    |
+
+E501 Line too long (129 > 100)
+   --> tests/test_mujoco_state_guard.py:243:101
+    |
+241 | …     for name, desc in saved["data_arrays"]["members"].items():
+242 | …         dtype = np.dtype(desc["dtype"]) if desc["dtype"].startswith(("<", ">", "|", "=")) and not desc["dtype"].startswith("|V") el…
+243 | …         value = np.frombuffer(base64.b64decode(saved["array_bytes_base64"][name]), dtype=dtype).copy().reshape(desc["shape"])
+    |                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+244 | …         arrays[name] = value if saved["data_array_topology"][name]["owns_data"] else value.view()
+245 | …     model = SimpleNamespace(nv=arrays["qvel"].size, nC=arrays["M"].size, ntendon=arrays["tendon_efcadr"].size)
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_mujoco_state_guard.py:244:101
+    |
+242 | …         dtype = np.dtype(desc["dtype"]) if desc["dtype"].startswith(("<", ">", "|", "=")) and not desc["dtype"].startswith("|V") el…
+243 | …         value = np.frombuffer(base64.b64decode(saved["array_bytes_base64"][name]), dtype=dtype).copy().reshape(desc["shape"])
+244 | …         arrays[name] = value if saved["data_array_topology"][name]["owns_data"] else value.view()
+    |                                                                                                   ^
+245 | …     model = SimpleNamespace(nv=arrays["qvel"].size, nC=arrays["M"].size, ntendon=arrays["tendon_efcadr"].size)
+246 | …     data = FakeData(model, nefc=arrays["efc_force"].size, nJ=arrays["efc_J"].size, nA=arrays["efc_AR"].size, nisland=arrays["island…
+    |
+
+E501 Line too long (114 > 100)
+   --> tests/test_mujoco_state_guard.py:245:101
+    |
+243 | …         value = np.frombuffer(base64.b64decode(saved["array_bytes_base64"][name]), dtype=dtype).copy().reshape(desc["shape"])
+244 | …         arrays[name] = value if saved["data_array_topology"][name]["owns_data"] else value.view()
+245 | …     model = SimpleNamespace(nv=arrays["qvel"].size, nC=arrays["M"].size, ntendon=arrays["tendon_efcadr"].size)
+    |                                                                                                   ^^^^^^^^^^^^^^
+246 | …     data = FakeData(model, nefc=arrays["efc_force"].size, nJ=arrays["efc_J"].size, nA=arrays["efc_AR"].size, nisland=arrays["island…
+247 | …     data.arrays = arrays
+    |
+
+E501 Line too long (173 > 100)
+   --> tests/test_mujoco_state_guard.py:246:101
+    |
+244 | …"owns_data"] else value.view()
+245 | …size, ntendon=arrays["tendon_efcadr"].size)
+246 | …["efc_J"].size, nA=arrays["efc_AR"].size, nisland=arrays["island_nv"].size, nidof=arrays["iacc"].size)
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+247 | …
+248 | …
+    |
+
+Found 13 errors.

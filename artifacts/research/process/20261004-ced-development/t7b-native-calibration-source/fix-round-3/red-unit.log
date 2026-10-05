@@ -1,0 +1,631 @@
+FFFFFFFF                                                                 [100%]
+=================================== FAILURES ===================================
+_ test_malformed_clock_original_structure_refuses_with_valueerror[missing_pair_hash] _
+
+change = 'missing_pair_hash'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = {'clock_descriptor_hash': 'cbb7f5d597d431bce745e5e5b3c859c7246fc93eac163d57cd52120ceb405535', 'clock_domain_id': 'cloc...796149aa', 'utc_lower_at': '2026-10-04T00:00:00+00:00', 'utc_upper_at': '2026-10-04T00:00:00.000004+00:00'}, ...], ...}
+envelope = RawEpisodeEnvelopeV3(identity=RawEpisodeIdentityV3(attempt_id='raw-attempt-1', assignment_id='assignment-1', assignmen...oller_targets=mappingproxy({'joints_rad': (0, 0, 0, 0, 0, 0, 0), 'fingers_m': (0.039, 0.039)}), actuator_delay_steps=0)
+records = RawEpisodeRecordsV3(intervals=(RawIntervalV3(interval_id='settle', record_seq=1, identity=RawEpisodeIdentityV3(attempt..._RETURN', observation_id='after', checksum_sha256='97d011b2faed33f6bab6d7054f7ff63e94041dc3a099f5f6f10ebb0981732bb2')))
+
+    def independent_utc_uncertainty_ns(
+        payload: Mapping[str, Any], envelope: RawEpisodeEnvelopeV3, records: RawEpisodeRecordsV3
+    ) -> int:
+        """Recompute uncertainty from every independently captured UTC bracket original.
+    
+        This reader is arithmetic only. The application catalog must authenticate the
+        independent acquisition implementation and bytes before native use.
+        """
+        data = _load(_json(payload))
+        if (
+            set(data)
+            != {
+                "schema_version",
+                "clock_domain_id",
+                "clock_descriptor_hash",
+                "independent_source_hashes",
+                "samples",
+            }
+            or data["schema_version"] != "native.calibration.utc-originals.v1"
+            or data["clock_domain_id"] != envelope.identity.clock_domain_id
+            or data["clock_descriptor_hash"] != envelope.clock_descriptor.digest()
+            or not data["independent_source_hashes"]
+            or set(data["independent_source_hashes"]) & set(envelope.clock_descriptor.source_hashes)
+        ):
+            raise ValueError("complete independent clock originals required")
+        for value in data["independent_source_hashes"].values():
+            _sha(value)
+        pairs = {
+            pair.digest(): pair
+            for interval in records.intervals
+            for pair in (interval.start, interval.end)
+            if pair is not None
+        }
+        samples = data["samples"]
+        if (
+            not pairs
+            or len(samples) != len(pairs)
+>           or {sample["pair_hash"] for sample in samples} != set(pairs)
+                ^^^^^^^^^^^^^^^^^^^
+        ):
+E       KeyError: 'pair_hash'
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:226: KeyError
+_ test_malformed_clock_original_structure_refuses_with_valueerror[null_lower] __
+
+change = 'null_lower'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:233: in independent_utc_uncertainty_ns
+    lower, upper = (datetime.fromisoformat(sample[k]) for k in ("utc_lower_at", "utc_upper_at"))
+    ^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x7c89dfe79600>
+
+>   lower, upper = (datetime.fromisoformat(sample[k]) for k in ("utc_lower_at", "utc_upper_at"))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: fromisoformat: argument must be str
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:233: TypeError
+_ test_malformed_clock_original_structure_refuses_with_valueerror[null_upper] __
+
+change = 'null_upper'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:233: in independent_utc_uncertainty_ns
+    lower, upper = (datetime.fromisoformat(sample[k]) for k in ("utc_lower_at", "utc_upper_at"))
+    ^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <tuple_iterator object at 0x7c89df2b9fc0>
+
+>   lower, upper = (datetime.fromisoformat(sample[k]) for k in ("utc_lower_at", "utc_upper_at"))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: fromisoformat: argument must be str
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:233: TypeError
+_ test_malformed_clock_original_structure_refuses_with_valueerror[nonmapping_sample] _
+
+change = 'nonmapping_sample'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = {'clock_descriptor_hash': 'cbb7f5d597d431bce745e5e5b3c859c7246fc93eac163d57cd52120ceb405535', 'clock_domain_id': 'cloc...796149aa', 'utc_lower_at': '2026-10-04T00:00:00+00:00', 'utc_upper_at': '2026-10-04T00:00:00.000004+00:00'}, ...], ...}
+envelope = RawEpisodeEnvelopeV3(identity=RawEpisodeIdentityV3(attempt_id='raw-attempt-1', assignment_id='assignment-1', assignmen...oller_targets=mappingproxy({'joints_rad': (0, 0, 0, 0, 0, 0, 0), 'fingers_m': (0.039, 0.039)}), actuator_delay_steps=0)
+records = RawEpisodeRecordsV3(intervals=(RawIntervalV3(interval_id='settle', record_seq=1, identity=RawEpisodeIdentityV3(attempt..._RETURN', observation_id='after', checksum_sha256='97d011b2faed33f6bab6d7054f7ff63e94041dc3a099f5f6f10ebb0981732bb2')))
+
+    def independent_utc_uncertainty_ns(
+        payload: Mapping[str, Any], envelope: RawEpisodeEnvelopeV3, records: RawEpisodeRecordsV3
+    ) -> int:
+        """Recompute uncertainty from every independently captured UTC bracket original.
+    
+        This reader is arithmetic only. The application catalog must authenticate the
+        independent acquisition implementation and bytes before native use.
+        """
+        data = _load(_json(payload))
+        if (
+            set(data)
+            != {
+                "schema_version",
+                "clock_domain_id",
+                "clock_descriptor_hash",
+                "independent_source_hashes",
+                "samples",
+            }
+            or data["schema_version"] != "native.calibration.utc-originals.v1"
+            or data["clock_domain_id"] != envelope.identity.clock_domain_id
+            or data["clock_descriptor_hash"] != envelope.clock_descriptor.digest()
+            or not data["independent_source_hashes"]
+            or set(data["independent_source_hashes"]) & set(envelope.clock_descriptor.source_hashes)
+        ):
+            raise ValueError("complete independent clock originals required")
+        for value in data["independent_source_hashes"].values():
+            _sha(value)
+        pairs = {
+            pair.digest(): pair
+            for interval in records.intervals
+            for pair in (interval.start, interval.end)
+            if pair is not None
+        }
+        samples = data["samples"]
+        if (
+            not pairs
+            or len(samples) != len(pairs)
+>           or {sample["pair_hash"] for sample in samples} != set(pairs)
+                ^^^^^^^^^^^^^^^^^^^
+        ):
+E       TypeError: 'NoneType' object is not subscriptable
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:226: TypeError
+_ test_malformed_clock_original_structure_refuses_with_valueerror[nonsequence_samples] _
+
+change = 'nonsequence_samples'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = {'clock_descriptor_hash': 'cbb7f5d597d431bce745e5e5b3c859c7246fc93eac163d57cd52120ceb405535', 'clock_domain_id': 'cloc...independent_utc_capture.py': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}, 'samples': None, ...}
+envelope = RawEpisodeEnvelopeV3(identity=RawEpisodeIdentityV3(attempt_id='raw-attempt-1', assignment_id='assignment-1', assignmen...oller_targets=mappingproxy({'joints_rad': (0, 0, 0, 0, 0, 0, 0), 'fingers_m': (0.039, 0.039)}), actuator_delay_steps=0)
+records = RawEpisodeRecordsV3(intervals=(RawIntervalV3(interval_id='settle', record_seq=1, identity=RawEpisodeIdentityV3(attempt..._RETURN', observation_id='after', checksum_sha256='97d011b2faed33f6bab6d7054f7ff63e94041dc3a099f5f6f10ebb0981732bb2')))
+
+    def independent_utc_uncertainty_ns(
+        payload: Mapping[str, Any], envelope: RawEpisodeEnvelopeV3, records: RawEpisodeRecordsV3
+    ) -> int:
+        """Recompute uncertainty from every independently captured UTC bracket original.
+    
+        This reader is arithmetic only. The application catalog must authenticate the
+        independent acquisition implementation and bytes before native use.
+        """
+        data = _load(_json(payload))
+        if (
+            set(data)
+            != {
+                "schema_version",
+                "clock_domain_id",
+                "clock_descriptor_hash",
+                "independent_source_hashes",
+                "samples",
+            }
+            or data["schema_version"] != "native.calibration.utc-originals.v1"
+            or data["clock_domain_id"] != envelope.identity.clock_domain_id
+            or data["clock_descriptor_hash"] != envelope.clock_descriptor.digest()
+            or not data["independent_source_hashes"]
+            or set(data["independent_source_hashes"]) & set(envelope.clock_descriptor.source_hashes)
+        ):
+            raise ValueError("complete independent clock originals required")
+        for value in data["independent_source_hashes"].values():
+            _sha(value)
+        pairs = {
+            pair.digest(): pair
+            for interval in records.intervals
+            for pair in (interval.start, interval.end)
+            if pair is not None
+        }
+        samples = data["samples"]
+        if (
+            not pairs
+>           or len(samples) != len(pairs)
+               ^^^^^^^^^^^^
+            or {sample["pair_hash"] for sample in samples} != set(pairs)
+        ):
+E       TypeError: object of type 'NoneType' has no len()
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:225: TypeError
+_ test_malformed_clock_original_structure_refuses_with_valueerror[unhashable_pair_hash] _
+
+change = 'unhashable_pair_hash'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = {'clock_descriptor_hash': 'cbb7f5d597d431bce745e5e5b3c859c7246fc93eac163d57cd52120ceb405535', 'clock_domain_id': 'cloc...796149aa', 'utc_lower_at': '2026-10-04T00:00:00+00:00', 'utc_upper_at': '2026-10-04T00:00:00.000004+00:00'}, ...], ...}
+envelope = RawEpisodeEnvelopeV3(identity=RawEpisodeIdentityV3(attempt_id='raw-attempt-1', assignment_id='assignment-1', assignmen...oller_targets=mappingproxy({'joints_rad': (0, 0, 0, 0, 0, 0, 0), 'fingers_m': (0.039, 0.039)}), actuator_delay_steps=0)
+records = RawEpisodeRecordsV3(intervals=(RawIntervalV3(interval_id='settle', record_seq=1, identity=RawEpisodeIdentityV3(attempt..._RETURN', observation_id='after', checksum_sha256='97d011b2faed33f6bab6d7054f7ff63e94041dc3a099f5f6f10ebb0981732bb2')))
+
+    def independent_utc_uncertainty_ns(
+        payload: Mapping[str, Any], envelope: RawEpisodeEnvelopeV3, records: RawEpisodeRecordsV3
+    ) -> int:
+        """Recompute uncertainty from every independently captured UTC bracket original.
+    
+        This reader is arithmetic only. The application catalog must authenticate the
+        independent acquisition implementation and bytes before native use.
+        """
+        data = _load(_json(payload))
+        if (
+            set(data)
+            != {
+                "schema_version",
+                "clock_domain_id",
+                "clock_descriptor_hash",
+                "independent_source_hashes",
+                "samples",
+            }
+            or data["schema_version"] != "native.calibration.utc-originals.v1"
+            or data["clock_domain_id"] != envelope.identity.clock_domain_id
+            or data["clock_descriptor_hash"] != envelope.clock_descriptor.digest()
+            or not data["independent_source_hashes"]
+            or set(data["independent_source_hashes"]) & set(envelope.clock_descriptor.source_hashes)
+        ):
+            raise ValueError("complete independent clock originals required")
+        for value in data["independent_source_hashes"].values():
+            _sha(value)
+        pairs = {
+            pair.digest(): pair
+            for interval in records.intervals
+            for pair in (interval.start, interval.end)
+            if pair is not None
+        }
+        samples = data["samples"]
+        if (
+            not pairs
+            or len(samples) != len(pairs)
+>           or {sample["pair_hash"] for sample in samples} != set(pairs)
+                ^^^^^^^^^^^^^^^^^^^
+        ):
+E       TypeError: unhashable type: 'list'
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:226: TypeError
+_ test_malformed_clock_original_structure_refuses_with_valueerror[nonmapping_sources] _
+
+change = 'nonmapping_sources'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = {'clock_descriptor_hash': 'cbb7f5d597d431bce745e5e5b3c859c7246fc93eac163d57cd52120ceb405535', 'clock_domain_id': 'cloc...796149aa', 'utc_lower_at': '2026-10-04T00:00:00+00:00', 'utc_upper_at': '2026-10-04T00:00:00.000004+00:00'}, ...], ...}
+envelope = RawEpisodeEnvelopeV3(identity=RawEpisodeIdentityV3(attempt_id='raw-attempt-1', assignment_id='assignment-1', assignmen...oller_targets=mappingproxy({'joints_rad': (0, 0, 0, 0, 0, 0, 0), 'fingers_m': (0.039, 0.039)}), actuator_delay_steps=0)
+records = RawEpisodeRecordsV3(intervals=(RawIntervalV3(interval_id='settle', record_seq=1, identity=RawEpisodeIdentityV3(attempt..._RETURN', observation_id='after', checksum_sha256='97d011b2faed33f6bab6d7054f7ff63e94041dc3a099f5f6f10ebb0981732bb2')))
+
+    def independent_utc_uncertainty_ns(
+        payload: Mapping[str, Any], envelope: RawEpisodeEnvelopeV3, records: RawEpisodeRecordsV3
+    ) -> int:
+        """Recompute uncertainty from every independently captured UTC bracket original.
+    
+        This reader is arithmetic only. The application catalog must authenticate the
+        independent acquisition implementation and bytes before native use.
+        """
+        data = _load(_json(payload))
+        if (
+            set(data)
+            != {
+                "schema_version",
+                "clock_domain_id",
+                "clock_descriptor_hash",
+                "independent_source_hashes",
+                "samples",
+            }
+            or data["schema_version"] != "native.calibration.utc-originals.v1"
+            or data["clock_domain_id"] != envelope.identity.clock_domain_id
+            or data["clock_descriptor_hash"] != envelope.clock_descriptor.digest()
+            or not data["independent_source_hashes"]
+            or set(data["independent_source_hashes"]) & set(envelope.clock_descriptor.source_hashes)
+        ):
+            raise ValueError("complete independent clock originals required")
+>       for value in data["independent_source_hashes"].values():
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'str' object has no attribute 'values'
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:214: AttributeError
+_ test_malformed_clock_original_structure_refuses_with_valueerror[nonmapping_payload] _
+
+change = 'nonmapping_payload'
+
+    @pytest.mark.parametrize(
+        "change",
+        (
+            "missing_pair_hash",
+            "null_lower",
+            "null_upper",
+            "nonmapping_sample",
+            "nonsequence_samples",
+            "unhashable_pair_hash",
+            "nonmapping_sources",
+            "nonmapping_payload",
+        ),
+    )
+    def test_malformed_clock_original_structure_refuses_with_valueerror(change):
+        _, producer = api()
+        envelope, records = raw_fixture()
+        payload = clock_originals(envelope, records)
+        if change == "missing_pair_hash":
+            del payload["samples"][0]["pair_hash"]
+        elif change == "null_lower":
+            payload["samples"][0]["utc_lower_at"] = None
+        elif change == "null_upper":
+            payload["samples"][0]["utc_upper_at"] = None
+        elif change == "nonmapping_sample":
+            payload["samples"][0] = None
+        elif change == "nonsequence_samples":
+            payload["samples"] = None
+        elif change == "unhashable_pair_hash":
+            payload["samples"][0]["pair_hash"] = []
+        elif change == "nonmapping_sources":
+            payload["independent_source_hashes"] = "not a source inventory"
+        else:
+            payload = None
+        with pytest.raises(ValueError):
+>           producer.independent_utc_uncertainty_ns(payload, envelope, records)
+
+tests/test_native_calibration_source.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+payload = None
+envelope = RawEpisodeEnvelopeV3(identity=RawEpisodeIdentityV3(attempt_id='raw-attempt-1', assignment_id='assignment-1', assignmen...oller_targets=mappingproxy({'joints_rad': (0, 0, 0, 0, 0, 0, 0), 'fingers_m': (0.039, 0.039)}), actuator_delay_steps=0)
+records = RawEpisodeRecordsV3(intervals=(RawIntervalV3(interval_id='settle', record_seq=1, identity=RawEpisodeIdentityV3(attempt..._RETURN', observation_id='after', checksum_sha256='97d011b2faed33f6bab6d7054f7ff63e94041dc3a099f5f6f10ebb0981732bb2')))
+
+    def independent_utc_uncertainty_ns(
+        payload: Mapping[str, Any], envelope: RawEpisodeEnvelopeV3, records: RawEpisodeRecordsV3
+    ) -> int:
+        """Recompute uncertainty from every independently captured UTC bracket original.
+    
+        This reader is arithmetic only. The application catalog must authenticate the
+        independent acquisition implementation and bytes before native use.
+        """
+        data = _load(_json(payload))
+        if (
+>           set(data)
+            != {
+                "schema_version",
+                "clock_domain_id",
+                "clock_descriptor_hash",
+                "independent_source_hashes",
+                "samples",
+            }
+            or data["schema_version"] != "native.calibration.utc-originals.v1"
+            or data["clock_domain_id"] != envelope.identity.clock_domain_id
+            or data["clock_descriptor_hash"] != envelope.clock_descriptor.digest()
+            or not data["independent_source_hashes"]
+            or set(data["independent_source_hashes"]) & set(envelope.clock_descriptor.source_hashes)
+        ):
+E       TypeError: 'NoneType' object is not iterable
+
+src/cloud_edge_robot_arm/research/native_geometry_calibration.py:199: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[missing_pair_hash]
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[null_lower]
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[null_upper]
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[nonmapping_sample]
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[nonsequence_samples]
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[unhashable_pair_hash]
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[nonmapping_sources]
+FAILED tests/test_native_calibration_source.py::test_malformed_clock_original_structure_refuses_with_valueerror[nonmapping_payload]
+8 failed, 53 deselected in 1.95s

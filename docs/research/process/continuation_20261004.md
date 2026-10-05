@@ -375,3 +375,12 @@ Git交付核验：阶段49快照d3472a5与本步记录器f7860ffd已推送研发
 限定实际结果：诊断唯一执行退出1，copy只尝试未验证、0 clone调用、0教师动作；原试验保留。新11帧OBSERVED不能算全horizon连续证书或新独立校准组。详见[本步报告](../../../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/report-step52.md)、[原始独审](../../../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/actual-independent-review.md)、[新核验器独审](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/independent-review.md)及[机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step52.json)。来源/预注册/完整horizon/policy与新guard仍实施中，本步交付不代表native或正式验收。
 
 第52步Git交付：实现/诊断/报告提交 `05d971f82b6542fdd78c2ba12ea8d211f86f94b9` 已推送，远端、本地和上游一致，push退出0；237个变更路径/8,746,641字节，完整诊断142原件保留，活动guard/native源码未混入。48项定向回归及非日志差异检查通过；原始日志17处尾空格使完整检查退出2，单列保留。见[交付记录](../../../artifacts/research/process/20261004-ced-development/git-delivery-step52.json)，本段随后续文档提交推送。
+
+
+## 第53步：状态保护与校准读取器软件修复（2026-10-05）
+
+第53步关闭状态保护dtype记录与校准UTC读取器的两项软件缺陷：root新复跑分别62项、61项CPU通过，独审限定软件范围通过，失败/UNKNOWN组不缩减。新V3核验器独审发现操作身份和额外失败/悬挂采集未拒绝，六个软件反例已复现待修复，尚未完整实测；旧11/10/1及诊断copy失败不升级。真实RESET/独立UTC原件、至少9个独立校准组和有限界正分支仍缺，Max、风险、机会/200故障及INITIAL/METHOD/FINAL未验收。主线T12/18、T13并行，边缘型号后置。
+
+状态保护原dtype四个反例与校准原registered-reader缺字段/null反例复跑已关闭，保持全部结构/来源比较与失败分母。新保护模块覆盖真实view字节、动态getter合同及另11个保护分量；校准v1仍因真实RESET缺失INCOMPLETE，恶格式为INVALID，真实几何/动作界保持不可用。详见[本步报告](../../../artifacts/research/process/20261004-ced-development/report-step53.md)、[状态保护独审](../../../artifacts/research/process/20261004-ced-development/capture-state-guard/fix-round-1/independent-root-review.md)、[校准第三轮独审](../../../artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/fix-round-3/independent-review.md)与[第53步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step53.json)。
+
+本步新增实际采集、physics、renderer、decoder、模型/provider及硬件调用均为0。本机NTP报告同步的只读原件已保存，但未取得每pair UTC误差界。完整V3采集器和真实RESET/UTC v2设计未纳入本步软件交付，运行前复核与后续完整动作采集继续；软件CPU通过不作连续观测或校准覆盖验收。

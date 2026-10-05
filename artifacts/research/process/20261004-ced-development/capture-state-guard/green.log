@@ -1,0 +1,92 @@
+....................................FF                                   [100%]
+=================================== FAILURES ===================================
+_ test_original_saved_snapshot_null_semantics_software_only[0001-snapshot.gz-0002-snapshot.gz] _
+
+api = <module 'cloud_edge_robot_arm.research.mujoco_state_guard' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/research/mujoco_state_guard.py'>
+contract = MujocoStateContract(mjxmacro_bytes=b'// Copyright 2021 DeepMind Technologies Limited\n//\n// Licensed under the Apache... 'ximat', 'xipos', 'xmat', 'xpos', 'xquat'), digest='16bfd83aa42ba257b2b3932335fdf8d1fdab423c513102a5fa9cbdee53450c99')
+left_file = '0001-snapshot.gz', right_file = '0002-snapshot.gz'
+
+    @pytest.mark.parametrize("left_file,right_file", [("0001-snapshot.gz", "0002-snapshot.gz"), ("0122-snapshot.gz", "0123-snapshot.gz")])
+    def test_original_saved_snapshot_null_semantics_software_only(api, contract, left_file, right_file):
+        snapshots = [json.loads(gzip.decompress((RAW / f).read_bytes())) for f in (left_file, right_file)]
+        import base64
+    
+        def restore(saved):
+            arrays = {}
+            for name, desc in saved["data_arrays"]["members"].items():
+                dtype = np.dtype(desc["dtype"]) if desc["dtype"].startswith(("<", ">", "|", "=")) and not desc["dtype"].startswith("|V") else np.dtype([tuple(x) for x in desc["dtype_descr"]])
+                value = np.frombuffer(base64.b64decode(saved["array_bytes_base64"][name]), dtype=dtype).copy().reshape(desc["shape"])
+                arrays[name] = value if saved["data_array_topology"][name]["owns_data"] else value.view()
+            model = SimpleNamespace(nv=arrays["qvel"].size, nC=arrays["M"].size, ntendon=arrays["tendon_efcadr"].size)
+            data = FakeData(model, nefc=arrays["efc_force"].size, nJ=arrays["efc_J"].size, nA=arrays["efc_AR"].size, nisland=arrays["island_nv"].size, nidof=arrays["iacc"].size)
+            data.arrays = arrays
+            return snap(api, contract, data, model)
+    
+        left, right = map(restore, snapshots)
+>       api.assert_unchanged(left, right)
+
+tests/test_mujoco_state_guard.py:251: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+before = DataArraySnapshot(contract_digest='16bfd83aa42ba257b2b3932335fdf8d1fdab423c513102a5fa9cbdee53450c99', fields=(ArrayFie...18575383512a307abb7d1ba5d5abfc03c4b6f96f')), digest='f49d8842dd3c82aeea427613f18d89123b9a0fac6e8c8d0568c57cd3e63accca')
+after = DataArraySnapshot(contract_digest='16bfd83aa42ba257b2b3932335fdf8d1fdab423c513102a5fa9cbdee53450c99', fields=(ArrayFie...18575383512a307abb7d1ba5d5abfc03c4b6f96f')), digest='3171260e9c42154f422e9c0baf11316f350f2c7f2510d8d86dc467a8744e1b8f')
+
+    def assert_unchanged(
+        before: DataArraySnapshot | GuardedStateSnapshot,
+        after: DataArraySnapshot | GuardedStateSnapshot,
+    ) -> None:
+        """Reject byte, support, type, shape, inventory or protected-state changes."""
+        if type(before) not in {DataArraySnapshot, GuardedStateSnapshot} or type(after) is not type(before):
+            raise StateGuardError("matching exact immutable snapshots required")
+        if replace(before).digest != replace(after).digest:
+>           raise StateGuardError("guarded state changed")
+E           cloud_edge_robot_arm.research.mujoco_state_guard.StateGuardError: guarded state changed
+
+src/cloud_edge_robot_arm/research/mujoco_state_guard.py:305: StateGuardError
+_ test_original_saved_snapshot_null_semantics_software_only[0122-snapshot.gz-0123-snapshot.gz] _
+
+api = <module 'cloud_edge_robot_arm.research.mujoco_state_guard' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/research/mujoco_state_guard.py'>
+contract = MujocoStateContract(mjxmacro_bytes=b'// Copyright 2021 DeepMind Technologies Limited\n//\n// Licensed under the Apache... 'ximat', 'xipos', 'xmat', 'xpos', 'xquat'), digest='16bfd83aa42ba257b2b3932335fdf8d1fdab423c513102a5fa9cbdee53450c99')
+left_file = '0122-snapshot.gz', right_file = '0123-snapshot.gz'
+
+    @pytest.mark.parametrize("left_file,right_file", [("0001-snapshot.gz", "0002-snapshot.gz"), ("0122-snapshot.gz", "0123-snapshot.gz")])
+    def test_original_saved_snapshot_null_semantics_software_only(api, contract, left_file, right_file):
+        snapshots = [json.loads(gzip.decompress((RAW / f).read_bytes())) for f in (left_file, right_file)]
+        import base64
+    
+        def restore(saved):
+            arrays = {}
+            for name, desc in saved["data_arrays"]["members"].items():
+                dtype = np.dtype(desc["dtype"]) if desc["dtype"].startswith(("<", ">", "|", "=")) and not desc["dtype"].startswith("|V") else np.dtype([tuple(x) for x in desc["dtype_descr"]])
+                value = np.frombuffer(base64.b64decode(saved["array_bytes_base64"][name]), dtype=dtype).copy().reshape(desc["shape"])
+                arrays[name] = value if saved["data_array_topology"][name]["owns_data"] else value.view()
+            model = SimpleNamespace(nv=arrays["qvel"].size, nC=arrays["M"].size, ntendon=arrays["tendon_efcadr"].size)
+            data = FakeData(model, nefc=arrays["efc_force"].size, nJ=arrays["efc_J"].size, nA=arrays["efc_AR"].size, nisland=arrays["island_nv"].size, nidof=arrays["iacc"].size)
+            data.arrays = arrays
+            return snap(api, contract, data, model)
+    
+        left, right = map(restore, snapshots)
+>       api.assert_unchanged(left, right)
+
+tests/test_mujoco_state_guard.py:251: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+before = DataArraySnapshot(contract_digest='16bfd83aa42ba257b2b3932335fdf8d1fdab423c513102a5fa9cbdee53450c99', fields=(ArrayFie...7e7525a2aed686ba7a7efe38fdfdc225d5f7c3db')), digest='f2dd44940902acbd480480249d887716a5d4b16f7ffa09bf89d8e7814b38a3c2')
+after = DataArraySnapshot(contract_digest='16bfd83aa42ba257b2b3932335fdf8d1fdab423c513102a5fa9cbdee53450c99', fields=(ArrayFie...7e7525a2aed686ba7a7efe38fdfdc225d5f7c3db')), digest='c87178c982efbae7d12ff9d63a22bf78b8961ad6cbc6d8c9765bf24a502091a6')
+
+    def assert_unchanged(
+        before: DataArraySnapshot | GuardedStateSnapshot,
+        after: DataArraySnapshot | GuardedStateSnapshot,
+    ) -> None:
+        """Reject byte, support, type, shape, inventory or protected-state changes."""
+        if type(before) not in {DataArraySnapshot, GuardedStateSnapshot} or type(after) is not type(before):
+            raise StateGuardError("matching exact immutable snapshots required")
+        if replace(before).digest != replace(after).digest:
+>           raise StateGuardError("guarded state changed")
+E           cloud_edge_robot_arm.research.mujoco_state_guard.StateGuardError: guarded state changed
+
+src/cloud_edge_robot_arm/research/mujoco_state_guard.py:305: StateGuardError
+=========================== short test summary info ============================
+FAILED tests/test_mujoco_state_guard.py::test_original_saved_snapshot_null_semantics_software_only[0001-snapshot.gz-0002-snapshot.gz]
+FAILED tests/test_mujoco_state_guard.py::test_original_saved_snapshot_null_semantics_software_only[0122-snapshot.gz-0123-snapshot.gz]
+2 failed, 36 passed in 0.32s

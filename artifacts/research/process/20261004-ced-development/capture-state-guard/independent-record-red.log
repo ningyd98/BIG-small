@@ -1,0 +1,70 @@
+Qualified target: source SHA 87ebd5f0884f8289c9b7187b479d0ccc91d8690321b88ddc6afc3aa2aa84807c
+Command: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:. .venv/bin/python -m pytest -q artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py
+Exit code: 1
+
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_inconsistent_or_non_dtype_description_fails_closed[0] __________
+
+description = '0'
+
+    @pytest.mark.parametrize("description", ('0', '[["","<i4"]]', '[["","|O"]]'))
+    def test_inconsistent_or_non_dtype_description_fails_closed(description):
+        record = valid_record()
+>       with pytest.raises(guard.StateGuardError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.research.mujoco_state_guard.StateGuardError'>
+
+artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py:25: Failed
+____ test_inconsistent_or_non_dtype_description_fails_closed[[["","<i4"]]] _____
+
+description = '[["","<i4"]]'
+
+    @pytest.mark.parametrize("description", ('0', '[["","<i4"]]', '[["","|O"]]'))
+    def test_inconsistent_or_non_dtype_description_fails_closed(description):
+        record = valid_record()
+>       with pytest.raises(guard.StateGuardError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.research.mujoco_state_guard.StateGuardError'>
+
+artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py:25: Failed
+_____ test_inconsistent_or_non_dtype_description_fails_closed[[["","|O"]]] _____
+
+description = '[["","|O"]]'
+
+    @pytest.mark.parametrize("description", ('0', '[["","<i4"]]', '[["","|O"]]'))
+    def test_inconsistent_or_non_dtype_description_fails_closed(description):
+        record = valid_record()
+>       with pytest.raises(guard.StateGuardError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.research.mujoco_state_guard.StateGuardError'>
+
+artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py:25: Failed
+___ test_genuine_snapshot_revalidation_rejects_forged_canonical_description ____
+
+    def test_genuine_snapshot_revalidation_rejects_forged_canonical_description():
+        path = ROOT / "tests/test_mujoco_state_guard.py"
+        spec = importlib.util.spec_from_file_location("guard_review_cpu_helpers", path)
+        assert spec and spec.loader
+        helpers = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helpers)
+        contract = guard.MujocoStateContract(
+            (helpers.HEADER_ROOT / "mjxmacro.h").read_bytes(),
+            (helpers.HEADER_ROOT / "mjdata.h").read_bytes(),
+            helpers.BINDING_SHA,
+            "3.3.7",
+        )
+        model = helpers.SimpleNamespace(nv=3, nC=5, ntendon=0)
+        snapshot = guard.snapshot_data_arrays(
+            helpers.FakeData(model), model, contract=contract, runtime_version="3.3.7"
+        )
+        record = next(item for item in snapshot.fields if item.name == "qpos")
+        object.__setattr__(record, "dtype_descr_json", '0')
+>       with pytest.raises(guard.StateGuardError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.research.mujoco_state_guard.StateGuardError'>
+
+artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py:47: Failed
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py::test_inconsistent_or_non_dtype_description_fails_closed[0]
+FAILED artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py::test_inconsistent_or_non_dtype_description_fails_closed[[["","<i4"]]]
+FAILED artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py::test_inconsistent_or_non_dtype_description_fails_closed[[["","|O"]]]
+FAILED artifacts/research/process/20261004-ced-development/capture-state-guard/independent-record-probe.py::test_genuine_snapshot_revalidation_rejects_forged_canonical_description
+4 failed in 0.12s
+

@@ -1,0 +1,362 @@
+FFFFFFFFFF..FF                                                           [100%]
+=================================== FAILURES ===================================
+_ test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate[producer_sha] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1186/test_raw_source_or_chronology_0')
+change = 'producer_sha'
+
+    @pytest.mark.parametrize("change", ["producer_sha", "asset_sha", "post_capture"])
+    def test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate(tmp_path, change):
+        _, producer = api()
+        reg, payload = registration(tmp_path)
+        envelope_path = tmp_path / "case-1/envelope.json"
+        records_path = tmp_path / "case-1/records.json"
+        envelope = json.loads(envelope_path.read_text())
+        records = json.loads(records_path.read_text())
+        if change == "producer_sha":
+            name = "src/cloud_edge_robot_arm/simulation/mujoco/backend.py"
+            envelope["identity"]["source_hashes"][name] = "f" * 64
+        elif change == "asset_sha":
+            envelope["identity"]["asset_hash"] = "f" * 64
+        else:
+            payload["preregistered_at"] = "2099-01-01T00:00:00+00:00"
+        for kind in ("intervals", "physics", "commands", "actions", "frames", "joins"):
+            for row in records[kind]:
+                row["identity"] = envelope["identity"]
+        envelope_path.write_text(json.dumps(envelope))
+        records_path.write_text(json.dumps(records))
+        for name, path in (("envelope", envelope_path), ("records", records_path)):
+            payload["original_file_hashes"][f"case-1/{name}.json"] = digest(path)
+        result = producer.reconstruct_registered_calibration(rewrite(reg, payload))
+        group = result.groups[0]
+>       assert group.status != "COMPLETE"
+E       AssertionError: assert 'COMPLETE' != 'COMPLETE'
+E        +  where 'COMPLETE' = CalibrationGroupResult(group_id='group-1', status='COMPLETE', allocated_frames=2, missing_frames=0, unknown_frames=2, ...f16ddc81a9765ea43e4792d53560ab1c7a', 'original-rgbd:22a772fd646648a7af4f768b9bb19bf16ddc81a9765ea43e4792d53560ab1c7a')).status
+
+tests/test_native_calibration_source.py:511: AssertionError
+_ test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate[asset_sha] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1186/test_raw_source_or_chronology_1')
+change = 'asset_sha'
+
+    @pytest.mark.parametrize("change", ["producer_sha", "asset_sha", "post_capture"])
+    def test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate(tmp_path, change):
+        _, producer = api()
+        reg, payload = registration(tmp_path)
+        envelope_path = tmp_path / "case-1/envelope.json"
+        records_path = tmp_path / "case-1/records.json"
+        envelope = json.loads(envelope_path.read_text())
+        records = json.loads(records_path.read_text())
+        if change == "producer_sha":
+            name = "src/cloud_edge_robot_arm/simulation/mujoco/backend.py"
+            envelope["identity"]["source_hashes"][name] = "f" * 64
+        elif change == "asset_sha":
+            envelope["identity"]["asset_hash"] = "f" * 64
+        else:
+            payload["preregistered_at"] = "2099-01-01T00:00:00+00:00"
+        for kind in ("intervals", "physics", "commands", "actions", "frames", "joins"):
+            for row in records[kind]:
+                row["identity"] = envelope["identity"]
+        envelope_path.write_text(json.dumps(envelope))
+        records_path.write_text(json.dumps(records))
+        for name, path in (("envelope", envelope_path), ("records", records_path)):
+            payload["original_file_hashes"][f"case-1/{name}.json"] = digest(path)
+        result = producer.reconstruct_registered_calibration(rewrite(reg, payload))
+        group = result.groups[0]
+>       assert group.status != "COMPLETE"
+E       AssertionError: assert 'COMPLETE' != 'COMPLETE'
+E        +  where 'COMPLETE' = CalibrationGroupResult(group_id='group-1', status='COMPLETE', allocated_frames=2, missing_frames=0, unknown_frames=2, ...f16ddc81a9765ea43e4792d53560ab1c7a', 'original-rgbd:22a772fd646648a7af4f768b9bb19bf16ddc81a9765ea43e4792d53560ab1c7a')).status
+
+tests/test_native_calibration_source.py:511: AssertionError
+_ test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate[post_capture] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1186/test_raw_source_or_chronology_2')
+change = 'post_capture'
+
+    @pytest.mark.parametrize("change", ["producer_sha", "asset_sha", "post_capture"])
+    def test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate(tmp_path, change):
+        _, producer = api()
+        reg, payload = registration(tmp_path)
+        envelope_path = tmp_path / "case-1/envelope.json"
+        records_path = tmp_path / "case-1/records.json"
+        envelope = json.loads(envelope_path.read_text())
+        records = json.loads(records_path.read_text())
+        if change == "producer_sha":
+            name = "src/cloud_edge_robot_arm/simulation/mujoco/backend.py"
+            envelope["identity"]["source_hashes"][name] = "f" * 64
+        elif change == "asset_sha":
+            envelope["identity"]["asset_hash"] = "f" * 64
+        else:
+            payload["preregistered_at"] = "2099-01-01T00:00:00+00:00"
+        for kind in ("intervals", "physics", "commands", "actions", "frames", "joins"):
+            for row in records[kind]:
+                row["identity"] = envelope["identity"]
+        envelope_path.write_text(json.dumps(envelope))
+        records_path.write_text(json.dumps(records))
+        for name, path in (("envelope", envelope_path), ("records", records_path)):
+            payload["original_file_hashes"][f"case-1/{name}.json"] = digest(path)
+        result = producer.reconstruct_registered_calibration(rewrite(reg, payload))
+        group = result.groups[0]
+>       assert group.status != "COMPLETE"
+E       AssertionError: assert 'COMPLETE' != 'COMPLETE'
+E        +  where 'COMPLETE' = CalibrationGroupResult(group_id='group-1', status='COMPLETE', allocated_frames=2, missing_frames=0, unknown_frames=2, ...f16ddc81a9765ea43e4792d53560ab1c7a', 'original-rgbd:22a772fd646648a7af4f768b9bb19bf16ddc81a9765ea43e4792d53560ab1c7a')).status
+
+tests/test_native_calibration_source.py:511: AssertionError
+_ test_original_source_links_have_software_only_positive_and_missing_controls __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1186/test_original_source_links_hav0')
+
+    def test_original_source_links_have_software_only_positive_and_missing_controls(tmp_path):
+        module, producer = api()
+        reg, registry = registration(tmp_path)
+        envelope, _ = raw_fixture()
+>       source_paths = producer.required_capture_source_paths()
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'cloud_edge_robot_arm.research.native_geometry_calibration' has no attribute 'required_capture_source_paths'
+
+tests/test_native_calibration_source.py:526: AttributeError
+____ test_truth_goal_uses_the_reconstructed_owner_policy_recipe[MOVE_ABOVE] ____
+
+skill = 'MOVE_ABOVE'
+
+    @pytest.mark.parametrize("skill", ["MOVE_ABOVE", "APPROACH", "LIFT", "RETREAT",
+                                       "MOVE_TO_REGION", "PLACE"])
+    def test_truth_goal_uses_the_reconstructed_owner_policy_recipe(skill):
+        module, producer = api()
+        from cloud_edge_robot_arm.contracts import SkillName
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            DeterministicGroundingPolicy, _resolved_parameters,
+        )
+        data = owner_values()
+        policy = replace(data["grounding_policy"], clearance_m=0.23, minimum_height_m=0.31)
+        assert isinstance(policy, DeterministicGroundingPolicy)
+        geometry_payload = geometry()
+        geometry_payload["region_world_m"] = [data["grounding_inputs"].destination[k] for k in "xyz"]
+        geometry_payload["support_height_m"] = data["grounding_inputs"].support_height_m
+        scope = module.NativeGeometryRegistration(geometry_payload)
+        state = {
+            "object_geom_position_m": [0.2, 0.1, 0.05],
+            "object_geom_rotation_row_major": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "tcp_position_m": [getattr(data["online"].robot_state.tcp_pose, k) for k in "xyz"],
+        }
+        step = data["original"].requirements["move"].original_step.model_copy(
+            update={"skill": SkillName(skill)})
+        expected = _resolved_parameters(step, data["original"], data["online"],
+                                        data["grounding_inputs"], policy)["target_pose"]
+>       assert producer.reconstruct_truth_endpoint(scope, policy, skill, state) == pytest.approx(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            tuple(expected[k] for k in "xyz"))
+E       AttributeError: module 'cloud_edge_robot_arm.research.native_geometry_calibration' has no attribute 'reconstruct_truth_endpoint'
+
+tests/test_native_calibration_source.py:564: AttributeError
+_____ test_truth_goal_uses_the_reconstructed_owner_policy_recipe[APPROACH] _____
+
+skill = 'APPROACH'
+
+    @pytest.mark.parametrize("skill", ["MOVE_ABOVE", "APPROACH", "LIFT", "RETREAT",
+                                       "MOVE_TO_REGION", "PLACE"])
+    def test_truth_goal_uses_the_reconstructed_owner_policy_recipe(skill):
+        module, producer = api()
+        from cloud_edge_robot_arm.contracts import SkillName
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            DeterministicGroundingPolicy, _resolved_parameters,
+        )
+        data = owner_values()
+        policy = replace(data["grounding_policy"], clearance_m=0.23, minimum_height_m=0.31)
+        assert isinstance(policy, DeterministicGroundingPolicy)
+        geometry_payload = geometry()
+        geometry_payload["region_world_m"] = [data["grounding_inputs"].destination[k] for k in "xyz"]
+        geometry_payload["support_height_m"] = data["grounding_inputs"].support_height_m
+        scope = module.NativeGeometryRegistration(geometry_payload)
+        state = {
+            "object_geom_position_m": [0.2, 0.1, 0.05],
+            "object_geom_rotation_row_major": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "tcp_position_m": [getattr(data["online"].robot_state.tcp_pose, k) for k in "xyz"],
+        }
+        step = data["original"].requirements["move"].original_step.model_copy(
+            update={"skill": SkillName(skill)})
+        expected = _resolved_parameters(step, data["original"], data["online"],
+                                        data["grounding_inputs"], policy)["target_pose"]
+>       assert producer.reconstruct_truth_endpoint(scope, policy, skill, state) == pytest.approx(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            tuple(expected[k] for k in "xyz"))
+E       AttributeError: module 'cloud_edge_robot_arm.research.native_geometry_calibration' has no attribute 'reconstruct_truth_endpoint'
+
+tests/test_native_calibration_source.py:564: AttributeError
+_______ test_truth_goal_uses_the_reconstructed_owner_policy_recipe[LIFT] _______
+
+skill = 'LIFT'
+
+    @pytest.mark.parametrize("skill", ["MOVE_ABOVE", "APPROACH", "LIFT", "RETREAT",
+                                       "MOVE_TO_REGION", "PLACE"])
+    def test_truth_goal_uses_the_reconstructed_owner_policy_recipe(skill):
+        module, producer = api()
+        from cloud_edge_robot_arm.contracts import SkillName
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            DeterministicGroundingPolicy, _resolved_parameters,
+        )
+        data = owner_values()
+        policy = replace(data["grounding_policy"], clearance_m=0.23, minimum_height_m=0.31)
+        assert isinstance(policy, DeterministicGroundingPolicy)
+        geometry_payload = geometry()
+        geometry_payload["region_world_m"] = [data["grounding_inputs"].destination[k] for k in "xyz"]
+        geometry_payload["support_height_m"] = data["grounding_inputs"].support_height_m
+        scope = module.NativeGeometryRegistration(geometry_payload)
+        state = {
+            "object_geom_position_m": [0.2, 0.1, 0.05],
+            "object_geom_rotation_row_major": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "tcp_position_m": [getattr(data["online"].robot_state.tcp_pose, k) for k in "xyz"],
+        }
+        step = data["original"].requirements["move"].original_step.model_copy(
+            update={"skill": SkillName(skill)})
+        expected = _resolved_parameters(step, data["original"], data["online"],
+                                        data["grounding_inputs"], policy)["target_pose"]
+>       assert producer.reconstruct_truth_endpoint(scope, policy, skill, state) == pytest.approx(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            tuple(expected[k] for k in "xyz"))
+E       AttributeError: module 'cloud_edge_robot_arm.research.native_geometry_calibration' has no attribute 'reconstruct_truth_endpoint'
+
+tests/test_native_calibration_source.py:564: AttributeError
+_____ test_truth_goal_uses_the_reconstructed_owner_policy_recipe[RETREAT] ______
+
+skill = 'RETREAT'
+
+    @pytest.mark.parametrize("skill", ["MOVE_ABOVE", "APPROACH", "LIFT", "RETREAT",
+                                       "MOVE_TO_REGION", "PLACE"])
+    def test_truth_goal_uses_the_reconstructed_owner_policy_recipe(skill):
+        module, producer = api()
+        from cloud_edge_robot_arm.contracts import SkillName
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            DeterministicGroundingPolicy, _resolved_parameters,
+        )
+        data = owner_values()
+        policy = replace(data["grounding_policy"], clearance_m=0.23, minimum_height_m=0.31)
+        assert isinstance(policy, DeterministicGroundingPolicy)
+        geometry_payload = geometry()
+        geometry_payload["region_world_m"] = [data["grounding_inputs"].destination[k] for k in "xyz"]
+        geometry_payload["support_height_m"] = data["grounding_inputs"].support_height_m
+        scope = module.NativeGeometryRegistration(geometry_payload)
+        state = {
+            "object_geom_position_m": [0.2, 0.1, 0.05],
+            "object_geom_rotation_row_major": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "tcp_position_m": [getattr(data["online"].robot_state.tcp_pose, k) for k in "xyz"],
+        }
+        step = data["original"].requirements["move"].original_step.model_copy(
+            update={"skill": SkillName(skill)})
+        expected = _resolved_parameters(step, data["original"], data["online"],
+                                        data["grounding_inputs"], policy)["target_pose"]
+>       assert producer.reconstruct_truth_endpoint(scope, policy, skill, state) == pytest.approx(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            tuple(expected[k] for k in "xyz"))
+E       AttributeError: module 'cloud_edge_robot_arm.research.native_geometry_calibration' has no attribute 'reconstruct_truth_endpoint'
+
+tests/test_native_calibration_source.py:564: AttributeError
+__ test_truth_goal_uses_the_reconstructed_owner_policy_recipe[MOVE_TO_REGION] __
+
+skill = 'MOVE_TO_REGION'
+
+    @pytest.mark.parametrize("skill", ["MOVE_ABOVE", "APPROACH", "LIFT", "RETREAT",
+                                       "MOVE_TO_REGION", "PLACE"])
+    def test_truth_goal_uses_the_reconstructed_owner_policy_recipe(skill):
+        module, producer = api()
+        from cloud_edge_robot_arm.contracts import SkillName
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            DeterministicGroundingPolicy, _resolved_parameters,
+        )
+        data = owner_values()
+        policy = replace(data["grounding_policy"], clearance_m=0.23, minimum_height_m=0.31)
+        assert isinstance(policy, DeterministicGroundingPolicy)
+        geometry_payload = geometry()
+        geometry_payload["region_world_m"] = [data["grounding_inputs"].destination[k] for k in "xyz"]
+        geometry_payload["support_height_m"] = data["grounding_inputs"].support_height_m
+        scope = module.NativeGeometryRegistration(geometry_payload)
+        state = {
+            "object_geom_position_m": [0.2, 0.1, 0.05],
+            "object_geom_rotation_row_major": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "tcp_position_m": [getattr(data["online"].robot_state.tcp_pose, k) for k in "xyz"],
+        }
+        step = data["original"].requirements["move"].original_step.model_copy(
+            update={"skill": SkillName(skill)})
+        expected = _resolved_parameters(step, data["original"], data["online"],
+                                        data["grounding_inputs"], policy)["target_pose"]
+>       assert producer.reconstruct_truth_endpoint(scope, policy, skill, state) == pytest.approx(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            tuple(expected[k] for k in "xyz"))
+E       AttributeError: module 'cloud_edge_robot_arm.research.native_geometry_calibration' has no attribute 'reconstruct_truth_endpoint'
+
+tests/test_native_calibration_source.py:564: AttributeError
+______ test_truth_goal_uses_the_reconstructed_owner_policy_recipe[PLACE] _______
+
+skill = 'PLACE'
+
+    @pytest.mark.parametrize("skill", ["MOVE_ABOVE", "APPROACH", "LIFT", "RETREAT",
+                                       "MOVE_TO_REGION", "PLACE"])
+    def test_truth_goal_uses_the_reconstructed_owner_policy_recipe(skill):
+        module, producer = api()
+        from cloud_edge_robot_arm.contracts import SkillName
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            DeterministicGroundingPolicy, _resolved_parameters,
+        )
+        data = owner_values()
+        policy = replace(data["grounding_policy"], clearance_m=0.23, minimum_height_m=0.31)
+        assert isinstance(policy, DeterministicGroundingPolicy)
+        geometry_payload = geometry()
+        geometry_payload["region_world_m"] = [data["grounding_inputs"].destination[k] for k in "xyz"]
+        geometry_payload["support_height_m"] = data["grounding_inputs"].support_height_m
+        scope = module.NativeGeometryRegistration(geometry_payload)
+        state = {
+            "object_geom_position_m": [0.2, 0.1, 0.05],
+            "object_geom_rotation_row_major": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            "tcp_position_m": [getattr(data["online"].robot_state.tcp_pose, k) for k in "xyz"],
+        }
+        step = data["original"].requirements["move"].original_step.model_copy(
+            update={"skill": SkillName(skill)})
+        expected = _resolved_parameters(step, data["original"], data["online"],
+                                        data["grounding_inputs"], policy)["target_pose"]
+>       assert producer.reconstruct_truth_endpoint(scope, policy, skill, state) == pytest.approx(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            tuple(expected[k] for k in "xyz"))
+E       AttributeError: module 'cloud_edge_robot_arm.research.native_geometry_calibration' has no attribute 'reconstruct_truth_endpoint'
+
+tests/test_native_calibration_source.py:564: AttributeError
+_ test_later_terminal_error_cannot_support_a_shorter_current_owner_horizon[12.0-None] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1186/test_later_terminal_error_cann2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76462e99ba40>
+registered_horizon = 12.0, expected = None
+
+    @pytest.mark.parametrize("registered_horizon,expected", [(9.0,None),(10.0,0.001),(12.0,None)])
+    def test_later_terminal_error_cannot_support_a_shorter_current_owner_horizon(
+            tmp_path, monkeypatch, registered_horizon, expected):
+        estimate = isolated_estimate(tmp_path, monkeypatch, horizon=registered_horizon)
+>       assert estimate.geometric_error_bound_m == expected
+E       AssertionError: assert 0.001 == None
+E        +  where 0.001 = NativeCalibrationEstimate(geometric_error_bound_m=0.001, reference_motion_bound_m_s=0.0, reference_digest='bbbbbbbbbbb...egistration_sha256='c028bc4b36b1e758759f60d2cb16ce87c72e8ddfe94008291e386c7a48dfe6a2', full_horizon_s=10.0, reasons=()).geometric_error_bound_m
+
+tests/test_native_calibration_source.py:602: AssertionError
+____ test_changed_registered_owner_policy_cannot_share_another_recipe_score ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1186/test_changed_registered_owner_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7646023e8140>
+
+    def test_changed_registered_owner_policy_cannot_share_another_recipe_score(tmp_path, monkeypatch):
+        estimate = isolated_estimate(tmp_path, monkeypatch, registered_policy="c"*64)
+>       assert estimate.geometric_error_bound_m is None
+E       AssertionError: assert 0.001 is None
+E        +  where 0.001 = NativeCalibrationEstimate(geometric_error_bound_m=0.001, reference_motion_bound_m_s=0.0, reference_digest='bbbbbbbbbbb...egistration_sha256='e0abf01066fa0706442c443dc41ff84a0c82640f2b6a9fc119f295e5dbd3be6e', full_horizon_s=10.0, reasons=()).geometric_error_bound_m
+
+tests/test_native_calibration_source.py:609: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_native_calibration_source.py::test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate[producer_sha]
+FAILED tests/test_native_calibration_source.py::test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate[asset_sha]
+FAILED tests/test_native_calibration_source.py::test_raw_source_or_chronology_mismatch_cannot_be_complete_candidate[post_capture]
+FAILED tests/test_native_calibration_source.py::test_original_source_links_have_software_only_positive_and_missing_controls
+FAILED tests/test_native_calibration_source.py::test_truth_goal_uses_the_reconstructed_owner_policy_recipe[MOVE_ABOVE]
+FAILED tests/test_native_calibration_source.py::test_truth_goal_uses_the_reconstructed_owner_policy_recipe[APPROACH]
+FAILED tests/test_native_calibration_source.py::test_truth_goal_uses_the_reconstructed_owner_policy_recipe[LIFT]
+FAILED tests/test_native_calibration_source.py::test_truth_goal_uses_the_reconstructed_owner_policy_recipe[RETREAT]
+FAILED tests/test_native_calibration_source.py::test_truth_goal_uses_the_reconstructed_owner_policy_recipe[MOVE_TO_REGION]
+FAILED tests/test_native_calibration_source.py::test_truth_goal_uses_the_reconstructed_owner_policy_recipe[PLACE]
+FAILED tests/test_native_calibration_source.py::test_later_terminal_error_cannot_support_a_shorter_current_owner_horizon[12.0-None]
+FAILED tests/test_native_calibration_source.py::test_changed_registered_owner_policy_cannot_share_another_recipe_score
+12 failed, 2 passed, 34 deselected in 6.73s

@@ -1,0 +1,53 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____________ test_null_allocation_read_variation_is_not_live_state _____________
+
+api = <module 'guard_red_baseline' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/capture-state-guard/legacy_baseline.py'>
+contract = <guard_red_baseline.MujocoStateContract object at 0x7f88a1764350>
+model = namespace(nv=3, nC=5, ntendon=0)
+
+    def test_null_allocation_read_variation_is_not_live_state(api, contract, model):
+        data = FakeData(model)
+        data.changing = {"iM", "dof_island"}
+        left, right = snap(api, contract, data, model), snap(api, contract, data, model)
+>       assert left.digest == right.digest
+E       AssertionError: assert 'c339f99d24a7...2e1bf348347f6' == 'a7298b5e9dec...18777fcdf1294'
+E         
+E         - a7298b5e9decf30314c6a237728ba7f83ff731e0b369ee7e13e18777fcdf1294
+E         + c339f99d24a70d9924d2134183066ca163beddf1a6c3614458f2e1bf348347f6
+
+tests/test_mujoco_state_guard.py:97: AssertionError
+__________ test_dual_null_allocation_read_variation_is_not_live_state __________
+
+api = <module 'guard_red_baseline' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/capture-state-guard/legacy_baseline.py'>
+contract = <guard_red_baseline.MujocoStateContract object at 0x7f889ffbb380>
+model = namespace(nv=3, nC=5, ntendon=0)
+
+    def test_dual_null_allocation_read_variation_is_not_live_state(api, contract, model):
+        data = FakeData(model, nefc=2)
+        data.changing = {"efc_AR_rowadr", "efc_AR_rownnz", "efc_pos"}
+>       assert snap(api, contract, data, model).digest == snap(api, contract, data, model).digest
+E       AssertionError: assert '9246029f716d...a013e8b29cf83' == 'a9a9cbdf6a2b...babc372bdc40c'
+E         
+E         - a9a9cbdf6a2be00a056d8d7c513699372c4d7fc195df27de6a3babc372bdc40c
+E         + 9246029f716ddaf195a2c7fd97a90b963b82e4a3b48710a49aaa013e8b29cf83
+
+tests/test_mujoco_state_guard.py:103: AssertionError
+___________________ test_unknown_owning_storage_fails_closed ___________________
+
+api = <module 'guard_red_baseline' from '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/capture-state-guard/legacy_baseline.py'>
+contract = <guard_red_baseline.MujocoStateContract object at 0x7f889ffb9d60>
+model = namespace(nv=3, nC=5, ntendon=0)
+
+    def test_unknown_owning_storage_fails_closed(api, contract, model):
+        data = FakeData(model)
+        data.arrays["unknown_owned"] = np.ones(3)
+>       with pytest.raises(api.StateGuardError, match="owning"):
+E       Failed: DID NOT RAISE <class 'guard_red_baseline.StateGuardError'>
+
+tests/test_mujoco_state_guard.py:109: Failed
+=========================== short test summary info ============================
+FAILED tests/test_mujoco_state_guard.py::test_null_allocation_read_variation_is_not_live_state
+FAILED tests/test_mujoco_state_guard.py::test_dual_null_allocation_read_variation_is_not_live_state
+FAILED tests/test_mujoco_state_guard.py::test_unknown_owning_storage_fails_closed
+3 failed, 35 deselected in 0.13s

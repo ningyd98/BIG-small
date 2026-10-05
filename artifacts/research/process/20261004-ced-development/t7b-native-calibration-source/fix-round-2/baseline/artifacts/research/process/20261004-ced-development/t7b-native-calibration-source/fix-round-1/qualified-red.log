@@ -1,0 +1,62 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_legal_component_ids_cannot_overwrite_unknown_geometry_or_action _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7a8311da28a0>
+
+    def test_legal_component_ids_cannot_overwrite_unknown_geometry_or_action(monkeypatch):
+        """SOFTWARE_ONLY aggregation probe; patched inputs are not native provenance."""
+        module, producer = api()
+        allocations = [
+            {"group_id": "a", "ancestor_ids": ["shared-origin"]},
+            {"group_id": "b", "ancestor_ids": ["shared-origin"]},
+            {"group_id": "a|b", "ancestor_ids": ["independent-origin-ab"]},
+            *[
+                {"group_id": f"z{index}", "ancestor_ids": [f"independent-origin-z{index}"]}
+                for index in range(8)
+            ],
+        ]
+        payload = {
+            "source_scope": "SOFTWARE_ONLY",
+            "geometry": geometry(),
+            "groups": allocations,
+            "supported_actions": {"MOVE_ABOVE": 10.0},
+        }
+    
+        def original_group(registration, registry, allocated, scope):
+            group_id = allocated["group_id"]
+            residual = None if group_id == "a" else 0.001
+            return producer.CalibrationGroupResult(
+                group_id=group_id,
+                status="INCOMPLETE" if residual is None else "COMPLETE",
+                allocated_frames=1,
+                missing_frames=int(residual is None),
+                unknown_frames=0,
+                failed_actions=int(residual is None),
+                geometry_error_m=residual,
+                action_errors_m={"MOVE_ABOVE": residual},
+                reasons=("software_unknown",) if residual is None else (),
+                fingerprints=("software-original:" + group_id,),
+            )
+    
+        registration = object.__new__(module.NativeCalibrationRegistration)
+        monkeypatch.setattr(module.NativeCalibrationRegistration, "revalidate", lambda self: payload)
+        monkeypatch.setattr(producer, "_group", original_group)
+        result = producer.reconstruct_registered_calibration(registration)
+        assert result.assigned_group_count == 11
+        assert result.independent_group_count == 10
+        assert ("a", "b") in result.components and ("a|b",) in result.components
+        actual = tuple(
+            (quantile.group_count, quantile.rank, quantile.bound_m, len(quantile.unavailable_group_ids))
+            for quantile in (result.geometry_quantile, result.action_quantiles["MOVE_ABOVE"])
+        )
+>       assert actual == ((10, 10, None, 1), (10, 10, None, 1))
+E       assert ((9, 9, 0.001... 9, 0.001, 0)) == ((10, 10, Non... 10, None, 1))
+E         
+E         At index 0 diff: (9, 9, 0.001, 0) != (10, 10, None, 1)
+E         Use -v to get more diff
+
+tests/test_native_calibration_source.py:479: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_native_calibration_source.py::test_legal_component_ids_cannot_overwrite_unknown_geometry_or_action
+1 failed, 33 deselected in 0.68s
