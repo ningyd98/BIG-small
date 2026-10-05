@@ -1,0 +1,138 @@
+E501 Line too long (101 > 100)
+  --> src/cloud_edge_robot_arm/research/native_clock_source_v2.py:45:101
+   |
+44 | def _sha(value: Any) -> str:
+45 |     if type(value) is not str or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+   |                                                                                                     ^
+46 |         raise ValueError("exact lowercase SHA256 required")
+47 |     return value
+   |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/research/native_clock_source_v2.py:165:101
+    |
+163 |         if any(p.is_symlink() for p in (self.binary.absolute(), *self.binary.absolute().parents)):
+164 |             raise ValueError("verifier lexical symlink rejected")
+165 |         if not self.binary.is_file() or hashlib.sha256(self.binary.read_bytes()).hexdigest() != self.binary_sha256:
+    |                                                                                                     ^^^^^^^^^^^^^^^
+166 |             raise ValueError("pinned verifier binary changed")
+167 |         pin_worker_source_inventory(
+    |
+
+UP022 Prefer `capture_output` over sending `stdout` and `stderr` to `PIPE`
+   --> src/cloud_edge_robot_arm/research/native_clock_source_v2.py:173:21
+    |
+171 |       def _invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+172 |           self._revalidate()
+173 |           completed = subprocess.run(
+    |  _____________________^
+174 | |             [str(self.binary)], input=canonical_bytes(payload), stdout=subprocess.PIPE,
+175 | |             stderr=subprocess.PIPE, timeout=10, check=False,
+176 | |         )
+    | |_________^
+177 |           if completed.returncode != 0:
+178 |               raise ValueError("official wire verification rejected original packet")
+    |
+help: Replace with `capture_output` keyword argument
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/native_clock_source_v2.py:187:101
+    |
+185 |         return value
+186 |
+187 |     def verify(self, request_b64: str, response_b64: str, public_key_b64: str) -> SignatureDiagnosticsV2:
+    |                                                                                                     ^^^^^
+188 |         _base64(request_b64)
+189 |         _base64(response_b64)
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/native_clock_source_v2.py:223:101
+    |
+221 |     if count < 1 or header > len(message):
+222 |         raise ValueError("original tag header malformed")
+223 |     offsets = [0] + [int.from_bytes(message[4 + i * 4:8 + i * 4], "little") for i in range(count - 1)]
+    |                                                                                                     ^^
+224 |     offsets.append(len(message) - header)
+225 |     tags_at = count * 4
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/native_clock_source_v2.py:286:101
+    |
+284 |         if [pair.sequence for pair in pairs] != sorted({pair.sequence for pair in pairs}):
+285 |             raise ValueError("complete unique ordered pair sequence required")
+286 |         if any(a.mono_after_ns > b.mono_before_ns for a, b in zip(pairs[:-1], pairs[1:], strict=True)):
+    |                                                                                                     ^^^
+287 |             raise ValueError("original pair monotonic order reversed")
+288 |         if any(
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/research/native_clock_source_v2.py:289:101
+    |
+287 |             raise ValueError("original pair monotonic order reversed")
+288 |         if any(
+289 |             not before.verified_after_ns <= pair.mono_before_ns <= pair.mono_after_ns <= after.send_before_ns
+    |                                                                                                     ^^^^^^^^^
+290 |             for pair in pairs
+291 |         ):
+    |
+
+E501 Line too long (101 > 100)
+  --> tests/test_native_clock_source_v2.py:35:101
+   |
+33 |     payload["sequence"] = 9
+34 |     assert rebuilt == original and rebuilt.to_payload()["sequence"] == 1
+35 |     assert rebuilt.digest() == hashlib.sha256(api.canonical_bytes(original.to_payload())).hexdigest()
+   |                                                                                                     ^
+36 |     with pytest.raises(ValueError):
+37 |         api.ClockTupleV2.from_payload({**original.to_payload(), "native": True})
+   |
+
+E501 Line too long (116 > 100)
+  --> tests/test_native_clock_source_v2.py:64:101
+   |
+62 |     clock_api()
+63 |     root = Path(__file__).resolve().parents[1]
+64 |     fixture = json.loads((root / "tools/research/native-clock-v2/testdata/software-only-exchange.json").read_text())
+   |                                                                                                     ^^^^^^^^^^^^^^^^
+65 |     assert fixture["scope"] == "SOFTWARE_ONLY"
+66 |     metadata = json.loads((root / "artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/reset-utc-v2-desi…
+   |
+
+E501 Line too long (186 > 100)
+  --> tests/test_native_clock_source_v2.py:66:101
+   |
+64 | …tware-only-exchange.json").read_text())
+65 | …
+66 | …velopment/t7b-native-calibration-source/reset-utc-v2-design/fix-round-1/go/build-metadata.json").read_text())
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+67 | …
+68 | …"],
+   |
+
+E501 Line too long (104 > 100)
+  --> tests/test_native_clock_source_v2.py:77:101
+   |
+75 |     api = clock_api()
+76 |     fixture, verifier = wire_fixture()
+77 |     result = verifier.verify(fixture["request_b64"], fixture["response_b64"], fixture["public_key_b64"])
+   |                                                                                                     ^^^^
+78 |     assert result.protocol == api.DRAFT08
+79 |     assert result.midpoint_unix_s == fixture["expected"]["midpoint_unix_s"]
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_native_clock_source_v2.py:89:51
+   |
+87 |     fields = {k: fixture[k] for k in ("request_b64", "response_b64", "public_key_b64")}
+88 |     key = {"request": "request_b64", "response": "response_b64", "key": "public_key_b64"}[change]
+89 |     raw = bytearray(base64.b64decode(fields[key])); raw[-1] ^= 1
+   |                                                   ^
+90 |     fields[key] = base64.b64encode(raw).decode()
+91 |     with pytest.raises(ValueError):
+   |
+
+Found 12 errors.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

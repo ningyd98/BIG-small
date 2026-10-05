@@ -1,0 +1,158 @@
+{"actual_subprocess_calls": 2, "after_sha256": "5c674edfa295231f0ec7888f04b94dc3b9c13675b4ee05cc2ec03104a057f3c5", "before_sha256": "930095fe5f13ab9522691fbedba1273f56a6a9f27823038093f4b99de7b6d313", "drift_pin": "binary", "intervals": 2, "reasons": [], "scope": "SOFTWARE_ONLY", "subprocess_outputs_fabricated": false}
+F{"actual_subprocess_calls": 2, "after_sha256": "573e0c3d11031bf4ca71394bb7b3e2c9c09ff52be01da076d59645ea93ca5f06", "before_sha256": "d1ccb4b15d81068e8fb24593abed070b01a8d2cadadfac217538cc912c9b3580", "drift_pin": "source", "intervals": 2, "reasons": [], "scope": "SOFTWARE_ONLY", "subprocess_outputs_fabricated": false}
+F
+=================================== FAILURES ===================================
+_ test_final_b_persistent_pin_drift_after_precheck_rejects_real_signed_replay[binary] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1215/test_final_b_persistent_pin_dr0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b7c4ff1b800>
+drift_pin = 'binary'
+
+    @pytest.mark.parametrize("drift_pin", ["binary", "source"])
+    def test_final_b_persistent_pin_drift_after_precheck_rejects_real_signed_replay(
+        tmp_path, monkeypatch, drift_pin
+    ):
+        api = clock_api()
+        fixture, original = wire_fixture()
+        binary = tmp_path / "wire-copy"
+        binary.write_bytes(original.binary.read_bytes())
+        binary.chmod(original.binary.stat().st_mode)
+        for name in original.source_hashes:
+            target = tmp_path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((original.source_root / name).read_bytes())
+        verifier = api.GoWireVerifierV2(
+            binary,
+            binary_sha256=original.binary_sha256,
+            source_root=tmp_path,
+            source_hashes=original.source_hashes,
+        )
+        before = api.ClockExchangeOriginalV2.from_payload(fixture["causal_exchanges"]["A"])
+        after = api.ClockExchangeOriginalV2.from_payload(fixture["causal_exchanges"]["B"])
+        positive = api.verify_causal_slab(
+            pairs(), before, after, verifier, acquisition_sha256="a" * 64
+        )
+        assert not positive.reasons and len(positive.conditional_pair_utc_intervals) == 2
+        changed_path = (
+            binary if drift_pin == "binary" else tmp_path / "tools/research/native-clock-v2/main.go"
+        )
+        previous_hash = hashlib.sha256(changed_path.read_bytes()).hexdigest()
+        real_run = api.subprocess.run
+        actual_completions = []
+    
+        def append_before_real_final_b(*args, **kwargs):
+            if len(actual_completions) == 1:
+                with changed_path.open("ab") as handle:
+                    handle.write(b"SOFTWARE_ONLY appended drift between pin check and final B exec")
+            completed = real_run(*args, **kwargs)
+            actual_completions.append(completed)
+            return completed
+    
+        monkeypatch.setattr(api.subprocess, "run", append_before_real_final_b)
+        result = api.verify_causal_slab(pairs(), before, after, verifier, acquisition_sha256="a" * 64)
+        assert len(actual_completions) == 2
+        assert all(completed.returncode == 0 for completed in actual_completions)
+        assert all(
+            json.loads(completed.stdout)["protocol"] == "draft-ietf-ntp-roughtime-08"
+            for completed in actual_completions
+        )
+        assert hashlib.sha256(changed_path.read_bytes()).hexdigest() != previous_hash
+        print(
+            json.dumps(
+                {
+                    "scope": "SOFTWARE_ONLY",
+                    "drift_pin": drift_pin,
+                    "actual_subprocess_calls": len(actual_completions),
+                    "before_sha256": previous_hash,
+                    "after_sha256": hashlib.sha256(changed_path.read_bytes()).hexdigest(),
+                    "intervals": len(result.conditional_pair_utc_intervals),
+                    "reasons": result.reasons,
+                    "subprocess_outputs_fabricated": False,
+                },
+                sort_keys=True,
+            )
+        )
+>       assert result.reasons and not result.conditional_pair_utc_intervals
+E       AssertionError: assert (())
+E        +  where () = CausalSlabDiagnosticsV2(conditional_pair_utc_intervals=(('e5960da988691b1106a26e9bc3b347ee0353a73210787956c7e925d22b7b...=(), native_authority='UNAVAILABLE', utc_calibration='UNAVAILABLE', issuer_accuracy='CONDITIONAL_UNVERIFIED_ASSERTION').reasons
+
+tests/test_native_clock_source_v2.py:334: AssertionError
+_ test_final_b_persistent_pin_drift_after_precheck_rejects_real_signed_replay[source] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1215/test_final_b_persistent_pin_dr1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b7c4db258b0>
+drift_pin = 'source'
+
+    @pytest.mark.parametrize("drift_pin", ["binary", "source"])
+    def test_final_b_persistent_pin_drift_after_precheck_rejects_real_signed_replay(
+        tmp_path, monkeypatch, drift_pin
+    ):
+        api = clock_api()
+        fixture, original = wire_fixture()
+        binary = tmp_path / "wire-copy"
+        binary.write_bytes(original.binary.read_bytes())
+        binary.chmod(original.binary.stat().st_mode)
+        for name in original.source_hashes:
+            target = tmp_path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((original.source_root / name).read_bytes())
+        verifier = api.GoWireVerifierV2(
+            binary,
+            binary_sha256=original.binary_sha256,
+            source_root=tmp_path,
+            source_hashes=original.source_hashes,
+        )
+        before = api.ClockExchangeOriginalV2.from_payload(fixture["causal_exchanges"]["A"])
+        after = api.ClockExchangeOriginalV2.from_payload(fixture["causal_exchanges"]["B"])
+        positive = api.verify_causal_slab(
+            pairs(), before, after, verifier, acquisition_sha256="a" * 64
+        )
+        assert not positive.reasons and len(positive.conditional_pair_utc_intervals) == 2
+        changed_path = (
+            binary if drift_pin == "binary" else tmp_path / "tools/research/native-clock-v2/main.go"
+        )
+        previous_hash = hashlib.sha256(changed_path.read_bytes()).hexdigest()
+        real_run = api.subprocess.run
+        actual_completions = []
+    
+        def append_before_real_final_b(*args, **kwargs):
+            if len(actual_completions) == 1:
+                with changed_path.open("ab") as handle:
+                    handle.write(b"SOFTWARE_ONLY appended drift between pin check and final B exec")
+            completed = real_run(*args, **kwargs)
+            actual_completions.append(completed)
+            return completed
+    
+        monkeypatch.setattr(api.subprocess, "run", append_before_real_final_b)
+        result = api.verify_causal_slab(pairs(), before, after, verifier, acquisition_sha256="a" * 64)
+        assert len(actual_completions) == 2
+        assert all(completed.returncode == 0 for completed in actual_completions)
+        assert all(
+            json.loads(completed.stdout)["protocol"] == "draft-ietf-ntp-roughtime-08"
+            for completed in actual_completions
+        )
+        assert hashlib.sha256(changed_path.read_bytes()).hexdigest() != previous_hash
+        print(
+            json.dumps(
+                {
+                    "scope": "SOFTWARE_ONLY",
+                    "drift_pin": drift_pin,
+                    "actual_subprocess_calls": len(actual_completions),
+                    "before_sha256": previous_hash,
+                    "after_sha256": hashlib.sha256(changed_path.read_bytes()).hexdigest(),
+                    "intervals": len(result.conditional_pair_utc_intervals),
+                    "reasons": result.reasons,
+                    "subprocess_outputs_fabricated": False,
+                },
+                sort_keys=True,
+            )
+        )
+>       assert result.reasons and not result.conditional_pair_utc_intervals
+E       AssertionError: assert (())
+E        +  where () = CausalSlabDiagnosticsV2(conditional_pair_utc_intervals=(('e5960da988691b1106a26e9bc3b347ee0353a73210787956c7e925d22b7b...=(), native_authority='UNAVAILABLE', utc_calibration='UNAVAILABLE', issuer_accuracy='CONDITIONAL_UNVERIFIED_ASSERTION').reasons
+
+tests/test_native_clock_source_v2.py:334: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_native_clock_source_v2.py::test_final_b_persistent_pin_drift_after_precheck_rejects_real_signed_replay[binary]
+FAILED tests/test_native_clock_source_v2.py::test_final_b_persistent_pin_drift_after_precheck_rejects_real_signed_replay[source]
+2 failed, 18 deselected in 0.34s

@@ -1,0 +1,37 @@
+..............F...                                                       [100%]
+=================================== FAILURES ===================================
+____ test_causal_boundary_detaches_caller_list_and_public_exchange_objects _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79f03e3e7f20>
+
+    def test_causal_boundary_detaches_caller_list_and_public_exchange_objects(monkeypatch):
+        api = clock_api()
+        fixture, verifier = wire_fixture()
+        before = api.ClockExchangeOriginalV2.from_payload(fixture["causal_exchanges"]["A"])
+        after = api.ClockExchangeOriginalV2.from_payload(fixture["causal_exchanges"]["B"])
+        original_pairs = list(pairs())
+        verify = verifier.verify
+    
+        def mutate_then_verify(*args):
+            original_pairs.clear()
+            object.__setattr__(after, "clock_domain_id", "caller-drift-during-replay")
+            return verify(*args)
+    
+        monkeypatch.setattr(verifier, "verify", mutate_then_verify)
+        result = api.verify_causal_slab(
+            original_pairs,
+            before,
+            after,
+            verifier,
+            acquisition_sha256="a" * 64,
+        )
+>       assert not result.reasons and len(result.conditional_pair_utc_intervals) == 2
+E       AssertionError: assert (not () and 0 == 2)
+E        +  where () = CausalSlabDiagnosticsV2(conditional_pair_utc_intervals=(), reasons=(), native_authority='UNAVAILABLE', utc_calibration='UNAVAILABLE', issuer_accuracy='CONDITIONAL_UNVERIFIED_ASSERTION').reasons
+E        +  and   0 = len(())
+E        +    where () = CausalSlabDiagnosticsV2(conditional_pair_utc_intervals=(), reasons=(), native_authority='UNAVAILABLE', utc_calibration='UNAVAILABLE', issuer_accuracy='CONDITIONAL_UNVERIFIED_ASSERTION').conditional_pair_utc_intervals
+
+tests/test_native_clock_source_v2.py:211: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_native_clock_source_v2.py::test_causal_boundary_detaches_caller_list_and_public_exchange_objects
+1 failed, 17 passed in 0.37s

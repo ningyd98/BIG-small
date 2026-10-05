@@ -1,0 +1,10 @@
+# R02 bounded interface rulings
+
+Astra plan SHA 7e7514b37b7351208176c1d660771facd7dadf668eb3a5cb9de0b3c43aa50579 supersedes the earlier request interface. Original design/review/checkpoint logs stay frozen.
+
+- Only Go wire and Python causal software are implemented in R02. R03 RESET/publication/worker remains deferred until this source is quiet and independently reviewed; no copied owner handle is accepted as authority.
+- Go request stdin is op=request plus previous_reply_b64, blind_b64 and public_key_b64; stdout exactly nonce_b64/request_b64. The future owning Python coordinator derives and records the 32-byte blind using source-random material and immutable slab commitment. The Go wrapper forwards that effective blind to official CreateRequest with the sole draft08 choice. Request formation alone proves no actual exchange.
+- Go verify stdin is op=verify plus request_b64/response_b64/public_key_b64; stdout exactly protocol/midpoint_unix_s/radius_s. Strict framing and leftover INDX are checked before official verification; no own signature algorithm is introduced.
+- The public Python ClockExchangeOriginalV2 contains15 exact original metadata fields. Its A/B commitment proof is separate from the minimal Go CLI, so the signature helper does not manufacture collection timing/issuer authenticity.
+- A local fixture key, source/binary consistency and original packet replay prove software controls only. Conditional issuer accuracy is unverified; utc_calibration and native_authority remain UNAVAILABLE. R02 never creates an app-owned provider or changes any native consumer.
+- Draft08 uses 32-byte nonce/blind and Unix UTC seconds. Per-pair conservative quantization padding is1s at each enclosing endpoint. The conditional width is (midpoint_B-midpoint_A)+radius_A+radius_B+2s, including the actual slab duration/network coverage through causal ordering. A finite width can exceed the frozen TTL/deadline; R03 must measure that before any independent-group campaign. Do not use NTP/rootdistance/RTT2 or silent issuer/version changes to shrink it.
