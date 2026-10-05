@@ -1,0 +1,53 @@
+--- old
+
++++ v2
+
+@@ -1,8 +1,13 @@
+
+-def verify_attempt(directory: Path, *, decode=False):
+-    module = runner_api()
++def verify_attempt(input_directory: Path, *, output_directory: Path, decode=False):
++    """Replay existing bytes; write derived evidence only outside the input tree."""
++    directory = input_directory.resolve(strict=True)
++    output_directory = output_directory.resolve()
++    if output_directory == directory or directory in output_directory.parents:
++        raise ValueError('output directory must be outside input directory')
++    output_directory.mkdir(parents=True, exist_ok=False)
+     summary = json.loads((directory / 'summary.json').read_text())
+     terminal = json.loads((directory / 'terminal.json').read_text())
+-    report = verify_series(directory / 'whole-step', decode=decode, output=directory / 'offline-observations.jsonl')
++    report = verify_series(directory / 'whole-step', decode=decode, output=output_directory / 'offline-observations.jsonl')
+     failures = report['failures']
+     series_summary = json.loads((directory / 'whole-step/summary.json').read_text())
+     index_ends = {}
+@@ -19,7 +24,7 @@
+
+     original_commands = []
+     sequence = 0
+     last_ns = None
+-    for row in module.read_jsonl_gzip(directory / 'nominal-journal.jsonl.gz'):
++    for row in read_jsonl_gzip(directory / 'nominal-journal.jsonl.gz'):
+         clock = row['clock']
+         before, after = (clock['monotonic_before_ns'], clock['monotonic_after_ns'])
+         if row['record_seq'] != sequence + 1 or before > after or (last_ns is not None and before < last_ns):
+@@ -117,7 +122,7 @@
+
+             control = operations.get((row['control_operation_id'], 'END'))
+             physics_begin = operations.get((row['physics_operation_id'], 'BEGIN'))
+             control_begin = operations.get((row['control_operation_id'], 'BEGIN'))
+-            actuator = actuators.get(step - 1)
++            actuator = actuators.get(step)
+             if physics is not None:
+                 physical_source = (physics['source'].get('result') or {}).get('physics_state', {})
+                 if not same_json(frame_identity(physics['source']), identity) or not same_json(frame_identity(physical_source), identity):
+@@ -131,7 +136,7 @@
+
+             begin, end = (actions.get((ordinal, 'ACTION_BEGIN')), actions.get((ordinal, 'ACTION_END')))
+             if begin is None or end is None or (not begin['start_step'] < step <= end['end_step']) or (not begin['clock']['monotonic_after_ns'] <= row['saved']['monotonic_begin_ns'] <= row['clock']['monotonic_after_ns'] <= end['clock']['monotonic_before_ns']):
+                 failures.append(f'step {step}: original action span mismatch')
+-    report.update(integrity_status='VERIFIED' if not failures else 'INCOMPLETE_OR_INVALID', association_scope='EXCLUDED_TEACHER_TRACE_NOT_NATIVE_RAW_V3', nominal_event_count=sequence, source_authenticity='UNKNOWN', original_action_begins=summary['action_begins'], original_action_ends=summary['action_ends'])
+-    with (directory / 'offline-verification.json').open('x') as stream:
++    report.update(reader_version=READER_VERSION, base_verifier_source_sha256=BASE_VERIFIER_SOURCE_SHA256, input_directory=str(directory), actuator_step_domain='UPCOMING_PHYSICS_STEP_N', integrity_status='VERIFIED' if not failures else 'INCOMPLETE_OR_INVALID', association_scope='EXCLUDED_TEACHER_TRACE_NOT_NATIVE_RAW_V3', nominal_event_count=sequence, source_authenticity='UNKNOWN', original_action_begins=summary['action_begins'], original_action_ends=summary['action_ends'])
++    with (output_directory / 'offline-verification.json').open('x') as stream:
+         stream.write(json.dumps(report, indent=2, allow_nan=False) + '\n')
+     return report

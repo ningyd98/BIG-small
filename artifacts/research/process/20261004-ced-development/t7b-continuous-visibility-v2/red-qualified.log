@@ -1,0 +1,60 @@
+Frozen baseline qualification after the original pre-implementation 2 RED (0.94 s).
+Target: old verifier SHA 19225d13e058cb428b8cf3a99095bde6b46bfd985bcb3290e4824fdd4b0b4e6f.
+No old input/source writes: isolated output directories only.
+Exit code: 1
+
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_real_failed_prefix_has_upcoming_step_join_without_false_errors ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1181/test_real_failed_prefix_has_up0')
+
+    def test_real_failed_prefix_has_upcoming_step_join_without_false_errors(tmp_path):
+        actual = PRIOR / "attempt-1"
+        before = hashes(actual)
+        report = verify(actual, tmp_path / "derived")
+        assert hashes(actual) == before
+        assert report["integrity_status"] == "INCOMPLETE_OR_INVALID"
+        assert (
+            report["allocated_steps"],
+            report["verified_frames"],
+            report["failed_or_missing_frames"],
+        ) == (
+            11,
+            10,
+            1,
+        )
+        assert report["original_action_begins"] == report["original_action_ends"] == 0
+        assert report["original_max_sample_gap_s"] == 0.005
+        assert report["max_sim_sample_gap_s"] <= 0.005
+        assert any("step 10: missing saved acquisition" in error for error in report["failures"])
+>       assert not [
+            error for error in report["failures"] if any(kind in error for kind in PREFIX_ERRORS)
+        ]
+E       AssertionError: assert not ['step 1: CONTROL/PHYSICS association mismatch', 'step 2: CONTROL/actuator/PHYSICS/acquisition clocks mismatch', 'step...ROL/actuator/PHYSICS/acquisition clocks mismatch', 'step 6: CONTROL/actuator/PHYSICS/acquisition clocks mismatch', ...]
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/test_cpu.py:109: AssertionError
+___________ test_minimal_upcoming_step_trace_has_exact_nominal_join ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1181/test_minimal_upcoming_step_tra0')
+
+    def test_minimal_upcoming_step_trace_has_exact_nominal_join(tmp_path):
+        source = tmp_path / "input"
+        source.mkdir()
+        upcoming_attempt(source)
+        before = hashes(source)
+        report = verify(source, tmp_path / "output")
+        assert hashes(source) == before
+>       assert report["integrity_status"] == "VERIFIED", report["failures"]
+E       AssertionError: ['step 1: CONTROL/PHYSICS association mismatch', 'step 2: CONTROL/actuator/PHYSICS/acquisition clocks mismatch']
+E       assert 'INCOMPLETE_OR_INVALID' == 'VERIFIED'
+E         
+E         - VERIFIED
+E         + INCOMPLETE_OR_INVALID
+
+artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/test_cpu.py:122: AssertionError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/test_cpu.py::test_real_failed_prefix_has_upcoming_step_join_without_false_errors
+FAILED artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/test_cpu.py::test_minimal_upcoming_step_trace_has_exact_nominal_join
+2 failed, 15 deselected in 0.93s
+

@@ -1,0 +1,127 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_journal_failure_keeps_denominator_and_original_exception[CAPTURE_BEGIN] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1173/test_journal_failure_keeps_den0')
+journal_failure = 'CAPTURE_BEGIN'
+
+    @pytest.mark.parametrize("journal_failure", ["CAPTURE_BEGIN", "CAPTURE_END", "CAPTURE_FAILED"])
+    def test_journal_failure_keeps_denominator_and_original_exception(tmp_path, journal_failure):
+        backend, reference = fake_backend(), fake_reference()
+        renderer = FakeRenderer()
+        original_error = ValueError("qualified original camera error")
+        journal_error = OSError("qualified " + journal_failure + " publication error")
+    
+        def capture(data, **kwargs):
+            if journal_failure == "CAPTURE_FAILED":
+                raise original_error
+            renderer.update_scene(data, camera=0)
+            renderer.render()
+            renderer.render()
+            return SimpleNamespace(latency_ms=0.0), (), {}, ("equal", "equal")
+    
+        def emit(event, **payload):
+            if event == journal_failure:
+                raise journal_error
+    
+        backend._camera = SimpleNamespace(_renderer=renderer, _capture=capture)
+        journal = SimpleNamespace(ensure=lambda _: None, emit=emit)
+        store = module.SnapshotStore(tmp_path / "snapshots", reference)
+        probe = module.CaptureProbe(backend, reference, store, journal, tmp_path)
+        with pytest.raises(Exception) as caught:
+            probe.capture()
+        if journal_failure == "CAPTURE_FAILED":
+            assert caught.value is original_error
+            assert "qualified CAPTURE_FAILED publication error" in caught.value.__notes__[0]
+        else:
+            assert caught.value is journal_error
+>       assert (probe.calls, probe.completed, probe.failed) == (1, 0, 1)
+E       assert (1, 0, 0) == (1, 0, 1)
+E         
+E         At index 2 diff: 0 != 1
+E         Use -v to get more diff
+
+artifacts/research/process/20261004-ced-development/capture-state-diagnosis/test_cpu.py:441: AssertionError
+__ test_journal_failure_keeps_denominator_and_original_exception[CAPTURE_END] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1173/test_journal_failure_keeps_den1')
+journal_failure = 'CAPTURE_END'
+
+    @pytest.mark.parametrize("journal_failure", ["CAPTURE_BEGIN", "CAPTURE_END", "CAPTURE_FAILED"])
+    def test_journal_failure_keeps_denominator_and_original_exception(tmp_path, journal_failure):
+        backend, reference = fake_backend(), fake_reference()
+        renderer = FakeRenderer()
+        original_error = ValueError("qualified original camera error")
+        journal_error = OSError("qualified " + journal_failure + " publication error")
+    
+        def capture(data, **kwargs):
+            if journal_failure == "CAPTURE_FAILED":
+                raise original_error
+            renderer.update_scene(data, camera=0)
+            renderer.render()
+            renderer.render()
+            return SimpleNamespace(latency_ms=0.0), (), {}, ("equal", "equal")
+    
+        def emit(event, **payload):
+            if event == journal_failure:
+                raise journal_error
+    
+        backend._camera = SimpleNamespace(_renderer=renderer, _capture=capture)
+        journal = SimpleNamespace(ensure=lambda _: None, emit=emit)
+        store = module.SnapshotStore(tmp_path / "snapshots", reference)
+        probe = module.CaptureProbe(backend, reference, store, journal, tmp_path)
+        with pytest.raises(Exception) as caught:
+            probe.capture()
+        if journal_failure == "CAPTURE_FAILED":
+            assert caught.value is original_error
+            assert "qualified CAPTURE_FAILED publication error" in caught.value.__notes__[0]
+        else:
+            assert caught.value is journal_error
+>       assert (probe.calls, probe.completed, probe.failed) == (1, 0, 1)
+E       assert (1, 1, 1) == (1, 0, 1)
+E         
+E         At index 1 diff: 1 != 0
+E         Use -v to get more diff
+
+artifacts/research/process/20261004-ced-development/capture-state-diagnosis/test_cpu.py:441: AssertionError
+_ test_journal_failure_keeps_denominator_and_original_exception[CAPTURE_FAILED] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1173/test_journal_failure_keeps_den2')
+journal_failure = 'CAPTURE_FAILED'
+
+    @pytest.mark.parametrize("journal_failure", ["CAPTURE_BEGIN", "CAPTURE_END", "CAPTURE_FAILED"])
+    def test_journal_failure_keeps_denominator_and_original_exception(tmp_path, journal_failure):
+        backend, reference = fake_backend(), fake_reference()
+        renderer = FakeRenderer()
+        original_error = ValueError("qualified original camera error")
+        journal_error = OSError("qualified " + journal_failure + " publication error")
+    
+        def capture(data, **kwargs):
+            if journal_failure == "CAPTURE_FAILED":
+                raise original_error
+            renderer.update_scene(data, camera=0)
+            renderer.render()
+            renderer.render()
+            return SimpleNamespace(latency_ms=0.0), (), {}, ("equal", "equal")
+    
+        def emit(event, **payload):
+            if event == journal_failure:
+                raise journal_error
+    
+        backend._camera = SimpleNamespace(_renderer=renderer, _capture=capture)
+        journal = SimpleNamespace(ensure=lambda _: None, emit=emit)
+        store = module.SnapshotStore(tmp_path / "snapshots", reference)
+        probe = module.CaptureProbe(backend, reference, store, journal, tmp_path)
+        with pytest.raises(Exception) as caught:
+            probe.capture()
+        if journal_failure == "CAPTURE_FAILED":
+>           assert caught.value is original_error
+E           AssertionError: assert OSError('qualified CAPTURE_FAILED publication error') is ValueError('qualified original camera error')
+E            +  where OSError('qualified CAPTURE_FAILED publication error') = <ExceptionInfo OSError('qualified CAPTURE_FAILED publication error') tblen=3>.value
+
+artifacts/research/process/20261004-ced-development/capture-state-diagnosis/test_cpu.py:437: AssertionError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/capture-state-diagnosis/test_cpu.py::test_journal_failure_keeps_denominator_and_original_exception[CAPTURE_BEGIN]
+FAILED artifacts/research/process/20261004-ced-development/capture-state-diagnosis/test_cpu.py::test_journal_failure_keeps_denominator_and_original_exception[CAPTURE_END]
+FAILED artifacts/research/process/20261004-ced-development/capture-state-diagnosis/test_cpu.py::test_journal_failure_keeps_denominator_and_original_exception[CAPTURE_FAILED]
+3 failed, 28 deselected in 0.17s

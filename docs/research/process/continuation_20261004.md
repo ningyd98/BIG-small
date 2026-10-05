@@ -367,3 +367,9 @@ Git交付核验：阶段49快照d3472a5与本步记录器f7860ffd已推送研发
 详见[第51步报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/report-step51.md)、[真实失败审查](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/independent-actual-failure-review.md)、[参照独审](../../../artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/task1-independent-review.md)与[第51步机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step51.json)。本实测为上一outboard场景的开发衍生component，新名字不等于新独立校准组。主线T12/18、T13并行，Max、真实几何/完整动作/连续-contact支持、风险、机会/200故障、合格B0及INITIAL/METHOD/FINAL继续，边缘型号后置，formal_accepted=false。验证后的实现、报告、相关失败证据按用户授权提交推送，活动中未审查的新代码不混入该交付。
 
 第51步Git交付：实现与本步证据已提交 `f3f59c412b3dc5d75222525a06495cd0fcecd02f` 并推送研发分支，远端、本地与上游SHA一致，push退出0。已审查范围140个变更路径；活动诊断/Task2未混入，失败原始数据与真实步号P2均保留。详见[交付记录](../../../artifacts/research/process/20261004-ced-development/git-delivery-step51.json)；本段随后续文档提交推送。
+
+## 第52步：逐数组真实诊断与v2步号核验（2026-10-05）
+
+第52步完成一次有界逐数组诊断及v2离线核验器：新诊断10被动步、11实时采集/11保存/0失败，末尾copy guard退出1、未验证clone；旧11/10/1和未完成horizon不改写。142份原始文件/7,876,865字节、33来源/19依赖及旧保护件独审匹配；读取新owning数组的具名差异支持限定假阳性解释。v2核验器17项及独立同范围17项通过，重放保留六条真实失败；新11帧离线OBSERVED只限被动前缀。native来源适用性与新guard继续开发，活动源码未纳入本步交付。主线T12/18、T13并行，Max/native/风险及INITIAL/METHOD/FINAL未验收，边缘型号后置。
+
+限定实际结果：诊断唯一执行退出1，copy只尝试未验证、0 clone调用、0教师动作；原试验保留。新11帧OBSERVED不能算全horizon连续证书或新独立校准组。详见[本步报告](../../../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/report-step52.md)、[原始独审](../../../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/actual-independent-review.md)、[新核验器独审](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility-v2/independent-review.md)及[机器索引](../../../artifacts/research/process/20261004-ced-development/implementation-status-step52.json)。来源/预注册/完整horizon/policy与新guard仍实施中，本步交付不代表native或正式验收。

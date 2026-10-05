@@ -8,7 +8,7 @@
 
 用户选择增加可见姿态标记并保留顶视相机与控制器。独立开发v1资产/检测已通过73项CPU及源/原始帧hash独审；同一物理相机的320×240严格识别UNKNOWN，新640×480单帧OBSERVED。第二版本保留原红色边缘，17份源与77项CPU独审通过，新的实际静态帧识别ID7并看到红色边缘；完整目标关联和连续/校准/native证书仍缺，不自动切换默认配置或抓取profile。一次开发搬运的147份产物/完整raw重建独审通过，离线物理评分成功，但全部9个动作后边界标记UNKNOWN，不能以物理成功代替视觉可观测性。
 
-阶段总结已到第51步：源冻结后唯一逐步实测在step10被data数组一致性保护终止，原120步settling未完成；13次camera调用（setup1/bootstrap1/逐步11），10帧保存、1失败、0教师动作，原attempt保留且不重跑。十份成功前缀仅为OBSERVED，不证明完整horizon。动作参照新模块29项及含旧范围的93项CPU通过，root独立29通过；来源/参数/完整时长重建已实现，但无界/VALID/准入。真实日志揭示ACTUATOR登记upcoming步n，原reader n-1误关联另行修正；逐数组诊断准备中。主线T12/18、T13并行，真实Max、基本/连续来源、风险及INITIAL/METHOD/FINAL未验收，边缘型号后置。见[本步报告](../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/report-step51.md)、[阶段总结](research/process/continuation_20261004.md)与[Git记录](research/process/git_delivery_20261005.md)。
+第52步完成一次有界逐数组诊断及v2离线核验器：新诊断10被动步、11实时采集/11保存/0失败，末尾copy guard退出1、未验证clone；旧11/10/1和未完成horizon不改写。142份原始文件/7,876,865字节、33来源/19依赖及旧保护件独审匹配；读取新owning数组的具名差异支持限定假阳性解释。v2核验器17项及独立同范围17项通过，重放保留六条真实失败；新11帧离线OBSERVED只限被动前缀。native来源适用性与新guard继续开发，活动源码未纳入本步交付。主线T12/18、T13并行，Max/native/风险及INITIAL/METHOD/FINAL未验收，边缘型号后置。 见[本步报告](../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/report-step52.md)、[阶段总结](research/process/continuation_20261004.md)与[Git记录](research/process/git_delivery_20261005.md)。
 
 ## 2026-10-04 夹爪修复应用到全项目
 

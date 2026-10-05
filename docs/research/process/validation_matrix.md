@@ -2,7 +2,7 @@
 
 **当前新路径验收入口：** [云、边、端总计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)及[逐步阶段总结](continuation_20261004.md)。下表分列软件交付和真实未满足项；T8父任务保持IN_PROGRESS，边缘模型T12b后置。历史验证表保留原验收时点。
 
-**第51步端侧更新：** 源冻结后的实际attempt只完成10/120 settling步，原数据数组保护在第11次逐步capture拒绝；10saved/1failed、0教师动作及全部原始来源保留。前缀十帧可见不算完整连续证书。动作参照29新项/93定向项及root独立29通过，不给motion/error界或native权限。真实ACTUATOR步n关联P2另修，逐数组诊断准备中；Max/基本几何/风险/INITIAL/METHOD/FINAL未验收。见[本步报告](../../../artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/report-step51.md)与[Git记录](git_delivery_20261005.md)。
+**第52步端侧更新：** 第52步完成一次有界逐数组诊断及v2离线核验器：新诊断10被动步、11实时采集/11保存/0失败，末尾copy guard退出1、未验证clone；旧11/10/1和未完成horizon不改写。142份原始文件/7,876,865字节、33来源/19依赖及旧保护件独审匹配；读取新owning数组的具名差异支持限定假阳性解释。v2核验器17项及独立同范围17项通过，重放保留六条真实失败；新11帧离线OBSERVED只限被动前缀。native来源适用性与新guard继续开发，活动源码未纳入本步交付。主线T12/18、T13并行，Max/native/风险及INITIAL/METHOD/FINAL未验收，边缘型号后置。 见[本步报告](../../../artifacts/research/process/20261004-ced-development/capture-state-diagnosis/report-step52.md)。
 
 | 新执行单元 | 计划验证与原始证据 | 状态 |
 |---|---|---|

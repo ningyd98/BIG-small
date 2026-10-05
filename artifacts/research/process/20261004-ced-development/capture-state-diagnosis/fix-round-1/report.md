@@ -1,0 +1,9 @@
+# Narrow journal lifecycle fix
+
+Current status: **CPU_PASS_PREPARED_PENDING_INDEPENDENT_REVIEW_NOT_EXECUTED**. Initial preparation, independent REQUEST_FIX, initial 33-source archive and all 15 bounded baseline files are preserved.
+
+Three qualified fake-only RED regressions reproduced BEGIN failure missing the failed denominator, END failure double-counting completion, and FAILED publication masking the original camera exception. The minimal fix places BEGIN publication inside the attempt exception boundary, counts completion only after successful END publication, and records a failed-publication note while preserving the original exception. Allocated attempts and actual `camera_calls_started` are now separate; no camera call is claimed when BEGIN publication fails.
+
+The original 28 tests plus 3 regressions pass: **31 passed in 0.16 s**. Scoped Ruff and AST pass. The unchanged original 32 live and archived inputs, all 21 failed-attempt raw files, all 15 baseline files and the initial REQUEST_FIX hash match. The refreshed closure remains 33 repository references with the same 19 external dependency pins; exact bytes and all hashes are in `report.json` and `source-check.json`. Only the new diagnostic execution script and CPU test changed; original controller/backend/camera/teacher sources did not.
+
+The diagnostic is still a single new ten-step passive investigation within the same development component: eleven live captures and at most one gated terminal clone capture, no commands, teacher actions or decoder, no retry of the original failed episode. A rejected copy is logged without fallback. No actual diagnostic has run. Root will perform the sole actual invocation after independent review. Root cause remains unresolved; the original state guard and all native/continuous/future authority blocks remain intact.
