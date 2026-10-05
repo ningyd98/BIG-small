@@ -82,3 +82,9 @@ This audit inspected filenames, sizes, content hashes, current literal source/te
 只读检查发现22个旧临时对象/打包文件，约128.5 GB，当前HEAD树约1.59 GB、64644文件，最大单文件低于100 MB；两者不能混作本次提交大小。磁盘仍约716 GB可用，gc.log仅报告不可达松散对象过多。未发现匹配Git/repack进程或可读FD占用，但进程检查受权限限制，不据此删除对象。
 
 已仅在本仓库将 `gc.auto` 从未设置改为0，暂停失败的自动整理；可用 `git config --local --unset gc.auto` 恢复。全部临时文件、packs、reflog及可恢复对象原地保留，没有运行prune/gc、改写历史或回收空间。受控存储清理另行处理，当前提交与推送不受影响。见[只读清单](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/local-storage-audit.json)和[本地维护结果](../../../artifacts/research/process/20261004-ced-development/git-delivery-20261005/local-maintenance-result.json)。
+
+## 第52步实际交付
+
+实现提交 `05d971f82b6542fdd78c2ba12ea8d211f86f94b9` 已推送研发分支；2026-10-05T10:56:55.124091+00:00 核对本地、上游及 `git ls-remote` 远端一致，push退出0，提交后已跟踪工作区干净。237个变更路径/8,746,641字节含冻结诊断、142份完整原始件、v2核验器、定向测试/独审和阶段报告；活动guard/native源码与历史批量原始载荷未混入。
+
+48项定向CPU通过（诊断31＋新核验器17），Ruff和非日志差异检查通过。原始终端日志17处尾空格保留，完整差异检查退出2，不宣称全范围无空白问题；首次同名测试收集失败及修正命令后的日志均保留。真实诊断仍末尾copy guard退出1、旧试验11/10/1不改写、无完整horizon/native/正式验收。见[限定检查](../../../artifacts/research/process/20261004-ced-development/git-check-step52.json)和[交付记录](../../../artifacts/research/process/20261004-ced-development/git-delivery-step52.json)。本段及交付记录随后续文档提交推送。
