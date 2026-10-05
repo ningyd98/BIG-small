@@ -1,0 +1,44 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_actual_asset_substitution_and_non_native_recorder_copies_cannot_publish _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1250/test_actual_asset_substitution0')
+
+    def test_actual_asset_substitution_and_non_native_recorder_copies_cannot_publish(tmp_path):
+        app = application(tmp_path)
+        activate(app)
+        rec, backend = owned_recorder(app, tmp_path)
+        with pytest.raises(ValueError):
+            app.check_recorder(copy.copy(rec))
+        backend._mjspec_xml_sha256 = "0" * 64
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_native_clock_publication_v2.py:194: Failed
+__ test_failed_capture_stays_in_prefix_denominator_even_with_120_physics_rows __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1250/test_failed_capture_stays_in_p0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x73e4f8334380>
+
+    def test_failed_capture_stays_in_prefix_denominator_even_with_120_physics_rows(tmp_path, monkeypatch):
+        from tests.test_native_clock_prefix_worker_v2 import software_components
+        app = application(tmp_path)
+        _, backend = software_components(monkeypatch, app)
+        original_step = backend.step
+        def inject_failed_cached_capture(*, steps):
+            original_step(steps=steps)
+            rec = backend._operation_observer.__self__
+            from tests.test_native_reset_capture_v2 import event
+            rec._on_boundary(event("CAPTURE","BEGIN",op=900,step=120))
+            rec._on_boundary(event("CAPTURE","END",op=900,step=120,error="SOFTWARE_ONLY cached failure"))
+        backend.step = inject_failed_cached_capture
+        receipt = app.execute_once()
+        assert receipt["cached_capture_allocations"] == 2
+>       assert receipt["prefix_complete"] is False
+E       assert True is False
+
+tests/test_native_clock_publication_v2.py:212: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_native_clock_publication_v2.py::test_actual_asset_substitution_and_non_native_recorder_copies_cannot_publish
+FAILED tests/test_native_clock_publication_v2.py::test_failed_capture_stays_in_prefix_denominator_even_with_120_physics_rows
+2 failed, 8 deselected in 2.13s

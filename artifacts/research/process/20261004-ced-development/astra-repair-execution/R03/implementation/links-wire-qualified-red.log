@@ -1,0 +1,44 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_current_original_assignment_and_formal_config_changes_reject _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1247/test_current_original_assignme0')
+
+    def test_current_original_assignment_and_formal_config_changes_reject(tmp_path):
+        app = application(tmp_path)
+        activate(app)
+        with app.repository._connect() as connection:
+            connection.execute("UPDATE simulation_jobs SET draft_json = ?", ('{}',))
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_native_clock_publication_v2.py:140: Failed
+_____ test_off_callback_bounded_exchange_saves_real_wire_failure_originals _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1247/test_off_callback_bounded_exch0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ea6be8a3a40>
+
+    def test_off_callback_bounded_exchange_saves_real_wire_failure_originals(tmp_path, monkeypatch):
+        app = application(tmp_path)
+        activate(app)
+        rec, backend = owned_recorder(app, tmp_path)
+        source = app.clock_source
+        calls = []
+        fixture = json.loads((Path(__file__).resolve().parents[1] / "tools/research/native-clock-v2/testdata/software-only-exchange.json").read_text())
+        import base64
+        def wrong_issuer_response(request, config, *, attempt):
+            calls.append(request)
+            start = time.monotonic_ns()
+            return base64.b64decode(fixture["response_b64"]), {name:start+i for i,name in enumerate(
+                ("send_before_ns","send_after_ns","receive_before_ns","receive_after_ns"))}
+        monkeypatch.setattr(api(),"_udp_exchange_v2",wrong_issuer_response)
+        with rec:
+            backend._in_observer_callback = True
+>           with pytest.raises(RuntimeError):
+E           Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_native_clock_publication_v2.py:166: Failed
+=========================== short test summary info ============================
+FAILED tests/test_native_clock_publication_v2.py::test_current_original_assignment_and_formal_config_changes_reject
+FAILED tests/test_native_clock_publication_v2.py::test_off_callback_bounded_exchange_saves_real_wire_failure_originals
+2 failed, 6 deselected in 1.23s

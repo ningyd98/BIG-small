@@ -1,0 +1,125 @@
+--- src/cloud_edge_robot_arm/research/protocol_generation.py.baseline
++++ src/cloud_edge_robot_arm/research/protocol_generation.py
+@@ -689,13 +689,9 @@
+             _, proof = _recovery(
+                 output / "source", plan["row"], plan["fault"], _read(protocol / "recipe.json")
+             )
+-            # Enforce G4's fault-start deadline, stronger than teacher-only bound.
+-            if (
+-                proof["independent_outcome"]["elapsed_s"]
+-                + proof["recovery_start_s"]
+-                - proof["injection_start_s"]
+-                > 60.0
+-            ):
++            # The verified full trace begins at reset/time0, so elapsed is the
++            # terminal timestamp, not duration since the recovery lift baseline.
++            if proof["independent_outcome"]["elapsed_s"] - proof["injection_start_s"] > 60.0:
+                 raise BudgetExceeded("fault-start Rcap result exceeded")
+             status = "PROVEN"
+     except Exception as exc:
+--- tests/test_protocol_generation_sources.py.baseline
++++ tests/test_protocol_generation_sources.py
+@@ -491,3 +491,103 @@
+                 pytest.fail("concurrent actual producer must be rejected")
+     with api().renderer_exclusive(tmp_path / "renderer.lock"):
+         pass
++
++
++@pytest.fixture(scope="module")
++def independently_scored_first_actual_recovery():
++    """Read immutable actual records; never execute or relabel the first group."""
++    import yaml
++
++    from cloud_edge_robot_arm.research.protocol_evidence import _recovery
++    from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import PhysicalSample
++
++    root = Path(__file__).resolve().parents[1]
++    raw = root / (
++        "artifacts/research/process/20261004-ced-development/"
++        "astra-repair-execution/R07/producer/raw/recovery-0001/attempt-1"
++    )
++    if not raw.is_dir():
++        pytest.skip("requires the immutable R07 first actual source for CPU-only regression")
++    plan = json.loads((raw / "execution-plan.json").read_text())
++    samples, proof = _recovery(
++        raw / "source", plan["row"], plan["fault"], yaml.safe_load(api().RULES_PATH.read_text())
++    )
++    assert samples[0]["physics_step"] == 0 and samples[0]["sim_time_s"] == 0
++    assert proof["independent_outcome"]["status"] == "SUCCESS"
++    return (
++        [PhysicalSample(**sample) for sample in samples],
++        proof,
++        json.loads((raw / "source/attempt.json").read_text())["recovery_start_step"],
++    )
++
++
++def producer_deadline_check(proof):
++    """Execute the actual duration guard alone, with no collector/source mock.
++
++    Isolating this original statement prevents physical execution and allocation
++    while checking the real producer criterion rather than a copied formula.
++    """
++    import ast
++    import inspect
++
++    tree = ast.parse(inspect.getsource(api().execute_recovery_once))
++    guards = [
++        node
++        for node in ast.walk(tree)
++        if isinstance(node, ast.If)
++        and len(node.body) == 1
++        and isinstance(node.body[0], ast.Raise)
++        and any(
++            isinstance(child, ast.Constant) and child.value == "fault-start Rcap result exceeded"
++            for child in ast.walk(node)
++        )
++    ]
++    assert len(guards) == 1
++    code = ast.fix_missing_locations(ast.Module(body=guards, type_ignores=[]))
++    exec(
++        compile(code, "producer-duration-guard", "exec"),
++        {"proof": proof, "BudgetExceeded": api().BudgetExceeded},
++    )
++
++
++@pytest.mark.parametrize("past_deadline", [False, True], ids=["under60", "over60"])
++def test_actual_reset_elapsed_uses_fault_start_deadline_only(
++    independently_scored_first_actual_recovery, past_deadline
++):
++    """SOFTWARE_ONLY: extend scored samples, never forge raw/source/PROVEN.
++
++    The independent evaluator scores the complete reset0 sample sequence and
++    returns elapsed from reset0 even when its lift baseline begins at recovery.
++    A stable software tail tests both sides of the original 60s contract.
++    """
++    import math
++    from dataclasses import asdict, replace
++
++    from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
++        CompletionCriteria,
++        evaluate_evidence,
++    )
++
++    samples, original, recovery_start_step = independently_scored_first_actual_recovery
++    dt = samples[-1].sim_time_s / samples[-1].physics_step
++    last_under_step = math.floor((original["injection_start_s"] + 60.0) / dt)
++    end_step = last_under_step + (1 if past_deadline else 0)
++    tail = [
++        replace(samples[-1], physics_step=step, sim_time_s=step * dt)
++        for step in range(samples[-1].physics_step + 1, end_step + 1)
++    ]
++    outcome = evaluate_evidence(
++        samples + tail,
++        CompletionCriteria("object", "target_region"),
++        evaluation_start_step=recovery_start_step,
++    )
++    assert outcome.success and outcome.safety_assessment == "SCOPED_NO_VIOLATION"
++    assert outcome.elapsed_s == tail[-1].sim_time_s
++    elapsed_from_fault = tail[-1].sim_time_s - original["injection_start_s"]
++    assert (elapsed_from_fault > 60) is past_deadline
++    scored = {**original, "independent_outcome": asdict(outcome)}
++    if past_deadline:
++        with pytest.raises(api().BudgetExceeded, match="fault-start Rcap"):
++            producer_deadline_check(scored)
++    else:
++        producer_deadline_check(scored)

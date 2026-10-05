@@ -1,0 +1,528 @@
+--- src/cloud_edge_robot_arm/research/protocol_generation.py.duration-fixed-baseline
++++ src/cloud_edge_robot_arm/research/protocol_generation.py
+@@ -317,20 +317,223 @@
+     }
+ 
+ 
+-def preflight_generation(protocol: Path, assignment_id: str, attempt: int = 1) -> dict:
++def _plain_path(path: Path) -> None:
++    if any(p.is_symlink() for p in (path, *path.parents)):
++        raise ValueError(f"symlink source/namespace forbidden: {path}")
++
++
++def _payloads_match(directory: Path, header: dict) -> None:
++    expected = {
++        "history.json",
++        "pools.json",
++        "recipe.json",
++        "schedules.json",
++        "budgets.json",
++        "candidates.json",
++    }
++    if set(header["payload_hashes"]) != expected:
++        raise ValueError("exact six locked input payloads required")
++    for name, digest in header["payload_hashes"].items():
++        path = directory / name
++        _plain_path(path)
++        if _hash(path) != digest:
++            raise ValueError("protocol payload drift")
++
++
++def _allocation_records(directory: Path, pools: dict, allowed_hashes: set[str]) -> dict:
++    """Read the canonical consumed ledger; missing outputs remain consumed."""
++    _plain_path(directory)
++    allowed_ids = {row["assignment_id"] for row in pools["recovery"]}
++    records: dict[str, dict[int, dict]] = {}
++    for path in sorted(directory.glob("*.json")):
++        _plain_path(path)
++        record = _read(path)
++        assignment, ordinal = record["assignment_id"], record["attempt"]
++        if (
++            assignment not in allowed_ids
++            or type(ordinal) is not int
++            or not 1 <= ordinal <= 5
++            or path.name != f"{assignment}-attempt-{ordinal}.json"
++            or record["state"] != "ALLOCATED"
++            or record["protocol_hash"] not in allowed_hashes
++        ):
++            raise ValueError("canonical allocation identity/version mismatch")
++        output = Path(record["output"])
++        _plain_path(output)
++        if str(output.resolve()) != record["output"]:
++            raise ValueError("canonical allocation output path mismatch")
++        result = _read(output / "result.json") if (output / "result.json").is_file() else None
++        if result is not None:
++            _plain_path(output / "result.json")
++            if result["status"] not in {"PROVEN", "FAILED", "INCOMPLETE", "EXCLUDED"}:
++                raise ValueError("unknown canonical allocation result status")
++        records.setdefault(assignment, {})[ordinal] = {"record": record, "result": result}
++    for attempts in records.values():
++        if sorted(attempts) != list(range(1, max(attempts) + 1)):
++            raise ValueError("canonical allocation ordinal prefix missing")
++        for ordinal in range(1, max(attempts)):
++            prior = attempts[ordinal]["result"]
++            if prior is None or prior["status"] == "PROVEN":
++                raise ValueError("later ordinal follows incomplete or PROVEN allocation")
++    return records
++
++
++def prepare_successor_generation(
++    predecessor: Path, output: Path, *, expected_predecessor_hash: str
++) -> dict:
++    """Pure CPU, one v2 overlay; preserve original inputs/evidence/consumed ledger."""
++    _plain_path(predecessor)
++    prior = _read(predecessor / "generation.json")
++    if (
++        prior["schema_version"] != "ced.recovery-generation.v1"
++        or prior["protocol_directory"] != str(predecessor.resolve())
++        or content_digest(prior) != expected_predecessor_hash
++    ):
++        raise ValueError("reviewed initial predecessor hash/namespace mismatch")
++    _payloads_match(predecessor, prior)
++    if prior["environment"] != _environment():
++        raise ValueError("predecessor environment drift")
++    inventory = _read(predecessor / "history.json")
++    if not inventory["complete"] or not prior["history_complete"]:
++        raise ValueError("predecessor history closure incomplete")
++    for entry in inventory["entries"]:
++        _plain_path(Path(entry["path"]))
++        if _hash(Path(entry["path"])) != entry["sha256"]:
++            raise ValueError("predecessor history source drift")
++    pools = _read(predecessor / "pools.json")
++    _pool_check(pools, set(pools["_evidence"]["excluded_groups"]))
++    if not _topology_complete(
++        {k: v for k, v in pools.items() if not k.startswith("_")}, "ced.research.v2"
++    ):
++        raise ValueError("predecessor complete3260v2 topology required")
++    allocations = predecessor / "allocations"
++    records = _allocation_records(allocations, pools, {expected_predecessor_hash})
++    evidence: dict[str, str] = {}
++    roots = []
++    for assignment, attempts in records.items():
++        for ordinal, item in attempts.items():
++            allocation = allocations / f"{assignment}-attempt-{ordinal}.json"
++            evidence[str(allocation.resolve())] = _hash(allocation)
++            attempt_output = Path(item["record"]["output"])
++            if attempt_output.is_dir():
++                roots.append(str(attempt_output.resolve()))
++                for path in sorted(attempt_output.rglob("*")):
++                    _plain_path(path)
++                    if path.is_file():
++                        evidence[str(path.resolve())] = _hash(path)
++    _fresh(output)
++    source_hashes = _source_pins()
++    archive = {
++        **source_hashes,
++        "tests/test_protocol_generation_sources.py": _hash(
++            REPOSITORY / "tests/test_protocol_generation_sources.py"
++        ),
++    }
++    for name, digest in archive.items():
++        path = output / "source-archive" / name
++        path.parent.mkdir(parents=True, exist_ok=True)
++        with path.open("xb") as stream:
++            stream.write((REPOSITORY / name).read_bytes())
++            stream.flush()
++            os.fsync(stream.fileno())
++        if _hash(path) != digest:
++            raise ValueError("source changed during successor archive")
++    _write(output / "predecessor-generation.json", prior)
++    header = {
++        **prior,
++        "schema_version": "ced.recovery-generation.v2",
++        "protocol_directory": str(output.resolve()),
++        "predecessor_directory": str(predecessor.resolve()),
++        "predecessor_protocol_hash": expected_predecessor_hash,
++        "predecessor_manifest_sha256": _hash(predecessor / "generation.json"),
++        "predecessor_archive_sha256": _hash(output / "predecessor-generation.json"),
++        "allocation_directory": str(allocations.resolve()),
++        "source_hashes": source_hashes,
++        "source_archive_hashes": archive,
++        "environment": _environment(),
++        "predecessor_evidence_hashes": evidence,
++        "predecessor_evidence_roots": roots,
++    }
++    _write(output / "generation.json", header)
++    return {
++        "status": "READY_FOR_REVIEW",
++        "protocol_hash": content_digest(header),
++        "predecessor_protocol_hash": expected_predecessor_hash,
++        "denominator": 200,
++        "attempted": len(records),
++        "unattempted": 200 - len(records),
++        "actual_calls": 0,
++        "g4_measured": False,
++    }
++
++
++def _generation_inputs(protocol: Path) -> tuple[dict, Path, Path]:
++    _plain_path(protocol)
+     header = _read(protocol / "generation.json")
+-    if any(p.is_symlink() for p in (protocol, *protocol.parents)):
+-        raise ValueError("symlink protocol directory forbidden")
+     if header.get("protocol_directory") != str(protocol.resolve()):
+         raise ValueError("copied or renamed protocol directory cannot reset attempt identity")
+-    if header["schema_version"] != "ced.recovery-generation.v1":
++    if header["schema_version"] == "ced.recovery-generation.v1":
++        inputs, allocations = protocol, protocol / "allocations"
++    elif header["schema_version"] == "ced.recovery-generation.v2":
++        inputs = Path(header["predecessor_directory"])
++        _plain_path(inputs)
++        _plain_path(inputs / "generation.json")
++        prior = _read(inputs / "generation.json")
++        if (
++            prior["schema_version"] != "ced.recovery-generation.v1"
++            or prior["protocol_directory"] != str(inputs.resolve())
++            or content_digest(prior) != header["predecessor_protocol_hash"]
++            or _hash(inputs / "generation.json") != header["predecessor_manifest_sha256"]
++            or _hash(protocol / "predecessor-generation.json")
++            != header["predecessor_archive_sha256"]
++            or _read(protocol / "predecessor-generation.json") != prior
++            or header["payload_hashes"] != prior["payload_hashes"]
++            or any(
++                header[k] != prior[k]
++                for k in (
++                    "seed",
++                    "history_complete",
++                    "config",
++                    "settle_steps",
++                    "provider_calls",
++                    "implicit_retries",
++                )
++            )
++        ):
++            raise ValueError("immutable predecessor manifest/payload/config drift")
++        allocations = inputs / "allocations"
++        if header["allocation_directory"] != str(allocations.resolve()):
++            raise ValueError("canonical predecessor allocation directory mismatch")
++        for name, digest in header["source_archive_hashes"].items():
++            if Path(name).is_absolute() or ".." in Path(name).parts:
++                raise ValueError("source archive path invalid")
++            path = protocol / "source-archive" / name
++            _plain_path(path)
++            if _hash(path) != digest:
++                raise ValueError("execution source archive drift")
++        for name, digest in header["predecessor_evidence_hashes"].items():
++            path = Path(name)
++            _plain_path(path)
++            if _hash(path) != digest:
++                raise ValueError("immutable predecessor evidence drift")
++        for name in header["predecessor_evidence_roots"]:
++            actual = {str(p.resolve()) for p in Path(name).rglob("*") if p.is_file()}
++            expected = {
++                p for p in header["predecessor_evidence_hashes"] if Path(name) in Path(p).parents
++            }
++            if actual != expected:
++                raise ValueError("immutable predecessor evidence file coverage drift")
++    else:
+         raise ValueError("unsupported generation protocol")
+-    for name, digest in header["payload_hashes"].items():
+-        if Path(name).name != name or _hash(protocol / name) != digest:
+-            raise ValueError("protocol payload drift")
++    _payloads_match(inputs, header)
+     if header["source_hashes"] != _source_pins() or header["environment"] != _environment():
+         raise ValueError("execution source/environment drift")
+-    inventory = _read(protocol / "history.json")
++    return header, inputs, allocations
++
++
++def preflight_generation(protocol: Path, assignment_id: str, attempt: int = 1) -> dict:
++    header, inputs, allocations = _generation_inputs(protocol)
++    inventory = _read(inputs / "history.json")
+     for entry in inventory["entries"]:
+         if _hash(Path(entry["path"])) != entry["sha256"]:
+             raise ValueError("history source drift")
+@@ -338,7 +541,7 @@
+         raise ValueError("history identity closure is incomplete")
+     if type(attempt) is not int or not 1 <= attempt <= 5:
+         raise ValueError("bounded attempt ordinal1..5 required")
+-    pools = _read(protocol / "pools.json")
++    pools = _read(inputs / "pools.json")
+     _pool_check(pools, set(pools["_evidence"]["excluded_groups"]))
+     if not _topology_complete(
+         {k: v for k, v in pools.items() if not k.startswith("_")}, "ced.research.v2"
+@@ -347,8 +550,21 @@
+     rows = [r for r in pools["recovery"] if r["assignment_id"] == assignment_id]
+     if len(rows) != 1:
+         raise ValueError("canonical recovery assignment required")
+-    schedule = _read(protocol / "schedules.json")[assignment_id]
+-    rules = _read(protocol / "recipe.json")
++    allowed_hashes = {content_digest(header)}
++    if header["schema_version"] == "ced.recovery-generation.v2":
++        allowed_hashes.add(header["predecessor_protocol_hash"])
++    records = _allocation_records(allocations, pools, allowed_hashes)
++    attempts = records.get(assignment_id, {})
++    if attempt in attempts:
++        raise ValueError("canonical allocation ordinal already consumed")
++    if attempt > 1:
++        previous = attempts.get(attempt - 1)
++        if previous is None or previous["result"] is None:
++            raise ValueError("previous attempt incomplete or missing; no ordinal skipping")
++        if previous["result"]["status"] == "PROVEN":
++            raise ValueError("previous attempt already PROVEN; no retry")
++    schedule = _read(inputs / "schedules.json")[assignment_id]
++    rules = _read(inputs / "recipe.json")
+     index = pools["recovery"].index(rows[0])
+     if schedule != {"fault": _fault(index, rules), "eligible": _eligible(rows[0], rules)}:
+         raise ValueError("registered fault/eligibility schedule drift")
+@@ -357,7 +573,12 @@
+         **schedule,
+         "row": rows[0],
+         "attempt": attempt,
+-        "budgets": _read(protocol / "budgets.json"),
++        "budgets": _read(inputs / "budgets.json"),
++        "input_directory": str(inputs.resolve()),
++        "allocation_directory": str(allocations.resolve()),
++        "denominator": 200,
++        "attempted": len(records),
++        "unattempted": 200 - len(records),
+         "protocol_hash": content_digest(header),
+         "status": "PREFLIGHT_ONLY",
+         "actual_calls": 0,
+@@ -649,7 +870,7 @@
+         raise ValueError("review protocol hash differs from frozen input")
+     if any(p.is_symlink() for p in (output, *output.parents)) or output.exists():
+         raise ValueError("fresh nonsymlink attempt output required")
+-    allocations = protocol / "allocations"
++    allocations = Path(plan["allocation_directory"])
+     if attempt > 1:
+         previous = allocations / f"{assignment_id}-attempt-{attempt - 1}.json"
+         if not previous.is_file():
+@@ -687,7 +908,10 @@
+             with renderer_exclusive(lease), wall_deadline(plan["budgets"]["wall_s"]):
+                 diagnostics = _run_physical(plan, output)
+             _, proof = _recovery(
+-                output / "source", plan["row"], plan["fault"], _read(protocol / "recipe.json")
++                output / "source",
++                plan["row"],
++                plan["fault"],
++                _read(Path(plan["input_directory"]) / "recipe.json"),
+             )
+             # The verified full trace begins at reset/time0, so elapsed is the
+             # terminal timestamp, not duration since the recovery lift baseline.
+--- scripts/generate_rgbd_protocol_evidence.py.duration-fixed-baseline
++++ scripts/generate_rgbd_protocol_evidence.py
+@@ -14,6 +14,7 @@
+     execute_recovery_once,
+     preflight_generation,
+     prepare_generation,
++    prepare_successor_generation,
+ )
+ 
+ 
+@@ -29,9 +30,25 @@
+     parser.add_argument("--execute-once", action="store_true")
+     parser.add_argument("--output", type=Path)
+     parser.add_argument("--expected-protocol-hash")
++    parser.add_argument("--successor-of", type=Path)
++    parser.add_argument("--expected-predecessor-hash")
+     args = parser.parse_args()
+     try:
+-        if args.prepare:
++        if args.successor_of is not None:
++            if (
++                not args.prepare
++                or args.execute_once
++                or not args.expected_predecessor_hash
++                or args.history_source
++                or args.history_catalog is not None
++            ):
++                raise ValueError("successor requires prepare and reviewed predecessor hash only")
++            report = prepare_successor_generation(
++                args.successor_of,
++                args.protocol,
++                expected_predecessor_hash=args.expected_predecessor_hash,
++            )
++        elif args.prepare:
+             if args.execute_once:
+                 raise ValueError("prepare cannot execute")
+             sources = args.history_source
+--- tests/test_protocol_generation_sources.py.duration-fixed-baseline
++++ tests/test_protocol_generation_sources.py
+@@ -591,3 +591,186 @@
+             producer_deadline_check(scored)
+     else:
+         producer_deadline_check(scored)
++
++
++def cpu_predecessor(tmp_path):
++    """One honest CPU allocation failure; no fabricated physical success."""
++    path, _ = history(tmp_path)
++    predecessor = tmp_path / "initial"
++    prepared = api().prepare_generation([path], predecessor)
++    output = tmp_path / "failed-cpu-allocation"
++    output.mkdir()
++    (output / "result.json").write_text(
++        json.dumps({"status": "FAILED", "reason": "CPU_ONLY_NO_PHYSICAL_CALL"})
++    )
++    allocations = predecessor / "allocations"
++    allocations.mkdir()
++    (allocations / "recovery-0001-attempt-1.json").write_text(
++        json.dumps(
++            {
++                "assignment_id": "recovery-0001",
++                "attempt": 1,
++                "state": "ALLOCATED",
++                "protocol_hash": prepared["protocol_hash"],
++                "output": str(output.resolve()),
++            }
++        )
++    )
++    return predecessor, prepared["protocol_hash"]
++
++
++def successor(tmp_path):
++    predecessor, reviewed_hash = cpu_predecessor(tmp_path)
++    output = tmp_path / "successor"
++    report = api().prepare_successor_generation(
++        predecessor, output, expected_predecessor_hash=reviewed_hash
++    )
++    return predecessor, output, report
++
++
++def test_successor_preserves_all_rows_payloads_and_consumed_namespace(tmp_path):
++    predecessor, output, report = successor(tmp_path)
++    original = json.loads((predecessor / "generation.json").read_text())
++    overlay = json.loads((output / "generation.json").read_text())
++    assert overlay["schema_version"] == "ced.recovery-generation.v2"
++    assert overlay["payload_hashes"] == original["payload_hashes"]
++    assert overlay["seed"] == original["seed"]
++    assert not (output / "pools.json").exists(), "references original; never copies/relabels rows"
++    plan = api().preflight_generation(output, "recovery-0002")
++    assert plan["allocation_directory"] == str((predecessor / "allocations").resolve())
++    assert plan["input_directory"] == str(predecessor.resolve())
++    assert plan["denominator"] == 200 and plan["attempted"] == 1 and plan["unattempted"] == 199
++    assert plan["fault"]["parameters"]["direction_y"] == -1.0
++    assert plan["actual_calls"] == 0 and report["actual_calls"] == 0
++    assert not (output / "allocations").exists()
++    with pytest.raises(ValueError, match="consumed"):
++        api().preflight_generation(output, "recovery-0001", 1)
++    with pytest.raises(ValueError, match="previous|ordinal"):
++        api().preflight_generation(output, "recovery-0002", 2)
++
++
++def test_successor_copy_cannot_reset_shared_allocation_namespace(tmp_path):
++    import shutil
++
++    _, output, _ = successor(tmp_path)
++    cloned = tmp_path / "copied-successor"
++    shutil.copytree(output, cloned)
++    with pytest.raises(ValueError, match="directory"):
++        api().preflight_generation(cloned, "recovery-0002")
++
++
++@pytest.mark.parametrize(
++    "drift", ["missing_predecessor", "payload", "source_archive", "actual_pin"]
++)
++def test_successor_rejects_missing_or_drifted_originals_before_backend(tmp_path, drift):
++    predecessor, output, _ = successor(tmp_path)
++    overlay = json.loads((output / "generation.json").read_text())
++    if drift == "missing_predecessor":
++        (predecessor / "generation.json").unlink()
++    elif drift == "payload":
++        (predecessor / "pools.json").write_text("{}")
++    elif drift == "source_archive":
++        archived = output / "source-archive" / next(iter(overlay["source_archive_hashes"]))
++        archived.write_text("altered")
++    else:
++        (tmp_path / "failed-cpu-allocation/result.json").write_text("{}")
++    with pytest.raises((ValueError, FileNotFoundError)):
++        api().preflight_generation(output, "recovery-0002")
++
++
++def test_successor_requires_reviewed_predecessor_hash_before_freeze(tmp_path):
++    predecessor, _ = cpu_predecessor(tmp_path)
++    output = tmp_path / "wrong-review"
++    with pytest.raises(ValueError, match="predecessor"):
++        api().prepare_successor_generation(predecessor, output, expected_predecessor_hash="0" * 64)
++    assert not output.exists()
++
++
++def test_successor_accounts_new_cpu_failure_in_shared_200_denominator(tmp_path, monkeypatch):
++    predecessor, output, report = successor(tmp_path)
++
++    def fail_before_physics(plan, destination):
++        raise RuntimeError("CPU_ONLY_NO_PHYSICAL_CALL")
++
++    monkeypatch.setattr(api(), "_run_physical", fail_before_physics)
++    result = api().execute_recovery_once(
++        output,
++        "recovery-0002",
++        tmp_path / "new-failed-allocation",
++        expected_protocol_hash=report["protocol_hash"],
++    )
++    assert result["status"] == "FAILED"
++    assert (
++        result["denominator"] == 200 and result["attempted"] == 2 and result["unattempted"] == 198
++    )
++    assert (predecessor / "allocations/recovery-0002-attempt-1.json").is_file()
++    assert not (output / "allocations").exists()
++    with pytest.raises(ValueError, match="consumed"):
++        api().preflight_generation(output, "recovery-0002", 1)
++
++
++def test_successor_pins_immutable_first_actual_without_relabeling(tmp_path):
++    root = Path(__file__).resolve().parents[1]
++    predecessor = root / (
++        "artifacts/research/process/20261004-ced-development/"
++        "astra-repair-execution/R07/producer/protocol-final"
++    )
++    if not predecessor.is_dir():
++        pytest.skip("requires immutable first R07 actual predecessor")
++    api().prepare_successor_generation(
++        predecessor,
++        tmp_path / "actual-successor",
++        expected_predecessor_hash="66570b912ba08e0924e4cbe31098be9df7f1f02ed43548b131f65b2695ded724",
++    )
++    plan = api().preflight_generation(tmp_path / "actual-successor", "recovery-0002")
++    assert plan["attempted"] == 1 and plan["unattempted"] == 199
++    assert any(
++        path.endswith("attempt-1/result.json") for path in plan["predecessor_evidence_hashes"]
++    )
++    with pytest.raises(ValueError, match="consumed|PROVEN"):
++        api().preflight_generation(tmp_path / "actual-successor", "recovery-0001", 1)
++    with pytest.raises(ValueError, match="PROVEN"):
++        api().preflight_generation(tmp_path / "actual-successor", "recovery-0001", 2)
++    with pytest.raises(ValueError, match="source"):
++        api().preflight_generation(predecessor, "recovery-0002")
++
++
++def test_successor_cli_freezes_overlay_and_default_preflight_is_cpu_only(tmp_path):
++    import subprocess
++
++    predecessor, reviewed_hash = cpu_predecessor(tmp_path)
++    output = tmp_path / "cli-successor"
++    root = Path(__file__).resolve().parents[1]
++    common = [str(root / ".venv/bin/python"), "scripts/generate_rgbd_protocol_evidence.py"]
++    prepared = subprocess.run(
++        common
++        + [
++            "--prepare",
++            "--protocol",
++            str(output),
++            "--successor-of",
++            str(predecessor),
++            "--expected-predecessor-hash",
++            reviewed_hash,
++        ],
++        cwd=root,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert prepared.returncode == 0, prepared.stderr + prepared.stdout
++    assert json.loads(prepared.stdout)["attempted"] == 1
++    preflight = subprocess.run(
++        common + ["--protocol", str(output), "--assignment", "recovery-0002"],
++        cwd=root,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert preflight.returncode == 0, preflight.stderr + preflight.stdout
++    plan = json.loads(preflight.stdout)
++    assert plan["status"] == "PREFLIGHT_ONLY" and plan["actual_calls"] == 0
++    assert plan["attempted"] == 1 and plan["unattempted"] == 199
++    assert plan["fault"]["parameters"]["direction_y"] == -1.0
++    assert not (output / "allocations").exists()
++    assert len(list((predecessor / "allocations").glob("*.json"))) == 1

@@ -1,0 +1,62 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_actual_reset_elapsed_uses_fault_start_deadline_only[under60] _______
+
+independently_scored_first_actual_recovery = ([PhysicalSample(episode_id='cfe732d445264075a8cada30422b90ce', physics_step=0, sim_time_s=0.0, object_position_m=(0.4...: 1.500000011999996, 'injection_start_s': 0.500000003999999, 'measured_displacement_m': 0.01910200301195309, ...}, 361)
+past_deadline = False
+
+    @pytest.mark.parametrize("past_deadline", [False, True], ids=["under60", "over60"])
+    def test_actual_reset_elapsed_uses_fault_start_deadline_only(
+        independently_scored_first_actual_recovery, past_deadline
+    ):
+        """SOFTWARE_ONLY: extend scored samples, never forge raw/source/PROVEN.
+    
+        The independent evaluator scores the complete reset0 sample sequence and
+        returns elapsed from reset0 even when its lift baseline begins at recovery.
+        A stable software tail tests both sides of the original 60s contract.
+        """
+        import math
+        from dataclasses import asdict, replace
+    
+        from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
+            CompletionCriteria,
+            evaluate_evidence,
+        )
+    
+        samples, original, recovery_start_step = independently_scored_first_actual_recovery
+        dt = samples[-1].sim_time_s / samples[-1].physics_step
+        last_under_step = math.floor((original["injection_start_s"] + 60.0) / dt)
+        end_step = last_under_step + (1 if past_deadline else 0)
+        tail = [
+            replace(samples[-1], physics_step=step, sim_time_s=step * dt)
+            for step in range(samples[-1].physics_step + 1, end_step + 1)
+        ]
+        outcome = evaluate_evidence(
+            samples + tail,
+            CompletionCriteria("object", "target_region"),
+            evaluation_start_step=recovery_start_step,
+        )
+        assert outcome.success and outcome.safety_assessment == "SCOPED_NO_VIOLATION"
+        assert outcome.elapsed_s == tail[-1].sim_time_s
+        elapsed_from_fault = tail[-1].sim_time_s - original["injection_start_s"]
+        assert (elapsed_from_fault > 60) is past_deadline
+        scored = {**original, "independent_outcome": asdict(outcome)}
+        if past_deadline:
+            with pytest.raises(api().BudgetExceeded, match="fault-start Rcap"):
+                producer_deadline_check(scored)
+        else:
+>           producer_deadline_check(scored)
+
+tests/test_protocol_generation_sources.py:594: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_protocol_generation_sources.py:548: in producer_deadline_check
+    exec(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+>   ???
+E   cloud_edge_robot_arm.research.protocol_generation.BudgetExceeded: fault-start Rcap result exceeded
+
+producer-duration-guard:62: BudgetExceeded
+=========================== short test summary info ============================
+FAILED tests/test_protocol_generation_sources.py::test_actual_reset_elapsed_uses_fault_start_deadline_only[under60]
+1 failed, 1 passed, 20 deselected in 2.76s

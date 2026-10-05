@@ -1,0 +1,21 @@
+F....                                                                    [100%]
+=================================== FAILURES ===================================
+_____________ test_inventory_connects_scene_and_component_aliases ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1218/test_inventory_connects_scene_0')
+
+    def test_inventory_connects_scene_and_component_aliases(tmp_path):
+        path, scene = history(tmp_path)
+        alias = tmp_path / 'alias.json'
+        alias.write_text(json.dumps({'group_id': 'renamed-used', 'scene_hash': scene.scene_hash,
+                                    'component': 'used-component'}))
+        linked = tmp_path / 'linked.json'
+        linked.write_text(json.dumps({'group_id': 'component-copy', 'component': 'used-component'}))
+        result = api().inventory_history([path, alias, linked])
+>       assert result['complete']
+E       assert False
+
+tests/test_protocol_generation_sources.py:31: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_generation_sources.py::test_inventory_connects_scene_and_component_aliases
+1 failed, 4 passed in 10.30s

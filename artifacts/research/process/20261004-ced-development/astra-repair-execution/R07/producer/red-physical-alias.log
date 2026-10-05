@@ -1,0 +1,24 @@
+F..                                                                      [100%]
+=================================== FAILURES ===================================
+_______ test_physical_identity_survives_asset_camera_and_colour_renaming _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1224/test_physical_identity_survive0')
+
+    def test_physical_identity_survives_asset_camera_and_colour_renaming(tmp_path):
+        path, scene = history(tmp_path)
+        alias = scene.model_dump()
+        alias['group_id'] = 'visual-rename'
+        alias['asset_family_hash'] = '1' * 64
+        alias['scene_parameters']['camera']['fovy'] = 55.
+        alias['scene_parameters']['target']['rgba'] = [.1, .9, .1, 1.]
+        other = tmp_path / 'visual.json'
+        other.write_text(json.dumps({'scene': alias, 'scene_hash':'2'*64}))
+        result = api().inventory_history([path, other])
+>       assert len(result['physical_keys']) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len(['35023762c86d8b951870e273209f84afbc717a6531368ed15780588d268de1c0', '870a2bd1cfbf1b7669651f9523df054b4f66978aeabd9d47bec6d87dc9e7daf4'])
+
+tests/test_protocol_generation_sources.py:229: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_generation_sources.py::test_physical_identity_survives_asset_camera_and_colour_renaming
+1 failed, 2 passed, 11 deselected in 2.55s

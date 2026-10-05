@@ -1,0 +1,133 @@
+.FFFF                                                                    [100%]
+=================================== FAILURES ===================================
+___ test_real_poll_lease_attempt_prefix_120_settle_cached_capture_no_planner ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1244/test_real_poll_lease_attempt_p0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78ec0c4a56a0>
+
+    def test_real_poll_lease_attempt_prefix_120_settle_cached_capture_no_planner(tmp_path, monkeypatch):
+        app = application(tmp_path)
+        calls, _ = software_components(monkeypatch, app)
+        app.worker.planner_factory = lambda: pytest.fail("model/planner construction forbidden")
+>       receipt = app.execute_once()
+                  ^^^^^^^^^^^^^^^^^^
+
+tests/test_native_clock_prefix_worker_v2.py:86: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:184: in execute_once
+    return self.catalog_entry()
+           ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.native_clock_publication_v2.NativeClockPrefixApplicationV2 object at 0x78ec0c4a5a00>
+
+    def catalog_entry(self) -> dict[str, Any]:
+        value = _live(self).catalog_json
+        if value is None:
+>           raise RuntimeError("no live source-only publication")
+E           RuntimeError: no live source-only publication
+
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:235: RuntimeError
+__ test_failed_real_worker_prefix_keeps_all_originals_and_marks_failed[reset] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1244/test_failed_real_worker_prefix0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78ec0c30f110>
+failure = 'reset'
+
+    @pytest.mark.parametrize("failure", ["reset", "settle"])
+    def test_failed_real_worker_prefix_keeps_all_originals_and_marks_failed(tmp_path, monkeypatch, failure):
+        app = application(tmp_path)
+        software_components(monkeypatch, app, reset_failure=failure=="reset", settle_failure=failure=="settle")
+>       receipt = app.execute_once()
+                  ^^^^^^^^^^^^^^^^^^
+
+tests/test_native_clock_prefix_worker_v2.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:184: in execute_once
+    return self.catalog_entry()
+           ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.native_clock_publication_v2.NativeClockPrefixApplicationV2 object at 0x78ec0c30f4d0>
+
+    def catalog_entry(self) -> dict[str, Any]:
+        value = _live(self).catalog_json
+        if value is None:
+>           raise RuntimeError("no live source-only publication")
+E           RuntimeError: no live source-only publication
+
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:235: RuntimeError
+_ test_failed_real_worker_prefix_keeps_all_originals_and_marks_failed[settle] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1244/test_failed_real_worker_prefix1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78ec0c30cef0>
+failure = 'settle'
+
+    @pytest.mark.parametrize("failure", ["reset", "settle"])
+    def test_failed_real_worker_prefix_keeps_all_originals_and_marks_failed(tmp_path, monkeypatch, failure):
+        app = application(tmp_path)
+        software_components(monkeypatch, app, reset_failure=failure=="reset", settle_failure=failure=="settle")
+>       receipt = app.execute_once()
+                  ^^^^^^^^^^^^^^^^^^
+
+tests/test_native_clock_prefix_worker_v2.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:184: in execute_once
+    return self.catalog_entry()
+           ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.native_clock_publication_v2.NativeClockPrefixApplicationV2 object at 0x78ec0c30e2d0>
+
+    def catalog_entry(self) -> dict[str, Any]:
+        value = _live(self).catalog_json
+        if value is None:
+>           raise RuntimeError("no live source-only publication")
+E           RuntimeError: no live source-only publication
+
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:235: RuntimeError
+__________ test_two_exchange_coordinator_freezes_every_pair_before_b ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1244/test_two_exchange_coordinator_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78ec0c30d400>
+
+    def test_two_exchange_coordinator_freezes_every_pair_before_b(tmp_path, monkeypatch):
+        app = application(tmp_path)
+        calls, backend = software_components(monkeypatch, app)
+        seen = []
+        def exchange(**kwargs):
+            rec = backend._operation_observer.__self__
+            seen.append((kwargs["exchange_id"], rec._frozen_prefix is not None))
+            app.exchange_attempts.append({"exchange_id":kwargs["exchange_id"],"status":"SOFTWARE_ONLY","original":None})
+            if kwargs["exchange_id"] == "A":
+                return replace(import_module("cloud_edge_robot_arm.research.native_clock_source_v2").ClockExchangeOriginalV2.from_payload(
+                    json.loads((app.clock_source.verifier.source_root/"tools/research/native-clock-v2/testdata/software-only-exchange.json").read_text())["causal_exchanges"]["A"]), clock_domain_id=rec._clock_domain_id)
+            assert kwargs["commitment"] == import_module("cloud_edge_robot_arm.research.native_clock_source_v2").slab_commitment(
+                tuple(import_module("cloud_edge_robot_arm.research.native_clock_source_v2").ClockTupleV2.from_payload(p) for p in rec._frozen_prefix.to_payload()["clock_pairs"]), acquisition_sha256=rec._frozen_prefix.digest())
+            return None
+        monkeypatch.setattr(app.clock_source,"exchange",exchange)
+>       receipt = app.execute_once()
+                  ^^^^^^^^^^^^^^^^^^
+
+tests/test_native_clock_prefix_worker_v2.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:184: in execute_once
+    return self.catalog_entry()
+           ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.native_clock_publication_v2.NativeClockPrefixApplicationV2 object at 0x78ec0c30db50>
+
+    def catalog_entry(self) -> dict[str, Any]:
+        value = _live(self).catalog_json
+        if value is None:
+>           raise RuntimeError("no live source-only publication")
+E           RuntimeError: no live source-only publication
+
+src/cloud_edge_robot_arm/research/native_clock_publication_v2.py:235: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_native_clock_prefix_worker_v2.py::test_real_poll_lease_attempt_prefix_120_settle_cached_capture_no_planner
+FAILED tests/test_native_clock_prefix_worker_v2.py::test_failed_real_worker_prefix_keeps_all_originals_and_marks_failed[reset]
+FAILED tests/test_native_clock_prefix_worker_v2.py::test_failed_real_worker_prefix_keeps_all_originals_and_marks_failed[settle]
+FAILED tests/test_native_clock_prefix_worker_v2.py::test_two_exchange_coordinator_freezes_every_pair_before_b
+4 failed, 1 passed in 3.66s

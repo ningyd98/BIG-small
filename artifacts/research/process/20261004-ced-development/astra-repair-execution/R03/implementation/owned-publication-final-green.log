@@ -1,0 +1,36 @@
+................F..............                                          [100%]
+=================================== FAILURES ===================================
+__ test_catalog_write_failure_never_exposes_a_live_publication_and_keeps_raw ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1259/test_catalog_write_failure_nev0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x72d1257d5fa0>
+
+    def test_catalog_write_failure_never_exposes_a_live_publication_and_keeps_raw(
+        tmp_path, monkeypatch
+    ):
+        from tests.test_native_clock_prefix_worker_v2 import software_components
+    
+        app = application(tmp_path)
+        software_components(monkeypatch, app)
+        original = api()._write_original
+    
+        def fail_catalog(directory, name, value):
+            if name == "capture-catalog.json":
+                raise OSError("SOFTWARE_ONLY catalog write failed")
+            return original(directory, name, value)
+    
+        monkeypatch.setattr(api(), "_write_original", fail_catalog)
+        with pytest.raises(RuntimeError, match="no live source-only publication"):
+            app.execute_once()
+        assert (app.output / "prefix-originals/reset-journal.json").is_file()
+        assert (app.output / "prefix-originals/publication-failure.json").is_file()
+>       assert app.repository.list_jobs()[0].status == RuntimeJobStatus.FAILED
+E       AssertionError: assert <RuntimeJobSt...OCKED_BY_ENV'> == <RuntimeJobSt...LED: 'FAILED'>
+E         
+E         - FAILED
+E         + BLOCKED_BY_ENV
+
+tests/test_native_clock_publication_v2.py:296: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_native_clock_publication_v2.py::test_catalog_write_failure_never_exposes_a_live_publication_and_keeps_raw
+1 failed, 30 passed in 10.37s

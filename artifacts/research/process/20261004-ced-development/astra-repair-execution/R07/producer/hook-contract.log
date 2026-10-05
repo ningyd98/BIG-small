@@ -1,0 +1,242 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_actual_path_wires_existing_detached_hooks_without_real_backend ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1230/test_actual_path_wires_existin0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x742a9635aba0>
+
+    def test_actual_path_wires_existing_detached_hooks_without_real_backend(tmp_path, monkeypatch):
+        from contextlib import contextmanager
+        from dataclasses import fields
+        from cloud_edge_robot_arm.simulation.mujoco.backend import (
+            ActuatorStepObservation, MuJoCoPhysicsBackend)
+        from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import EpisodeOutcome
+        from cloud_edge_robot_arm.research.protocol_evidence import _observation, _recovery
+        from tests.test_protocol_evidence_generation import inputs, recovery
+        import yaml
+        fixture_dir = tmp_path / 'fixture'
+        fixture_dir.mkdir()
+        row = inputs(fixture_dir)['recovery'][0]
+        source = recovery(fixture_dir, row)
+        raw = [_observation(v) for v in json.loads((source/'physical-observations.json').read_text())]
+        actions = json.loads((source/'teacher-actions.json').read_text())
+        commands = [v['backend_record'] for v in json.loads((source/'commands.json').read_text())]
+        controls = json.loads((source/'actuator-provenance.json').read_text())['steps']
+        actuator_rows = [ActuatorStepObservation(**{f.name:v[f.name]
+                         for f in fields(ActuatorStepObservation)}) for v in controls]
+        faults = json.loads((source/'fault-events.json').read_text())
+        fault = {'fault_type':'TARGET_MOTION', 'parameters':{'speed_m_s':.02,'duration_s':1.,'direction_y':1.}}
+        rules = yaml.safe_load(api().RULES_PATH.read_text())
+        _, proof = _recovery(source, row, fault, rules)
+        forbidden_calls = []
+        def forbid_initialize(*args):
+            forbidden_calls.append('initialize')
+            pytest.fail('This integration test is CPU-only')
+        monkeypatch.setattr(MuJoCoPhysicsBackend, 'initialize', forbid_initialize)
+        class Backend:
+            total_physics_steps = 0
+            physical = None
+            actuator = None
+            fault_records = []
+            teacher_active = False
+            @property
+            def command_records(self):
+                return [v for v in commands if self.teacher_active and
+                        v['physics_step'] <= self.total_physics_steps]
+            def current_physics_observation(self):
+                return raw[self.total_physics_steps]
+            def get_sim_time(self):
+                return self.current_physics_observation().sim_time_s
+            @contextmanager
+            def observe_physics_steps(self, callback):
+                assert self.physical is None, 'No nested observer allowed'
+                self.physical = callback
+                try: yield
+                finally: self.physical = None
+            @contextmanager
+            def observe_actuator_steps(self, callback):
+                self.actuator = callback
+                try: yield
+                finally: self.actuator = None
+            def step(self, steps=1):
+                for _ in range(steps):
+                    self.actuator(actuator_rows[self.total_physics_steps])
+                    self.total_physics_steps += 1
+                    if self.total_physics_steps == 520:
+                        self.fault_records.append(faults[1])
+                    self.physical(raw[self.total_physics_steps])
+            def inject_fault(self, value):
+                assert value.parameters == fault['parameters']
+                assert self.total_physics_steps == 20
+                self.fault_records = [faults[0]]
+        backend = Backend()
+        class Capture:
+            def __init__(self, config):
+                assert (config.camera_width, config.camera_height) == (320, 240)
+                self._backend = backend
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def apply_scene(self, scene): assert scene.group_id == row['scene']['group_id']
+        def teacher(scene, robot, recorder, *, settle_steps, physical_observer, action_observer):
+            assert settle_steps == 0 and backend.total_physics_steps == 520
+            backend.teacher_active = True
+            physical_observer(backend.current_physics_observation())
+            with backend.observe_physics_steps(physical_observer):
+                for event in actions:
+                    backend.step(event['end_step'] - backend.total_physics_steps)
+                    action_observer({k:event[k] for k in ('result','episode_id','start_step','end_step',
+                                                         'command_seq_start','command_seq_end')})
+            return EpisodeOutcome(**proof['independent_outcome'])
+        monkeypatch.setattr('cloud_edge_robot_arm.vision.capture.MuJoCoCaptureSession', Capture)
+        monkeypatch.setattr('cloud_edge_robot_arm.datasets.rgbd.teacher.run_teacher_episode', teacher)
+        output = tmp_path/'collected'
+        output.mkdir()
+        plan = {'row':row, 'config':{'camera_width':320, 'camera_height':240,
+                'physics_dt_s':.002}, 'settle_steps':20, 'fault':fault, 'budgets':api().BUDGETS}
+>       diagnostics = api()._run_physical(plan, output)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_generation_sources.py:406: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budgets': {'min_free_bytes': 10737418240, 'rcap_s': 60.0, 'retained_bytes': 2147483648, 'wall_s': 1800.0}, 'config':...: 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a', ...}, ...}
+output = PosixPath('/tmp/pytest-of-ningyd/pytest-1230/test_actual_path_wires_existin0/collected')
+
+    def _run_physical(plan: dict, output: Path) -> dict:
+        """The sole actual path: existing scene reset, fault, T5 and passive hooks."""
+        # Lazy imports: default CLI and prepare never initialize a backend or renderer.
+        from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec
+        from cloud_edge_robot_arm.datasets.rgbd.teacher import EpisodeRecorder, run_teacher_episode
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.simulation.models import PhysicalFault, PhysicalFaultType
+        from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+    
+        scene = SceneSpec.model_validate(plan["row"]["scene"])
+        guard = GenerationBudget(plan["budgets"], output)
+        spool = StepSpool(output / "raw-step-journal.jsonl")
+        raw: list[Any] = []
+        controls: list[Any] = []
+        actions: list[dict] = []
+        commands: list[dict] = []
+        events: list[dict] = []
+        recovery_start: int | None = None
+        backend: Any = None
+        outcome = None
+        failure = None
+    
+        def record(snapshot: Any) -> None:
+            if raw and raw[-1].physics_step == snapshot.physics_step:
+                if raw[-1] != snapshot:
+                    raise ValueError("same-step physical snapshot changed")
+                return
+            raw.append(snapshot)
+            spool.append("PHYSICS", asdict(snapshot))
+            # Conservative reservation for both originals and final six-file source.
+            guard.check(snapshot.sim_time_s, (len(raw) + len(controls)) * 16384)
+    
+        def actuator(snapshot: Any) -> None:
+            controls.append(snapshot)
+            spool.append("ACTUATOR_PRE", asdict(snapshot))
+            guard.check(snapshot.sim_time_s, (len(raw) + len(controls)) * 16384)
+    
+        try:
+            guard.check(0.0, 0)
+            with MuJoCoCaptureSession(SimulatorConfig(**plan["config"])) as capture:
+                capture.apply_scene(scene)
+                backend = capture._backend
+                record(backend.current_physics_observation())
+                with backend.observe_actuator_steps(actuator):
+                    with backend.observe_physics_steps(record):
+                        backend.step(steps=plan["settle_steps"])
+                        guard.fault_start_s = backend.get_sim_time()
+                        parameters = plan["fault"]["parameters"]
+                        backend.inject_fault(PhysicalFault(PhysicalFaultType.TARGET_MOTION, parameters))
+                        maximum_steps = (
+                            math.ceil(parameters["duration_s"] / plan["config"]["physics_dt_s"]) + 1
+                        )
+                        for _ in range(maximum_steps):
+                            if any(
+                                e["event"] == "TARGET_MOTION_FINISHED" for e in backend.fault_records
+                            ):
+                                break
+                            backend.step(steps=1)
+                        if not any(
+                            e["event"] == "TARGET_MOTION_FINISHED" for e in backend.fault_records
+                        ):
+                            raise RuntimeError(
+                                "actual injected fault did not finish within locked duration"
+                            )
+                    # T5 installs the original sole observer; do not nest observers.
+                    recovery_start = backend.total_physics_steps
+                    recorder = EpisodeRecorder()
+                    outcome = run_teacher_episode(
+                        scene,
+                        MuJoCoSkillRobot(backend),
+                        recorder,
+                        settle_steps=0,
+                        physical_observer=record,
+                        action_observer=lambda event: actions.append(dict(event)),
+                    )
+                commands = backend.command_records
+                events = backend.fault_records
+        except Exception as exc:
+            failure = f"{type(exc).__name__}: {exc}"
+            if backend is not None:
+                commands = backend.command_records
+                events = backend.fault_records
+        finally:
+            try:
+                spool.close()
+            except Exception as exc:
+                failure = f"raw step spool: {exc}"
+            # Outside callbacks, persist every available detached original, even after
+            # budget/action/renderer failures. No fabricated step or success completion.
+            for name, values in (("raw-observations.jsonl", raw), ("raw-actuators.jsonl", controls)):
+                path = output / name
+                with path.open("x") as stream:
+                    for value in values:
+                        stream.write(canonical_json(asdict(value)) + "\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            for name, value in (
+                ("action-events.json", actions),
+                ("backend-commands.json", commands),
+                ("raw-fault-events.json", events),
+            ):
+                _write(output / name, value)
+            _write(
+                output / "physical-terminal.json",
+                {
+                    "failure": failure,
+                    "independent_t5_outcome": asdict(outcome) if outcome else None,
+                    "recovery_start_step": recovery_start,
+                    "raw_states": len(raw),
+                    "actuator_rows": len(controls),
+                    "actions": len(actions),
+                    "scope": "ACTUAL_OFFLINE_T5",
+                },
+            )
+        if raw and controls:
+            # Failed and partial traces are intentionally serialized too; independent
+            # acceptance can only PROVE the complete injected successful safe trace.
+            write_recovery_source(
+                row=plan["row"],
+                observations=raw,
+                action_events=actions,
+                backend_commands=commands,
+                actuator_steps=controls,
+                fault_events=events,
+                recovery_start_step=recovery_start
+                if recovery_start is not None
+                else raw[-1].physics_step,
+                output=output / "source",
+            )
+        if failure:
+>           raise RuntimeError(failure)
+E           RuntimeError: BudgetExceeded: bounded raw step spool saturated
+
+src/cloud_edge_robot_arm/research/protocol_generation.py:587: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_generation_sources.py::test_actual_path_wires_existing_detached_hooks_without_real_backend
+1 failed, 17 deselected in 1.38s

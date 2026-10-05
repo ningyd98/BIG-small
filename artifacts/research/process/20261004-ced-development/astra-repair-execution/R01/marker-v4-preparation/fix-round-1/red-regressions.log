@@ -1,0 +1,216 @@
+FFFFFFF                                                                  [100%]
+=================================== FAILURES ===================================
+____ test_protocol_path_resolves_relative_input_and_rejects_other_directory ____
+
+    def test_protocol_path_resolves_relative_input_and_rejects_other_directory():
+        m = pilot()
+        relative = HERE.relative_to(ROOT) / "fix-round-1/pilot-protocol"
+>       assert m.protocol_directory(relative) == (HERE / "fix-round-1/pilot-protocol").resolve()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py:326: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/fix-round-1/pilot-protocol')
+
+    def protocol_directory(directory):
+        directory = Path(directory).resolve()
+        if directory != (HERE / "pilot-protocol").resolve():
+>           raise RuntimeError("only independently reviewed fresh pilot protocol directory permitted")
+E           RuntimeError: only independently reviewed fresh pilot protocol directory permitted
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/run_sparse_once.py:319: RuntimeError
+______ test_real_factory_frozen_201_step_horizon_retains_deviations[4805] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1249/test_real_factory_frozen_201_s0')
+final_step = 4805
+
+    @pytest.mark.parametrize("final_step", [4805, 4806, 4807])
+    def test_real_factory_frozen_201_step_horizon_retains_deviations(tmp_path, final_step):
+        m = pilot()
+        header = json.loads((HERE / "pilot-protocol/header.json").read_text())
+        base = m.configured_runner(header)
+        selected = tuple(header["selected_steps"])
+        current = [0]
+        class CPUObservation:
+            episode_id = "cpu-range-only"
+            def __init__(self, n):
+                self.sim_time_s = n / 240
+                self.observation_id = f"cpu-{n}"
+                self.checksum_sha256 = "cpu-fixture"
+            def model_dump_json(self):
+                return json.dumps({"observation_id": self.observation_id})
+        def capture():
+            return CPUObservation(current[0]), ["same", "same"]
+        directory = tmp_path / "sparse"
+        recorder = base.StepRGBDRecorder(directory, capture, episode_id=CPUObservation.episode_id,
+                                        max_sample_gap_s=header["original_max_sample_gap_s"])
+        for n in range(final_step + 1):
+            current[0] = n
+            recorder.observe_step(episode_id=CPUObservation.episode_id, physics_step=n, sim_time_s=n / 240)
+            if n in selected:
+                recorder.record_step(episode_id=CPUObservation.episode_id, physics_step=n, sim_time_s=n / 240)
+        summary = recorder.finish(final_step=final_step, final_sim_time_s=final_step / 240)
+        rows = [json.loads(line) for line in (directory / "index.jsonl").read_text().splitlines()]
+        callbacks = [r for r in rows if r["event"] == "PHYSICAL_CALLBACK"]
+        reached = [n for n in selected if n <= final_step]
+        assert [r["physics_step"] for r in callbacks] == list(range(final_step + 1))
+        assert summary["allocated_steps"] == summary["saved_steps"] == reached
+        assert summary["physical_callbacks"] == summary["physical_callback_attempts"] == final_step + 1
+        assert summary["final_step"] == final_step
+        assert summary["planned_selected_steps"] == list(selected)
+        assert len(list((directory / "frames").glob("*.json.gz"))) == len(reached)
+        assert summary["status"] == ("COMPLETE" if final_step == 4806 else "INCOMPLETE")
+>       assert summary["recipe_range_status"] == ("MATCH" if final_step == 4806 else "RECIPE_DEVIATION")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'recipe_range_status'
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py:422: KeyError
+______ test_real_factory_frozen_201_step_horizon_retains_deviations[4806] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1249/test_real_factory_frozen_201_s1')
+final_step = 4806
+
+    @pytest.mark.parametrize("final_step", [4805, 4806, 4807])
+    def test_real_factory_frozen_201_step_horizon_retains_deviations(tmp_path, final_step):
+        m = pilot()
+        header = json.loads((HERE / "pilot-protocol/header.json").read_text())
+        base = m.configured_runner(header)
+        selected = tuple(header["selected_steps"])
+        current = [0]
+        class CPUObservation:
+            episode_id = "cpu-range-only"
+            def __init__(self, n):
+                self.sim_time_s = n / 240
+                self.observation_id = f"cpu-{n}"
+                self.checksum_sha256 = "cpu-fixture"
+            def model_dump_json(self):
+                return json.dumps({"observation_id": self.observation_id})
+        def capture():
+            return CPUObservation(current[0]), ["same", "same"]
+        directory = tmp_path / "sparse"
+        recorder = base.StepRGBDRecorder(directory, capture, episode_id=CPUObservation.episode_id,
+                                        max_sample_gap_s=header["original_max_sample_gap_s"])
+        for n in range(final_step + 1):
+            current[0] = n
+            recorder.observe_step(episode_id=CPUObservation.episode_id, physics_step=n, sim_time_s=n / 240)
+            if n in selected:
+                recorder.record_step(episode_id=CPUObservation.episode_id, physics_step=n, sim_time_s=n / 240)
+        summary = recorder.finish(final_step=final_step, final_sim_time_s=final_step / 240)
+        rows = [json.loads(line) for line in (directory / "index.jsonl").read_text().splitlines()]
+        callbacks = [r for r in rows if r["event"] == "PHYSICAL_CALLBACK"]
+        reached = [n for n in selected if n <= final_step]
+        assert [r["physics_step"] for r in callbacks] == list(range(final_step + 1))
+        assert summary["allocated_steps"] == summary["saved_steps"] == reached
+        assert summary["physical_callbacks"] == summary["physical_callback_attempts"] == final_step + 1
+        assert summary["final_step"] == final_step
+        assert summary["planned_selected_steps"] == list(selected)
+        assert len(list((directory / "frames").glob("*.json.gz"))) == len(reached)
+        assert summary["status"] == ("COMPLETE" if final_step == 4806 else "INCOMPLETE")
+>       assert summary["recipe_range_status"] == ("MATCH" if final_step == 4806 else "RECIPE_DEVIATION")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'recipe_range_status'
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py:422: KeyError
+______ test_real_factory_frozen_201_step_horizon_retains_deviations[4807] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1249/test_real_factory_frozen_201_s2')
+final_step = 4807
+
+    @pytest.mark.parametrize("final_step", [4805, 4806, 4807])
+    def test_real_factory_frozen_201_step_horizon_retains_deviations(tmp_path, final_step):
+        m = pilot()
+        header = json.loads((HERE / "pilot-protocol/header.json").read_text())
+        base = m.configured_runner(header)
+        selected = tuple(header["selected_steps"])
+        current = [0]
+        class CPUObservation:
+            episode_id = "cpu-range-only"
+            def __init__(self, n):
+                self.sim_time_s = n / 240
+                self.observation_id = f"cpu-{n}"
+                self.checksum_sha256 = "cpu-fixture"
+            def model_dump_json(self):
+                return json.dumps({"observation_id": self.observation_id})
+        def capture():
+            return CPUObservation(current[0]), ["same", "same"]
+        directory = tmp_path / "sparse"
+        recorder = base.StepRGBDRecorder(directory, capture, episode_id=CPUObservation.episode_id,
+                                        max_sample_gap_s=header["original_max_sample_gap_s"])
+        for n in range(final_step + 1):
+            current[0] = n
+            recorder.observe_step(episode_id=CPUObservation.episode_id, physics_step=n, sim_time_s=n / 240)
+            if n in selected:
+                recorder.record_step(episode_id=CPUObservation.episode_id, physics_step=n, sim_time_s=n / 240)
+        summary = recorder.finish(final_step=final_step, final_sim_time_s=final_step / 240)
+        rows = [json.loads(line) for line in (directory / "index.jsonl").read_text().splitlines()]
+        callbacks = [r for r in rows if r["event"] == "PHYSICAL_CALLBACK"]
+        reached = [n for n in selected if n <= final_step]
+        assert [r["physics_step"] for r in callbacks] == list(range(final_step + 1))
+        assert summary["allocated_steps"] == summary["saved_steps"] == reached
+        assert summary["physical_callbacks"] == summary["physical_callback_attempts"] == final_step + 1
+        assert summary["final_step"] == final_step
+        assert summary["planned_selected_steps"] == list(selected)
+        assert len(list((directory / "frames").glob("*.json.gz"))) == len(reached)
+>       assert summary["status"] == ("COMPLETE" if final_step == 4806 else "INCOMPLETE")
+E       AssertionError: assert 'COMPLETE' == 'INCOMPLETE'
+E         
+E         - INCOMPLETE
+E         ? --
+E         + COMPLETE
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py:421: AssertionError
+_ test_range_policy_rejects_before_source_or_runtime_loading[expected_physics_steps-4807] _
+
+field = 'expected_physics_steps', value = 4807
+
+    @pytest.mark.parametrize("field,value", [("expected_physics_steps", 4807),
+                                            ("expected_physics_steps", True),
+                                            ("expected_physics_steps_is_admission_gate", False)])
+    def test_range_policy_rejects_before_source_or_runtime_loading(field, value):
+        m = pilot()
+        header = {"expected_physics_steps": 4806, "expected_physics_steps_is_admission_gate": True}
+>       m.require_range_policy(header)
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'marker_v4_pilot_owned' has no attribute 'require_range_policy'
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py:431: AttributeError
+_ test_range_policy_rejects_before_source_or_runtime_loading[expected_physics_steps-True] _
+
+field = 'expected_physics_steps', value = True
+
+    @pytest.mark.parametrize("field,value", [("expected_physics_steps", 4807),
+                                            ("expected_physics_steps", True),
+                                            ("expected_physics_steps_is_admission_gate", False)])
+    def test_range_policy_rejects_before_source_or_runtime_loading(field, value):
+        m = pilot()
+        header = {"expected_physics_steps": 4806, "expected_physics_steps_is_admission_gate": True}
+>       m.require_range_policy(header)
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'marker_v4_pilot_owned' has no attribute 'require_range_policy'
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py:431: AttributeError
+_ test_range_policy_rejects_before_source_or_runtime_loading[expected_physics_steps_is_admission_gate-False] _
+
+field = 'expected_physics_steps_is_admission_gate', value = False
+
+    @pytest.mark.parametrize("field,value", [("expected_physics_steps", 4807),
+                                            ("expected_physics_steps", True),
+                                            ("expected_physics_steps_is_admission_gate", False)])
+    def test_range_policy_rejects_before_source_or_runtime_loading(field, value):
+        m = pilot()
+        header = {"expected_physics_steps": 4806, "expected_physics_steps_is_admission_gate": True}
+>       m.require_range_policy(header)
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'marker_v4_pilot_owned' has no attribute 'require_range_policy'
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py:431: AttributeError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py::test_protocol_path_resolves_relative_input_and_rejects_other_directory
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py::test_real_factory_frozen_201_step_horizon_retains_deviations[4805]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py::test_real_factory_frozen_201_step_horizon_retains_deviations[4806]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py::test_real_factory_frozen_201_step_horizon_retains_deviations[4807]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py::test_range_policy_rejects_before_source_or_runtime_loading[expected_physics_steps-4807]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py::test_range_policy_rejects_before_source_or_runtime_loading[expected_physics_steps-True]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-preparation/test_cpu.py::test_range_policy_rejects_before_source_or_runtime_loading[expected_physics_steps_is_admission_gate-False]
+7 failed, 33 deselected in 0.52s

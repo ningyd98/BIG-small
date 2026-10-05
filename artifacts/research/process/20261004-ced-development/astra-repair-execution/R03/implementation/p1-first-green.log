@@ -1,0 +1,189 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_one_observer_exact_clock_tee_and_old_begin_new_end_keep_raw_sequence[None] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1235/test_one_observer_exact_clock_0')
+old = None
+
+    @pytest.mark.parametrize("old", [None, "software-old"])
+    def test_one_observer_exact_clock_tee_and_old_begin_new_end_keep_raw_sequence(tmp_path, old):
+        rec, backend = recorder(tmp_path)
+        with rec:
+            assert backend._operation_observer.__self__ is rec
+            with pytest.raises(RuntimeError):
+                with backend.observe_operation_boundaries(lambda _: None):
+                    pass
+            returned = rec._clock_pair()
+            assert rec.clock_pair_originals[-1]["sequence"] == returned[0]
+            assert rec.clock_pair_originals[-1]["mono_before_ns"] == returned[1]
+            assert rec.clock_pair_originals[-1]["utc_at"] == returned[2].isoformat()
+>           reset_events(rec, backend, old)
+
+tests/test_native_reset_capture_v2.py:70: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rec = <cloud_edge_robot_arm.research.native_reset_capture_v2.VisualResetClockRecorderV2 object at 0x706dd59285c0>
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x706dd5e6cce0>
+old = None
+
+    def reset_events(rec, backend, old=None):
+        backend._episode_id = old
+>       scenario = backend._scenario.model_dump(mode="json")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'PhysicalScenarioConfig' object has no attribute 'model_dump'
+
+tests/test_native_reset_capture_v2.py:43: AttributeError
+_ test_one_observer_exact_clock_tee_and_old_begin_new_end_keep_raw_sequence[software-old] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1235/test_one_observer_exact_clock_1')
+old = 'software-old'
+
+    @pytest.mark.parametrize("old", [None, "software-old"])
+    def test_one_observer_exact_clock_tee_and_old_begin_new_end_keep_raw_sequence(tmp_path, old):
+        rec, backend = recorder(tmp_path)
+        with rec:
+            assert backend._operation_observer.__self__ is rec
+            with pytest.raises(RuntimeError):
+                with backend.observe_operation_boundaries(lambda _: None):
+                    pass
+            returned = rec._clock_pair()
+            assert rec.clock_pair_originals[-1]["sequence"] == returned[0]
+            assert rec.clock_pair_originals[-1]["mono_before_ns"] == returned[1]
+            assert rec.clock_pair_originals[-1]["utc_at"] == returned[2].isoformat()
+>           reset_events(rec, backend, old)
+
+tests/test_native_reset_capture_v2.py:70: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rec = <cloud_edge_robot_arm.research.native_reset_capture_v2.VisualResetClockRecorderV2 object at 0x706dd56d00b0>
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x706dd570e720>
+old = 'software-old'
+
+    def reset_events(rec, backend, old=None):
+        backend._episode_id = old
+>       scenario = backend._scenario.model_dump(mode="json")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'PhysicalScenarioConfig' object has no attribute 'model_dump'
+
+tests/test_native_reset_capture_v2.py:43: AttributeError
+___ test_snapshot_detaches_aliases_and_retains_failed_reset_and_late_events ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1235/test_snapshot_detaches_aliases0')
+
+    def test_snapshot_detaches_aliases_and_retains_failed_reset_and_late_events(tmp_path):
+        rec, backend = recorder(tmp_path)
+        with rec:
+>           rec._on_boundary(event("RESET", "BEGIN", None))
+
+tests/test_native_reset_capture_v2.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/native_reset_capture_v2.py:81: in _on_boundary
+    "event": _plain(event),
+             ^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/vision/raw_recorder_v3.py:81: in _plain
+    return _plain(asdict(value))
+                  ^^^^^^^^^^^^^
+/usr/lib/python3.12/dataclasses.py:1322: in asdict
+    return _asdict_inner(obj, dict_factory)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/dataclasses.py:1332: in _asdict_inner
+    f.name: _asdict_inner(getattr(obj, f.name), dict)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/dataclasses.py:1379: in _asdict_inner
+    return copy.deepcopy(obj)
+           ^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = mappingproxy({'requested': mappingproxy({})}), memo = {}, _nil = []
+
+    def deepcopy(x, memo=None, _nil=[]):
+        """Deep copy operation on arbitrary Python objects.
+    
+        See the module's __doc__ string for more info.
+        """
+    
+        if memo is None:
+            memo = {}
+    
+        d = id(x)
+        y = memo.get(d, _nil)
+        if y is not _nil:
+            return y
+    
+        cls = type(x)
+    
+        copier = _deepcopy_dispatch.get(cls)
+        if copier is not None:
+            y = copier(x, memo)
+        else:
+            if issubclass(cls, type):
+                y = _deepcopy_atomic(x, memo)
+            else:
+                copier = getattr(x, "__deepcopy__", None)
+                if copier is not None:
+                    y = copier(memo)
+                else:
+                    reductor = dispatch_table.get(cls)
+                    if reductor:
+                        rv = reductor(x)
+                    else:
+                        reductor = getattr(x, "__reduce_ex__", None)
+                        if reductor is not None:
+>                           rv = reductor(4)
+                                 ^^^^^^^^^^^
+E                           TypeError: cannot pickle 'mappingproxy' object
+
+/usr/lib/python3.12/copy.py:151: TypeError
+_ test_cached_capture_denominator_and_failed_frame_are_exported_without_bound_owner _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1235/test_cached_capture_denominato0')
+
+    def test_cached_capture_denominator_and_failed_frame_are_exported_without_bound_owner(tmp_path):
+        rec, backend = recorder(tmp_path)
+        with rec:
+>           reset_events(rec, backend)
+
+tests/test_native_reset_capture_v2.py:105: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rec = <cloud_edge_robot_arm.research.native_reset_capture_v2.VisualResetClockRecorderV2 object at 0x706e01c217f0>
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x706dd5c21d60>
+old = None
+
+    def reset_events(rec, backend, old=None):
+        backend._episode_id = old
+>       scenario = backend._scenario.model_dump(mode="json")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'PhysicalScenarioConfig' object has no attribute 'model_dump'
+
+tests/test_native_reset_capture_v2.py:43: AttributeError
+_____ test_upcoming_control_n_is_retained_with_physics_n_not_previous_step _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1235/test_upcoming_control_n_is_ret0')
+
+    def test_upcoming_control_n_is_retained_with_physics_n_not_previous_step(tmp_path):
+        rec, backend = recorder(tmp_path)
+        with rec:
+>           reset_events(rec, backend)
+
+tests/test_native_reset_capture_v2.py:126: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rec = <cloud_edge_robot_arm.research.native_reset_capture_v2.VisualResetClockRecorderV2 object at 0x706dd573bcb0>
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x706dd573b350>
+old = None
+
+    def reset_events(rec, backend, old=None):
+        backend._episode_id = old
+>       scenario = backend._scenario.model_dump(mode="json")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'PhysicalScenarioConfig' object has no attribute 'model_dump'
+
+tests/test_native_reset_capture_v2.py:43: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_native_reset_capture_v2.py::test_one_observer_exact_clock_tee_and_old_begin_new_end_keep_raw_sequence[None]
+FAILED tests/test_native_reset_capture_v2.py::test_one_observer_exact_clock_tee_and_old_begin_new_end_keep_raw_sequence[software-old]
+FAILED tests/test_native_reset_capture_v2.py::test_snapshot_detaches_aliases_and_retains_failed_reset_and_late_events
+FAILED tests/test_native_reset_capture_v2.py::test_cached_capture_denominator_and_failed_frame_are_exported_without_bound_owner
+FAILED tests/test_native_reset_capture_v2.py::test_upcoming_control_n_is_retained_with_physics_n_not_previous_step
+5 failed in 0.67s

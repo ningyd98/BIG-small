@@ -1,0 +1,45 @@
+--- worker-before.py
++++ src/cloud_edge_robot_arm/simulation_runtime/worker.py
+@@ -127,6 +127,7 @@
+         self.heartbeat_at: str | None = None
+         self._heartbeat_failed = threading.Event()
+         self._active_task_origin: tuple[str, float, datetime] | None = None
++        self._native_clock_prefix_application: object | None = None
+ 
+     def poll_once(self) -> bool:
+         # acquire_lease 是跨进程/跨线程的唯一消费门；没有租约就不能执行 job。
+@@ -210,6 +211,12 @@
+             result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+             self._raise_if_cancelled_or_timed_out(job_id, job, start_monotonic)
+             terminal = RuntimeJobStatus.SUCCEEDED
++            if (
++                isinstance(result, dict)
++                and result.get("evaluation_scope") == "NATIVE_RESET_PREFIX_EXCLUDED"
++                and result.get("prefix_complete") is not True
++            ):
++                terminal = RuntimeJobStatus.FAILED
+             if isinstance(result, dict) and result.get("job_type") == "DATASET_GENERATION":
+                 if result.get("dataset_status") == "BLOCKED":
+                     terminal = RuntimeJobStatus.BLOCKED_BY_ENV
+@@ -669,6 +676,21 @@
+     def _run_visual_closed_loop(
+         self, job: SimulationJobRecord, draft: ExperimentDraft, *, start_monotonic: float
+     ) -> tuple[dict[str, Any], list[TimelineEvent], list[SimulationMetric]]:
++        prefix_application = getattr(self, "_native_clock_prefix_application", None)
++        if prefix_application is not None:
++            from cloud_edge_robot_arm.research.native_clock_publication_v2 import (
++                NativeClockPrefixApplicationV2,
++                run_native_reset_clock_prefix_v2,
++            )
++
++            if type(prefix_application) is not NativeClockPrefixApplicationV2:
++                raise TypeError("exact configured source-only prefix application required")
++            return run_native_reset_clock_prefix_v2(
++                cast(NativeClockPrefixApplicationV2, prefix_application),
++                self,
++                job,
++                start_monotonic=start_monotonic,
++            )
+         from pydantic_core import to_jsonable_python
+ 
+         from cloud_edge_robot_arm.simulation.config import SimulatorConfig

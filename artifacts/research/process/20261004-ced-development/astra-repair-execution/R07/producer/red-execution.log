@@ -1,0 +1,122 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_______ test_budget_uses_fault_start_and_preserves_boundary_before_raise _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1221/test_budget_uses_fault_start_a0')
+
+    def test_budget_uses_fault_start_and_preserves_boundary_before_raise(tmp_path):
+        clock = [0.]
+>       guard = api().GenerationBudget({'wall_s':1800., 'retained_bytes':1024,
+                ^^^^^^^^^^^^^^^^^^^^^^
+                                        'min_free_bytes':0, 'rcap_s':60.}, tmp_path,
+                                       clock=lambda: clock[0], disk_free=lambda: 999999)
+E       AttributeError: module 'cloud_edge_robot_arm.research.protocol_generation' has no attribute 'GenerationBudget'
+
+tests/test_protocol_generation_sources.py:100: AttributeError
+_ test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[exception] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1221/test_execute_preserves_allocat0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x707b333b5ac0>
+mode = 'exception'
+
+    @pytest.mark.parametrize('mode', ['exception', 'no_fault', 'budget'])
+    def test_execute_preserves_allocation_and_partial_sources_without_hidden_retry(tmp_path, monkeypatch, mode):
+        path, _ = history(tmp_path)
+        protocol = tmp_path / 'protocol'
+        prepared = api().prepare_generation([path], protocol)
+        calls = []
+        def collect(plan, output):
+            calls.append(plan['fault']['parameters'])
+            (output / 'raw-observations.jsonl').write_text('{"physics_step":0}\n')
+            if mode == 'budget':
+                raise api().BudgetExceeded('wall budget exceeded')
+            if mode == 'exception':
+                raise RuntimeError('actual teacher failed')
+            return {'physical_calls':1}
+>       monkeypatch.setattr(api(), '_run_physical', collect)
+E       AttributeError: <module 'cloud_edge_robot_arm.research.protocol_generation' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/research/protocol_generation.py'> has no attribute '_run_physical'
+
+tests/test_protocol_generation_sources.py:126: AttributeError
+_ test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[no_fault] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1221/test_execute_preserves_allocat1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x707b09d8a060>
+mode = 'no_fault'
+
+    @pytest.mark.parametrize('mode', ['exception', 'no_fault', 'budget'])
+    def test_execute_preserves_allocation_and_partial_sources_without_hidden_retry(tmp_path, monkeypatch, mode):
+        path, _ = history(tmp_path)
+        protocol = tmp_path / 'protocol'
+        prepared = api().prepare_generation([path], protocol)
+        calls = []
+        def collect(plan, output):
+            calls.append(plan['fault']['parameters'])
+            (output / 'raw-observations.jsonl').write_text('{"physics_step":0}\n')
+            if mode == 'budget':
+                raise api().BudgetExceeded('wall budget exceeded')
+            if mode == 'exception':
+                raise RuntimeError('actual teacher failed')
+            return {'physical_calls':1}
+>       monkeypatch.setattr(api(), '_run_physical', collect)
+E       AttributeError: <module 'cloud_edge_robot_arm.research.protocol_generation' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/research/protocol_generation.py'> has no attribute '_run_physical'
+
+tests/test_protocol_generation_sources.py:126: AttributeError
+_ test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[budget] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1221/test_execute_preserves_allocat2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x707b36773c80>
+mode = 'budget'
+
+    @pytest.mark.parametrize('mode', ['exception', 'no_fault', 'budget'])
+    def test_execute_preserves_allocation_and_partial_sources_without_hidden_retry(tmp_path, monkeypatch, mode):
+        path, _ = history(tmp_path)
+        protocol = tmp_path / 'protocol'
+        prepared = api().prepare_generation([path], protocol)
+        calls = []
+        def collect(plan, output):
+            calls.append(plan['fault']['parameters'])
+            (output / 'raw-observations.jsonl').write_text('{"physics_step":0}\n')
+            if mode == 'budget':
+                raise api().BudgetExceeded('wall budget exceeded')
+            if mode == 'exception':
+                raise RuntimeError('actual teacher failed')
+            return {'physical_calls':1}
+>       monkeypatch.setattr(api(), '_run_physical', collect)
+E       AttributeError: <module 'cloud_edge_robot_arm.research.protocol_generation' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/research/protocol_generation.py'> has no attribute '_run_physical'
+
+tests/test_protocol_generation_sources.py:126: AttributeError
+____ test_wrong_review_pin_cannot_dispatch_and_existing_output_is_preserved ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1221/test_wrong_review_pin_cannot_d0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x707b09b03fb0>
+
+    def test_wrong_review_pin_cannot_dispatch_and_existing_output_is_preserved(tmp_path, monkeypatch):
+        path, _ = history(tmp_path)
+        protocol = tmp_path / 'protocol'
+        api().prepare_generation([path], protocol)
+        def forbidden(*args):
+            pytest.fail('backend creation is forbidden in this CPU preflight')
+>       monkeypatch.setattr(api(), '_run_physical', forbidden)
+E       AttributeError: <module 'cloud_edge_robot_arm.research.protocol_generation' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/research/protocol_generation.py'> has no attribute '_run_physical'
+
+tests/test_protocol_generation_sources.py:149: AttributeError
+________ test_registered_empty_history_cannot_claim_complete_inventory _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1221/test_registered_empty_history_0')
+
+    def test_registered_empty_history_cannot_claim_complete_inventory(tmp_path):
+        path = tmp_path / 'empty.json'
+        path.write_text('{}')
+        result = api().inventory_history([path])
+>       assert result['complete'] is False
+E       assert True is False
+
+tests/test_protocol_generation_sources.py:160: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_generation_sources.py::test_budget_uses_fault_start_and_preserves_boundary_before_raise
+FAILED tests/test_protocol_generation_sources.py::test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[exception]
+FAILED tests/test_protocol_generation_sources.py::test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[no_fault]
+FAILED tests/test_protocol_generation_sources.py::test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[budget]
+FAILED tests/test_protocol_generation_sources.py::test_wrong_review_pin_cannot_dispatch_and_existing_output_is_preserved
+FAILED tests/test_protocol_generation_sources.py::test_registered_empty_history_cannot_claim_complete_inventory
+6 failed, 5 deselected in 6.56s
