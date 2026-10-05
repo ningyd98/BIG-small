@@ -1,0 +1,115 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_canonical_pass_for_decoy_target_cannot_authorize_candidate[memory] ____
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7c2caa5aa840>
+
+    def test_canonical_pass_for_decoy_target_cannot_authorize_candidate(replan_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        request, response = setup_replan(replan_repo)
+        response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
+            update={"preconditions": ["target_visible"]}, deep=True)]}, deep=True)
+        def decoy_proof(*args):
+            proof = submit_proof(*args)
+            facts = {key: dict(value) for key, value in proof.online_evidence.visual_facts.items()}
+            facts["target_visible"]["target_id"] = "decoy"
+            return replace(proof, action=replace(proof.action,
+                        preconditions=(ConditionSpec("target_visible", target_id="decoy"),)),
+                        online_evidence=replace(proof.online_evidence, visual_facts=facts))
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=decoy_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert result.record.status == "PREPARED"
+E       AssertionError: assert 'ACTIVATED' == 'PREPARED'
+E         
+E         - PREPARED
+E         + ACTIVATED
+
+tests/test_replan_activation.py:783: AssertionError
+___ test_canonical_pass_for_decoy_target_cannot_authorize_candidate[sqlite] ____
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7c2ca6737c50>
+
+    def test_canonical_pass_for_decoy_target_cannot_authorize_candidate(replan_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        request, response = setup_replan(replan_repo)
+        response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
+            update={"preconditions": ["target_visible"]}, deep=True)]}, deep=True)
+        def decoy_proof(*args):
+            proof = submit_proof(*args)
+            facts = {key: dict(value) for key, value in proof.online_evidence.visual_facts.items()}
+            facts["target_visible"]["target_id"] = "decoy"
+            return replace(proof, action=replace(proof.action,
+                        preconditions=(ConditionSpec("target_visible", target_id="decoy"),)),
+                        online_evidence=replace(proof.online_evidence, visual_facts=facts))
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=decoy_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert result.record.status == "PREPARED"
+E       AssertionError: assert 'ACTIVATED' == 'PREPARED'
+E         
+E         - PREPARED
+E         + ACTIVATED
+
+tests/test_replan_activation.py:783: AssertionError
+___ test_stale_supplied_active_record_cannot_stage_an_old_candidate[memory] ____
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7c2ca6737740>
+
+    def test_stale_supplied_active_record_cannot_stage_an_old_candidate(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        old = replan_repo.get_active_contract("task")
+        replan_repo.save_active_contract(old.contract.model_copy(update={
+            "plan_version": 2, "command_seq": 2,
+        }), plan_id="plan", robot_id="robot")
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response, active_record=old)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not False and ['stage'] == []
+E        +  where False = ReplanApplyResult(applied=False, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='tas...59ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['activation guard/checkpoint/version/cancellation conflict']).applied
+E         
+E         Left contains one more item: 'stage'
+E         Use -v to get more diff)
+
+tests/test_replan_activation.py:798: AssertionError
+___ test_stale_supplied_active_record_cannot_stage_an_old_candidate[sqlite] ____
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7c2ca9465af0>
+
+    def test_stale_supplied_active_record_cannot_stage_an_old_candidate(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        old = replan_repo.get_active_contract("task")
+        replan_repo.save_active_contract(old.contract.model_copy(update={
+            "plan_version": 2, "command_seq": 2,
+        }), plan_id="plan", robot_id="robot")
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response, active_record=old)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not False and ['stage'] == []
+E        +  where False = ReplanApplyResult(applied=False, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='tas...59ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['activation guard/checkpoint/version/cancellation conflict']).applied
+E         
+E         Left contains one more item: 'stage'
+E         Use -v to get more diff)
+
+tests/test_replan_activation.py:798: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_canonical_pass_for_decoy_target_cannot_authorize_candidate[memory]
+FAILED tests/test_replan_activation.py::test_canonical_pass_for_decoy_target_cannot_authorize_candidate[sqlite]
+FAILED tests/test_replan_activation.py::test_stale_supplied_active_record_cannot_stage_an_old_candidate[memory]
+FAILED tests/test_replan_activation.py::test_stale_supplied_active_record_cannot_stage_an_old_candidate[sqlite]
+4 failed, 47 deselected in 1.03s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k "decoy_target or stale_supplied"
+Observed exit code: 1

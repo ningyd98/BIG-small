@@ -1,0 +1,42 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_role_probe_keeps_actual_response_bytes_and_refusal_without_freeze ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-451/test_role_probe_keeps_actual_r0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c0bcc771970>
+
+    def test_role_probe_keeps_actual_response_bytes_and_refusal_without_freeze(tmp_path, monkeypatch):
+        import io
+        import urllib.request
+    
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
+        from cloud_edge_robot_arm.vision.capture import CapturedFrame
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot, resolve_visual_planner
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+        from scripts.probe_rgbd_roles import _attempt
+        from tests.test_rgbd_observations import observation_payload
+    
+        raw = b'  {"choices": []}  \n'
+    
+        class ExternalBoundary:
+            def open(self, request, timeout):
+                return io.BytesIO(raw)
+    
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
+        model = ModelConfigSnapshot(provider="openai_compatible", model="qwen3.8-max",
+            endpoint="https://dashscope.aliyuncs.com", weight_digest=None, quantization=None,
+            image_size=(320, 240), generation_parameters={"temperature": 0, "num_predict": 512}, timeout_s=30)
+        planner = resolve_visual_planner(model, api_key="credential-marker", allow_paid=True)
+        observation = RGBDObservation.model_validate(observation_payload())
+        frame = CapturedFrame(observation, (0, 11, 12, -1),
+            {0: "table", 11: "object_geom", 12: "target_region_geom"}, "fixture", ("fixture",) * 3)
+        request = InitialPlanningRequest(request_id="software-byte-contract", user_instruction="pick red cube",
+            scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)), observation=observation)
+        attempt = _attempt(planner, request, frame, tmp_path, 0, cloud())
+>       assert attempt["serialized_received_bytes"] == 20
+E       assert 0 == 20
+
+tests/test_rgbd_role_models.py:415: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_role_probe_keeps_actual_response_bytes_and_refusal_without_freeze
+1 failed, 24 deselected in 0.28s

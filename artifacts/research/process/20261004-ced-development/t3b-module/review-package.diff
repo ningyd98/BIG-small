@@ -1,0 +1,1318 @@
+--- initial/src/cloud_edge_robot_arm/vision/role_models.py
++++ current/src/cloud_edge_robot_arm/vision/role_models.py
+@@ -0,0 +1,229 @@
++"""Separate immutable cloud, edge and device identities for research runs.
++
++A digest binds configuration and source evidence. It is not evidence that a
++remote service exposed immutable weights or that a provider passed acceptance.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import re
++from collections.abc import Iterable, Mapping
++from dataclasses import dataclass
++from datetime import date
++from types import MappingProxyType
++from typing import TYPE_CHECKING, Literal
++from urllib.parse import urlparse
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.model_control.service import ModelControlService
++    from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
++
++
++def configuration_hash(value: Mapping[str, object]) -> str:
++    """Hash JSON configuration with stable ordering and no nonfinite values."""
++    encoded = json.dumps(
++        dict(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
++    ).encode()
++    return hashlib.sha256(encoded).hexdigest()
++
++
++def _require_digest(value: str, name: str) -> None:
++    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
++        raise ValueError(f"{name} requires a full SHA-256 digest")
++
++
++def _require_id(value: str, name: str) -> None:
++    if not isinstance(value, str) or not value.strip() or len(value) > 200:
++        raise ValueError(f"invalid {name}")
++    if any(ord(character) < 32 for character in value):
++        raise ValueError(f"invalid {name}")
++
++
++@dataclass(frozen=True, slots=True)
++class RoleProviderSnapshot:
++    role: Literal["CLOUD", "EDGE", "DEVICE"]
++    provider_id: str
++    provider_location: Literal["LOCAL_HOST", "REMOTE_SERVICE"]
++    model_id: str | None
++    revision: str | None
++    weight_digest: str | None
++    quantization: str | None
++    request_config_hash: str
++    source_hashes: Mapping[str, str]
++
++    def __post_init__(self) -> None:
++        if self.role not in {"CLOUD", "EDGE", "DEVICE"}:
++            raise ValueError("invalid role")
++        if self.provider_location not in {"LOCAL_HOST", "REMOTE_SERVICE"}:
++            raise ValueError("invalid provider_location")
++        _require_id(self.provider_id, "provider_id")
++        if self.role == "CLOUD" and self.model_id is None:
++            raise ValueError("CLOUD requires a model_id")
++        for name in ("model_id", "revision", "quantization"):
++            value = getattr(self, name)
++            if value is not None:
++                _require_id(value, name)
++        if self.weight_digest is not None:
++            _require_digest(self.weight_digest, "weight_digest")
++        _require_digest(self.request_config_hash, "request_config_hash")
++        sources = dict(self.source_hashes)
++        if not sources:
++            raise ValueError("source_hashes cannot be empty")
++        for name, digest in sources.items():
++            _require_id(name, "source path")
++            _require_digest(digest, "source hash")
++        object.__setattr__(self, "source_hashes", MappingProxyType(sources))
++
++    def evidence(self) -> dict[str, object]:
++        return {
++            "role": self.role,
++            "provider_id": self.provider_id,
++            "provider_location": self.provider_location,
++            "model_id": self.model_id,
++            "revision": self.revision,
++            "weight_digest": self.weight_digest,
++            "quantization": self.quantization,
++            "request_config_hash": self.request_config_hash,
++            "source_hashes": dict(self.source_hashes),
++        }
++
++    def digest(self) -> str:
++        return configuration_hash(self.evidence())
++
++
++@dataclass(frozen=True, slots=True)
++class RoleModelBundle:
++    cloud_snapshot: RoleProviderSnapshot
++    edge_provider_id: str
++    edge_provider_hash: str
++    device_pipeline_hash: str
++
++    def __post_init__(self) -> None:
++        if (
++            not isinstance(self.cloud_snapshot, RoleProviderSnapshot)
++            or self.cloud_snapshot.role != "CLOUD"
++        ):
++            raise ValueError("cloud_snapshot must bind the CLOUD role")
++        _require_id(self.edge_provider_id, "edge_provider_id")
++        _require_digest(self.edge_provider_hash, "edge_provider_hash")
++        _require_digest(self.device_pipeline_hash, "device_pipeline_hash")
++
++    def evidence(self) -> dict[str, object]:
++        return {
++            "cloud_snapshot": self.cloud_snapshot.evidence(),
++            "edge_provider_id": self.edge_provider_id,
++            "edge_provider_hash": self.edge_provider_hash,
++            "device_pipeline_hash": self.device_pipeline_hash,
++        }
++
++    def digest(self) -> str:
++        return configuration_hash(self.evidence())
++
++    def validate_bindings(
++        self, *, cloud_snapshot_hash: str, edge_provider_hash: str, device_pipeline_hash: str
++    ) -> None:
++        if (cloud_snapshot_hash, edge_provider_hash, device_pipeline_hash) != (
++            self.cloud_snapshot.digest(),
++            self.edge_provider_hash,
++            self.device_pipeline_hash,
++        ):
++            raise ValueError("role binding mismatch")
++
++
++def select_cloud_model_id(model_id: str, available_model_ids: Iterable[str] = ()) -> str:
++    """Prefer an advertised dated Max snapshot, never guess a service revision.
++
++    An explicitly dated profile remains pinned. Registry availability must come
++    from the caller's provider evidence; an alias stays an alias when unknown.
++    """
++    if not re.fullmatch(r"qwen3\.8-max(?:-\d{4}-\d{2}-\d{2})?", model_id):
++        raise ValueError("cloud profile must select the qwen3.8-max family")
++    if model_id != "qwen3.8-max":
++        date.fromisoformat(model_id[-10:])
++        return model_id
++    candidates = []
++    for candidate in available_model_ids:
++        if not isinstance(candidate, str) or not re.fullmatch(
++            r"qwen3\.8-max-\d{4}-\d{2}-\d{2}", candidate
++        ):
++            continue
++        try:
++            date.fromisoformat(candidate[-10:])
++        except ValueError:
++            continue
++        candidates.append(candidate)
++    return max(candidates, default=model_id)
++
++
++def resolve_cloud_role(
++    service: ModelControlService,
++    profile_id: str,
++    *,
++    source_hashes: Mapping[str, str],
++    allow_paid: bool = False,
++    image_size: tuple[int, int] = (320, 240),
++    coordinate_system: Literal["pixel", "normalized_1000"] = "pixel",
++    grasp_profile: Literal[
++        "unconfigured", "mujoco_upright_box_v1", "mujoco_upright_box_v2"
++    ] = "unconfigured",
++    available_model_ids: Iterable[str] = (),
++) -> tuple[RGBDPlannerAdapter, RoleProviderSnapshot]:
++    """Read a chosen profile and its existing secret store without activating it."""
++    from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++    from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable
++
++    profile = service.get_profile(profile_id)
++    if not profile.enabled or profile.provider_kind != PlannerProviderKind.OPENAI_COMPATIBLE:
++        raise RGBDModelUnavailable("cloud role requires an enabled compatible API profile")
++    model_id = select_cloud_model_id(profile.model_name, available_model_ids)
++    model_snapshot = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model=model_id,
++        endpoint=profile.base_url,
++        weight_digest=None,
++        quantization=None,
++        image_size=image_size,
++        generation_parameters={
++            "temperature": profile.temperature,
++            "num_predict": profile.max_tokens,
++        },
++        timeout_s=profile.timeout_seconds,
++        coordinate_system=coordinate_system,
++        grasp_profile=grasp_profile,
++    )
++    request_settings = model_snapshot.evidence() | {
++        "chat_path": profile.chat_completions_path,
++        "config_version": profile.config_version,
++        "response_format": {"type": "json_object"},
++        "allow_paid": allow_paid,
++    }
++    location: Literal["LOCAL_HOST", "REMOTE_SERVICE"] = (
++        "LOCAL_HOST"
++        if urlparse(model_snapshot.endpoint).hostname in {"localhost", "127.0.0.1", "::1"}
++        else "REMOTE_SERVICE"
++    )
++    snapshot = RoleProviderSnapshot(
++        role="CLOUD",
++        provider_id=profile.profile_id,
++        provider_location=location,
++        model_id=model_id,
++        revision=None,
++        weight_digest=None,
++        quantization=None,
++        request_config_hash=configuration_hash(request_settings),
++        source_hashes=source_hashes,
++    )
++    planner = resolve_visual_planner(
++        model_snapshot,
++        api_key=service.secret_store.get_secret(profile.profile_id) or "",
++        chat_path=profile.chat_completions_path,
++        allow_paid=allow_paid,
++    )
++    planner.role_snapshot = snapshot  # type: ignore[attr-defined]
++    return planner, snapshot
+--- initial/src/cloud_edge_robot_arm/vision/model_resolver.py
++++ current/src/cloud_edge_robot_arm/vision/model_resolver.py
+@@ -18,22 +18,22 @@
+     from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+ class ModelConfigSnapshot:
+     """A model identity and bounded request configuration, detached from live profiles."""
+ 
+     provider: Literal["ollama", "openai_compatible"]
+     model: str
+     endpoint: str
+-    weight_digest: str
+-    quantization: str
++    weight_digest: str | None
++    quantization: str | None
+     image_size: tuple[int, int]
+     generation_parameters: Mapping[str, int | float | bool]
+     timeout_s: float
+     coordinate_system: Literal["pixel", "normalized_1000"] = "pixel"
+     grasp_profile: Literal[
+         "unconfigured", "mujoco_upright_box_v1", "mujoco_upright_box_v2"
+     ] = "unconfigured"
+ 
+     def __post_init__(self) -> None:
+         if self.coordinate_system not in {"pixel", "normalized_1000"}:
+@@ -46,23 +46,33 @@
+             PlannerProviderKind.OLLAMA
+             if self.provider == "ollama"
+             else PlannerProviderKind.OPENAI_COMPATIBLE
+             if self.provider == "openai_compatible"
+             else None
+         )
+         if kind is None or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_./:-]{0,159}", self.model):
+             raise ValueError("invalid visual model provider or name")
+         canonical = EndpointSecurityPolicy().validate(kind, self.endpoint)
+         object.__setattr__(self, "endpoint", canonical)
+-        if self.weight_digest and not re.fullmatch(r"[0-9a-f]{64}", self.weight_digest):
++        if self.provider == "ollama" and (
++            self.weight_digest is None or self.quantization is None
++        ):
++            raise ValueError("local snapshots require explicit weight identity fields")
++        if self.weight_digest is not None and (
++            not isinstance(self.weight_digest, str)
++            or (self.weight_digest and not re.fullmatch(r"[0-9a-f]{64}", self.weight_digest))
++        ):
+             raise ValueError("weight_digest must be a full SHA-256 hex digest")
+-        if not re.fullmatch(r"[A-Za-z0-9_]{1,40}", self.quantization):
++        if self.quantization is not None and (
++            not isinstance(self.quantization, str)
++            or not re.fullmatch(r"[A-Za-z0-9_]{1,40}", self.quantization)
++        ):
+             raise ValueError("invalid quantization")
+         size = tuple(self.image_size)
+         if (
+             len(size) != 2
+             or not all(type(value) is int for value in size)
+             or not 1 <= size[0] <= 1280
+             or not 1 <= size[1] <= 720
+         ):
+             raise ValueError("invalid model image size")
+         object.__setattr__(self, "image_size", size)
+--- initial/scripts/probe_rgbd_roles.py
++++ current/scripts/probe_rgbd_roles.py
+@@ -0,0 +1,504 @@
++"""Probe a selected cloud profile with real synchronized RGB-D, without dispatch.
++
++The default CLI records NOT_STARTED. --execute runs the service and renderer;
++software tests and dry runs never create a role acceptance snapshot.
++"""
++
++from __future__ import annotations
++
++import argparse
++import base64
++import hashlib
++import json
++import os
++import sys
++import time
++from collections.abc import Mapping
++from datetime import UTC, datetime
++from pathlib import Path
++from typing import Any, cast
++
++import yaml
++
++if __package__ in {None, ""}:
++    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++from cloud_edge_robot_arm.model_control.models import SecretStoreKind
++from cloud_edge_robot_arm.model_control.service import ModelControlService
++from cloud_edge_robot_arm.vision.role_models import (
++    RoleModelBundle,
++    RoleProviderSnapshot,
++    configuration_hash,
++    resolve_cloud_role,
++)
++from scripts.probe_rgbd_model import _pixel_hit, _source_fingerprints, summarize_chat_request
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def _sha(raw: bytes) -> str:
++    return hashlib.sha256(raw).hexdigest()
++
++
++def _write(path: Path, value: object) -> str:
++    raw = (
++        json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n"
++    ).encode()
++    with path.open("xb") as stream:
++        stream.write(raw)
++    return _sha(raw)
++
++
++def summarize_role_request(body: Mapping[str, Any]) -> dict[str, Any]:
++    """Read the production compatible wire body, retaining byte/hash evidence."""
++    canonical = dict(body)
++    messages = []
++    for message in body.get("messages", []):
++        if not isinstance(message, dict):
++            raise ValueError("invalid request message")
++        current = dict(message)
++        content = current.get("content")
++        if isinstance(content, list):
++            text, images = [], []
++            for part in content:
++                if part.get("type") == "text":
++                    text.append(part["text"])
++                elif part.get("type") == "image_url":
++                    url = part["image_url"]["url"]
++                    if not isinstance(url, str) or not url.startswith("data:image/png;base64,"):
++                        raise ValueError("probe requires inline PNG images")
++                    encoded = url.split(",", 1)[1]
++                    base64.b64decode(encoded, validate=True)
++                    images.append(encoded)
++            current["content"] = "\n".join(text)
++            current["images"] = images
++        messages.append(current)
++    canonical["messages"] = messages
++    summary = summarize_chat_request(canonical)
++    summary["serialized_sent_bytes"] = len(json.dumps(dict(body)).encode())
++    summary["wire_sha256"] = _sha(json.dumps(dict(body)).encode())
++    summary["response_format"] = body.get("response_format")
++    summary["generation_parameters"] = {
++        key: body[key] for key in ("temperature", "max_tokens") if key in body
++    }
++    return summary
++
++
++def _hash_sources(paths: list[str]) -> dict[str, str]:
++    if not paths:
++        raise ValueError("source_paths must not be empty")
++    sources = {}
++    for name in paths:
++        if not isinstance(name, str) or Path(name).is_absolute() or ".." in Path(name).parts:
++            raise ValueError("source path must be repository relative")
++        target = (ROOT / name).resolve()
++        if not target.is_relative_to(ROOT):
++            raise ValueError("source path leaves repository")
++        sources[name] = _sha(target.read_bytes())
++    return sources
++
++
++def source_fingerprints() -> dict[str, str]:
++    return _source_fingerprints() | _hash_sources(
++        [
++            "src/cloud_edge_robot_arm/vision/role_models.py",
++            "scripts/probe_rgbd_roles.py",
++            "src/cloud_edge_robot_arm/model_control/service.py",
++            "src/cloud_edge_robot_arm/model_control/endpoint_security.py",
++        ]
++    )
++
++
++def read_role_config(path: Path) -> dict[str, Any]:
++    config = yaml.safe_load(path.read_text())
++    if not isinstance(config, dict) or set(config) != {
++        "schema_version",
++        "cloud",
++        "edge",
++        "device",
++        "probe",
++    }:
++        raise ValueError("invalid role config fields")
++    if config["schema_version"] != "ced.roles.v1":
++        raise ValueError("invalid role config schema")
++    if set(config["cloud"]) != {
++        "profile_id",
++        "model_family",
++        "available_model_ids",
++        "image_size",
++        "coordinate_system",
++        "grasp_profile",
++    }:
++        raise ValueError("cloud config must reference a profile, never credentials")
++    if config["cloud"]["model_family"] != "qwen3.8-max" or config["cloud"]["image_size"] != [
++        320,
++        240,
++    ]:
++        raise ValueError("cloud requires Max family and fixed 320x240 RGB-D")
++    if not isinstance(config["cloud"]["available_model_ids"], list):
++        raise ValueError("available_model_ids must be provider-advertised IDs")
++    if set(config["edge"]) != {
++        "provider_id",
++        "provider_location",
++        "model_id",
++        "source_paths",
++        "policy",
++    }:
++        raise ValueError("invalid edge provider config")
++    if config["edge"]["model_id"] is not None:
++        raise ValueError("current edge provider is rules without a forced model")
++    if set(config["device"]) != {"source_paths"}:
++        raise ValueError("invalid device config")
++    probe = config["probe"]
++    if set(probe) != {"scenario_id", "seed", "instruction", "warm_runs"}:
++        raise ValueError("invalid probe config")
++    if probe["scenario_id"] != "S01_NORMAL_STATIC" or type(probe["seed"]) is not int:
++        raise ValueError("role probe requires S01 and integer seed")
++    if type(probe["warm_runs"]) is not int or not 3 <= probe["warm_runs"] <= 10:
++        raise ValueError("probe requires 3 to 10 warm runs")
++    if not isinstance(probe["instruction"], str) or not probe["instruction"].strip():
++        raise ValueError("probe instruction cannot be empty")
++    return cast(dict[str, Any], config)
++
++
++def can_accept_role_probe(report: Mapping[str, Any]) -> bool:
++    """Nominal role-probe gate; never means physical, edge, or final acceptance."""
++    try:
++        if report.get("source") != "mujoco_camera" or report.get("transport") != "REAL_HTTP":
++            return False
++        if report["capture"]["synchronized"] is not True:
++            return False
++        if report["capture"]["image_size"] != [320, 240]:
++            return False
++        cloud = RoleProviderSnapshot(**report["bundle"]["cloud_snapshot"])
++        if cloud.role != "CLOUD" or cloud.provider_location != "REMOTE_SERVICE":
++            return False
++        if dict(cloud.source_hashes) != source_fingerprints():
++            return False
++        attempts = report["attempts"]
++        if (
++            not isinstance(attempts, list)
++            or len(attempts) != report["probe_config"]["warm_runs"] + 1
++        ):
++            return False
++        if report["probe_config"]["warm_runs"] < 3:
++            return False
++        for attempt in attempts:
++            if not all(
++                attempt.get(key) is True
++                for key in (
++                    "transport_two_images",
++                    "parsed",
++                    "grounded",
++                    "target_hit",
++                    "destination_hit",
++                )
++            ):
++                return False
++            summary = attempt["request_summary"]
++            if summary != attempt["expected_request_summary"] or summary["model"] != cloud.model_id:
++                return False
++            if summary["image_count"] != 2 or summary["distinct_image_count"] != 2:
++                return False
++            if summary["serialized_sent_bytes"] <= 0 or attempt["serialized_received_bytes"] <= 0:
++                return False
++            evidence = attempt["observation_evidence"]
++            if evidence["top_grasp_offset_status"] != "CALIBRATED_RGBD_TOP_GRASP_V1":
++                return False
++            if evidence["cloud_snapshot_hash"] != cloud.digest():
++                return False
++        return True
++    except (KeyError, TypeError, ValueError, OSError):
++        return False
++
++
++def run_probe(
++    config_path: Path,
++    output: Path,
++    *,
++    service: ModelControlService | None = None,
++    profile_id: str | None = None,
++    execute: bool = False,
++    allow_paid: bool = False,
++) -> dict[str, Any]:
++    """Use a caller's model-control service; no activation, fallback, or actuation."""
++    config = read_role_config(config_path)
++    output.mkdir(parents=True, exist_ok=True)
++    if any(output.iterdir()):
++        raise FileExistsError("role probe requires a fresh output directory")
++    report: dict[str, Any] = {
++        "schema_version": "ced.role-probe.v1",
++        "status": "NOT_STARTED",
++        "source": None,
++        "transport": None,
++        "capture": {"synchronized": False},
++        "attempts": [],
++        "started_at": datetime.now(UTC).isoformat(),
++        "probe_config": config["probe"],
++        "config_sha256": _sha(config_path.read_bytes()),
++        "bundle": None,
++        "acceptance_scope": "nominal cloud RGB-D planning probe only",
++        "physical_acceptance": False,
++        "edge_acceptance": False,
++        "dispatch": False,
++        "billing_cost": None,
++        "pure_inference_duration_s": None,
++        "planned_attempt_count": config["probe"]["warm_runs"] + 1,
++    }
++    try:
++        selected = profile_id or config["cloud"]["profile_id"]
++        if not execute:
++            report["reason"] = "execution not requested; no service or renderer contacted"
++        elif service is None or not selected:
++            raise ValueError(
++                "probe requires an existing model-control service and selected profile"
++            )
++        else:
++            if not service.secret_store.has_secret(selected):
++                raise ValueError("selected cloud profile secret is unavailable")
++            cloud_config, edge_config = config["cloud"], config["edge"]
++            planner, cloud = resolve_cloud_role(
++                service,
++                selected,
++                source_hashes=source_fingerprints(),
++                allow_paid=allow_paid,
++                image_size=tuple(cloud_config["image_size"]),
++                coordinate_system=cloud_config["coordinate_system"],
++                grasp_profile=cloud_config["grasp_profile"],
++                available_model_ids=cloud_config["available_model_ids"],
++            )
++            edge = RoleProviderSnapshot(
++                role="EDGE",
++                provider_id=edge_config["provider_id"],
++                provider_location=edge_config["provider_location"],
++                model_id=None,
++                revision=None,
++                weight_digest=None,
++                quantization=None,
++                request_config_hash=configuration_hash(edge_config["policy"]),
++                source_hashes=_hash_sources(edge_config["source_paths"]),
++            )
++            bundle = RoleModelBundle(
++                cloud,
++                edge.provider_id,
++                edge.digest(),
++                configuration_hash(_hash_sources(config["device"]["source_paths"])),
++            )
++            report.update(
++                bundle=bundle.evidence(), bundle_hash=bundle.digest(), edge_snapshot=edge.evidence()
++            )
++            if cloud.provider_location != "REMOTE_SERVICE" or not allow_paid:
++                raise ValueError("real cloud probe requires a remote profile and --allow-paid")
++            # Import renderer only after config/profile/payment boundaries succeed.
++            os.environ.setdefault("MUJOCO_GL", "egl")
++            from cloud_edge_robot_arm.cloud.planning.models import (
++                InitialPlanningRequest,
++                SceneSummary,
++            )
++            from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++            from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++            simulator = SimulatorConfig(
++                camera_width=320,
++                camera_height=240,
++                render_rgb=True,
++                render_depth=True,
++                domain_randomization=False,
++                seed=config["probe"]["seed"],
++            )
++            report["transport"] = "REAL_HTTP"
++            with MuJoCoCaptureSession(simulator) as session:
++                for index in range(config["probe"]["warm_runs"] + 1):
++                    frame = session.capture_with_instances()
++                    synchronized = len(frame.pass_state_hashes) == 3 and (
++                        set(frame.pass_state_hashes) == {frame.physics_state_hash}
++                    )
++                    report["source"] = frame.observation.source
++                    report["capture"] = {
++                        "synchronized": synchronized
++                        and (index == 0 or report["capture"]["synchronized"]),
++                        "image_size": [320, 240],
++                    }
++                    if not synchronized:
++                        raise ValueError("capture passes are not synchronized")
++                    request = InitialPlanningRequest(
++                        request_id=f"cloud-role-probe-{index:02d}",
++                        user_instruction=config["probe"]["instruction"],
++                        scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
++                        observation=frame.observation,
++                    )
++                    attempt = _attempt(planner, request, frame, output, index, cloud)
++                    report["attempts"].append(attempt)
++                    if attempt["status"] == "BLOCKED":
++                        raise RuntimeError("cloud attempt failed; preserve unexecuted denominator")
++            report["status"] = "PASS" if can_accept_role_probe(report) else "FAIL"
++    except Exception as exc:
++        # Endpoint, HTTP errors and credential-bearing exception text are never persisted.
++        report.update(status="BLOCKED", blocked_reason=type(exc).__name__)
++    report["unexecuted_attempt_count"] = report["planned_attempt_count"] - len(report["attempts"])
++    report["finished_at"] = datetime.now(UTC).isoformat()
++    digest = _write(output / "role-probe-report.json", report)
++    (output / "role-probe-report.sha256").write_text(digest + "\n")
++    if report["status"] == "PASS":
++        _write(output / "roles-frozen.json", report["bundle"])
++    return report
++
++
++def _attempt(
++    planner: Any, request: Any, frame: Any, output: Path, index: int, cloud: RoleProviderSnapshot
++) -> dict[str, Any]:
++    from cloud_edge_robot_arm.research.cost_ledger import CostLedger
++    from cloud_edge_robot_arm.vision.capture import save_captured_frame
++    from cloud_edge_robot_arm.vision.messages import build_visual_messages
++    from cloud_edge_robot_arm.vision.planner import VisualDecision, compatible_messages
++
++    directory = output / f"attempt-{index:02d}"
++    directory.mkdir()
++    save_captured_frame(frame, directory)
++    snapshot = planner.model_snapshot
++    messages = build_visual_messages(
++        request.user_instruction,
++        frame.observation,
++        image_size=snapshot.image_size,
++        coordinate_system=snapshot.coordinate_system,
++        decision_schema=VisualDecision.model_json_schema(),
++    )
++    expected = summarize_role_request(
++        {
++            "model": planner.model_name,
++            "messages": compatible_messages(messages),
++            "temperature": snapshot.generation_parameters["temperature"],
++            "max_tokens": snapshot.generation_parameters["num_predict"],
++            "response_format": {"type": "json_object"},
++        }
++    )
++    actual: dict[str, Any] = {}
++    # The transport ledger measures the actual received raw bytes before parsing.
++    ledger = CostLedger()
++    previous_ledger = planner.cost_ledger
++    planner.cost_ledger = ledger
++    post = planner._post
++
++    def instrumented(path: str, body: dict[str, Any]) -> dict[str, Any]:
++        actual.update(request_summary=summarize_role_request(body))
++        actual["request_sha256"] = _write(directory / "request.json", body)
++        response = post(path, body)
++        actual["response_sha256"] = _write(directory / "response.json", response)
++        return cast(dict[str, Any], response)
++
++    planner._post = instrumented
++    started = time.monotonic()
++    try:
++        draft = planner.plan(request)
++    except Exception as exc:
++        actual.update(
++            status="BLOCKED",
++            failure_type=type(exc).__name__,
++            transport_two_images=False,
++            parsed=False,
++            grounded=False,
++            target_hit=False,
++            destination_hit=False,
++            wall_latency_ms=(time.monotonic() - started) * 1000,
++            cost_ledger=ledger.export(),
++        )
++        _write(directory / "attempt.json", actual)
++        return actual
++    finally:
++        planner._post = post
++        planner.cost_ledger = previous_ledger
++    rows = ledger.requests()
++    actual["cost_ledger"] = ledger.export()
++    actual["serialized_received_bytes"] = sum(row.serialized_received_bytes for row in rows)
++    actual["serialized_sent_bytes"] = sum(row.serialized_sent_bytes for row in rows)
++    evidence = draft.observation_evidence or {}
++    target_hit, target_evidence = _pixel_hit(
++        frame, evidence.get("original_pixel_target"), "object_geom"
++    )
++    destination_hit, destination_evidence = _pixel_hit(
++        frame, evidence.get("original_pixel_destination"), "target_region_geom"
++    )
++    summary = actual.get("request_summary", {})
++    attempt = actual | {
++        "status": "COMPLETE",
++        "index": index,
++        "phase": "first" if index == 0 else "warm",
++        "expected_request_summary": expected,
++        "wall_latency_ms": (time.monotonic() - started) * 1000,
++        "transport_two_images": summary.get("image_count") == 2
++        and summary.get("distinct_image_count") == 2,
++        "parsed": draft.parse_error is None,
++        "grounded": draft.observed_scene is not None,
++        "target_hit": target_hit,
++        "destination_hit": destination_hit,
++        "target_offline_check": target_evidence,
++        "destination_offline_check": destination_evidence,
++        "observation_evidence": evidence | {"cloud_snapshot_hash": cloud.digest()},
++        "parse_error": draft.parse_error,
++        "parsed_json": draft.parsed_json,
++    }
++    _write(directory / "attempt.json", attempt)
++    return attempt
++
++
++class _EnvironmentProfileSecrets:
++    """Read-only implementation of the existing SecretStore boundary for the CLI."""
++
++    kind = SecretStoreKind.ENVIRONMENT
++
++    def __init__(self, profile_id: str, variable: str) -> None:
++        self.profile_id, self.variable = profile_id, variable
++
++    def get_secret(self, profile_id: str) -> str | None:
++        return os.environ.get(self.variable) if profile_id == self.profile_id else None
++
++    def has_secret(self, profile_id: str) -> bool:
++        return bool(self.get_secret(profile_id))
++
++    def set_secret(self, profile_id: str, value: str) -> None:
++        raise ValueError("CLI secret store is read-only")
++
++    def delete_secret(self, profile_id: str) -> None:
++        raise ValueError("CLI secret store is read-only")
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--config", type=Path, default=ROOT / "configs/research/ced_roles.yaml")
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--profile-id")
++    parser.add_argument("--model-control-db", type=Path, default=Path("data/model_control.db"))
++    parser.add_argument("--secret-env", default="BIGSMALL_VLM_API_KEY")
++    parser.add_argument("--execute", action="store_true")
++    parser.add_argument("--allow-paid", action="store_true")
++    args = parser.parse_args()
++    service = None
++    if args.execute:
++        from cloud_edge_robot_arm.model_control.sqlite_repository import (
++            SQLiteModelProfileRepository,
++        )
++
++        selected = args.profile_id or read_role_config(args.config)["cloud"]["profile_id"]
++        if args.model_control_db.is_file() and selected:
++            service = ModelControlService(
++                repository=SQLiteModelProfileRepository(args.model_control_db),
++                secret_store=_EnvironmentProfileSecrets(selected, args.secret_env),
++            )
++    report = run_probe(
++        args.config,
++        args.output,
++        service=service,
++        profile_id=args.profile_id,
++        execute=args.execute,
++        allow_paid=args.allow_paid,
++    )
++    print(
++        json.dumps(
++            {"status": report["status"], "report_path": str(args.output / "role-probe-report.json")}
++        )
++    )
++    return 0 if report["status"] in {"PASS", "NOT_STARTED"} else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- initial/configs/research/ced_roles.yaml
++++ current/configs/research/ced_roles.yaml
+@@ -0,0 +1,38 @@
++schema_version: ced.roles.v1
++cloud:
++  # Select an existing model-control profile through --profile-id; never activate it.
++  profile_id: null
++  model_family: qwen3.8-max
++  # A supplied provider registry may advertise date snapshots; absence stays unknown.
++  available_model_ids: []
++  image_size: [320, 240]
++  coordinate_system: pixel
++  grasp_profile: mujoco_upright_box_v2
++edge:
++  provider_id: deterministic_rules_cost_v1
++  provider_location: LOCAL_HOST
++  model_id: null
++  source_paths:
++    - src/cloud_edge_robot_arm/vision/role_models.py
++  policy:
++    dispatch: false
++    local_recover_enabled: false
++    score_source: rules
++    status: NOT_ACCEPTED
++# These hashes bind software/calibration; they do not prove device acceptance.
++device:
++  source_paths:
++    - src/cloud_edge_robot_arm/vision/observations.py
++    - src/cloud_edge_robot_arm/vision/capture.py
++    - src/cloud_edge_robot_arm/vision/top_grasp.py
++    - src/cloud_edge_robot_arm/vision/tracking.py
++    - src/cloud_edge_robot_arm/vision/task_semantics.py
++    - src/cloud_edge_robot_arm/vision/execution.py
++    - src/cloud_edge_robot_arm/edge/safety/shield.py
++    - src/cloud_edge_robot_arm/edge/evidence/conditions.py
++    - assets/robots/franka_panda/scene.xml
++probe:
++  scenario_id: S01_NORMAL_STATIC
++  seed: 0
++  instruction: pick the red cube and place it in the green target region
++  warm_runs: 3
+--- initial/tests/test_rgbd_role_models.py
++++ current/tests/test_rgbd_role_models.py
+@@ -0,0 +1,472 @@
++"""Software contracts only; these tests supply no real cloud acceptance evidence."""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import importlib
++import importlib.util
++import json
++from dataclasses import replace
++from datetime import UTC, datetime
++
++import pytest
++
++
++def roles():
++    assert importlib.util.find_spec("cloud_edge_robot_arm.vision.role_models") is not None, (
++        "T3b role bindings are missing"
++    )
++    return importlib.import_module("cloud_edge_robot_arm.vision.role_models")
++
++
++def cloud(**overrides):
++    values = dict(
++        role="CLOUD",
++        provider_id="max-profile",
++        provider_location="REMOTE_SERVICE",
++        model_id="qwen3.8-max",
++        revision=None,
++        weight_digest=None,
++        quantization=None,
++        request_config_hash="a" * 64,
++        source_hashes={"vision/messages.py": "b" * 64},
++    )
++    return roles().RoleProviderSnapshot(**(values | overrides))
++
++
++def test_cloud_alias_does_not_invent_weight_digest():
++    snapshot = cloud()
++    assert snapshot.evidence()["weight_digest"] is None
++    assert snapshot.evidence()["revision"] is None
++    assert snapshot.evidence()["quantization"] is None
++    assert snapshot.evidence()["model_id"] == "qwen3.8-max"
++
++
++def test_cloud_and_edge_versions_cannot_be_swapped():
++    module = roles()
++    edge = replace(
++        cloud(), role="EDGE", model_id=None, provider_id="rules-v1", provider_location="LOCAL_HOST"
++    )
++    with pytest.raises(ValueError, match="CLOUD"):
++        module.RoleModelBundle(edge, "rules-v1", "c" * 64, "d" * 64)
++    bundle = module.RoleModelBundle(cloud(), "rules-v1", "c" * 64, "d" * 64)
++    bundle.validate_bindings(
++        cloud_snapshot_hash=cloud().digest(),
++        edge_provider_hash="c" * 64,
++        device_pipeline_hash="d" * 64,
++    )
++    with pytest.raises(ValueError, match="binding"):
++        bundle.validate_bindings(
++            cloud_snapshot_hash="c" * 64,
++            edge_provider_hash=cloud().digest(),
++            device_pipeline_hash="d" * 64,
++        )
++
++
++@pytest.mark.parametrize(
++    "overrides",
++    [
++        {"request_config_hash": ""},
++        {"source_hashes": {}},
++        {"source_hashes": {"vision/messages.py": "not-a-digest"}},
++        {"role": "PLANNER"},
++        {"provider_location": "DEVICE"},
++        {"provider_id": ""},
++        {"model_id": None},
++        {"weight_digest": "UNKNOWN"},
++        {"revision": ""},
++    ],
++)
++def test_role_snapshot_rejects_unbound_or_invalid_identity(overrides):
++    with pytest.raises(ValueError):
++        cloud(**overrides)
++
++
++def test_source_and_request_hashes_affect_role_binding():
++    original = cloud()
++    changed_source = replace(original, source_hashes={"vision/messages.py": "e" * 64})
++    changed_request = replace(original, request_config_hash="f" * 64)
++    module = roles()
++    digests = {
++        module.RoleModelBundle(item, "rules-v1", "c" * 64, "d" * 64).digest()
++        for item in (original, changed_source, changed_request)
++    }
++    assert len(digests) == 3
++
++
++def test_source_mapping_cannot_mutate_frozen_identity():
++    sources = {"vision/messages.py": "b" * 64}
++    snapshot = cloud(source_hashes=sources)
++    before = snapshot.digest()
++    sources["vision/messages.py"] = "c" * 64
++    assert snapshot.digest() == before
++    with pytest.raises(TypeError):
++        snapshot.source_hashes["vision/messages.py"] = "d" * 64
++
++
++def test_edge_rules_provider_requires_no_model():
++    snapshot = cloud(
++        role="EDGE", provider_id="rules-v1", provider_location="LOCAL_HOST", model_id=None
++    )
++    assert snapshot.evidence()["model_id"] is None
++
++
++def test_profile_resolution_preserves_nulls_and_existing_secret_boundary(tmp_path):
++    from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
++    from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
++    from cloud_edge_robot_arm.model_control.service import ModelControlService
++    from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
++
++    module = roles()
++    service = ModelControlService(
++        repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
++        secret_store=InMemorySecretStore(),
++    )
++    profile = service.create_profile(
++        display_name="max",
++        provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
++        model_name="qwen3.8-max",
++        base_url="https://dashscope.aliyuncs.com",
++        api_key="test-only-secret",
++        max_tokens=777,
++    )
++    adapter, snapshot = module.resolve_cloud_role(
++        service,
++        profile.profile_id,
++        source_hashes={"messages.py": "b" * 64},
++        allow_paid=True,
++        grasp_profile="mujoco_upright_box_v2",
++    )
++    assert adapter.model_name == "qwen3.8-max"
++    assert adapter.model_snapshot.weight_digest is None
++    assert adapter.model_snapshot.quantization is None
++    assert adapter.model_snapshot.generation_parameters["num_predict"] == 777
++    assert adapter.model_snapshot.image_size == (320, 240)
++    assert snapshot.evidence()["weight_digest"] is None
++    assert "test-only-secret" not in json.dumps(snapshot.evidence())
++    assert service.repository.get_active_profile_id() == ""
++
++
++def test_cloud_plan_uses_real_two_image_transport(monkeypatch, tmp_path):
++    # Only the external HTTP operation is replaced. Production message construction,
++    # compatible serialization, _post and strict parsing execute. No model was queried.
++    import io
++    import urllib.request
++
++    from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
++    from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
++    from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
++    from cloud_edge_robot_arm.model_control.service import ModelControlService
++    from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from tests.test_rgbd_observations import observation_payload
++
++    module = roles()
++    service = ModelControlService(
++        repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
++        secret_store=InMemorySecretStore(),
++    )
++    profile = service.create_profile(
++        display_name="max",
++        provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
++        model_name="qwen3.8-max",
++        base_url="https://dashscope.aliyuncs.com",
++    )
++    adapter, snapshot = module.resolve_cloud_role(
++        service, profile.profile_id, source_hashes={"messages.py": "b" * 64}, allow_paid=True
++    )
++    payloads = []
++
++    class ExternalBoundary:
++        def open(self, request, timeout):
++            payloads.append(json.loads(request.data))
++            return io.BytesIO(
++                json.dumps(
++                    {
++                        "choices": [
++                            {
++                                "message": {
++                                    "content": json.dumps(
++                                        {
++                                            "target_pixel": None,
++                                            "destination_pixel": None,
++                                            "target_label": "missing",
++                                            "reported_confidence": 0,
++                                            "skills": [],
++                                            "reason": "target absent",
++                                        }
++                                    )
++                                }
++                            }
++                        ]
++                    }
++                ).encode()
++            )
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
++    observation = RGBDObservation.model_validate(observation_payload())
++    draft = adapter.plan(
++        InitialPlanningRequest(
++            request_id="software-transport-contract",
++            user_instruction="pick missing target",
++            scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
++            observation=observation,
++        )
++    )
++    body = payloads[0]
++    image_parts = [
++        part
++        for message in body["messages"]
++        if isinstance(message["content"], list)
++        for part in message["content"]
++        if part["type"] == "image_url"
++    ]
++    blobs = [
++        base64.b64decode(part["image_url"]["url"].split(",", 1)[1], validate=True)
++        for part in image_parts
++    ]
++    assert len(blobs) == 2
++    assert all(blob.startswith(b"\x89PNG") for blob in blobs)
++    assert hashlib.sha256(blobs[0]).digest() != hashlib.sha256(blobs[1]).digest()
++    assert body["model"] == snapshot.model_id
++    assert draft.parse_error is None
++    assert draft.parsed_json == {
++        "_sentinel": "REQUEST_MORE_OBSERVATION",
++        "_reason": "target absent",
++    }
++
++
++def test_probe_summary_reads_actual_compatible_image_bytes():
++    assert importlib.util.find_spec("scripts.probe_rgbd_roles") is not None, "role probe missing"
++    probe = importlib.import_module("scripts.probe_rgbd_roles")
++    body = {
++        "model": "qwen3.8-max",
++        "messages": [
++            {
++                "role": "user",
++                "content": [
++                    {"type": "text", "text": "pick"},
++                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,YWJj"}},
++                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,ZGVm"}},
++                ],
++            }
++        ],
++    }
++    summary = probe.summarize_role_request(body)
++    assert summary["image_count"] == 2
++    assert summary["image_bytes"] == [3, 3]
++    assert summary["image_sha256"] == [
++        hashlib.sha256(b"abc").hexdigest(),
++        hashlib.sha256(b"def").hexdigest(),
++    ]
++    assert summary["serialized_sent_bytes"] == len(json.dumps(body).encode())
++    assert "YWJj" not in json.dumps(summary)
++
++
++def test_probe_cannot_accept_software_or_missing_real_evidence():
++    assert importlib.util.find_spec("scripts.probe_rgbd_roles") is not None, "role probe missing"
++    probe = importlib.import_module("scripts.probe_rgbd_roles")
++    assert (
++        probe.can_accept_role_probe({"status": "PASS", "source": "software_test", "attempts": []})
++        is False
++    )
++    assert (
++        probe.can_accept_role_probe(
++            {
++                "source": "mujoco_camera",
++                "transport": "REAL_HTTP",
++                "capture": {"synchronized": True},
++                "attempts": [],
++            }
++        )
++        is False
++    )
++
++
++def test_date_snapshot_selection_uses_only_advertised_family_versions():
++    module = roles()
++    assert (
++        module.select_cloud_model_id(
++            "qwen3.8-max",
++            ["qwen3.8-max-2026-09-01", "qwen3.8-max-2026-09-15", "qwen3.5-max-2026-10-01"],
++        )
++        == "qwen3.8-max-2026-09-15"
++    )
++    assert module.select_cloud_model_id("qwen3.8-max", []) == "qwen3.8-max"
++    assert module.select_cloud_model_id("qwen3.8-max-2026-09-01", []) == "qwen3.8-max-2026-09-01"
++
++
++def test_api_model_snapshot_preserves_unavailable_weight_identity():
++    from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
++
++    snapshot = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="qwen3.8-max",
++        endpoint="https://dashscope.aliyuncs.com",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0},
++        timeout_s=30,
++    )
++    assert snapshot.evidence()["weight_digest"] is None
++    assert snapshot.evidence()["quantization"] is None
++    assert snapshot.digest() != replace(snapshot, weight_digest="a" * 64).digest()
++
++
++@pytest.mark.parametrize("field", ["weight_digest", "quantization"])
++def test_local_snapshot_does_not_accept_null_weight_identity(field):
++    from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
++
++    values = dict(
++        provider="ollama",
++        model="qwen3.5:4b",
++        endpoint="http://127.0.0.1:11434",
++        weight_digest="a" * 64,
++        quantization="Q4_K_M",
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0},
++        timeout_s=30,
++    )
++    values[field] = None
++    with pytest.raises(ValueError):
++        ModelConfigSnapshot(**values)
++
++
++def test_probe_dry_run_never_touches_supplied_service(tmp_path):
++    from pathlib import Path
++
++    from scripts.probe_rgbd_roles import run_probe
++
++    class ForbiddenService:
++        def get_profile(self, profile_id):
++            raise AssertionError("dry run contacted a profile service")
++
++    report = run_probe(
++        Path("configs/research/ced_roles.yaml"), tmp_path / "dry", service=ForbiddenService()
++    )
++    assert report["status"] == "NOT_STARTED"
++    assert report["attempts"] == []
++    assert not (tmp_path / "dry" / "roles-frozen.json").exists()
++
++
++def test_missing_profile_secret_blocks_before_transport_or_renderer(tmp_path):
++    from pathlib import Path
++
++    from scripts.probe_rgbd_roles import run_probe
++
++    from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
++    from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
++    from cloud_edge_robot_arm.model_control.service import ModelControlService
++    from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
++
++    service = ModelControlService(
++        repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
++        secret_store=InMemorySecretStore(),
++    )
++    profile = service.create_profile(
++        display_name="max",
++        provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
++        model_name="qwen3.8-max",
++        base_url="https://dashscope.aliyuncs.com",
++    )
++    report = run_probe(
++        Path("configs/research/ced_roles.yaml"),
++        tmp_path / "missing-secret",
++        service=service,
++        profile_id=profile.profile_id,
++        execute=True,
++        allow_paid=True,
++    )
++    assert report["status"] == "BLOCKED"
++    assert report["transport"] is None
++    assert report["attempts"] == []
++
++
++def test_role_probe_keeps_actual_response_bytes_and_refusal_without_freeze(tmp_path, monkeypatch):
++    import io
++    import urllib.request
++
++    from scripts.probe_rgbd_roles import _attempt
++
++    from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
++    from cloud_edge_robot_arm.vision.capture import CapturedFrame
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from tests.test_rgbd_observations import observation_payload
++
++    raw = b'  {"choices": []}  \n'
++
++    class ExternalBoundary:
++        def open(self, request, timeout):
++            return io.BytesIO(raw)
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
++    model = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="qwen3.8-max",
++        endpoint="https://dashscope.aliyuncs.com",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0, "num_predict": 512},
++        timeout_s=30,
++    )
++    planner = resolve_visual_planner(model, api_key="credential-marker", allow_paid=True)
++    observation = RGBDObservation.model_validate(observation_payload())
++    frame = CapturedFrame(
++        observation,
++        (0, 11, 12, -1),
++        {0: "table", 11: "object_geom", 12: "target_region_geom"},
++        "fixture",
++        ("fixture",) * 3,
++    )
++    request = InitialPlanningRequest(
++        request_id="software-byte-contract",
++        user_instruction="pick red cube",
++        scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
++        observation=observation,
++    )
++    attempt = _attempt(planner, request, frame, tmp_path, 0, cloud())
++    assert attempt["serialized_received_bytes"] == 20
++    assert len(raw) == 20
++    assert attempt["parsed"] is False
++    assert attempt["grounded"] is False
++    assert attempt["target_hit"] is False
++    assert planner.cost_ledger is None
++    assert not (tmp_path / "roles-frozen.json").exists()
++    assert "credential-marker" not in (tmp_path / "attempt-00" / "request.json").read_text()
++
++
++def test_cli_missing_profile_database_writes_machine_readable_blocked(tmp_path):
++    import subprocess
++    import sys
++
++    output = tmp_path / "missing-profile"
++    result = subprocess.run(
++        [
++            sys.executable,
++            "-m",
++            "scripts.probe_rgbd_roles",
++            "--execute",
++            "--model-control-db",
++            str(tmp_path / "absent.db"),
++            "--profile-id",
++            "absent-profile",
++            "--output",
++            str(output),
++        ],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert result.returncode == 2
++    assert result.stdout.startswith("{")
++    assert json.loads(result.stdout)["status"] == "BLOCKED"
++    report = json.loads((output / "role-probe-report.json").read_text())
++    assert report["attempts"] == []
++    assert report["transport"] is None

@@ -1,0 +1,102 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_rehashed_index_cannot_delete_both_assignment_and_failed_record_reference _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-635/test_rehashed_index_cannot_del0')
+
+    def test_rehashed_index_cannot_delete_both_assignment_and_failed_record_reference(tmp_path):
+        manifest = bundle(tmp_path)
+        path = tmp_path / "assignments.json"
+        index = json.loads(path.read_text())
+        index["assignments"].remove("a")
+        del index["records"]["a"]
+        path.write_text(json.dumps(index))
+        payload = manifest.to_payload()
+        payload["artifact_hashes"]["assignments.json"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        (tmp_path / "reproduction-manifest.json").write_text(json.dumps({
+            "schema_version": "ced.reproduction-manifest.v1", "manifest": payload,
+            "content_hash": digest(payload),
+        }))
+>       assert api().verify_reproduction_bundle(tmp_path)["integrity_valid"] is False
+E       assert True is False
+
+tests/test_research_reproducibility.py:89: AssertionError
+_________________ test_recomputed_metrics_match_saved_results __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-635/test_recomputed_metrics_match_0')
+
+    def test_recomputed_metrics_match_saved_results(tmp_path):
+        from dataclasses import asdict
+    
+        from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
+        from cloud_edge_robot_arm.research.acceptance import analyze_research_runs
+        from cloud_edge_robot_arm.research.assignments import build_assignments
+        from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec
+        from cloud_edge_robot_arm.research.runner import run_assignment
+        from tests.test_research_assignments import scene_pool
+    
+        pools = {"formal": scene_pool.__wrapped__()}
+        methods = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY", "NO_TIME_VALIDITY",
+                   "NO_LOCAL_REPAIR")
+        spec = ProtocolSpec(selected_n=600, tcap_s=120,
+            pool_hashes={"formal": content_digest(pools["formal"])}, model_snapshot_hash="a" * 64,
+            method_hashes={key: content_digest(key) for key in methods},
+            initial_protocol_hash="b" * 64, opportunity_hash="c" * 64,
+            recovery_fault_manifest_hash="d" * 64)
+        frozen = FrozenProtocol(spec=spec, stage="FINAL", content_hash=content_digest({
+            "spec": spec.model_dump(mode="json"), "stage": "FINAL"}))
+        runs, protocol = tmp_path / "runs", tmp_path / "protocol"
+        runs.mkdir()
+        protocol.mkdir()
+        (protocol / "protocol.json").write_text(frozen.model_dump_json())
+        assignments = build_assignments(frozen, methods, scene_pool=pools["formal"])
+        assigned = {"schema_version": "ced.assignments.v1", "protocol_hash": frozen.content_hash,
+                    "assignments": [asdict(row) for row in assignments]}
+        assigned["content_hash"] = content_digest(assigned)
+        (runs / "assignments.json").write_text(canonical_json(assigned))
+        (runs / "pools.json").write_text(canonical_json(pools))
+        (runs / "records.jsonl").write_text("\n".join(
+            canonical_json(run_assignment(row, frozen).to_payload(protocol=frozen))
+            for row in assignments) + "\n")
+        saved = tmp_path / "saved"
+        original = analyze_research_runs(runs, protocol, saved, software_only=True)
+        assert original["status"] == "SOFTWARE_ONLY"
+        assert json.loads((saved / "metrics.json").read_text())["assignment_denominator"] == 4200
+        source = tmp_path / "source/example.py"
+        source.parent.mkdir()
+        source.write_text("# explicitly blocked software fixture\n")
+        index = {"schema_version": "ced.reproduction-index.v1",
+                 "assignments": [row.assignment_id for row in assignments],
+                 "records": {row.assignment_id: "runs/records.jsonl" for row in assignments}}
+        (tmp_path / "index.json").write_text(canonical_json(index))
+        hashes = {p.relative_to(tmp_path).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in tmp_path.rglob("*") if p.is_file()}
+        sources = {"source/example.py": hashes["source/example.py"]}
+        manifest = api().ReproductionManifest(digest(sources), {}, {}, "a" * 64,
+            frozen.content_hash, {}, [20261004], [["never", "execute"]], hashes,
+            source_hashes=sources, assignment_index_path="index.json", runs_path="runs",
+            protocol_path="protocol", analysis_path="saved", scope="SOFTWARE_ONLY")
+        api().write_reproduction_manifest(manifest, tmp_path)
+        output = tmp_path / "rebuilt"
+        api().rebuild_analysis(tmp_path, output, software_only=True)
+        rebuilt = json.loads((output / "reproduction.json").read_text())
+        assert rebuilt["matches_saved_analysis"] is True
+        assert rebuilt["numeric_rebuild"] == "SOFTWARE_ONLY"
+        assert rebuilt["physical_reproduction"] == "NOT_RUN"
+        assert rebuilt["research_accepted"] is False
+        assert json.loads((saved / "metrics.json").read_text()) == json.loads(
+            (output / "metrics.json").read_text())
+        payload = manifest.to_payload()
+        payload["model_snapshot_hash"] = "f" * 64
+        (tmp_path / "reproduction-manifest.json").write_text(json.dumps({
+            "schema_version": "ced.reproduction-manifest.v1", "manifest": payload,
+            "content_hash": digest(payload),
+        }))
+>       with pytest.raises(ValueError, match="model"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_reproducibility.py:267: Failed
+=========================== short test summary info ============================
+FAILED tests/test_research_reproducibility.py::test_rehashed_index_cannot_delete_both_assignment_and_failed_record_reference
+FAILED tests/test_research_reproducibility.py::test_recomputed_metrics_match_saved_results
+2 failed, 14 deselected in 8.20s

@@ -1,0 +1,97 @@
+...........................F............................................ [  9%]
+........................................................................ [ 19%]
+........................................................................ [ 28%]
+........................................................................ [ 38%]
+........................................................................ [ 48%]
+..................s......................................s.............. [ 57%]
+...................................................................s.... [ 67%]
+........................................................................ [ 77%]
+........................................................................ [ 86%]
+........................................................................ [ 96%]
+............................                                             [100%]
+=================================== FAILURES ===================================
+_ test_actual_repositories_capture_provider_owner_receipt_and_cancellation[sqlite-False] _
+
+configured = {'binding': RoleRuntimeBinding(bundle=RoleModelBundle(cloud_snapshot=RoleProviderSnapshot(role='CLOUD', provider_id='m...task_started_at=datetime.datetime(2026, 10, 5, 6, 33, 42, 738961, tzinfo=datetime.timezone.utc), task_timeout_s=120.0)}
+cancel_after_return = False
+
+    @pytest.mark.parametrize("cancel_after_return", [False, True])
+    def test_actual_repositories_capture_provider_owner_receipt_and_cancellation(
+        configured,
+        cancel_after_return,
+    ):
+        from cloud_edge_robot_arm.vision.evaluation import ExecutionPolicy
+        from cloud_edge_robot_arm.vision.supervision import SupervisionDecision
+        from tests.test_visual_worker_runtime import adopted_owner
+        from tests.test_visual_worker_runtime import frame as synthetic_frame
+    
+        owner, initial, _, _ = adopted_owner(configured)
+        owner.initialize_supervision(0.01, RobotState(connected=True))
+        run, calls = episode()
+        run.worker_runtime = owner
+        run.backend._episode_id = owner.episode_id
+        run.budget = owner.verification_state
+        run.observation = initial
+        run.policy = ExecutionPolicy(
+            "move the visible box",
+            model_snapshot_hash="5" * 64,
+            role_binding=owner.role_binding,
+            device_pipeline="OPENCV",
+            worker_runtime=owner,
+            supervision_period_s=0.01,
+            advance_physics_during_wait=True,
+        )
+        run._worker_supervision_frames = {}
+        run._state_version = 0
+        run.capture.capture = lambda: synthetic_frame("actual-repository-software-camera")
+        source = run.capture_supervision_frame()
+        run.supervision = SimpleNamespace(snapshot=lambda: {"closed": False})
+        provider_calls = []
+    
+        def software_provider(observation, context):
+            provider_calls.append(observation.observation_id)
+            return SupervisionDecision(
+                episode_id=context.episode_id,
+                plan_version=context.plan_version,
+                state_version=context.state_version,
+                observation_id=context.observation_id,
+                next_step_id=context.next_step_id,
+                recommendation="CONTINUE",
+                reason="SOFTWARE_ONLY",
+            )
+    
+        run.planner = SimpleNamespace(
+            base_url="software-only://supervised-owner", supervise=software_provider
+        )
+        response = run.supervise_frame(source)
+        run.supervision.poll = lambda **kwargs: [response]
+        original_publication = owner.publication.digest()
+        if cancel_after_return:
+            configured["jobs"].request_cancel(owner.source.job_id)
+            with pytest.raises(_EpisodeStopped, match="WORKER_RUNTIME"):
+                run.apply_supervision()
+        else:
+            run.apply_supervision()
+            assert owner.publication.digest() == original_publication
+            assert owner.verification_state.remaining_reobservations == 2
+        record = configured["events"].get_visual_supervision(owner.episode_id).to_payload()
+        assert record["captures_reserved"] == record["supervisor_calls_reserved"] == 1
+        status = record["claims"][source.claim_id]["status"]
+        if cancel_after_return:
+            assert status == "PLAN_PENDING"
+        elif status == "PLAN_PENDING":
+            assert run.records[-1]["action"] == "DISCARD"
+>           assert run.records[-1]["reason"].startswith("original_frame_ttl_expired")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'reason'
+
+tests/test_visual_worker_supervision_execution.py:320: KeyError
+=============================== warnings summary ===============================
+tests/test_visual_worker_factory.py::test_factory_passes_real_running_lease_attempt_and_original_clock
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_visual_worker_supervision_execution.py::test_actual_repositories_capture_provider_owner_receipt_and_cancellation[sqlite-False]
+1 failed, 744 passed, 3 skipped, 2 deselected, 1 warning in 452.27s (0:07:32)

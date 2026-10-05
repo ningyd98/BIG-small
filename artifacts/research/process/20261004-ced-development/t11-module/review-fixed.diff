@@ -1,0 +1,308 @@
+--- reviewed/src/cloud_edge_robot_arm/auto_mode/baseline_policies.py
++++ fixed/src/cloud_edge_robot_arm/auto_mode/baseline_policies.py
+@@ -7,11 +7,14 @@
+ import math
+ from collections import Counter, OrderedDict
+ from collections.abc import Callable, Mapping
+-from dataclasses import dataclass
++from dataclasses import dataclass, fields, is_dataclass
+ from datetime import datetime
++from enum import Enum
+ from pathlib import Path
+ from types import MappingProxyType
+ from typing import Any
++
++from pydantic import BaseModel
+ 
+ from cloud_edge_robot_arm.auto_mode.models import AutoModePolicy, AutoModeState
+ from cloud_edge_robot_arm.auto_mode.runtime_events import (
+@@ -39,6 +42,48 @@
+     ).hexdigest()
+ 
+ 
++def _input_value(value: Any) -> Any:
++    """Canonicalize frozen inputs without deepcopying read-only mapping proxies."""
++    if isinstance(value, BaseModel):
++        return value.model_dump(mode="json")
++    if isinstance(value, datetime):
++        return value.isoformat()
++    if isinstance(value, Enum):
++        return value.value
++    if isinstance(value, Mapping):
++        return {str(key): _input_value(item) for key, item in value.items()}
++    if is_dataclass(value) and not isinstance(value, type):
++        return {field.name: _input_value(getattr(value, field.name)) for field in fields(value)}
++    if isinstance(value, (tuple, list)):
++        return [_input_value(item) for item in value]
++    if isinstance(value, (set, frozenset)):
++        return sorted(_input_value(item) for item in value)
++    return value
++
++
++def _policy_input_hash(context: DecisionContext) -> str:
++    # Spent quota counters are mutable reservations, not new evidence. The
++    # live hard-stop check runs first; limits/deadline are still bound here.
++    return _canonical_hash(
++        _input_value(
++            {
++                "mode": context.mode,
++                "event": context.event,
++                "online_evidence": context.online_evidence,
++                "evidence_verdict": context.evidence_verdict,
++                "condition_verdicts": context.condition_verdicts,
++                "risk_features": context.risk_features,
++                "risk_estimate": context.risk_estimate,
++                "network_cost": context.network_cost,
++                "capabilities": context.capabilities,
++                "legacy_rule_evidence": context.legacy_rule_evidence,
++                "budget_limits": context.verification_budget.limits,
++                "budget_deadline": context.verification_budget.deadline_at,
++            }
++        )
++    )
++
++
+ def _source_hashes() -> dict[str, str]:
+     from cloud_edge_robot_arm.auto_mode import selector
+     from cloud_edge_robot_arm.risk import evaluator, models
+@@ -118,6 +163,10 @@
+         self, context: DecisionContext, choose: Callable[[], DecisionAction]
+     ) -> DecisionAction:
+         if self._hard_stop(context):
++            return DecisionAction.STOP
++        try:
++            input_hash = _policy_input_hash(context)
++        except (ValueError, TypeError, OverflowError):
+             return DecisionAction.STOP
+         key = (
+             context.task_id,
+@@ -134,6 +183,7 @@
+             context.evidence_verdict.status,
+             tuple((v.condition_name, v.status) for v in context.condition_verdicts),
+             tuple(sorted(context.capabilities)),
++            input_hash,
+         )
+         existing = self._decisions.get(context.event.event_id)
+         # This bounded policy cache only prevents charging an allowance twice;
+@@ -573,7 +623,11 @@
+ def verify_mode_switch_policy(snapshot: Any) -> dict[str, Any]:
+     """独立重算全部selection候选物理/成本和模式日志，拒绝只有hash的声明。"""
+     from cloud_edge_robot_arm.auto_mode.models import ModeSwitchPolicySnapshot
+-    from cloud_edge_robot_arm.contracts import AutoModeTransition, AutoModeTransitionStatus
++    from cloud_edge_robot_arm.contracts import (
++        AutoModeTransition,
++        AutoModeTransitionStatus,
++        ControlMode,
++    )
+ 
+     verdict: dict[str, Any] = {"accepted": False, "errors": []}
+     try:
+@@ -642,7 +696,10 @@
+                     (raw / "cases" / assignment["assignment_id"] / "episode.json").read_text()
+                 )
+                 previous_at = None
+-                previous_version = None
++                previous_mode = ControlMode(log["initial_current_mode"])
++                previous_version = log["initial_mode_version"]
++                if type(previous_version) is not int or previous_version < 1:
++                    raise ValueError("mode selection initial mode version is invalid")
+                 for ordinal, transition in enumerate(transitions):
+                     checkpoint = checkpoints[ordinal]
+                     if (
+@@ -662,10 +719,8 @@
+                         or transition.committed_at is None
+                         or transition.committed_at < transition.prepared_at
+                         or transition.new_mode_version != transition.expected_mode_version + 1
+-                        or (
+-                            previous_version is not None
+-                            and transition.expected_mode_version != previous_version
+-                        )
++                        or transition.from_mode != previous_mode
++                        or transition.expected_mode_version != previous_version
+                         or ordinal >= params["max_switches"]
+                     ):
+                         raise ValueError(
+@@ -683,6 +738,7 @@
+                         raise ValueError("mode selection transition violates frozen dwell/cooldown")
+                     previous_at = transition.committed_at
+                     previous_version = transition.new_mode_version
++                    previous_mode = transition.to_mode
+                     commits += 1
+             if commits == 0:
+                 raise ValueError("mode selection did not exercise any actual mode commits")
+--- reviewed/src/cloud_edge_robot_arm/auto_mode/repository.py
++++ fixed/src/cloud_edge_robot_arm/auto_mode/repository.py
+@@ -159,6 +159,7 @@
+ 
+     def save_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
+         """保存模式切换记录，并在幂等键冲突时抛出显式错误。"""
++        transition = AutoModeTransition.model_validate(transition.model_dump())
+         with self._lock:
+             existing_id = self._transition_idempotency.get(transition.idempotency_key)
+             existing = self._transitions.get(existing_id) if existing_id is not None else None
+@@ -222,6 +223,8 @@
+ 
+     def prepare_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
+         """原子准备或返回相同幂等请求，不复用冲突的请求内容。"""
++        transition = AutoModeTransition.model_validate(transition.model_dump())
++        _validate_transition_save(None, transition)
+         with self._lock:
+             existing = self.get_transition_by_idempotency(transition.idempotency_key)
+             if existing is not None:
+@@ -350,6 +353,7 @@
+ 
+     def save_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
+         """保存模式切换记录，并保持幂等冲突检查与 SQLite 落盘一致。"""
++        transition = AutoModeTransition.model_validate(transition.model_dump())
+         with self._lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
+             _validate_transition_save(
+@@ -572,6 +576,8 @@
+ 
+     def prepare_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
+         """SQLite写事务内准备幂等请求，跨连接不会创建重复事务。"""
++        transition = AutoModeTransition.model_validate(transition.model_dump())
++        _validate_transition_save(None, transition)
+         with self._lock, self._conn:
+             self._conn.execute("BEGIN IMMEDIATE")
+             existing = self.get_transition_by_idempotency(transition.idempotency_key)
+@@ -792,5 +798,5 @@
+         or existing.payload_hash != incoming.payload_hash
+     ):
+         raise IdempotencyConflictError("mode transition idempotency/payload conflict")
+-    if existing.status != AutoModeTransitionStatus.PREPARED and existing != incoming:
+-        raise ValueError("terminal mode transition cannot be overwritten")
++    if existing != incoming:
++        raise ValueError("prepared and terminal mode transition records are immutable")
+--- reviewed/tests/test_runtime_auto_baselines.py
++++ fixed/tests/test_runtime_auto_baselines.py
+@@ -543,6 +543,8 @@
+             "policy_parameters": params,
+             "source_hashes": source_hashes,
+             "initial_last_switch_at": (NOW - timedelta(seconds=600)).isoformat(),
++            "initial_current_mode": ControlMode.PERIODIC_CLOUD_SUPERVISION.value,
++            "initial_mode_version": 1,
+             "committed_transitions": [transition.model_dump(mode="json")],
+             "checkpoints": [checkpoint.model_dump(mode="json")],
+         }
+@@ -628,3 +630,67 @@
+     assert module.ThresholdPolicy(0.5).decide(ctx) == DecisionAction.CONTINUE
+     with pytest.raises(TypeError):
+         ctx.risk_estimate.failure_probability_by_action["CONTINUE"] = 0.99
++
++
++@pytest.mark.parametrize(
++    "changed_risk",
++    [
++        RiskEstimate(None, {"CONTINUE": None}, None, None, "UNKNOWN"),
++        RiskEstimate(0.9, {"CONTINUE": 0.9}, 0.02, 0.05, "VALID"),
++    ],
++)
++def test_duplicate_event_rejects_replaced_calibrated_risk(changed_risk):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    policy = module.ThresholdPolicy(0.5)
++    ctx = context()
++    assert policy.decide(ctx) == DecisionAction.CONTINUE
++    altered = replace(ctx, risk_estimate=changed_risk)
++    assert policy.decide(altered) == DecisionAction.STOP
++    assert ctx.verification_budget.remaining_reobservations == 2
++    fresh = replace(altered, event=replace(altered.event, event_id="new-risk-event"))
++    expected = (
++        DecisionAction.REOBSERVE
++        if changed_risk.status == "UNKNOWN"
++        else DecisionAction.REQUEST_CLOUD
++    )
++    assert policy.decide(fresh) == expected
++
++
++@pytest.mark.parametrize(
++    "damage", ["chain_from_mode", "initial_mode", "initial_version", "missing_initial_mode"]
++)
++def test_mode_selection_rejects_impossible_initial_or_chained_state(tmp_path: Path, damage):
++    import json
++
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    snapshot = mode_policy_snapshot(tmp_path / "mode")
++    raw = Path(snapshot.selection_directory) / "candidate"
++    assignment = json.loads((raw / "assignments.json").read_text())[0]
++    path = raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json"
++    log = json.loads(path.read_text())
++    if damage == "chain_from_mode":
++        row = dict(log["committed_transitions"][0])
++        row.update(
++            transition_id="second",
++            idempotency_key="second",
++            expected_mode_version=2,
++            new_mode_version=3,
++            prepared_at=(NOW + timedelta(seconds=599)).isoformat(),
++            committed_at=(NOW + timedelta(seconds=600)).isoformat(),
++        )
++        cp = dict(log["checkpoints"][0])
++        cp.update(
++            checkpoint_id="second",
++            mode_version=2,
++            persisted_at=(NOW + timedelta(seconds=600)).isoformat(),
++        )
++        log["committed_transitions"].append(row)
++        log["checkpoints"].append(cp)
++    elif damage == "initial_mode":
++        log["initial_current_mode"] = ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY.value
++    elif damage == "initial_version":
++        log["initial_mode_version"] = 2
++    else:
++        log.pop("initial_current_mode", None)
++    path.write_text(json.dumps(log))
++    assert module.verify_mode_switch_policy(snapshot)["accepted"] is False
+--- reviewed/tests/test_mode_transition_cas.py
++++ fixed/tests/test_mode_transition_cas.py
+@@ -332,3 +332,50 @@
+     with pytest.raises(ValueError, match=reason):
+         service.commit(prepared.transition_id)
+     assert repo.get_status("task").mode_version == 1
++
++
++@pytest.mark.parametrize("sqlite", [False, True])
++@pytest.mark.parametrize(
++    "change",
++    [
++        {"transition_id": "changed-id"},
++        {"to_mode": ControlMode.AUTO},
++        {"from_mode": ETEA},
++        {"task_id": "foreign"},
++        {"expected_mode_version": 2},
++        {"new_mode_version": 3},
++        {"idempotency_key": "new-key"},
++        {"decision_id": "different"},
++        {"reason": "changed"},
++        {"prepared_at": datetime(2026, 10, 5, tzinfo=UTC)},
++        {"payload_hash": "f" * 64},
++    ],
++)
++def test_prepared_transition_all_request_fields_are_immutable(tmp_path: Path, sqlite, change):
++    repo = (
++        SQLiteAutoModeRepository(tmp_path / "mode.db") if sqlite else InMemoryAutoModeRepository()
++    )
++    initialize(repo)
++    service = ModeTransitionService(repository=repo, clock=lambda: NOW)
++    original = service.prepare(request())
++    with pytest.raises((ValueError, IdempotencyConflictError)):
++        repo.save_transition(original.model_copy(update=change))
++    assert repo.get_transition(original.transition_id) == original
++    assert service.prepare(request()) == original
++    assert repo.get_status("task").mode_version == 1
++    assert service.commit(original.transition_id).to_mode == ETEA
++    assert repo.get_status("task").current_mode == ETEA
++    repo.close()
++
++
++@pytest.mark.parametrize("sqlite", [False, True])
++def test_public_save_revalidates_model_copy_with_invalid_mode(tmp_path: Path, sqlite):
++    repo = (
++        SQLiteAutoModeRepository(tmp_path / "mode.db") if sqlite else InMemoryAutoModeRepository()
++    )
++    initialize(repo)
++    original = ModeTransitionService(repository=repo, clock=lambda: NOW).prepare(request())
++    with pytest.raises(ValueError):
++        repo.save_transition(original.model_copy(update={"to_mode": "illegal"}))
++    assert repo.get_transition(original.transition_id) == original
++    repo.close()

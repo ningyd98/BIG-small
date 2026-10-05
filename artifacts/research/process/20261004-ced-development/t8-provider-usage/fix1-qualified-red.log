@@ -1,0 +1,186 @@
+FFF.FFFFF                                                                [100%]
+=================================== FAILURES ===================================
+_______ test_only_supported_synchronous_chat_response_is_observed[None] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_only_supported_synchronou0')
+object_type = None
+
+    @pytest.mark.parametrize("object_type", [None, "error", "response", "chat.completion.chunk"])
+    def test_only_supported_synchronous_chat_response_is_observed(tmp_path, object_type):
+        response = {
+            "id": "opaque",
+            "model": MODEL,
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+        if object_type is not None:
+            response["object"] = object_type
+        result = read(fixture(tmp_path, response=response)[0])
+>       assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
+E       AssertionError: assert ('OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED)
+
+tests/test_provider_usage.py:44: AssertionError
+_______ test_only_supported_synchronous_chat_response_is_observed[error] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_only_supported_synchronou1')
+object_type = 'error'
+
+    @pytest.mark.parametrize("object_type", [None, "error", "response", "chat.completion.chunk"])
+    def test_only_supported_synchronous_chat_response_is_observed(tmp_path, object_type):
+        response = {
+            "id": "opaque",
+            "model": MODEL,
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+        if object_type is not None:
+            response["object"] = object_type
+        result = read(fixture(tmp_path, response=response)[0])
+>       assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
+E       AssertionError: assert ('OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED)
+
+tests/test_provider_usage.py:44: AssertionError
+_____ test_only_supported_synchronous_chat_response_is_observed[response] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_only_supported_synchronou2')
+object_type = 'response'
+
+    @pytest.mark.parametrize("object_type", [None, "error", "response", "chat.completion.chunk"])
+    def test_only_supported_synchronous_chat_response_is_observed(tmp_path, object_type):
+        response = {
+            "id": "opaque",
+            "model": MODEL,
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+        if object_type is not None:
+            response["object"] = object_type
+        result = read(fixture(tmp_path, response=response)[0])
+>       assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
+E       AssertionError: assert ('OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED)
+
+tests/test_provider_usage.py:44: AssertionError
+_____________ test_typed_chat_error_envelope_is_still_unsupported ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_typed_chat_error_envelope0')
+
+    def test_typed_chat_error_envelope_is_still_unsupported(tmp_path):
+        response = {
+            "object": "chat.completion",
+            "error": {"code": "software-fixture-error"},
+            "id": "opaque",
+            "model": MODEL,
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+        result = read(fixture(tmp_path, response=response, status="ERROR")[0])
+>       assert result.status == "UNKNOWN" and result.original_attempts == 1
+E       AssertionError: assert ('OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED)
+
+tests/test_provider_usage.py:58: AssertionError
+__________ test_zero_provider_usage_keeps_all_attempts_unknown[False] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_zero_provider_usage_keeps0')
+empty = False
+
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_zero_provider_usage_keeps_all_attempts_unknown(tmp_path, empty):
+        registration, evidence = fixture(tmp_path, status="ERROR")
+        ledger = json.loads((evidence / "ledger.json").read_text())
+        if empty:
+            ledger = []
+        else:
+            ledger[0].update(sent_at=None, serialized_sent_bytes=0, serialized_received_bytes=0)
+        (evidence / "ledger.json").write_text(json.dumps(ledger))
+        (evidence / "wire.json").write_text("[]")
+        result = read(rebind_originals(registration, evidence))
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED
+
+tests/test_provider_usage.py:72: AssertionError
+__________ test_zero_provider_usage_keeps_all_attempts_unknown[True] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_zero_provider_usage_keeps1')
+empty = True
+
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_zero_provider_usage_keeps_all_attempts_unknown(tmp_path, empty):
+        registration, evidence = fixture(tmp_path, status="ERROR")
+        ledger = json.loads((evidence / "ledger.json").read_text())
+        if empty:
+            ledger = []
+        else:
+            ledger[0].update(sent_at=None, serialized_sent_bytes=0, serialized_received_bytes=0)
+        (evidence / "ledger.json").write_text(json.dumps(ledger))
+        (evidence / "wire.json").write_text("[]")
+        result = read(rebind_originals(registration, evidence))
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED
+
+tests/test_provider_usage.py:72: AssertionError
+_________ test_disjoint_modality_subtotals_cannot_exceed_parent[input] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_disjoint_modality_subtota0')
+side = 'input'
+
+    @pytest.mark.parametrize("side", ["input", "output"])
+    def test_disjoint_modality_subtotals_cannot_exceed_parent(tmp_path, side):
+        usage = {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+        if side == "input":
+            usage["prompt_tokens_details"] = {"text_tokens": 70, "image_tokens": 70}
+        else:
+            usage["completion_tokens_details"] = {"text_tokens": 40, "audio_tokens": 40}
+        response = {"object": "chat.completion", "id": "opaque", "model": MODEL, "usage": usage}
+        result = read(fixture(tmp_path, response=response)[0])
+>       assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
+E       AssertionError: assert ('OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED)
+
+tests/test_provider_usage.py:87: AssertionError
+________ test_disjoint_modality_subtotals_cannot_exceed_parent[output] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-847/test_disjoint_modality_subtota1')
+side = 'output'
+
+    @pytest.mark.parametrize("side", ["input", "output"])
+    def test_disjoint_modality_subtotals_cannot_exceed_parent(tmp_path, side):
+        usage = {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+        if side == "input":
+            usage["prompt_tokens_details"] = {"text_tokens": 70, "image_tokens": 70}
+        else:
+            usage["completion_tokens_details"] = {"text_tokens": 40, "audio_tokens": 40}
+        response = {"object": "chat.completion", "id": "opaque", "model": MODEL, "usage": usage}
+        result = read(fixture(tmp_path, response=response)[0])
+>       assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
+E       AssertionError: assert ('OBSERVED' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED)
+
+tests/test_provider_usage.py:87: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_provider_usage.py::test_only_supported_synchronous_chat_response_is_observed[None]
+FAILED tests/test_provider_usage.py::test_only_supported_synchronous_chat_response_is_observed[error]
+FAILED tests/test_provider_usage.py::test_only_supported_synchronous_chat_response_is_observed[response]
+FAILED tests/test_provider_usage.py::test_typed_chat_error_envelope_is_still_unsupported
+FAILED tests/test_provider_usage.py::test_zero_provider_usage_keeps_all_attempts_unknown[False]
+FAILED tests/test_provider_usage.py::test_zero_provider_usage_keeps_all_attempts_unknown[True]
+FAILED tests/test_provider_usage.py::test_disjoint_modality_subtotals_cannot_exceed_parent[input]
+FAILED tests/test_provider_usage.py::test_disjoint_modality_subtotals_cannot_exceed_parent[output]
+8 failed, 1 passed, 22 deselected in 0.35s

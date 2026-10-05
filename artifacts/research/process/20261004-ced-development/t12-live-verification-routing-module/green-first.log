@@ -1,0 +1,566 @@
+FFFFFFFF..........FFFFFFFF..........FF....................F              [100%]
+=================================== FAILURES ===================================
+_ test_missing_api_then_unknown_debits_pool_and_publication_atomically[memory] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642e2126960>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_missing_api_then_unknown_debits_pool_and_publication_atomically(source):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+_ test_missing_api_then_unknown_debits_pool_and_publication_atomically[sqlite] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642b6917c50>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_missing_api_then_unknown_debits_pool_and_publication_atomically(source):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data))
+>       assert result.write_disposition == 'NEW_COMMIT'
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'write_disposition'
+
+tests/test_visual_verification_repository.py:86: AttributeError
+________ test_pass_is_local_only_does_not_refund_or_debit_retry[memory] ________
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642b6916420>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_pass_is_local_only_does_not_refund_or_debit_retry(source):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:102: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.PASS: 'PASS'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+________ test_pass_is_local_only_does_not_refund_or_debit_retry[sqlite] ________
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642de5a8860>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_pass_is_local_only_does_not_refund_or_debit_retry(source):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False))
+>       assert result.record.route == 'CONTINUE'
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:103: AttributeError
+_ test_identical_retry_and_random_key_new_generation_cannot_charge_twice[memory] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642de5aa600>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_identical_retry_and_random_key_new_generation_cannot_charge_twice(source):
+        repo, data = source
+        request = request_for(data)
+>       first = repo.route_visual_verification_if_current(request=request)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:115: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+_ test_identical_retry_and_random_key_new_generation_cannot_charge_twice[sqlite] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642b69373b0>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_identical_retry_and_random_key_new_generation_cannot_charge_twice(source):
+        repo, data = source
+        request = request_for(data)
+        first = repo.route_visual_verification_if_current(request=request)
+        repeated = repo.route_visual_verification_if_current(request=request)
+>       assert repeated.write_disposition == 'HISTORICAL_DUPLICATE'
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'write_disposition'
+
+tests/test_visual_verification_repository.py:117: AttributeError
+_ test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[memory] __
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642b69366c0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_same_key_changed_payload_or_same_frame_changed_facts_conflicts(source):
+        repo, data = source
+>       repo.route_visual_verification_if_current(request=request_for(data))
+
+tests/test_visual_verification_repository.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+_ test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[sqlite] __
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642de5abc20>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_same_key_changed_payload_or_same_frame_changed_facts_conflicts(source):
+        repo, data = source
+        repo.route_visual_verification_if_current(request=request_for(data))
+>       with pytest.raises(IdempotencyConflictError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError'>
+
+tests/test_visual_verification_repository.py:129: Failed
+_ test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[memory] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642de5cc2f0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund(source):
+        repo, data = source
+        for index, expected in [(1, 2), (2, 1), (3, 0), (4, 0), (5, 0)]:
+>           result = repo.route_visual_verification_if_current(request=request_for(data, event_key=f'route-{index}'))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:172: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+_ test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[sqlite] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642b6937500>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund(source):
+        repo, data = source
+        for index, expected in [(1, 2), (2, 1), (3, 0), (4, 0), (5, 0)]:
+            result = repo.route_visual_verification_if_current(request=request_for(data, event_key=f'route-{index}'))
+>           assert result.record.route == ('REOBSERVE' if index <= 3 else 'STOP')
+                   ^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:173: AttributeError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SAFETY] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642b69350a0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SAFETY'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SKILL] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642b6968140>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SKILL'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-CLOUD_RETURN] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642e2df7170>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'CLOUD_RETURN'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SAFETY] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642b6924e60>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SAFETY'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+>       assert result.record.route == ('STOP' if phase == 'NATIVE_PRE_SKILL' else 'REOBSERVE')
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:185: AttributeError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SKILL] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642de5cd9d0>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SKILL'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+>       assert result.record.route == ('STOP' if phase == 'NATIVE_PRE_SKILL' else 'REOBSERVE')
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:185: AttributeError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-CLOUD_RETURN] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642de5cd340>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'CLOUD_RETURN'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+>       assert result.record.route == ('STOP' if phase == 'NATIVE_PRE_SKILL' else 'REOBSERVE')
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:185: AttributeError
+___ test_input_snapshot_and_detached_history_ignore_caller_mutations[memory] ___
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7642de5cdc70>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_input_snapshot_and_detached_history_ignore_caller_mutations(source):
+        repo, data = source
+        request = request_for(data)
+        original_hash = request.digest()
+        data['online'].visual_facts['extra'] = {'caller': True}
+        data['publication'].verification_budget.state.remaining_reobservations = 0
+        assert request.digest() == original_hash
+>       result = repo.route_visual_verification_if_current(request=request)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:468: in derive_route
+    reasons=list(dict.fromkeys(reasons)),verdicts=[_plain(asdict(v)) for v in verdicts],created_at=now.isoformat(),
+                                                   ^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:47: in _plain
+    return {k: _plain(v) for k, v in value.items()}
+               ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = <ConditionStatus.UNKNOWN: 'UNKNOWN'>
+
+    def _plain(value: Any) -> Any:
+        if isinstance(value, Mapping):
+            if any(type(k) is not str for k in value):
+                raise ValueError('string source keys required')
+            return {k: _plain(v) for k, v in value.items()}
+        if isinstance(value, (tuple, list)):
+            return [_plain(v) for v in value]
+        if isinstance(value, datetime):
+            return aware(value).isoformat()
+        if value is None or type(value) in (str, bool):
+            return value
+        if type(value) is int and abs(value) <= 2**63-1:
+            return value
+        if type(value) is float and math.isfinite(value):
+            return value
+>       raise ValueError('finite strict JSON source required')
+E       ValueError: finite strict JSON source required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:58: ValueError
+___ test_input_snapshot_and_detached_history_ignore_caller_mutations[sqlite] ___
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7642b692b2f0>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_input_snapshot_and_detached_history_ignore_caller_mutations(source):
+        repo, data = source
+        request = request_for(data)
+        original_hash = request.digest()
+        data['online'].visual_facts['extra'] = {'caller': True}
+        data['publication'].verification_budget.state.remaining_reobservations = 0
+        assert request.digest() == original_hash
+        result = repo.route_visual_verification_if_current(request=request)
+>       payload = result.record.to_payload()
+                  ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:222: AttributeError
+_ test_two_sqlite_connections_commit_one_capture_claim_and_restart_preserves_history _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-950/test_two_sqlite_connections_co0')
+
+    def test_two_sqlite_connections_commit_one_capture_claim_and_restart_preserves_history(tmp_path):
+        path = tmp_path/'race.db'
+        repos = [SQLiteEventAutonomyRepository(path), SQLiteEventAutonomyRepository(path)]
+        data = fresh_source_values(); original=data['original']
+        state = VerificationBudgetState(3,2,0,original.verification_deadline_at,VerificationBudget(3,2,3,40))
+        retry=RecoveryBudget(budget_id='race',task_id=original.identity.task_id,task_total_retry_limit=2,
+            per_step_retry_limit=1,per_skill_retry_limit=2,effective_retry_limit=2,remaining_retries=2,
+            retry_deadline=original.verification_deadline_at,scene_version=original.contract.scene_version,
+            created_at=original.registered_at,updated_at=original.registered_at)
+        data['publication']=repos[0].initialize_visual_owner_if_absent(original,data['source_checkpoint'],state,retry)
+        raw=data['online'].observation.model_dump(mode='json');raw.update(captured_at=datetime.now(UTC).isoformat(),checksum_sha256='')
+        data['online']=replace(data['online'],observation=RGBDObservation.model_validate(raw),context_hash=data['source_checkpoint'].checkpoint_hash)
+        request=request_for(data)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results=list(pool.map(lambda repo:repo.route_visual_verification_if_current(request=request),repos))
+>       assert sorted(r.write_disposition for r in results)==['HISTORICAL_DUPLICATE','NEW_COMMIT']
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:270: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x7642de5ced70>
+
+>   assert sorted(r.write_disposition for r in results)==['HISTORICAL_DUPLICATE','NEW_COMMIT']
+                  ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'NoneType' object has no attribute 'write_disposition'
+
+tests/test_visual_verification_repository.py:270: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_visual_verification_repository.py::test_missing_api_then_unknown_debits_pool_and_publication_atomically[memory]
+FAILED tests/test_visual_verification_repository.py::test_missing_api_then_unknown_debits_pool_and_publication_atomically[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_pass_is_local_only_does_not_refund_or_debit_retry[memory]
+FAILED tests/test_visual_verification_repository.py::test_pass_is_local_only_does_not_refund_or_debit_retry[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_identical_retry_and_random_key_new_generation_cannot_charge_twice[memory]
+FAILED tests/test_visual_verification_repository.py::test_identical_retry_and_random_key_new_generation_cannot_charge_twice[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[memory]
+FAILED tests/test_visual_verification_repository.py::test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[memory]
+FAILED tests/test_visual_verification_repository.py::test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SAFETY]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SKILL]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-CLOUD_RETURN]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SAFETY]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SKILL]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-CLOUD_RETURN]
+FAILED tests/test_visual_verification_repository.py::test_input_snapshot_and_detached_history_ignore_caller_mutations[memory]
+FAILED tests/test_visual_verification_repository.py::test_input_snapshot_and_detached_history_ignore_caller_mutations[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_two_sqlite_connections_commit_one_capture_claim_and_restart_preserves_history
+19 failed, 40 passed in 10.41s

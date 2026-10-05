@@ -1,0 +1,141 @@
+E702 Multiple statements on one line (semicolon)
+   --> src/cloud_edge_robot_arm/vision/pose_markers.py:128:31
+    |
+126 |             abs(float(point@basis[-1])) for point in metric-center)>.002:
+127 |         return unknown('marker_depth_not_planar',observed)
+128 |     x_axis=metric[1]-metric[0];x_axis/=np.linalg.norm(x_axis)
+    |                               ^
+129 |     y_hint=metric[0]-metric[3] # bitmap row increases opposite marker +y
+130 |     z_axis=np.cross(x_axis,y_hint)
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/vision/pose_markers.py:159:101
+    |
+157 |     dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+158 |     bits=cv2.aruco.generateImageMarker(dictionary,7,6)
+159 |     def geom(name: str,position: tuple[float,float,float],size: tuple[float,float,float],white: bool) -> None:
+    |                                                                                                     ^^^^^^^^^^
+160 |         attributes={'name':name,'type':'box','pos':' '.join(f'{value:.10f}' for value in position),
+161 |             'size':' '.join(f'{value:.10f}' for value in size),'mass':'0','density':'0',
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/vision/pose_markers.py:172:101
+    |
+170 |                 ((column-2.5)*cell,(2.5-row)*cell,.03504),
+171 |                 (cell/2,cell/2,.00001),bool(bits[row,column]))
+172 |     tree.insert(0,ET.Comment('DEVELOPMENTAL POSE MARKER V1: visual only; no grasp calibration acceptance'))
+    |                                                                                                     ^^^^^^^
+173 |     ET.indent(tree,space='  ')
+174 |     return ET.tostring(tree,encoding='utf-8')+b'\n'
+    |
+
+E501 Line too long (115 > 100)
+  --> tests/test_pose_marker_evidence.py:29:101
+   |
+29 | def observation(*, rotation=0, marker_id=7, duplicate=False, clipped=False, depth=1., calibration='synthetic-cal'):
+   |                                                                                                     ^^^^^^^^^^^^^^^
+30 |     image = np.full((160,160),255,dtype=np.uint8)
+31 |     glyph = BITS7 if marker_id==7 else cv2.aruco.generateImageMarker(
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_pose_marker_evidence.py:42:24
+   |
+40 |         image[56:104,56:104] = glyph
+41 |     image = np.rot90(image,rotation)
+42 |     output=io.BytesIO();Image.fromarray(image).convert('RGB').save(output,format='PNG')
+   |                        ^
+43 |     depths=np.full((160,160),depth,dtype='<f4')
+44 |     return RGBDObservation(frame_id=f'software-{rotation}',captured_at=datetime(2026,10,4,tzinfo=UTC),
+   |
+
+E501 Line too long (102 > 100)
+  --> tests/test_pose_marker_evidence.py:44:101
+   |
+42 |     output=io.BytesIO();Image.fromarray(image).convert('RGB').save(output,format='PNG')
+43 |     depths=np.full((160,160),depth,dtype='<f4')
+44 |     return RGBDObservation(frame_id=f'software-{rotation}',captured_at=datetime(2026,10,4,tzinfo=UTC),
+   |                                                                                                     ^^
+45 |         sim_time_s=0.,width=160,height=160,rgb_png_base64=base64.b64encode(output.getvalue()).decode(),
+46 |         depth_float32_base64=base64.b64encode(depths.tobytes()).decode(),intrinsics=(200.,200.,79.5,79.5),
+   |
+
+E501 Line too long (120 > 100)
+  --> tests/test_pose_marker_evidence.py:60:101
+   |
+58 |     expected=(0.,math.pi/2,math.pi,-math.pi/2)
+59 |     for k,(item,yaw) in enumerate(zip(estimates,expected,strict=True)):
+60 |         assert math.atan2(math.sin(item.yaw_world_rad-yaw),math.cos(item.yaw_world_rad-yaw))==pytest.approx(0.,abs=.025)
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+61 |         assert item.marker_center_world_m==pytest.approx((0.,0.,.5),abs=.004)
+62 |         assert len(item.ordered_corners_px)==4
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_pose_marker_evidence.py:74:27
+   |
+72 |     current=observation(**options.get(bad,{}))
+73 |     if bad=='missing':
+74 |         image=io.BytesIO();Image.new('RGB',(160,160),'white').save(image,format='PNG')
+   |                           ^
+75 |         current=RGBDObservation.model_validate({**current.model_dump(),
+76 |             'rgb_png_base64':base64.b64encode(image.getvalue()).decode(),'checksum_sha256':''})
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_pose_marker_evidence.py:94:33
+   |
+92 |     base=BASE.read_bytes()
+93 |     marked=api().build_pose_marked_xml(base)
+94 |     original=ET.fromstring(base);new=ET.fromstring(marked)
+   |                                 ^
+95 |     old_nodes={node.get('name'):node for node in original.iter() if node.get('name')}
+96 |     new_nodes={node.get('name'):node for node in new.iter() if node.get('name')}
+   |
+
+E501 Line too long (124 > 100)
+   --> tests/test_pose_marker_evidence.py:104:101
+    |
+102 |                and node.get('conaffinity')=='0' for node in additions)
+103 |     assert new.find('asset') is None # no texture file path dependency
+104 |     assert hashlib.sha256(BASE.read_bytes()).hexdigest()=='66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2'
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+105 |     with pytest.raises(ValueError):
+106 |         api().build_pose_marked_xml(base.replace(b'mass="0.08"',b'mass="0.09"'))
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_pose_marker_evidence.py:123:101
+    |
+121 |         name=mujoco.mj_id2name(base,mujoco.mjtObj.mjOBJ_GEOM,geom_id)
+122 |         other=marked.geom(name).id
+123 |         for field in ('geom_type','geom_size','geom_pos','geom_quat','geom_contype','geom_conaffinity',
+    |                                                                                                     ^^^
+124 |                       'geom_friction','geom_solref','geom_solimp','geom_margin','geom_gap','geom_rgba'):
+125 |             assert np.array_equal(getattr(base,field)[geom_id],getattr(marked,field)[other]),(name,field)
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_pose_marker_evidence.py:125:101
+    |
+123 |         for field in ('geom_type','geom_size','geom_pos','geom_quat','geom_contype','geom_conaffinity',
+124 |                       'geom_friction','geom_solref','geom_solimp','geom_margin','geom_gap','geom_rgba'):
+125 |             assert np.array_equal(getattr(base,field)[geom_id],getattr(marked,field)[other]),(name,field)
+    |                                                                                                     ^^^^^
+126 |     left,right=mujoco.MjData(base),mujoco.MjData(marked)
+127 |     for _ in range(20):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_pose_marker_evidence.py:128:34
+    |
+126 |     left,right=mujoco.MjData(base),mujoco.MjData(marked)
+127 |     for _ in range(20):
+128 |         mujoco.mj_step(base,left);mujoco.mj_step(marked,right)
+    |                                  ^
+129 |     assert np.array_equal(left.qpos,right.qpos) and np.array_equal(left.qvel,right.qvel)
+    |
+
+Found 13 errors.

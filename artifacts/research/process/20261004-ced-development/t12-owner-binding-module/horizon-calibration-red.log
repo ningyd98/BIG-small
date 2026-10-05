@@ -1,0 +1,34 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_requested_horizon_cannot_shorten_original_frozen_policy _________
+
+    def test_requested_horizon_cannot_shorten_original_frozen_policy():
+        data = values()
+        original = data["original"]
+        requirements = {**original.requirements, "move": replace(
+            original.requirements["move"], expected_duration_s=12.0)}
+        data["original"] = api().freeze_original_visual_plan(**{
+            **original.freeze_inputs(), "requirements": requirements})
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_owner_registration.py:268: Failed
+_______ test_registered_calibration_requirement_must_match_current_frame _______
+
+    def test_registered_calibration_requirement_must_match_current_frame():
+        data = values()
+        original = data["original"]
+        requirement = original.requirements["move"]
+        requirements = {**original.requirements, "move": replace(
+            requirement, preconditions=(replace(requirement.preconditions[0], tolerances={
+                **requirement.preconditions[0].tolerances, "calibration_version": "another"}),))}
+        data["original"] = api().freeze_original_visual_plan(**{
+            **original.freeze_inputs(), "requirements": requirements})
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_owner_registration.py:281: Failed
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_registration.py::test_requested_horizon_cannot_shorten_original_frozen_policy
+FAILED tests/test_visual_owner_registration.py::test_registered_calibration_requirement_must_match_current_frame
+2 failed, 36 deselected in 0.49s

@@ -1,0 +1,136 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_pilot_collector_joins_actual_transport_order_without_model_call[nonempty] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-793/test_pilot_collector_joins_act0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7abe142a58e0>
+response_mode = 'nonempty'
+
+    @pytest.mark.parametrize("response_mode", ["nonempty", "empty", "absent"])
+    def test_pilot_collector_joins_actual_transport_order_without_model_call(
+        tmp_path, monkeypatch, response_mode
+    ):
+        import hashlib
+        import urllib.request
+    
+        from scripts.run_rgbd_pilot import _PilotWireCollector
+    
+        from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+    
+        class Response:
+            def __enter__(self):
+                return self
+    
+            def __exit__(self, *args):
+                return False
+    
+            def read(self, size):
+                return b"{}" if response_mode == "nonempty" else b""
+    
+        class Opener:
+            def open(self, request, timeout):
+                if response_mode == "absent":
+                    raise TimeoutError("SOFTWARE_ONLY transport fixture")
+                return Response()
+    
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener())
+        collector = _PilotWireCollector(tmp_path, secret="")
+>       planner = RGBDPlannerAdapter(
+            base_url="https://software-only.invalid", model_name="SOFTWARE_ONLY",
+            provider="openai_compatible", model_role="SUPERVISOR",
+            cost_ledger=collector.ledger, raw_transport_observer=collector.observe,
+        )
+E       TypeError: RGBDPlannerAdapter.__init__() got an unexpected keyword argument 'model_name'
+
+tests/test_ced_pilot_stages.py:85: TypeError
+_ test_pilot_collector_joins_actual_transport_order_without_model_call[empty] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-793/test_pilot_collector_joins_act1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7abe13aad670>
+response_mode = 'empty'
+
+    @pytest.mark.parametrize("response_mode", ["nonempty", "empty", "absent"])
+    def test_pilot_collector_joins_actual_transport_order_without_model_call(
+        tmp_path, monkeypatch, response_mode
+    ):
+        import hashlib
+        import urllib.request
+    
+        from scripts.run_rgbd_pilot import _PilotWireCollector
+    
+        from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+    
+        class Response:
+            def __enter__(self):
+                return self
+    
+            def __exit__(self, *args):
+                return False
+    
+            def read(self, size):
+                return b"{}" if response_mode == "nonempty" else b""
+    
+        class Opener:
+            def open(self, request, timeout):
+                if response_mode == "absent":
+                    raise TimeoutError("SOFTWARE_ONLY transport fixture")
+                return Response()
+    
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener())
+        collector = _PilotWireCollector(tmp_path, secret="")
+>       planner = RGBDPlannerAdapter(
+            base_url="https://software-only.invalid", model_name="SOFTWARE_ONLY",
+            provider="openai_compatible", model_role="SUPERVISOR",
+            cost_ledger=collector.ledger, raw_transport_observer=collector.observe,
+        )
+E       TypeError: RGBDPlannerAdapter.__init__() got an unexpected keyword argument 'model_name'
+
+tests/test_ced_pilot_stages.py:85: TypeError
+_ test_pilot_collector_joins_actual_transport_order_without_model_call[absent] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-793/test_pilot_collector_joins_act2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7abe13aacb90>
+response_mode = 'absent'
+
+    @pytest.mark.parametrize("response_mode", ["nonempty", "empty", "absent"])
+    def test_pilot_collector_joins_actual_transport_order_without_model_call(
+        tmp_path, monkeypatch, response_mode
+    ):
+        import hashlib
+        import urllib.request
+    
+        from scripts.run_rgbd_pilot import _PilotWireCollector
+    
+        from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+    
+        class Response:
+            def __enter__(self):
+                return self
+    
+            def __exit__(self, *args):
+                return False
+    
+            def read(self, size):
+                return b"{}" if response_mode == "nonempty" else b""
+    
+        class Opener:
+            def open(self, request, timeout):
+                if response_mode == "absent":
+                    raise TimeoutError("SOFTWARE_ONLY transport fixture")
+                return Response()
+    
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener())
+        collector = _PilotWireCollector(tmp_path, secret="")
+>       planner = RGBDPlannerAdapter(
+            base_url="https://software-only.invalid", model_name="SOFTWARE_ONLY",
+            provider="openai_compatible", model_role="SUPERVISOR",
+            cost_ledger=collector.ledger, raw_transport_observer=collector.observe,
+        )
+E       TypeError: RGBDPlannerAdapter.__init__() got an unexpected keyword argument 'model_name'
+
+tests/test_ced_pilot_stages.py:85: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_ced_pilot_stages.py::test_pilot_collector_joins_actual_transport_order_without_model_call[nonempty]
+FAILED tests/test_ced_pilot_stages.py::test_pilot_collector_joins_actual_transport_order_without_model_call[empty]
+FAILED tests/test_ced_pilot_stages.py::test_pilot_collector_joins_actual_transport_order_without_model_call[absent]
+3 failed, 18 deselected in 0.37s

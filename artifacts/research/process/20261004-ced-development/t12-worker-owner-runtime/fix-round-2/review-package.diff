@@ -1,0 +1,80 @@
+--- a/src/cloud_edge_robot_arm/vision/worker_owner.py
++++ b/src/cloud_edge_robot_arm/vision/worker_owner.py
+@@ -238,6 +238,18 @@
+         )
+ 
+ 
++def _plain_worker_sources(value: Mapping[str, str]) -> Mapping[str, str]:
++    # Do not call comparisons or path methods supplied by str subclasses.
++    if not isinstance(value, Mapping):
++        raise ValueError("plain source inventory mapping required")
++    copied: dict[str, str] = {}
++    for name, digest in value.items():
++        if type(name) is not str or type(digest) is not str:
++            raise ValueError("plain source names and SHA strings required")
++        copied[name] = digest
++    return _sources(copied)
++
++
+ def pin_worker_source_inventory(
+     root: Path,
+     expected: Mapping[str, str],
+@@ -259,7 +271,10 @@
+     # Only after checking the original lexical ancestors may parent navigation
+     # be normalized for containment. abspath would erase an alias/.. first.
+     lexical_root = lexical_root.resolve()
+-    copied = _sources(expected)
++    copied = _plain_worker_sources(expected)
++    if not isinstance(required_paths, Set) or any(type(name) is not str for name in required_paths):
++        raise ValueError("plain source required-path strings required")
++    required_paths = frozenset(required_paths)
+     if not required_paths or not required_paths <= copied.keys():
+         raise ValueError("complete required source inventory missing")
+     for name, digest in copied.items():
+@@ -340,7 +355,7 @@
+         or not lease_source.acquired_at <= _aware(observation.captured_at) <= start
+     ):
+         raise ValueError("current identity/acquisition/calibration/source time mismatch")
+-    sources = _sources(source_hashes)
++    sources = _plain_worker_sources(source_hashes)
+     if not REQUIRED_COMPILER_SOURCES <= sources.keys():
+         raise ValueError("complete compiler/policy source inventory required")
+     requirements: dict[str, OriginalActionRequirements] = {}
+--- a/tests/test_visual_worker_owner.py
++++ b/tests/test_visual_worker_owner.py
+@@ -457,3 +457,35 @@
+         )
+         == expected
+     )
++
++
++class PermissiveSourceString(str):
++    def __eq__(self, other):
++        return True
++
++    def __ne__(self, other):
++        return False
++
++    __hash__ = str.__hash__
++
++
++@pytest.mark.parametrize("kind", ["digest", "filename", "required_path"])
++def test_source_inventory_rejects_str_subclasses_before_comparison(tmp_path, kind):
++    import hashlib
++
++    (tmp_path / "source.py").write_text("VALUE=1\n")
++    actual = hashlib.sha256((tmp_path / "source.py").read_bytes()).hexdigest()
++    name = PermissiveSourceString("source.py") if kind == "filename" else "source.py"
++    digest = PermissiveSourceString("f" * 64) if kind == "digest" else actual
++    required = {PermissiveSourceString("source.py")} if kind == "required_path" else {"source.py"}
++    with pytest.raises(ValueError, match="plain source"):
++        api().pin_worker_source_inventory(tmp_path, {name: digest}, required_paths=required)
++
++
++def test_original_compiler_rejects_subclass_source_registration(running):
++    data = compilation(running)
++    sources = dict(data["source_hashes"])
++    key = next(iter(sources))
++    sources[key] = PermissiveSourceString(sources[key])
++    with pytest.raises(ValueError, match="plain source"):
++        api().compile_worker_original_plan(**{**data, "source_hashes": sources})

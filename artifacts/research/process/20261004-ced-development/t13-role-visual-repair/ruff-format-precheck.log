@@ -1,0 +1,298 @@
+E501 Line too long (105 > 100)
+  --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_adapter.py:64:101
+   |
+62 |                 return unavailable('typed_actual_source_missing')
+63 |             visual = source.context
+64 |             if context is not None and (digest(context.active_contract) != digest(visual.active_contract)
+   |                                                                                                     ^^^^^
+65 |                     or context.checkpoint is None
+66 |                     or digest(context.checkpoint) != digest(visual.checkpoint)):
+   |
+
+E501 Line too long (107 > 100)
+  --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_adapter.py:75:101
+   |
+73 |                 source=source, grounding_provider=self.grounding_provider, clock=self.clock,
+74 |                 full_remaining=self.full_remaining)
+75 |             provider.validate(request, authorized_window(visual, self.full_remaining), observation, visual)
+   |                                                                                                     ^^^^^^^
+76 |             response = build_visual_repair(request, window, observation, context=visual,
+77 |                 provider=provider, full_remaining=self.full_remaining, clock=self.clock)
+   |
+
+E501 Line too long (104 > 100)
+  --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py:85:101
+   |
+83 |         object.__setattr__(self, 'context', VisualRepairContext(
+84 |             current.active_contract, current.checkpoint, current.dependencies,
+85 |             current.invalid_evidence_ids, current.online_evidence, current.completed_effect_conditions))
+   |                                                                                                     ^^^^
+86 |         object.__setattr__(self, 'action_evidence', MappingProxyType({
+87 |             identity: replace(proof, evidence=replace(proof.evidence))
+   |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py:128:101
+    |
+127 | GroundingProvider = Callable[
+128 |     [RepairReplacementIntent, TaskStep, RGBDObservation, VisualRepairContext, str], GroundedRepairStep
+    |                                                                                                     ^^
+129 | ]
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py:195:101
+    |
+193 |             raise RoleVisualRepairUnavailable('actual_source_unavailable')
+194 |         if (digest(context) != digest(self.source.context)
+195 |                 or observation.checksum_sha256 != context.online_evidence.observation.checksum_sha256
+    |                                                                                                     ^
+196 |                 or request.task_id != context.active_contract.task_id
+197 |                 or request.current_plan_version != context.active_contract.plan_version
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py:263:101
+    |
+261 |         assert self.binding is not None and self.grounding_provider is not None
+262 |         originals = {step.step_id: step for step in context.active_contract.steps}
+263 |         bound = {'schema_version': PROMPT_VERSION, 'request': plain(request), 'window': plain(window),
+    |                                                                                                     ^^
+264 |             'frame': observation.evidence(), 'context_hash': digest(context),
+265 |             'source_hash': self.source.source_hash, 'bundle_hash': self.binding.bundle.digest(),
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py:270:101
+    |
+268 |         self.last_binding_hash = binding_hash
+269 |         envelope = {**bound, 'binding_hash': binding_hash,
+270 |             'authorized_steps': [plain(originals[identity]) for identity in window.replace_step_ids]}
+    |                                                                                                     ^
+271 |         instruction = (context.active_contract.user_instruction + '\nROLE_REPAIR_CONTEXT=' +
+272 |                        json.dumps(envelope, sort_keys=True, separators=(',', ':')))
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py:296:101
+    |
+294 |         if (decision.binding_hash != binding_hash
+295 |                 or len(decision.replacements) != len(window.replace_step_ids)
+296 |                 or {item.step_id for item in decision.replacements} != set(window.replace_step_ids)):
+    |                                                                                                     ^
+297 |             raise RoleVisualRepairUnavailable('remote_authorized_window_or_binding_changed')
+298 |         replacements = {}
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py:325:101
+    |
+323 |                     or step.success_conditions != original.success_conditions
+324 |                     or step.expected_duration_ms != original.expected_duration_ms
+325 |                     or step.timeout_ms != original.timeout_ms or step.retry_limit != original.retry_limit
+    |                                                                                                     ^^^^^
+326 |                     or digest(grounded.action_evidence.preconditions)
+327 |                     != digest(self.source.action_evidence[original.step_id].preconditions)
+    |
+
+E501 Line too long (111 > 100)
+   --> tests/test_role_visual_repair.py:120:101
+    |
+120 | def test_role_repair_wire_has_two_images_replanner_cost_and_only_authorized_replacement(tmp_path, monkeypatch):
+    |                                                                                                     ^^^^^^^^^^^
+121 |     adapter, wire, planner, binding, source, request, window, observation, ledger = setup(tmp_path, monkeypatch)
+122 |     result = adapter.replan(request)
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_role_visual_repair.py:121:101
+    |
+120 | def test_role_repair_wire_has_two_images_replanner_cost_and_only_authorized_replacement(tmp_path, monkeypatch):
+121 |     adapter, wire, planner, binding, source, request, window, observation, ledger = setup(tmp_path, monkeypatch)
+    |                                                                                                     ^^^^^^^^^^^^
+122 |     result = adapter.replan(request)
+123 |     assert result.outcome == 'REPLANNED' and not result.validation_errors
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:136:28
+    |
+134 | def test_missing_actual_prerequisite_is_unavailable_with_zero_calls(tmp_path, monkeypatch, missing):
+135 |     adapter, wire, planner, binding, source, request, *_ = setup(tmp_path, monkeypatch)
+136 |     if missing == 'binding': adapter.binding = None
+    |                            ^
+137 |     elif missing == 'source': adapter.source_provider = None
+138 |     elif missing == 'grounding': adapter.grounding_provider = None
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:137:29
+    |
+135 |     adapter, wire, planner, binding, source, request, *_ = setup(tmp_path, monkeypatch)
+136 |     if missing == 'binding': adapter.binding = None
+137 |     elif missing == 'source': adapter.source_provider = None
+    |                             ^
+138 |     elif missing == 'grounding': adapter.grounding_provider = None
+139 |     elif missing == 'key': planner._api_key = ''
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:138:32
+    |
+136 |     if missing == 'binding': adapter.binding = None
+137 |     elif missing == 'source': adapter.source_provider = None
+138 |     elif missing == 'grounding': adapter.grounding_provider = None
+    |                                ^
+139 |     elif missing == 'key': planner._api_key = ''
+140 |     else:
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:139:26
+    |
+137 |     elif missing == 'source': adapter.source_provider = None
+138 |     elif missing == 'grounding': adapter.grounding_provider = None
+139 |     elif missing == 'key': planner._api_key = ''
+    |                          ^
+140 |     else:
+141 |         cloud = replace(binding.bundle.cloud_snapshot, source_hashes={
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:154:32
+    |
+152 | def test_remote_parsed_candidate_cannot_change_bound_ids_or_skills(tmp_path, monkeypatch, change):
+153 |     def mutate(decision):
+154 |         if change=='wrong_hash': decision['binding_hash']='f'*64
+    |                                ^
+155 |         elif change=='completed': decision['replacements'][0]['step_id']='approach'
+156 |         elif change=='duplicate': decision['replacements'].append(decision['replacements'][0])
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:155:33
+    |
+153 |     def mutate(decision):
+154 |         if change=='wrong_hash': decision['binding_hash']='f'*64
+155 |         elif change=='completed': decision['replacements'][0]['step_id']='approach'
+    |                                 ^
+156 |         elif change=='duplicate': decision['replacements'].append(decision['replacements'][0])
+157 |         elif change=='missing': decision['replacements']=[]
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:156:33
+    |
+154 |         if change=='wrong_hash': decision['binding_hash']='f'*64
+155 |         elif change=='completed': decision['replacements'][0]['step_id']='approach'
+156 |         elif change=='duplicate': decision['replacements'].append(decision['replacements'][0])
+    |                                 ^
+157 |         elif change=='missing': decision['replacements']=[]
+158 |         else: decision['replacements'][0]['skill']='HOME'
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:157:31
+    |
+155 |         elif change=='completed': decision['replacements'][0]['step_id']='approach'
+156 |         elif change=='duplicate': decision['replacements'].append(decision['replacements'][0])
+157 |         elif change=='missing': decision['replacements']=[]
+    |                               ^
+158 |         else: decision['replacements'][0]['skill']='HOME'
+159 |     adapter, wire, _, _, _, request, *_ = setup(tmp_path, monkeypatch, change=mutate)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_role_visual_repair.py:158:13
+    |
+156 |         elif change=='duplicate': decision['replacements'].append(decision['replacements'][0])
+157 |         elif change=='missing': decision['replacements']=[]
+158 |         else: decision['replacements'][0]['skill']='HOME'
+    |             ^
+159 |     adapter, wire, _, _, _, request, *_ = setup(tmp_path, monkeypatch, change=mutate)
+160 |     result = adapter.replan(request)
+    |
+
+E501 Line too long (110 > 100)
+   --> tests/test_role_visual_repair.py:204:101
+    |
+204 | @pytest.mark.parametrize('changed', ['plan_id', 'robot_id', 'failed_step_id', 'completed', 'future', 'bytes'])
+    |                                                                                                     ^^^^^^^^^^
+205 | def test_direct_provider_revalidates_complete_request_and_frame_before_paid_call(tmp_path, monkeypatch, changed):
+206 |     adapter, wire, _, _, source, request, window, observation, _ = setup(tmp_path, monkeypatch)
+    |
+
+E501 Line too long (113 > 100)
+   --> tests/test_role_visual_repair.py:205:101
+    |
+204 | @pytest.mark.parametrize('changed', ['plan_id', 'robot_id', 'failed_step_id', 'completed', 'future', 'bytes'])
+205 | def test_direct_provider_revalidates_complete_request_and_frame_before_paid_call(tmp_path, monkeypatch, changed):
+    |                                                                                                     ^^^^^^^^^^^^^
+206 |     adapter, wire, _, _, source, request, window, observation, _ = setup(tmp_path, monkeypatch)
+207 |     updates = {'plan_id': 'other', 'robot_id': 'other', 'failed_step_id': 'approach',
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_role_visual_repair.py:271:101
+    |
+271 | @pytest.mark.parametrize('bad', ['scope', 'duration', 'motion', 'estop', 'collision', 'disconnected'])
+    |                                                                                                     ^^
+272 | def test_incomplete_or_unsafe_actual_source_is_unavailable_before_paid_call(tmp_path, monkeypatch, bad):
+273 |     adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+    |
+
+E501 Line too long (104 > 100)
+   --> tests/test_role_visual_repair.py:272:101
+    |
+271 | @pytest.mark.parametrize('bad', ['scope', 'duration', 'motion', 'estop', 'collision', 'disconnected'])
+272 | def test_incomplete_or_unsafe_actual_source_is_unavailable_before_paid_call(tmp_path, monkeypatch, bad):
+    |                                                                                                     ^^^^
+273 |     adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+274 |     proofs = dict(source.action_evidence)
+    |
+
+E501 Line too long (104 > 100)
+   --> tests/test_role_visual_repair.py:296:101
+    |
+295 | @pytest.mark.parametrize('bad', ['binding', 'timeout', 'retry', 'frame', 'conditions'])
+296 | def test_grounded_step_must_preserve_full_bound_proof_and_frozen_parameters(tmp_path, monkeypatch, bad):
+    |                                                                                                     ^^^^
+297 |     from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+298 |     adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_role_visual_repair.py:312:101
+    |
+310 |         else:
+311 |             proof = replace(proof, postconditions=())
+312 |         return api().GroundedRepairStep(original, proof, binding_hash, replan_payload_hash(original))
+    |                                                                                                     ^
+313 |     adapter.grounding_provider = grounding
+314 |     result = adapter.replan(request)
+    |
+
+E501 Line too long (113 > 100)
+   --> tests/test_role_visual_repair.py:337:101
+    |
+336 | @pytest.mark.parametrize('error', ['http', 'timeout', 'invalid_json'])
+337 | def test_failed_mock_transport_is_counted_once_without_secret_response_or_fallback(tmp_path, monkeypatch, error):
+    |                                                                                                     ^^^^^^^^^^^^^
+338 |     import io
+339 |     import urllib.error
+    |
+
+UP031 Use format specifiers instead of percent format
+   --> tests/test_role_visual_repair.py:342:23
+    |
+340 |     adapter, wire, planner, _, _, request, *_rest, ledger = setup(tmp_path, monkeypatch)
+341 |     secret = planner._api_key
+342 |     encoded = ''.join('\\u%04x'%ord(c) for c in secret).encode()
+    |                       ^^^^^^^^^^^^^^^^
+343 |     seen = []
+344 |     planner.raw_transport_observer = lambda phase, path, data: seen.append((phase,path,data))
+    |
+help: Replace with format specifiers
+
+Found 33 errors (5 fixed, 28 remaining).
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

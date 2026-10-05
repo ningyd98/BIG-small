@@ -1,0 +1,1 @@
+Four RED regressions reproduced spent counts/deadline reset and task mismatch. Root now calls authorized atomic initialize_retry_budget_if_absent repository interface; repository implementation is assigned to T13 activation owner. GREEN/static verification waits on that producer. No readiness or completion claim.

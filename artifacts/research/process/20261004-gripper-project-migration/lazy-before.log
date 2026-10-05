@@ -1,0 +1,29 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_lazy_default_defers_loading_and_preserves_verification_failure ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7911939f8800>
+
+    def test_lazy_default_defers_loading_and_preserves_verification_failure(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cloud_edge_robot_arm.vision import frozen_model
+        from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable
+        from tests.test_rgbd_grasp_scope import _request
+    
+        clear_model_env(monkeypatch)
+        calls: list[Path] = []
+    
+        def unavailable(path: Path) -> Any:
+            calls.append(path)
+            raise RGBDModelUnavailable("frozen model evidence drift or missing")
+    
+        monkeypatch.setattr(frozen_model, "load_frozen_planner", unavailable)
+        lazy_type = getattr(frozen_model, "EnvironmentRGBDPlanner", None)
+>       assert lazy_type is not None
+E       assert None is not None
+
+tests/test_rgbd_project_defaults.py:63: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_project_defaults.py::test_lazy_default_defers_loading_and_preserves_verification_failure
+1 failed, 10 deselected in 0.18s

@@ -1,0 +1,94 @@
+--- before/src/cloud_edge_robot_arm/research/reproducibility.py
++++ after/src/cloud_edge_robot_arm/research/reproducibility.py
+@@ -213,6 +213,44 @@
+                     or set(assignments) != set(records)):
+                 raise ValueError("assignment coverage must retain every failed/blocked original")
+             assigned, recorded = len(assignments), len(records)
++            if manifest.runs_path:
++                original_name = (
++                    _relative(manifest.runs_path) / "assignments.json"
++                ).as_posix()
++                if original_name not in manifest.artifact_hashes:
++                    raise ValueError("bound original assignment list absent from inventory")
++                original = json.loads(_resolve(root, original_name).read_text())
++                from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++                if not isinstance(original, dict) or (
++                    original.get("schema_version") != "ced.assignments.v1"
++                    or content_digest({key: value for key, value in original.items()
++                                       if key != "content_hash"}) != original.get("content_hash")
++                ):
++                    raise ValueError("invalid bound original assignment list")
++                original_ids = [row["assignment_id"] for row in original["assignments"]]
++                if (len(original_ids) != len(set(original_ids))
++                        or set(original_ids) != set(assignments)):
++                    raise ValueError("index omits bound original assigned episodes")
++                if manifest.protocol_hash and (
++                    original.get("protocol_hash") != manifest.protocol_hash
++                ):
++                    raise ValueError("bound assignment list protocol hash mismatch")
++                if manifest.protocol_path:
++                    from cloud_edge_robot_arm.research.acceptance import CORE_METHODS
++                    from cloud_edge_robot_arm.research.assignments import (
++                        EpisodeAssignment,
++                        build_assignments,
++                    )
++
++                    pool_name = (_relative(manifest.runs_path) / "pools.json").as_posix()
++                    if pool_name not in manifest.artifact_hashes:
++                        raise ValueError("bound original scene pool absent from inventory")
++                    pools = json.loads(_resolve(root, pool_name).read_text())
++                    rebuilt = build_assignments(frozen, CORE_METHODS, scene_pool=pools["formal"])
++                    declared = [EpisodeAssignment(**row) for row in original["assignments"]]
++                    if rebuilt != declared:
++                        raise ValueError("assignment list omits exact frozen protocol assignments")
+             if _archived_assignment_ids(root, manifest.artifact_hashes) != set(assignments):
+                 raise ValueError("assignment index omits archived original episode records")
+             for path in set(records.values()):
+--- before/tests/test_research_reproducibility.py
++++ after/tests/test_research_reproducibility.py
+@@ -86,6 +86,44 @@
+         "schema_version": "ced.reproduction-manifest.v1", "manifest": payload,
+         "content_hash": digest(payload),
+     }))
++    assert api().verify_reproduction_bundle(tmp_path)["integrity_valid"] is False
++
++
++def test_bound_original_assignment_list_survives_dual_index_and_record_deletion(tmp_path):
++    manifest = bundle(tmp_path)
++    payload = manifest.to_payload()
++    for name in ("records/failed.json", "records/blocked.json"):
++        del payload["artifact_hashes"][name]
++    runs = tmp_path / "runs"
++    runs.mkdir()
++    original = {"schema_version": "ced.assignments.v1", "protocol_hash": "a" * 64,
++                "assignments": [{"assignment_id": "a"}, {"assignment_id": "b"}]}
++    original["content_hash"] = digest(original)
++    (runs / "assignments.json").write_text(json.dumps(original))
++    records = runs / "records.jsonl"
++    records.write_text("\n".join(json.dumps({"assignment": {"assignment_id": value},
++                                           "run_status": "BLOCKED"}) for value in ("a", "b")))
++    index_path = tmp_path / "assignments.json"
++    index = {"schema_version": "ced.reproduction-index.v1", "assignments": ["a", "b"],
++             "records": {"a": "runs/records.jsonl", "b": "runs/records.jsonl"}}
++    index_path.write_text(json.dumps(index))
++    payload["runs_path"] = "runs"
++    def republish():
++        for path in (runs / "assignments.json", records, index_path):
++            payload["artifact_hashes"][path.relative_to(tmp_path).as_posix()] = (
++                hashlib.sha256(path.read_bytes()).hexdigest())
++        (tmp_path / "reproduction-manifest.json").write_text(json.dumps({
++            "schema_version": "ced.reproduction-manifest.v1", "manifest": payload,
++            "content_hash": digest(payload),
++        }))
++    republish()
++    assert api().verify_reproduction_bundle(tmp_path)["integrity_valid"] is True
++    index["assignments"].remove("a")
++    del index["records"]["a"]
++    index_path.write_text(json.dumps(index))
++    records.write_text(json.dumps({"assignment": {"assignment_id": "b"},
++                                   "run_status": "BLOCKED"}))
++    republish()
+     assert api().verify_reproduction_bundle(tmp_path)["integrity_valid"] is False
+ 
+ 

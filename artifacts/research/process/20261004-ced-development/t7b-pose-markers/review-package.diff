@@ -1,0 +1,707 @@
+diff --git a/src/cloud_edge_robot_arm/vision/pose_markers.py b/src/cloud_edge_robot_arm/vision/pose_markers.py
+new file mode 100644
+index 00000000..fd14e06a
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/vision/pose_markers.py
+@@ -0,0 +1,231 @@
++"""Developmental RGBD marker estimates; no calibrated or continuous-motion bounds.
++
++Only RGBDObservation and registered marker geometry enter detection. Scene/physics
++truth and instance IDs are not inputs. This does not admit a grasp profile or
++change native safety/evidence status.
++"""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import io
++import json
++import math
++import re
++import xml.etree.ElementTree as ET
++from dataclasses import asdict, dataclass
++from datetime import datetime
++from typing import Literal
++
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++BASE_ASSET_SHA256 = "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
++MARKER_SIZE_M = 0.0525  # six cells plus one quiet cell on either side fit the 70mm face
++
++
++@dataclass(frozen=True)
++class PoseMarkerRegistration:
++    marker_id: int
++    marker_size_m: float
++    marked_asset_sha256: str
++    dictionary: Literal["DICT_4X4_50"] = "DICT_4X4_50"
++
++    def __post_init__(self) -> None:
++        if (
++            type(self.marker_id) is not int
++            or not 0 <= self.marker_id < 50
++            or type(self.marker_size_m) not in {int, float}
++            or not math.isfinite(self.marker_size_m)
++            or self.marker_size_m <= 0
++            or self.dictionary != "DICT_4X4_50"
++            or not isinstance(self.marked_asset_sha256, str)
++            or not re.fullmatch(r"[0-9a-f]{64}", self.marked_asset_sha256)
++        ):
++            raise ValueError("known marker geometry and marked asset SHA256 are required")
++
++    def digest(self) -> str:
++        return hashlib.sha256(
++            json.dumps(
++                asdict(self), sort_keys=True, separators=(",", ":"), allow_nan=False
++            ).encode()
++        ).hexdigest()
++
++
++@dataclass(frozen=True)
++class PoseMarkerEstimate:
++    status: Literal["OBSERVED", "UNKNOWN"]
++    reason: str
++    observation_id: str
++    observation_checksum_sha256: str
++    captured_at: datetime
++    registration_hash: str
++    observed_marker_ids: tuple[int, ...] = ()
++    ordered_corners_px: tuple[tuple[float, float], ...] | None = None
++    marker_center_world_m: tuple[float, float, float] | None = None
++    rotation_marker_to_world: tuple[float, ...] | None = None
++    yaw_world_rad: float | None = None
++    measured_edge_lengths_m: tuple[float, ...] | None = None
++    measured_min_side_px: float | None = None
++    geometric_error_bound_m: None = None
++    angular_velocity_bound_rad_s: None = None
++    stability_status: Literal["UNKNOWN"] = "UNKNOWN"
++
++
++def detect_pose_marker(
++    observation: RGBDObservation, registration: PoseMarkerRegistration
++) -> PoseMarkerEstimate:
++    """Decode exactly one known marker and estimate its ordered pose from depth.
++
++    Planarity/nominal size are sanity checks, not a sensor calibration. A single
++    frame, or agreement of endpoints, cannot bound motion between observations.
++    No source scope is promoted and no native VALID flag is returned.
++    """
++
++    def unknown(reason: str, ids: tuple[int, ...] = ()) -> PoseMarkerEstimate:
++        return PoseMarkerEstimate(
++            "UNKNOWN",
++            reason,
++            observation.observation_id,
++            observation.checksum_sha256,
++            observation.captured_at,
++            registration.digest(),
++            ids,
++        )
++
++    try:
++        current = RGBDObservation.model_validate(observation.model_dump())
++    except Exception:
++        return unknown("invalid_registered_rgbd")
++    if not current.calibration_version or not current.episode_id:
++        return unknown("registered_camera_context_missing")
++    try:
++        import cv2
++        import numpy as np
++        from PIL import Image
++
++        params = cv2.aruco.DetectorParameters()
++        params.errorCorrectionRate = 0.0  # do not repair unknown marker bits into the expected ID
++        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
++        detector = cv2.aruco.ArucoDetector(dictionary, params)
++        rgb = np.asarray(
++            Image.open(io.BytesIO(base64.b64decode(current.rgb_png_base64))).convert("RGB")
++        )
++        corners, ids, _ = detector.detectMarkers(cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY))
++    except (ImportError, AttributeError):
++        return unknown("aruco_decoder_unavailable")
++    if ids is None:
++        return unknown("known_marker_not_observed")
++    observed = tuple(int(item) for item in ids.reshape(-1))
++    if len(observed) != 1 or observed[0] != registration.marker_id:
++        return unknown("foreign_or_ambiguous_marker", observed)
++    points = np.asarray(corners[0], dtype=float).reshape(4, 2)
++    if not np.isfinite(points).all() or any(
++        not (1 <= x < current.width - 2 and 1 <= y < current.height - 2) for x, y in points
++    ):
++        return unknown("marker_boundary_clipped", observed)
++    side_px = np.linalg.norm(np.roll(points, -1, axis=0) - points, axis=1)
++    if float(side_px.min()) < 8:
++        return unknown("marker_resolution_insufficient", observed)
++    depths = np.asarray(current.depth_values()).reshape(current.height, current.width)
++    transform = np.asarray(current.camera_to_world).reshape(4, 4)
++    fx, fy, cx, cy = current.intrinsics
++    world = []
++    for x, y in (*points, points.mean(axis=0)):
++        u, v = int(round(float(x))), int(round(float(y)))
++        patch = depths[v - 1 : v + 2, u - 1 : u + 2]
++        if patch.shape != (3, 3) or not np.isfinite(patch).all() or (patch <= 0).any():
++            return unknown("marker_metric_depth_unavailable", observed)
++        z = float(np.median(patch))
++        camera = np.array([(x - cx) * z / fx, (y - cy) * z / fy, z, 1.0])
++        world.append((transform @ camera)[:3])
++    metric = np.array(world[:4])
++    lengths = np.linalg.norm(np.roll(metric, -1, axis=0) - metric, axis=1)
++    if any(abs(float(value) / registration.marker_size_m - 1) > 0.30 for value in lengths):
++        return unknown("registered_marker_size_inconsistent", observed)
++    center = metric.mean(axis=0)
++    _, _, basis = np.linalg.svd(metric - center)
++    if (
++        abs(float((world[4] - center) @ basis[-1])) > 0.002
++        or max(abs(float(point @ basis[-1])) for point in metric - center) > 0.002
++    ):
++        return unknown("marker_depth_not_planar", observed)
++    x_axis = metric[1] - metric[0]
++    x_axis /= np.linalg.norm(x_axis)
++    y_hint = metric[0] - metric[3]  # bitmap row increases opposite marker +y
++    z_axis = np.cross(x_axis, y_hint)
++    if np.linalg.norm(z_axis) < 1e-8:
++        return unknown("ordered_marker_axes_degenerate", observed)
++    z_axis /= np.linalg.norm(z_axis)
++    y_axis = np.cross(z_axis, x_axis)
++    rotation = np.column_stack((x_axis, y_axis, z_axis))
++    yaw = math.atan2(float(x_axis[1]), float(x_axis[0]))
++    return PoseMarkerEstimate(
++        "OBSERVED",
++        "uncalibrated_single_frame_pose_estimate",
++        current.observation_id,
++        current.checksum_sha256,
++        current.captured_at,
++        registration.digest(),
++        observed,
++        tuple((float(x), float(y)) for x, y in points),
++        (float(world[4][0]), float(world[4][1]), float(world[4][2])),
++        tuple(float(value) for value in rotation.ravel()),
++        yaw,
++        tuple(float(value) for value in lengths),
++        float(side_px.min()),
++    )
++
++
++def build_pose_marked_xml(base_xml: bytes) -> bytes:
++    """Add portable visual-only ID7 cells to the exact unmodified v2 base asset.
++
++    The new asset needs its own source binding; compiled physical equivalence
++    does not make it a registered grasp v3 or a calibrated pose source.
++    """
++    if hashlib.sha256(base_xml).hexdigest() != BASE_ASSET_SHA256:
++        raise ValueError("pose marker requires exact frozen base v2 asset")
++    import cv2
++
++    tree = ET.fromstring(base_xml)
++    body = tree.find("./worldbody/body[@name='object']")
++    if body is None:
++        raise ValueError("registered object body missing")
++    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
++    bits = cv2.aruco.generateImageMarker(dictionary, 7, 6)
++
++    def geom(
++        name: str,
++        position: tuple[float, float, float],
++        size: tuple[float, float, float],
++        white: bool,
++    ) -> None:
++        attributes = {
++            "name": name,
++            "type": "box",
++            "pos": " ".join(f"{value:.10f}" for value in position),
++            "size": " ".join(f"{value:.10f}" for value in size),
++            "mass": "0",
++            "density": "0",
++            "contype": "0",
++            "conaffinity": "0",
++            "group": "2",
++            "rgba": ("0.98 0.98 0.98 1" if white else "0.01 0.01 0.01 1"),
++        }
++        ET.SubElement(body, "geom", attributes)
++
++    geom("pose_marker_quiet_v1", (0.0, 0.0, 0.03502), (0.035, 0.035, 0.00001), True)
++    cell = MARKER_SIZE_M / 6
++    for row in range(6):
++        for column in range(6):
++            geom(
++                f"pose_marker_v1_r{row}c{column}",
++                ((column - 2.5) * cell, (2.5 - row) * cell, 0.03504),
++                (cell / 2, cell / 2, 0.00001),
++                bool(bits[row, column]),
++            )
++    tree.insert(
++        0, ET.Comment("DEVELOPMENTAL POSE MARKER V1: visual only; no grasp calibration acceptance")
++    )
++    ET.indent(tree, space="  ")
++    return bytes(ET.tostring(tree, encoding="utf-8")) + b"\n"
+diff --git a/tests/test_pose_marker_evidence.py b/tests/test_pose_marker_evidence.py
+new file mode 100644
+index 00000000..ef934e44
+--- /dev/null
++++ b/tests/test_pose_marker_evidence.py
+@@ -0,0 +1,348 @@
++"""SOFTWARE_ONLY marker fixtures and CPU compiled physical equivalence; no render."""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import importlib
++import io
++import math
++from datetime import UTC, datetime
++from pathlib import Path
++
++import cv2
++import numpy as np
++import pytest
++from PIL import Image
++
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++BASE = Path(__file__).resolve().parents[1] / "assets/robots/franka_panda/scene.xml"
++# Independently checked canonical ID7 bits, including the black one-cell border.
++BITS7 = (
++    np.array(
++        [
++            [0, 0, 0, 0, 0, 0],
++            [0, 1, 1, 0, 0, 0],
++            [0, 0, 1, 0, 0, 0],
++            [0, 1, 1, 1, 1, 0],
++            [0, 0, 0, 1, 0, 0],
++            [0, 0, 0, 0, 0, 0],
++        ],
++        dtype=np.uint8,
++    )
++    * 255
++)
++
++
++def api():
++    return importlib.import_module("cloud_edge_robot_arm.vision.pose_markers")
++
++
++def observation(
++    *,
++    rotation=0,
++    marker_id=7,
++    duplicate=False,
++    clipped=False,
++    depth=1.0,
++    calibration="synthetic-cal",
++):
++    image = np.full((160, 160), 255, dtype=np.uint8)
++    glyph = (
++        BITS7
++        if marker_id == 7
++        else cv2.aruco.generateImageMarker(
++            cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50), marker_id, 6
++        )
++    )
++    glyph = np.repeat(np.repeat(glyph, 8, axis=0), 8, axis=1)
++    if duplicate:
++        image[56:104, 10:58] = glyph
++        image[56:104, 102:150] = glyph
++    elif clipped:
++        image[56:104, 0:48] = glyph
++    else:
++        image[56:104, 56:104] = glyph
++    image = np.rot90(image, rotation)
++    output = io.BytesIO()
++    Image.fromarray(image).convert("RGB").save(output, format="PNG")
++    depths = np.full((160, 160), depth, dtype="<f4")
++    return RGBDObservation(
++        frame_id=f"software-{rotation}",
++        captured_at=datetime(2026, 10, 4, tzinfo=UTC),
++        sim_time_s=0.0,
++        width=160,
++        height=160,
++        rgb_png_base64=base64.b64encode(output.getvalue()).decode(),
++        depth_float32_base64=base64.b64encode(depths.tobytes()).decode(),
++        intrinsics=(200.0, 200.0, 79.5, 79.5),
++        camera_to_world=(
++            1.0,
++            0.0,
++            0.0,
++            0.0,
++            0.0,
++            -1.0,
++            0.0,
++            0.0,
++            0.0,
++            0.0,
++            -1.0,
++            1.5,
++            0.0,
++            0.0,
++            0.0,
++            1.0,
++        ),
++        source="rgbd_camera",
++        episode_id="SOFTWARE_ONLY",
++        calibration_version=calibration,
++    )
++
++
++def registration():
++    return api().PoseMarkerRegistration(
++        marker_id=7, marker_size_m=0.24, marked_asset_sha256="a" * 64
++    )
++
++
++def test_ordered_known_marker_rotation_distinguishes_cube_quarter_turns():
++    estimates = [
++        api().detect_pose_marker(observation(rotation=k), registration()) for k in (0, 1, 2, 3)
++    ]
++    assert all(item.status == "OBSERVED" for item in estimates)
++    expected = (0.0, math.pi / 2, math.pi, -math.pi / 2)
++    for k, (item, yaw) in enumerate(zip(estimates, expected, strict=True)):
++        assert math.atan2(
++            math.sin(item.yaw_world_rad - yaw), math.cos(item.yaw_world_rad - yaw)
++        ) == pytest.approx(0.0, abs=0.025)
++        assert item.marker_center_world_m == pytest.approx((0.0, 0.0, 0.5), abs=0.004)
++        assert len(item.ordered_corners_px) == 4
++        assert item.geometric_error_bound_m is None and item.angular_velocity_bound_rad_s is None
++        assert item.stability_status == "UNKNOWN"
++        assert item.observation_checksum_sha256 == observation(rotation=k).checksum_sha256
++
++
++@pytest.mark.parametrize(
++    "bad",
++    [
++        "missing",
++        "foreign",
++        "duplicate",
++        "clipped",
++        "zero_depth",
++        "wrong_scale",
++        "no_calibration",
++        "bytes",
++    ],
++)
++def test_missing_or_ambiguous_or_unregistered_measurement_stays_unknown(bad):
++    options = {
++        "foreign": {"marker_id": 8},
++        "duplicate": {"duplicate": True},
++        "clipped": {"clipped": True},
++        "zero_depth": {"depth": 0.0},
++        "wrong_scale": {"depth": 2.0},
++        "no_calibration": {"calibration": None},
++    }
++    current = observation(**options.get(bad, {}))
++    if bad == "missing":
++        image = io.BytesIO()
++        Image.new("RGB", (160, 160), "white").save(image, format="PNG")
++        current = RGBDObservation.model_validate(
++            {
++                **current.model_dump(),
++                "rgb_png_base64": base64.b64encode(image.getvalue()).decode(),
++                "checksum_sha256": "",
++            }
++        )
++    if bad == "bytes":
++        current = current.model_copy(update={"depth_float32_base64": "AAAA"})
++    result = api().detect_pose_marker(current, registration())
++    assert result.status == "UNKNOWN"
++    assert result.marker_center_world_m is None and result.yaw_world_rad is None
++    assert result.geometric_error_bound_m is None and result.angular_velocity_bound_rad_s is None
++
++
++def test_registered_geometry_cannot_use_empty_asset_binding():
++    with pytest.raises(ValueError):
++        api().PoseMarkerRegistration(marker_id=7, marker_size_m=0.24, marked_asset_sha256="")
++
++
++def test_builder_binds_exact_base_and_is_portable_xml_with_only_visual_additions():
++    import xml.etree.ElementTree as ET
++
++    base = BASE.read_bytes()
++    marked = api().build_pose_marked_xml(base)
++    original = ET.fromstring(base)
++    new = ET.fromstring(marked)
++    old_nodes = {node.get("name"): node for node in original.iter() if node.get("name")}
++    new_nodes = {node.get("name"): node for node in new.iter() if node.get("name")}
++    for name, node in old_nodes.items():
++        assert new_nodes[name].attrib == node.attrib
++    additions = [node for name, node in new_nodes.items() if name not in old_nodes]
++    assert additions and all(node.tag == "geom" for node in additions)
++    assert all(
++        node.get("mass") == "0"
++        and node.get("density") == "0"
++        and node.get("contype") == "0"
++        and node.get("conaffinity") == "0"
++        for node in additions
++    )
++    assert new.find("asset") is None  # no texture file path dependency
++    assert (
++        hashlib.sha256(BASE.read_bytes()).hexdigest()
++        == "66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2"
++    )
++    with pytest.raises(ValueError):
++        api().build_pose_marked_xml(base.replace(b'mass="0.08"', b'mass="0.09"'))
++
++
++def test_compiled_marker_preserves_mass_inertia_joint_controller_camera_and_existing_contacts():
++    import mujoco
++
++    base = mujoco.MjModel.from_xml_path(str(BASE))
++    marked = mujoco.MjModel.from_xml_string(api().build_pose_marked_xml(BASE.read_bytes()).decode())
++    for field in ("nq", "nv", "nu", "nbody", "njnt", "ncam", "nsite"):
++        assert getattr(marked, field) == getattr(base, field)
++    for field in (
++        "body_mass",
++        "body_inertia",
++        "body_ipos",
++        "body_iquat",
++        "body_pos",
++        "body_quat",
++        "jnt_type",
++        "jnt_axis",
++        "jnt_pos",
++        "jnt_range",
++        "dof_damping",
++        "dof_armature",
++        "actuator_gainprm",
++        "actuator_biasprm",
++        "actuator_ctrlrange",
++        "actuator_trnid",
++        "cam_pos",
++        "cam_quat",
++        "cam_fovy",
++        "site_pos",
++        "site_size",
++        "qpos0",
++    ):
++        assert np.array_equal(getattr(marked, field), getattr(base, field)), field
++    for geom_id in range(base.ngeom):
++        name = mujoco.mj_id2name(base, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
++        other = marked.geom(name).id
++        for field in (
++            "geom_type",
++            "geom_size",
++            "geom_pos",
++            "geom_quat",
++            "geom_contype",
++            "geom_conaffinity",
++            "geom_friction",
++            "geom_solref",
++            "geom_solimp",
++            "geom_margin",
++            "geom_gap",
++            "geom_rgba",
++        ):
++            assert np.array_equal(getattr(base, field)[geom_id], getattr(marked, field)[other]), (
++                name,
++                field,
++            )
++    left, right = mujoco.MjData(base), mujoco.MjData(marked)
++    for _ in range(20):
++        mujoco.mj_step(base, left)
++        mujoco.mj_step(marked, right)
++    assert np.array_equal(left.qpos, right.qpos) and np.array_equal(left.qvel, right.qvel)
++
++
++def test_positive_depth_with_zero_mask_is_already_rejected_by_registered_pair_validator():
++    current = observation()
++    mask = bytearray(current.valid_mask_bytes())
++    mask[56 * 160 + 56] = 0
++    altered = current.model_copy(update={"valid_mask_base64": base64.b64encode(mask).decode()})
++    with pytest.raises(ValueError, match="valid mask must match positive finite depth"):
++        RGBDObservation.model_validate(altered.model_dump())
++    assert api().detect_pose_marker(altered, registration()).status == "UNKNOWN"
++    assert api().detect_pose_marker(altered, registration()).reason == "invalid_registered_rgbd"
++
++
++@pytest.mark.parametrize("bad", ["intrinsics", "rotation", "checksum"])
++def test_invalid_camera_calibration_or_frame_hash_rejects_before_pose_estimate(bad):
++    current = observation()
++    changes = {
++        "intrinsics": {"intrinsics": (-200.0, 200.0, 79.5, 79.5)},
++        "rotation": {
++            "camera_to_world": (
++                1.0,
++                0.0,
++                0.0,
++                0.0,
++                0.0,
++                1.0,
++                0.0,
++                0.0,
++                0.0,
++                0.0,
++                -1.0,
++                1.5,
++                0.0,
++                0.0,
++                0.0,
++                1.0,
++            )
++        },
++        "checksum": {"checksum_sha256": "f" * 64},
++    }[bad]
++    estimate = api().detect_pose_marker(current.model_copy(update=changes), registration())
++    assert estimate.status == "UNKNOWN" and estimate.rotation_marker_to_world is None
++
++
++def test_nonplanar_center_depth_cannot_produce_ordered_metric_pose():
++    current = observation()
++    depths = np.ones((160, 160), dtype="<f4")
++    depths[79:82, 79:82] = 1.2
++    current = RGBDObservation.model_validate(
++        {
++            **current.model_dump(),
++            "depth_float32_base64": base64.b64encode(depths.tobytes()).decode(),
++            "checksum_sha256": "",
++        }
++    )
++    assert api().detect_pose_marker(current, registration()).status == "UNKNOWN"
++
++
++def test_saved_native_resolution_profiles_measure_detectability_without_truth_input():
++    import json
++
++    root = BASE.parents[3] / "artifacts/research/process/20261004-ced-development/t7b-pose-markers"
++    asset = BASE.with_name("scene_pose_marker_v1.xml")
++    registered = api().PoseMarkerRegistration(
++        7, 0.0525, hashlib.sha256(asset.read_bytes()).hexdigest()
++    )
++    observations = []
++    estimates = []
++    for directory in ("actual-capture-1", "actual-capture-640"):
++        data = json.loads((root / directory / "frame/observation-full.json").read_text())
++        current = RGBDObservation.model_validate(data)
++        observations.append(current)
++        estimates.append(api().detect_pose_marker(current, registered))
++    assert [(item.width, item.height) for item in observations] == [(320, 240), (640, 480)]
++    assert observations[0].calibration_version != observations[1].calibration_version
++    assert observations[0].intrinsics != observations[1].intrinsics
++    assert [item.status for item in estimates] == ["UNKNOWN", "OBSERVED"]
++    assert estimates[1].observed_marker_ids == (7,) and estimates[1].measured_min_side_px > 16
++    assert all(
++        item.angular_velocity_bound_rad_s is None
++        and item.geometric_error_bound_m is None
++        and item.stability_status == "UNKNOWN"
++        for item in estimates
++    )
++
++
++def test_non_string_asset_identity_rejects_as_invalid_registration():
++    with pytest.raises(ValueError):
++        api().PoseMarkerRegistration(marker_id=7, marker_size_m=0.24, marked_asset_sha256=None)
+diff --git a/assets/robots/franka_panda/scene_pose_marker_v1.xml b/assets/robots/franka_panda/scene_pose_marker_v1.xml
+new file mode 100644
+index 00000000..a618fa53
+--- /dev/null
++++ b/assets/robots/franka_panda/scene_pose_marker_v1.xml
+@@ -0,0 +1,110 @@
++<mujoco model="bigsmall_phase9_franka_like_scene">
++  <!--DEVELOPMENTAL POSE MARKER V1: visual only; no grasp calibration acceptance-->
++  <compiler angle="radian" coordinate="local" />
++  <option timestep="0.0041666667" gravity="0 0 -9.81" integrator="RK4" />
++  <default>
++    <joint damping="0.8" armature="0.01" limited="true" />
++    <geom contype="1" conaffinity="1" solref="0.01 1" solimp="0.9 0.95 0.001" friction="0.8 0.01 0.001" />
++    <position kp="20" kv="5" ctrllimited="true" />
++  </default>
++  <worldbody>
++    <camera name="rgbd" pos="0.35 0 1.4" quat="1 0 0 0" fovy="50" />
++    <light name="rgbd_light" pos="0.35 0 2" dir="0 0 -1" directional="true" />
++    <geom name="table" type="box" pos="0.35 0 -0.025" size="0.65 0.45 0.025" contype="1" conaffinity="1" rgba="0.45 0.45 0.45 1" />
++    <body name="panda_link0" pos="0 0 0.22">
++      <geom name="base" type="cylinder" size="0.08 0.04" contype="0" conaffinity="0" rgba="0.2 0.2 0.22 1" />
++      <body name="panda_link1" pos="0 0 0.09">
++        <joint name="joint1" type="hinge" axis="0 0 1" range="-2.9 2.9" />
++        <geom name="link1" type="capsule" fromto="0 0 0 0.08 0 0.07" size="0.025" contype="0" conaffinity="0" rgba="0.9 0.9 0.86 1" />
++        <body name="panda_link2" pos="0.08 0 0.07">
++          <joint name="joint2" type="hinge" axis="0 1 0" range="-1.8 1.8" />
++          <geom name="link2" type="capsule" fromto="0 0 0 0.12 0 0.08" size="0.022" contype="0" conaffinity="0" rgba="0.88 0.88 0.84 1" />
++          <body name="panda_link3" pos="0.12 0 0.08">
++            <joint name="joint3" type="hinge" axis="0 1 0" range="-2.8 2.8" />
++            <geom name="link3" type="capsule" fromto="0 0 0 0.12 0 -0.04" size="0.021" contype="0" conaffinity="0" rgba="0.86 0.86 0.82 1" />
++            <body name="panda_link4" pos="0.12 0 -0.04">
++              <joint name="joint4" type="hinge" axis="1 0 0" range="-2.9 2.9" />
++              <geom name="link4" type="capsule" fromto="0 0 0 0.1 0 0.04" size="0.019" contype="0" conaffinity="0" rgba="0.84 0.84 0.8 1" />
++              <body name="panda_link5" pos="0.1 0 0.04">
++                <joint name="joint5" type="hinge" axis="0 1 0" range="-2.9 2.9" />
++                <geom name="link5" type="capsule" fromto="0 0 0 0.08 0 0" size="0.018" contype="0" conaffinity="0" rgba="0.82 0.82 0.78 1" />
++                <body name="panda_link6" pos="0.08 0 0">
++                  <joint name="joint6" type="hinge" axis="1 0 0" range="-2.9 2.9" />
++                  <geom name="link6" type="capsule" fromto="0 0 0 0.06 0 0" size="0.016" contype="0" conaffinity="0" rgba="0.8 0.8 0.76 1" />
++                  <body name="panda_hand" pos="0.06 0 0">
++                    <joint name="joint7" type="hinge" axis="0 1 0" range="-2.9 2.9" />
++                    <geom name="hand" type="box" pos="0.035 0 0" size="0.035 0.04 0.025" contype="0" conaffinity="0" rgba="0.2 0.2 0.22 1" />
++                    <site name="tcp" pos="0.105 0 0" size="0.01" />
++                    <body name="left_finger" pos="0.075 0.009 0">
++                      <joint name="finger_left_joint" type="slide" axis="0 1 0" range="0 0.04" />
++                      <geom name="left_finger_geom" type="box" pos="0.025 0 0" size="0.035 0.008 0.028" contype="2" conaffinity="2" friction="1.5 0.01 0.001" rgba="0.1 0.1 0.1 1" />
++                    </body>
++                    <body name="right_finger" pos="0.075 -0.009 0">
++                      <joint name="finger_right_joint" type="slide" axis="0 -1 0" range="0 0.04" />
++                      <geom name="right_finger_geom" type="box" pos="0.025 0 0" size="0.035 0.008 0.028" contype="2" conaffinity="2" friction="1.5 0.01 0.001" rgba="0.1 0.1 0.1 1" />
++                    </body>
++                  </body>
++                </body>
++              </body>
++            </body>
++          </body>
++        </body>
++      </body>
++    </body>
++    <body name="object" pos="0.45 0 0.035">
++      <freejoint name="object_free" />
++      <geom name="object_geom" type="box" size="0.035 0.035 0.035" mass="0.08" contype="1" conaffinity="3" rgba="0.9 0.2 0.15 1" />
++      <geom name="pose_marker_quiet_v1" type="box" pos="0.0000000000 0.0000000000 0.0350200000" size="0.0350000000 0.0350000000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r0c0" type="box" pos="-0.0218750000 0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r0c1" type="box" pos="-0.0131250000 0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r0c2" type="box" pos="-0.0043750000 0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r0c3" type="box" pos="0.0043750000 0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r0c4" type="box" pos="0.0131250000 0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r0c5" type="box" pos="0.0218750000 0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r1c0" type="box" pos="-0.0218750000 0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r1c1" type="box" pos="-0.0131250000 0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r1c2" type="box" pos="-0.0043750000 0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r1c3" type="box" pos="0.0043750000 0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r1c4" type="box" pos="0.0131250000 0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r1c5" type="box" pos="0.0218750000 0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r2c0" type="box" pos="-0.0218750000 0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r2c1" type="box" pos="-0.0131250000 0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r2c2" type="box" pos="-0.0043750000 0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r2c3" type="box" pos="0.0043750000 0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r2c4" type="box" pos="0.0131250000 0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r2c5" type="box" pos="0.0218750000 0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r3c0" type="box" pos="-0.0218750000 -0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r3c1" type="box" pos="-0.0131250000 -0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r3c2" type="box" pos="-0.0043750000 -0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r3c3" type="box" pos="0.0043750000 -0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r3c4" type="box" pos="0.0131250000 -0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r3c5" type="box" pos="0.0218750000 -0.0043750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r4c0" type="box" pos="-0.0218750000 -0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r4c1" type="box" pos="-0.0131250000 -0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r4c2" type="box" pos="-0.0043750000 -0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r4c3" type="box" pos="0.0043750000 -0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.98 0.98 0.98 1" />
++      <geom name="pose_marker_v1_r4c4" type="box" pos="0.0131250000 -0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r4c5" type="box" pos="0.0218750000 -0.0131250000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r5c0" type="box" pos="-0.0218750000 -0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r5c1" type="box" pos="-0.0131250000 -0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r5c2" type="box" pos="-0.0043750000 -0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r5c3" type="box" pos="0.0043750000 -0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r5c4" type="box" pos="0.0131250000 -0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++      <geom name="pose_marker_v1_r5c5" type="box" pos="0.0218750000 -0.0218750000 0.0350400000" size="0.0043750000 0.0043750000 0.0000100000" mass="0" density="0" contype="0" conaffinity="0" group="2" rgba="0.01 0.01 0.01 1" />
++    </body>
++    <body name="target_region" pos="0.2 0.25 0.002">
++      <geom name="target_region_geom" type="box" size="0.08 0.08 0.002" contype="0" conaffinity="0" rgba="0.1 0.6 0.2 0.4" />
++    </body>
++  </worldbody>
++  <actuator>
++    <position name="act1" joint="joint1" ctrlrange="-2.9 2.9" />
++    <position name="act2" joint="joint2" ctrlrange="-1.8 1.8" />
++    <position name="act3" joint="joint3" ctrlrange="-2.8 2.8" />
++    <position name="act4" joint="joint4" ctrlrange="-2.9 2.9" />
++    <position name="act5" joint="joint5" ctrlrange="-2.9 2.9" />
++    <position name="act6" joint="joint6" ctrlrange="-2.9 2.9" />
++    <position name="act7" joint="joint7" ctrlrange="-2.9 2.9" />
++    <position name="left_finger_act" joint="finger_left_joint" ctrlrange="0 0.04" kp="250" kv="10" />
++    <position name="right_finger_act" joint="finger_right_joint" ctrlrange="0 0.04" kp="250" kv="10" />
++  </actuator>
++</mujoco>

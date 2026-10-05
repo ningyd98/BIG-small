@@ -1,0 +1,5 @@
+# Native T10 submission integration
+
+Use the approved ced.research.v2 design and existing visual SkillExecutor/SafetyShield. Bind native current frame, contract/step, plan/seq, source bundle and canonical conditions at cloud return, before SafetyShield and immediately before existing skill dispatch. Model/fact-map numeric claims cannot become calibrated geometric/motion bounds. The native source currently has no accepted bound certificate, so these values remain UNKNOWN and dispatch remains closed. Reobserve only through the existing bounded route before SafetyShield; invalidation after SafetyShield must stop rather than reuse its old resolved context after recapture. Preserve legacy paths and frozen historic source packages.
+
+TDD: absent helper/uncertified bound and boundary tests RED; mandatory source inventory RED; post-Safety invalidation RED. Implement narrowly, run actual related CPU regression and static checks, freeze exact sources and independently review. These tests cannot accept physical research or a remote model.

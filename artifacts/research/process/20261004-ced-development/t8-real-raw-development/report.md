@@ -1,0 +1,5 @@
+# 开发用真实完整恢复证据
+
+PHYSICS / DEVELOPMENT_ONLY；0模型请求，未调用在线恢复。实际目标运动故障后，现行T5教师9动作成功；5368完整物理状态（reset0至terminal5367）与5367真实步进前控制输出保持对应。独立评价SUCCESS / SCOPED_NO_VIOLATION。实际证据生产器复制不可变原始资料，公开verify_protocol_evidence重新读取所有原始数据，errors为空、recovery_proven=1、integrity_valid=true。
+
+该目录仅一开发组，正式2400机会与200恢复固定拓扑不满足，因此准备和复核均正确INCOMPLETE/valid=false，g4_measured=false。不能将此结果写成G4或正式恢复成功；该组须加入后续正式排除表。分离保留actualassessment、protocolaudit与全部原始命令/物理/控制/fault资料，源码和载荷SHA256记录供复核。真实运行没有变更门槛、在线算法或资产。

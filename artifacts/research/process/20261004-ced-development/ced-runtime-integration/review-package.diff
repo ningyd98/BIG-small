@@ -1,0 +1,849 @@
+--- baseline/src/cloud_edge_robot_arm/vision/runtime_binding.py
++++ src/cloud_edge_robot_arm/vision/runtime_binding.py
+@@ -0,0 +1,105 @@
++"""Recheck frozen cloud, edge and device software at actual runtime boundaries.
++
++These bindings identify implementations; they do not certify remote weights,
++calibration, method admission or physical task success.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from collections.abc import Mapping
++from dataclasses import dataclass, field
++from pathlib import Path
++from types import MappingProxyType
++from typing import TYPE_CHECKING, cast
++
++from cloud_edge_robot_arm.vision.role_models import (
++    RoleModelBundle,
++    RoleProviderSnapshot,
++    cloud_request_settings,
++    configuration_hash,
++)
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
++
++
++def _freeze(value: object) -> object:
++    if isinstance(value, Mapping):
++        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
++    if isinstance(value, list):
++        return tuple(_freeze(item) for item in value)
++    return value
++
++
++def _plain(value: object) -> object:
++    if isinstance(value, Mapping):
++        return {key: _plain(item) for key, item in value.items()}
++    if isinstance(value, tuple):
++        return [_plain(item) for item in value]
++    return value
++
++
++@dataclass(frozen=True)
++class RoleRuntimeBinding:
++    bundle: RoleModelBundle
++    edge_snapshot: RoleProviderSnapshot
++    device_source_hashes: Mapping[str, str]
++    edge_policy: Mapping[str, object]
++    root: Path = field(default_factory=lambda: Path(__file__).resolve().parents[3],
++                       kw_only=True, repr=False)
++
++    def __post_init__(self) -> None:
++        if self.edge_snapshot.role != "EDGE" or (
++            self.edge_snapshot.provider_id != self.bundle.edge_provider_id
++            or self.edge_snapshot.digest() != self.bundle.edge_provider_hash
++        ):
++            raise ValueError("edge role binding differs from its bundle")
++        sources = dict(self.device_source_hashes)
++        if not sources or configuration_hash(sources) != self.bundle.device_pipeline_hash:
++            raise ValueError("device source binding differs from its bundle")
++        # Policies are JSON data: copy through serialization to break nested aliases.
++        policy = json.loads(json.dumps(dict(self.edge_policy), allow_nan=False))
++        if configuration_hash(policy) != self.edge_snapshot.request_config_hash:
++            raise ValueError("edge policy binding differs from its snapshot")
++        object.__setattr__(self, "device_source_hashes", MappingProxyType(sources))
++        object.__setattr__(self, "edge_policy", _freeze(policy))
++        object.__setattr__(self, "root", Path(self.root))
++
++    def _validate_sources(self, sources: Mapping[str, str]) -> None:
++        root = self.root.resolve()
++        for name, expected in sources.items():
++            relative = Path(name)
++            if relative.is_absolute() or ".." in relative.parts:
++                raise ValueError("role source path escapes its repository")
++            path = root / relative
++            if not path.is_file() or any(part.is_symlink() for part in (path, *path.parents)
++                                        if part.is_relative_to(root)):
++                raise ValueError("role source unavailable or symlinked")
++            if not path.resolve().is_relative_to(root) or (
++                hashlib.sha256(path.read_bytes()).hexdigest() != expected
++            ):
++                raise ValueError("role source hash changed")
++
++    def validate(self, planner: RGBDPlannerAdapter) -> None:
++        snapshot = getattr(planner, "role_snapshot", None)
++        if not isinstance(snapshot, RoleProviderSnapshot) or (
++            snapshot.digest() != self.bundle.cloud_snapshot.digest()
++        ):
++            raise ValueError("cloud role binding changed")
++        if configuration_hash(cloud_request_settings(planner)) != snapshot.request_config_hash:
++            raise ValueError("cloud request settings changed")
++        if configuration_hash(cast(Mapping[str, object], _plain(self.edge_policy))) != (
++            self.edge_snapshot.request_config_hash
++        ):
++            raise ValueError("edge policy changed")
++        for sources in (snapshot.source_hashes, self.edge_snapshot.source_hashes,
++                        self.device_source_hashes):
++            self._validate_sources(sources)
++
++    def evidence(self) -> dict[str, object]:
++        return {"bundle_hash": self.bundle.digest(), "bundle": self.bundle.evidence(),
++                "edge_snapshot": self.edge_snapshot.evidence(),
++                "device_source_hashes": dict(self.device_source_hashes),
++                "edge_policy": _plain(self.edge_policy)}
+--- baseline/src/cloud_edge_robot_arm/vision/online_intent.py
++++ src/cloud_edge_robot_arm/vision/online_intent.py
+@@ -0,0 +1,46 @@
++"""Scoped canonical instruction/pixel identity binding without simulator truth.
++
++Unsupported language or ambiguous color remains unavailable. This verifies a
++visible chromatic identity, not arbitrary semantic detection or calibrated pose.
++"""
++
++import colorsys
++import math
++from collections.abc import Sequence
++
++_COLORS = {"red": "红色", "yellow": "黄色", "blue": "蓝色", "green": "绿色",
++           "purple": "紫色", "orange": "橙色", "cyan": "青色"}
++_INSTRUCTIONS = {
++    text: color for color, chinese in _COLORS.items() for text in (
++        f"Move the {color} block to the green region.",
++        f"将{chinese}方块放到绿色区域",
++        f"pick the {color} cube and place it in the green target region",
++    )
++}
++_HUE_DEGREES = {"red": (342., 18.), "orange": (18., 42.), "yellow": (42., 78.),
++                "green": (90., 162.), "cyan": (162., 198.), "blue": (198., 258.),
++                "purple": (258., 318.)}
++
++
++def _matches(color: str, rgb: Sequence[float]) -> bool:
++    if len(rgb) != 3 or any(not math.isfinite(value) or not 0 <= value <= 1 for value in rgb):
++        return False
++    hue, saturation, value = colorsys.rgb_to_hsv(*rgb)
++    if saturation < .25 or value < .1:
++        return False
++    lower, upper = _HUE_DEGREES[color]
++    degrees = hue * 360
++    return lower <= degrees <= upper if lower < upper else degrees >= lower or degrees <= upper
++
++
++def validate_grounded_colors(
++    instruction: str, target_rgb: Sequence[float], destination_rgb: Sequence[float]
++) -> tuple[str, str]:
++    color = _INSTRUCTIONS.get(instruction.strip())
++    if color is None:
++        raise ValueError("instruction outside the canonical visible-color scope")
++    if not _matches(color, target_rgb):
++        raise ValueError("observed pixels do not identify the requested target")
++    if not _matches("green", destination_rgb):
++        raise ValueError("observed pixels do not identify the requested destination")
++    return color, "green"
+--- baseline/src/cloud_edge_robot_arm/vision/execution.py
++++ src/cloud_edge_robot_arm/vision/execution.py
+@@ -20,7 +20,7 @@
+ from datetime import UTC, datetime, timedelta
+ from functools import partial
+ from pathlib import Path
+-from typing import Any, cast
++from typing import TYPE_CHECKING, Any, cast
+ 
+ import numpy as np
+ from PIL import Image
+@@ -79,6 +79,9 @@
+     matches_calibrated_gripper,
+ )
+ 
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
++
+ TRACK_SUPPORT_TOLERANCE_M = 0.018
+ TRACK_FOREGROUND_MARGIN_M = 0.005
+ TRACK_MIN_FOREGROUND_FRACTION = 0.8
+@@ -409,11 +412,40 @@
+         return result
+ 
+ 
++def make_target_tracker(
++    observation: RGBDObservation, evidence: dict[str, Any], policy: ExecutionPolicy
++) -> RGBDTargetTracker | OpenCVTargetTracker:
++    if policy.device_pipeline == "OPENCV":
++        from cloud_edge_robot_arm.vision.online_intent import validate_grounded_colors
++        from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
++
++        tracker = OpenCVTargetTracker(observation, evidence)
++        validate_grounded_colors(
++            policy.instruction, tracker.target_color.tolist(), tracker.destination_color.tolist())
++        return tracker
++    return RGBDTargetTracker(observation, evidence)
++
++
++def terminal_conditions(policy: ExecutionPolicy) -> list[ConditionSpec]:
++    checks = [
++        ConditionSpec("object_inside_target_region", target_id="object"),
++        ConditionSpec("gripper_released"),
++        ConditionSpec("robot_in_safe_pose", tolerances={"minimum_safe_height": 0.08}),
++    ]
++    if policy.device_pipeline == "OPENCV":
++        checks.append(ConditionSpec("placement_stable", target_id="object"))
++    return checks
++
++
+ def grounded_contract(
+     draft: PlannerDraft, observation: RGBDObservation, policy: ExecutionPolicy
+ ) -> TaskContract:
+     """Bind validated planner intent to calibrated RGB-D geometry, not scene truth."""
+     evidence = draft.observation_evidence or {}
++    if policy.role_binding is not None and (
++        evidence.get("role_bundle_hash") != policy.role_binding.bundle.digest()
++    ):
++        raise ValueError("planner evidence differs from the selected role bundle")
+     snapshot = evidence.get("model_snapshot")
+     if evidence.get("model_snapshot_hash") != policy.model_snapshot_hash:
+         raise ValueError("planner evidence differs from the selected model snapshot")
+@@ -518,6 +550,8 @@
+         snapshot = planner.model_snapshot
+         if snapshot is None or snapshot.digest() != policy.model_snapshot_hash:
+             raise ValueError("episode planner differs from the immutable model snapshot")
++        if policy.role_binding is not None:
++            policy.role_binding.validate(planner)
+         self.planner, self.robot, self.capture, self.policy = planner, robot, capture, policy
+         self.backend = robot._backend
+         self.started_at = time.monotonic()
+@@ -526,7 +560,7 @@
+         self.records: list[dict[str, Any]] = []
+         self.observation: RGBDObservation | None = None
+         self.count = self.calls = self.actions = 0
+-        self.tracker: RGBDTargetTracker | None = None
++        self.tracker: RGBDTargetTracker | OpenCVTargetTracker | None = None
+         self.require_continuous_grasp = False
+         self.shield = research_safety_shield(policy.timeout_s)
+         self.executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
+@@ -560,6 +594,8 @@
+                     "scope": policy.scope,
+                     "timeout_s": policy.timeout_s,
+                     "model_snapshot_hash": policy.model_snapshot_hash,
++                    "device_pipeline": policy.device_pipeline,
++                    "role_binding": policy.role_binding.evidence() if policy.role_binding else None,
+                     "verification_budget": asdict(policy.verification_budget),
+                     "supervision_period_s": policy.supervision_period_s,
+                     "advance_physics_during_wait": policy.advance_physics_during_wait,
+@@ -579,6 +615,13 @@
+                 },
+             )
+ 
++    def validate_role_boundary(self) -> None:
++        if self.policy.role_binding is not None:
++            try:
++                self.policy.role_binding.validate(self.planner)
++            except (ValueError, OSError) as error:
++                raise _EpisodeStopped("ROLE_BINDING_CHANGED") from error
++
+     def check_active(self) -> None:
+         if self.policy.cancelled is not None and self.policy.cancelled():
+             raise _EpisodeStopped("CANCELLED")
+@@ -615,6 +658,7 @@
+     ) -> bool:
+         while True:
+             self.check_active()
++            self.validate_role_boundary()
+             assert self.observation is not None
+             facts = (
+                 self.tracker.facts(self.observation, self.robot.get_state()) if self.tracker else {}
+@@ -700,6 +744,7 @@
+ 
+         while True:
+             self.check_active()
++            self.validate_role_boundary()
+             assert self.observation is not None
+             request = InitialPlanningRequest(
+                 request_id="visual-episode",
+@@ -725,6 +770,13 @@
+                 on_wait=self.wait_clock.advance_wait if self.wait_clock is not None else None,
+             )
+             self.check_active()
++            self.validate_role_boundary()
++            if self.policy.role_binding is not None:
++                draft.observation_evidence = {
++                    **(draft.observation_evidence or {}),
++                    "role_bundle_hash": self.policy.role_binding.bundle.digest(),
++                    "role_binding": self.policy.role_binding.evidence(),
++                }
+             self.records.append(
+                 {
+                     "layer": "MODEL_RETURN",
+@@ -768,6 +820,7 @@
+ 
+     def execute(self, contract: TaskContract, step: TaskStep) -> bool:
+         self.check_active()
++        self.validate_role_boundary()
+         assert self.observation is not None
+         before = self.observation
+         state = self.robot.get_state()
+@@ -819,6 +872,7 @@
+         if pre.limited_parameters:
+             step = step.model_copy(update={"parameters": pre.limited_parameters})
+         self.check_active()
++        self.validate_role_boundary()
+         start_step = self.backend.total_physics_steps
+         self.records.append(
+             {
+@@ -965,6 +1019,7 @@
+     def supervise_frame(self, frame: Any) -> dict[str, Any]:
+         from cloud_edge_robot_arm.vision.request_control import bounded_model_call
+ 
++        self.validate_role_boundary()
+         planner = copy.copy(self.planner)
+         planner.model_role = "SUPERVISOR"
+         observation = frame.observation
+@@ -974,6 +1029,7 @@
+             resource_key=planner.base_url,
+             cancelled=lambda: bool(self.supervision and self.supervision.snapshot()["closed"]),
+         )
++        self.validate_role_boundary()
+         return {"observation_id": observation.observation_id,
+                 "episode_id": observation.episode_id, "captured_at": observation.captured_at,
+                 "context": frame.context.model_dump(mode="json"),
+@@ -989,6 +1045,7 @@
+ 
+         if self.supervision is None:
+             return
++        self.validate_role_boundary()
+         for response in self.supervision.poll(atomic_action_active=False):
+             if isinstance(response, Exception):
+                 self.records.append({"layer": "SUPERVISION_ERROR",
+@@ -1040,7 +1097,8 @@
+                 {
+                     "observation_id": observation.observation_id,
+                     "sim_time_s": observation.sim_time_s,
+-                    "center": visible["measured_values"]["center"] if visible else None,
++                    "center": visible.get("measured_values", {}).get("center")
++                    if visible else None,
+                 }
+             )
+ 
+@@ -1112,7 +1170,7 @@
+                 ],
+                 DecisionEventKind.SKILL_BOUNDARY,
+                 {"phase": "post_lift_passive_hold", "hold_samples": samples},
+-                facts_transform=held_facts,
++                facts_transform=held_facts if self.policy.device_pipeline == "LEGACY" else None,
+             )
+         finally:
+             self.require_continuous_grasp = False
+@@ -1162,7 +1220,7 @@
+                 "contract": contract.model_dump(mode="json"),
+             }
+         )
+-        self.tracker = RGBDTargetTracker(self.observation, evidence)
++        self.tracker = make_target_tracker(self.observation, evidence, self.policy)
+         self._plan_version = contract.plan_version
+         self._supervision_started = True
+         self.recapture()  # Revalidate after inference, even when inference was fast.
+@@ -1231,11 +1289,7 @@
+         )
+         self.recapture()
+         return self.verify(
+-            [
+-                ConditionSpec("object_inside_target_region", target_id="object"),
+-                ConditionSpec("gripper_released"),
+-                ConditionSpec("robot_in_safe_pose", tolerances={"minimum_safe_height": 0.08}),
+-            ],
++            terminal_conditions(self.policy),
+             DecisionEventKind.RESULT_VERIFIED,
+         )
+ 
+--- baseline/src/cloud_edge_robot_arm/vision/evaluation.py
++++ src/cloud_edge_robot_arm/vision/evaluation.py
+@@ -19,6 +19,7 @@
+ from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
+ from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import EpisodeOutcome
+ from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
++from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
+ 
+ ExecutionScope = Literal["CAPTURE_ONLY", "VISUAL_PLANNING", "VISION_CLOSED_LOOP"]
+ 
+@@ -41,12 +42,18 @@
+     output_dir: Path | None = None
+     supervision_period_s: float | None = None
+     advance_physics_during_wait: bool = False
++    device_pipeline: Literal["LEGACY", "OPENCV"] = "LEGACY"
++    role_binding: RoleRuntimeBinding | None = None
+ 
+     def __post_init__(self) -> None:
+         if not self.instruction.strip() or not math.isfinite(self.timeout_s) or self.timeout_s <= 0:
+             raise ValueError("instruction and finite positive episode timeout are required")
+         if self.scope not in {"CAPTURE_ONLY", "VISUAL_PLANNING", "VISION_CLOSED_LOOP"}:
+             raise ValueError("unknown execution scope")
++        if self.device_pipeline not in {"LEGACY", "OPENCV"}:
++            raise ValueError("unknown device pipeline")
++        if (self.device_pipeline == "OPENCV") != (self.role_binding is not None):
++            raise ValueError("OpenCV runs require explicit cloud/edge/device role binding")
+         if self.supervision_period_s is not None and (
+             not math.isfinite(self.supervision_period_s) or self.supervision_period_s <= 0
+         ):
+--- baseline/src/cloud_edge_robot_arm/edge/evidence/conditions.py
++++ src/cloud_edge_robot_arm/edge/evidence/conditions.py
+@@ -71,6 +71,7 @@
+         "object_attached",
+         "object_lifted",
+         "object_stable",
++        "placement_stable",
+     }
+ )
+ _ROBOT_CONDITIONS = frozenset(
+--- baseline/configs/research/ced_roles.yaml
++++ configs/research/ced_roles.yaml
+@@ -0,0 +1,41 @@
++schema_version: ced.roles.v1
++cloud:
++  # Select an existing model-control profile through --profile-id; never activate it.
++  profile_id: null
++  model_family: qwen3.8-max
++  # A supplied provider registry may advertise date snapshots; absence stays unknown.
++  available_model_ids: []
++  image_size: [320, 240]
++  coordinate_system: pixel
++  grasp_profile: mujoco_upright_box_v2
++edge:
++  provider_id: deterministic_rules_cost_v1
++  provider_location: LOCAL_HOST
++  model_id: null
++  source_paths:
++    - src/cloud_edge_robot_arm/vision/role_models.py
++  policy:
++    dispatch: false
++    local_recover_enabled: false
++    score_source: rules
++    status: NOT_ACCEPTED
++# These hashes bind software/calibration; they do not prove device acceptance.
++device:
++  source_paths:
++    - src/cloud_edge_robot_arm/vision/observations.py
++    - src/cloud_edge_robot_arm/vision/capture.py
++    - src/cloud_edge_robot_arm/vision/top_grasp.py
++    - src/cloud_edge_robot_arm/vision/tracking.py
++    - src/cloud_edge_robot_arm/vision/online_intent.py
++    - src/cloud_edge_robot_arm/vision/runtime_binding.py
++    - src/cloud_edge_robot_arm/vision/evaluation.py
++    - src/cloud_edge_robot_arm/vision/task_semantics.py
++    - src/cloud_edge_robot_arm/vision/execution.py
++    - src/cloud_edge_robot_arm/edge/safety/shield.py
++    - src/cloud_edge_robot_arm/edge/evidence/conditions.py
++    - assets/robots/franka_panda/scene.xml
++probe:
++  scenario_id: S01_NORMAL_STATIC
++  seed: 0
++  instruction: pick the red cube and place it in the green target region
++  warm_runs: 3
+--- baseline/tests/test_ced_runtime_binding.py
++++ tests/test_ced_runtime_binding.py
+@@ -0,0 +1,222 @@
++"""Role/source drift and native CV uncertainty cannot authorize a skill."""
++
++import hashlib
++import importlib
++from dataclasses import replace
++from types import SimpleNamespace
++
++import pytest
++
++from cloud_edge_robot_arm.vision.evaluation import ExecutionPolicy
++from cloud_edge_robot_arm.vision.role_models import (
++    RoleModelBundle,
++    RoleProviderSnapshot,
++    cloud_request_settings,
++    configuration_hash,
++)
++
++
++def api():
++    return importlib.import_module("cloud_edge_robot_arm.vision.runtime_binding")
++
++
++def role_binding(tmp_path):
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++
++    snapshot = ModelConfigSnapshot(provider="openai_compatible", model="qwen3.8-max",
++        endpoint="https://example.invalid", weight_digest=None, quantization=None,
++        image_size=(320, 240), generation_parameters={"temperature": 0, "num_predict": 512},
++        timeout_s=30)
++    planner = resolve_visual_planner(snapshot, api_key="", allow_paid=False)
++    sources = {}
++    for name in ("cloud.py", "edge.py", "device.py"):
++        path = tmp_path / name
++        path.write_text("# frozen implementation\n")
++        sources[name] = hashlib.sha256(path.read_bytes()).hexdigest()
++    cloud = RoleProviderSnapshot("CLOUD", "max", "REMOTE_SERVICE", planner.model_name,
++        None, None, None, configuration_hash(cloud_request_settings(planner)),
++        {"cloud.py": sources["cloud.py"]})
++    edge_policy = {"provider": "rules", "local_recover_enabled": False}
++    edge = RoleProviderSnapshot("EDGE", "rules", "LOCAL_HOST", None, None, None, None,
++        configuration_hash(edge_policy), {"edge.py": sources["edge.py"]})
++    device = {"device.py": sources["device.py"]}
++    bundle = RoleModelBundle(cloud, edge.provider_id, edge.digest(), configuration_hash(device))
++    planner.role_snapshot = cloud
++    return planner, api().RoleRuntimeBinding(bundle, edge, device, edge_policy, root=tmp_path)
++
++
++@pytest.mark.parametrize("drift", ["model", "endpoint", "timeout", "cloud", "edge", "device"])
++def test_mutable_role_or_source_drift_is_rechecked_at_boundary(tmp_path, drift):
++    planner, binding = role_binding(tmp_path)
++    binding.validate(planner)
++    if drift == "model":
++        planner.model_name = "other"
++    elif drift == "endpoint":
++        planner.base_url = "http://other"
++    elif drift == "timeout":
++        planner.timeout_s += 1
++    else:
++        (tmp_path / f"{drift}.py").write_text("# changed\n")
++    with pytest.raises(ValueError):
++        binding.validate(planner)
++
++
++def test_role_binding_rejects_swapped_edge_and_fake_device_digest(tmp_path):
++    planner, binding = role_binding(tmp_path)
++    with pytest.raises(ValueError):
++        replace(binding, bundle=replace(binding.bundle, device_pipeline_hash="f" * 64))
++    planner.role_snapshot = binding.edge_snapshot
++    with pytest.raises(ValueError):
++        binding.validate(planner)
++
++
++def test_device_pipeline_requires_complete_role_binding():
++    with pytest.raises(ValueError):
++        ExecutionPolicy("pick red", model_snapshot_hash="a" * 64, device_pipeline="OPENCV")
++
++
++def test_opencv_factory_preserves_native_unknown_in_canonical_conditions(tmp_path):
++    from cloud_edge_robot_arm.edge.evidence.conditions import (
++        OnlineEvidenceSnapshot,
++        evaluate_conditions,
++    )
++    from cloud_edge_robot_arm.vision.execution import make_target_tracker, terminal_conditions
++    from tests.test_opencv_target_evidence import scene
++    from tests.test_rgbd_online_verification import evidence
++
++    _, binding = role_binding(tmp_path)
++    policy = ExecutionPolicy("Move the red block to the green region.",
++        model_snapshot_hash="a" * 64, device_pipeline="OPENCV", role_binding=binding)
++    observation = scene()
++    tracker = make_target_tracker(observation, {
++        "original_pixel_target": [12, 26], "original_pixel_destination": [57, 32],
++        "top_grasp_support_height_m": 0.0,
++    }, policy)
++    facts = tracker.facts(observation)
++    snap = OnlineEvidenceSnapshot(observation, evidence().robot_state, facts, 1, 1, "test")
++    verdicts = evaluate_conditions(terminal_conditions(policy), snap)
++    assert "placement_stable" in {row.condition_name for row in verdicts}
++    assert any(row.status.value == "UNKNOWN" for row in verdicts)
++
++
++def test_role_drift_before_skill_stops_before_safety_and_dispatch(tmp_path):
++    from cloud_edge_robot_arm.vision.execution import _EpisodeStopped, _VisualEpisode
++
++    planner, binding = role_binding(tmp_path)
++    episode = _VisualEpisode.__new__(_VisualEpisode)
++    episode.planner = planner
++    episode.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64,
++        device_pipeline="OPENCV", role_binding=binding)
++    episode.check_active = lambda: None
++    episode.observation = SimpleNamespace(observation_id="fresh")
++    calls = []
++    episode.shield = SimpleNamespace(pre_check=lambda _: calls.append("safety"))
++    episode.executor = SimpleNamespace(execute_attempt=lambda **_: calls.append("dispatch"))
++    planner.model_name = "swapped"
++    with pytest.raises(_EpisodeStopped, match="ROLE_BINDING_CHANGED"):
++        episode.execute(None, None)
++    assert calls == []
++
++
++def test_role_paths_cannot_follow_symlink_or_escape_root(tmp_path):
++    planner, binding = role_binding(tmp_path)
++    (tmp_path / "device.py").unlink()
++    (tmp_path / "device.py").symlink_to(tmp_path / "cloud.py")
++    with pytest.raises(ValueError, match="source"):
++        binding.validate(planner)
++
++
++@pytest.mark.parametrize("damage", [None, "occluded"])
++def test_native_stability_is_not_overwritten_by_legacy_endpoint_hold(tmp_path, damage):
++    from cloud_edge_robot_arm.vision.execution import _VisualEpisode
++    from tests.test_opencv_target_evidence import scene, tracker
++
++    _, binding = role_binding(tmp_path)
++    episode = _VisualEpisode.__new__(_VisualEpisode)
++    episode.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64,
++        device_pipeline="OPENCV", role_binding=binding)
++    episode.observation = scene()
++    episode.tracker = tracker(episode.observation)
++    if damage:
++        episode.observation = scene("occluded", time=.1, damage=damage,
++            started=episode.tracker._reference.captured_at)
++    from cloud_edge_robot_arm.contracts import RobotState
++
++    state = RobotState(connected=True)
++    episode.robot = SimpleNamespace(get_state=lambda: state)
++    backend = SimpleNamespace(total_physics_steps=0, _config=SimpleNamespace(physics_dt_s=.1))
++    backend.step = lambda steps: setattr(backend, "total_physics_steps",
++        backend.total_physics_steps + steps)
++    episode.backend = backend
++    episode.records = []
++    episode.monitor_physics_state = lambda: None
++    episode.recapture = lambda: None
++    observed = []
++    episode.verify = lambda *_, **kwargs: observed.append(kwargs.get("facts_transform")) or False
++    assert episode.hold_lift() is False
++    assert observed == [None]
++
++
++@pytest.mark.parametrize("changed_during_call", [False, True])
++def test_cloud_return_checks_binding_before_accepting_draft(tmp_path, changed_during_call):
++    import time
++    from datetime import UTC, datetime, timedelta
++
++    from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++    from cloud_edge_robot_arm.cloud.planning.models import PlannerDraft
++    from cloud_edge_robot_arm.vision.execution import _EpisodeStopped, _VisualEpisode
++    from tests.test_opencv_target_evidence import scene
++
++    planner, binding = role_binding(tmp_path)
++    episode = _VisualEpisode.__new__(_VisualEpisode)
++    episode.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64,
++        device_pipeline="OPENCV", role_binding=binding)
++    episode.planner = planner
++    episode.check_active = lambda: None
++    episode.observation = scene()
++    episode.calls = 0
++    episode.deadline = time.monotonic() + 10
++    episode.budget = SimpleNamespace(deadline_at=datetime.now(UTC) + timedelta(seconds=10))
++    episode.wait_clock = None
++    episode.records = []
++    episode.route = lambda *_: DecisionAction.CONTINUE
++    calls = []
++
++    def plan(request):
++        calls.append(request.observation.observation_id)
++        if changed_during_call:
++            planner.model_name = "changed-during-inference"
++        return PlannerDraft(planner_name="fixture", model_name=planner.model_name,
++            raw_text="{}", parsed_json={"steps": []}, parse_error=None)
++
++    planner.plan = plan
++    if changed_during_call:
++        with pytest.raises(_EpisodeStopped, match="ROLE_BINDING_CHANGED"):
++            episode.plan()
++        assert episode.records == []
++    else:
++        draft = episode.plan()
++        assert draft.observation_evidence["role_bundle_hash"] == binding.bundle.digest()
++    assert len(calls) == 1
++
++
++def test_legacy_runtime_import_does_not_require_optional_opencv():
++    import subprocess
++    import sys
++
++    code = '''
++import builtins
++original = builtins.__import__
++def without_cv(name, *args, **kwargs):
++    if name == "cv2" or name.startswith("cv2."):
++        raise ModuleNotFoundError("optional OpenCV is intentionally absent")
++    return original(name, *args, **kwargs)
++builtins.__import__ = without_cv
++from cloud_edge_robot_arm.vision.execution import RGBDTargetTracker
++assert RGBDTargetTracker is not None
++'''
++    completed = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
++    assert completed.returncode == 0, completed.stderr
+--- baseline/tests/test_online_visual_intent.py
++++ tests/test_online_visual_intent.py
+@@ -0,0 +1,44 @@
++"""Requested identity is checked against observed pixels before any motion."""
++
++import importlib
++
++import pytest
++
++
++def validate(instruction, target=(.9, .05, .05), region=(.05, .9, .05)):
++    api = importlib.import_module("cloud_edge_robot_arm.vision.online_intent")
++    return api.validate_grounded_colors(instruction, target, region)
++
++
++@pytest.mark.parametrize("instruction", [
++    "Move the red block to the green region.",
++    "将红色方块放到绿色区域",
++    "pick the red cube and place it in the green target region",
++])
++def test_supported_instruction_is_bound_to_observed_color(instruction):
++    assert validate(instruction) == ("red", "green")
++
++
++@pytest.mark.parametrize("instruction", [
++    "Move the blue block to the green region.",
++    "Move the yellow block to the green region.",
++])
++def test_planner_grounded_red_pixel_cannot_replace_requested_missing_target(instruction):
++    with pytest.raises(ValueError, match="requested target"):
++        validate(instruction)
++
++
++@pytest.mark.parametrize("instruction", [
++    "Do not Move the red block to the green region.",
++    "Move the red block to the green region. Move another one.",
++    "Move the red block to the blue region.",
++    "move something",
++])
++def test_unknown_negated_or_multiple_instruction_remains_unavailable(instruction):
++    with pytest.raises(ValueError, match="instruction"):
++        validate(instruction)
++
++
++def test_red_target_green_destination_cannot_be_swapped():
++    with pytest.raises(ValueError, match="destination"):
++        validate("Move the red block to the green region.", region=(.9, .05, .05))
+--- baseline/tests/test_visual_supervision.py
++++ tests/test_visual_supervision.py
+@@ -0,0 +1,120 @@
++"""A periodic response must actually govern its matching action boundary."""
++
++from datetime import UTC, datetime
++
++import pytest
++
++from cloud_edge_robot_arm.vision.supervision import (
++    SupervisionContext,
++    SupervisionDecision,
++    decide_supervision,
++)
++
++
++def context(version=3):
++    return SupervisionContext(episode_id="ep", plan_version=1, state_version=version,
++        next_step_id="approach", next_skill="APPROACH", observation_id="obs",
++        task_instruction="Move the red block to the green region.",
++        captured_at=datetime.now(UTC), proprioception={"gripper_open": True})
++
++
++@pytest.mark.parametrize("recommendation,expected", [
++    ("CONTINUE", "CONTINUE"), ("REOBSERVE", "REOBSERVE"),
++    ("REPLAN", "STOP"), ("STOP", "STOP"),
++])
++def test_response_content_changes_boundary_decision(recommendation, expected):
++    current = context()
++    reply = SupervisionDecision(episode_id="ep", plan_version=1, state_version=3,
++        observation_id="obs", next_step_id="approach", recommendation=recommendation,
++        reason="unit fixture")
++    assert decide_supervision(reply, current, current, maximum_age_s=5) == expected
++
++
++def test_old_state_or_mismatched_step_can_never_authorize_motion():
++    captured = context(2)
++    reply = SupervisionDecision(episode_id="ep", plan_version=1, state_version=2,
++        observation_id="obs", next_step_id="approach", recommendation="CONTINUE", reason="")
++    assert decide_supervision(reply, captured, context(3), maximum_age_s=5) == "DISCARD"
++    wrong_step = reply.model_copy(update={"next_step_id": "place"})
++    assert decide_supervision(wrong_step, captured, captured, maximum_age_s=5) == "REJECT"
++
++
++def test_supervisor_input_schema_rejects_oracle_fields():
++    with pytest.raises(ValueError):
++        SupervisionContext.model_validate({**context().model_dump(), "physical_success": True})
++
++
++def test_matching_stop_response_terminates_the_real_episode_boundary():
++    from types import SimpleNamespace
++
++    from cloud_edge_robot_arm.vision.evaluation import ExecutionPolicy
++    from cloud_edge_robot_arm.vision.execution import _EpisodeStopped, _VisualEpisode
++
++    captured = context()
++    reply = SupervisionDecision(episode_id="ep", plan_version=1, state_version=3,
++        observation_id="obs", next_step_id="approach", recommendation="STOP", reason="unsafe")
++    response = {"episode_id": "ep", "captured_at": captured.captured_at,
++                "context": captured.model_dump(), "decision": reply.model_dump()}
++    run = _VisualEpisode.__new__(_VisualEpisode)
++    run.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64)
++    run.supervision = SimpleNamespace(poll=lambda **_: [response])
++    run.observation = SimpleNamespace(episode_id="ep")
++    run.supervision_context = lambda _: captured
++    run.records = []
++    run._state_version = 3
++    with pytest.raises(_EpisodeStopped, match="SUPERVISION_STOPPED_SEQUENCE"):
++        run.apply_supervision()
++    assert run.records[-1]["action"] == "STOP"
++
++
++def test_supervision_http_carries_two_images_bound_context_and_actual_costs():
++    import json
++    import threading
++    from http.server import BaseHTTPRequestHandler, HTTPServer
++
++    from cloud_edge_robot_arm.research.cost_ledger import CostLedger
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
++    from tests.test_rgbd_observations import observation_payload
++
++    observation = RGBDObservation.model_validate({**observation_payload(), "episode_id": "ep"})
++    captured = context().model_copy(update={"episode_id": observation.episode_id,
++        "observation_id": observation.observation_id, "captured_at": observation.captured_at})
++    received = []
++
++    class Handler(BaseHTTPRequestHandler):
++        def do_POST(self):
++            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
++            if self.path == "/api/show":
++                response = {"capabilities": ["vision"]}
++            else:
++                received.append(body)
++                reply = {k: getattr(captured, k) for k in ("episode_id", "plan_version",
++                    "state_version", "observation_id", "next_step_id")}
++                reply.update(recommendation="STOP", reason="software transport fixture")
++                response = {"message": {"content": json.dumps(reply)}}
++            raw = json.dumps(response).encode()
++            self.send_response(200)
++            self.send_header("Content-Length", str(len(raw)))
++            self.end_headers()
++            self.wfile.write(raw)
++
++        def log_message(self, *args):
++            pass
++
++    server = HTTPServer(("127.0.0.1", 0), Handler)
++    worker = threading.Thread(target=server.serve_forever, daemon=True)
++    worker.start()
++    ledger = CostLedger()
++    try:
++        adapter = RGBDPlannerAdapter(base_url=f"http://127.0.0.1:{server.server_port}",
++            cost_ledger=ledger, model_role="SUPERVISOR")
++        assert adapter.supervise(observation, captured).recommendation == "STOP"
++        assert len(received[0]["messages"][1]["images"]) == 2
++        assert captured.observation_id in received[0]["messages"][1]["content"]
++        assert ledger.snapshot().requests_by_role == {"SUPERVISOR": 1}
++        assert ledger.snapshot().application_bytes > 0
++    finally:
++        server.shutdown()
++        server.server_close()
++        worker.join()

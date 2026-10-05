@@ -1,0 +1,41 @@
+FF..........                                                             [100%]
+=================================== FAILURES ===================================
+___________ test_results_keep_blocked_denominator_and_protocol_hash ____________
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-643/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70ca66d805f0>
+
+    def test_results_keep_blocked_denominator_and_protocol_hash(prepared_sources, monkeypatch):
+        root, protocol_hash = prepared_sources
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+>       assert response.status_code == 200, response.text
+E       AssertionError: {"error":"research_artifact_invalid","status_code":409}
+E       assert 409 == 200
+E        +  where 409 = <Response [409 Conflict]>.status_code
+
+tests/test_research_results_api.py:71: AssertionError
+______ test_export_retains_same_protocol_denominators_and_software_scope _______
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-643/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70ca60e0e1e0>
+
+    def test_export_retains_same_protocol_denominators_and_software_scope(prepared_sources, monkeypatch):
+        root, _ = prepared_sources
+        client = browser(monkeypatch, root)
+        detail = client.get("/api/v1/research/runs/run-1/evidence").json()
+        exported = client.get("/api/v1/research/runs/run-1/export")
+>       assert exported.status_code == 200 and exported.json() == detail
+E       assert (409 == 200)
+E        +  where 409 = <Response [409 Conflict]>.status_code
+
+tests/test_research_results_api.py:89: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:45
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_research_results_api.py::test_results_keep_blocked_denominator_and_protocol_hash
+FAILED tests/test_research_results_api.py::test_export_retains_same_protocol_denominators_and_software_scope
+2 failed, 10 passed, 1 warning in 13.77s

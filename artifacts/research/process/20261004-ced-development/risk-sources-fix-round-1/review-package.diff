@@ -1,0 +1,523 @@
+--- original/src/cloud_edge_robot_arm/research/risk_sources.py
++++ fix1/src/cloud_edge_robot_arm/research/risk_sources.py
+@@ -18,13 +18,17 @@
+ from pathlib import Path
+ from types import MappingProxyType
+ from typing import Any, Literal
++from xml.etree import ElementTree
+ 
+ import numpy as np
+ 
+ from cloud_edge_robot_arm.contracts import ActionResult
+ from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec, content_digest
+ from cloud_edge_robot_arm.research.protocol_evidence import COLLISION_SCOPE, _observation
+-from cloud_edge_robot_arm.simulation.mujoco.backend import PhysicsStepObservation
++from cloud_edge_robot_arm.simulation.mujoco.backend import (
++    ActuatorStepObservation,
++    PhysicsStepObservation,
++)
+ from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
+     CompletionCriteria,
+     evaluate_evidence,
+@@ -273,6 +277,15 @@
+     return float(value)
+ 
+ 
++def _array(value: Any, shape: tuple[int, ...]) -> np.ndarray[Any, Any]:
++    """Validate numeric element types before numpy can coerce booleans/strings."""
++    if not isinstance(value, (list, tuple)) or len(value) != shape[0]:
++        raise ValueError("raw numeric vector shape differs")
++    if len(shape) == 1:
++        return np.asarray([_number(item) for item in value], dtype=float)
++    return np.asarray([_array(item, shape[1:]) for item in value], dtype=float)
++
++
+ def _physics(rows: Any, case: RawCaseRegistration) -> list[PhysicsStepObservation]:
+     if not isinstance(rows, list) or not rows:
+         raise ValueError("reset-complete raw physics array is required")
+@@ -307,23 +320,114 @@
+     scene = SceneSpec.model_validate(row["scene"] if case.layout == "CED_PILOT_RAW_V2" else row)
+     target = scene.scene_parameters["target"]
+     destination = scene.scene_parameters["destination"]
+-    if (
+-        not np.allclose(raw[0].object_position_m, target["position"], atol=1e-9, rtol=0)
+-        or (not np.allclose(raw[0].object_half_extent_m, target["half_size"], atol=1e-9, rtol=0))
+-        or any(
+-            not np.allclose(item.region_center_m, destination["position"], atol=1e-9, rtol=0)
+-            or not np.allclose(
+-                item.region_half_extent_m, destination["half_size"], atol=1e-9, rtol=0
+-            )
+-            for item in raw
+-        )
++    if not np.allclose(raw[0].object_position_m, target["position"], atol=1e-9, rtol=0) or any(
++        not np.allclose(item.object_half_extent_m, target["half_size"], atol=1e-9, rtol=0)
++        or not np.allclose(item.region_center_m, destination["position"], atol=1e-9, rtol=0)
++        or not np.allclose(item.region_half_extent_m, destination["half_size"], atol=1e-9, rtol=0)
++        for item in raw
+     ):
+         raise ValueError("raw reset/full scene geometry mismatch")
+     return scene
+ 
+ 
++def _controller_basis(
++    registration: RiskSourceRegistration, scene: SceneSpec
++) -> Mapping[str, np.ndarray[Any, Any] | float]:
++    """Compile registered inline MJCF constants only; never create data or step.
++
++    External assets/includes and unregistered variants stay unavailable. This
++    reproduces controller constants, not dynamics or generalized gravity bias.
++    """
++    paths = [
++        name
++        for name, digest in registration.current_source_hashes.items()
++        if digest == scene.asset_family_hash and Path(name).suffix == ".xml"
++    ]
++    if len(paths) != 1:
++        raise FileNotFoundError("unique_registered_controller_asset_unavailable")
++    payload = _safe(registration.source_root, paths[0]).read_bytes()
++    if hashlib.sha256(payload).hexdigest() != scene.asset_family_hash:
++        raise ValueError("controller asset bytes changed")
++    try:
++        document = ElementTree.fromstring(payload)
++    except ElementTree.ParseError as error:
++        raise ValueError("controller asset XML is invalid") from error
++    if any(element.tag == "include" or "file" in element.attrib for element in document.iter()):
++        raise FileNotFoundError("external_controller_asset_dependencies_unsupported")
++    arm = document.findall("./actuator/position")
++    if [item.get("name") for item in arm[:7]] != [f"act{i}" for i in range(1, 8)]:
++        raise FileNotFoundError("controller_asset_actuator_layout_unsupported")
++    try:
++        import mujoco
++    except ImportError as error:
++        raise FileNotFoundError("controller_asset_compiler_unavailable") from error
++    try:
++        model = mujoco.MjModel.from_xml_string(payload.decode())
++        joints = [model.joint(f"joint{i}").id for i in range(1, 8)]
++        fingers = [model.joint(name).id for name in ("finger_left_joint", "finger_right_joint")]
++        if model.nu != 9 or any(
++            model.actuator(f"act{i + 1}").id != i or model.actuator_trnid[i, 0] != joint
++            for i, joint in enumerate(joints)
++        ):
++            raise FileNotFoundError("controller_asset_joint_transmission_unsupported")
++        table = model.geom("table").id
++        # Supported registered assets have a static, axis-aligned world table.
++        if model.geom_bodyid[table] != 0 or not np.array_equal(
++            model.geom_quat[table], [1, 0, 0, 0]
++        ):
++            raise FileNotFoundError("controller_asset_table_geometry_unsupported")
++        return {
++            "gains": model.actuator_gainprm[:7, 0].copy(),
++            "ranges": model.actuator_ctrlrange[:7].copy(),
++            "joint_ranges": model.jnt_range[joints].copy(),
++            "finger_ranges": model.jnt_range[fingers].copy(),
++            "table_top": float(model.geom_pos[table, 2] + model.geom_size[table, 2]),
++        }
++    except ValueError as error:
++        raise ValueError("registered controller asset cannot compile") from error
++    except KeyError as error:
++        raise FileNotFoundError("controller_asset_named_geometry_unavailable") from error
++
++
++def _command_schema(command: Mapping[str, Any]) -> None:
++    common = {
++        "type",
++        "accepted",
++        "reason",
++        "after_emergency_stop",
++        "sim_time_s",
++        "episode_id",
++        "physics_step",
++        "command_seq",
++    }
++    kind, accepted = command.get("type"), command.get("accepted")
++    if (
++        kind not in {"joint_target", "hold_current_joints", "gripper"}
++        or type(accepted) is not bool
++        or type(command.get("after_emergency_stop")) is not bool
++        or not isinstance(command.get("reason"), str)
++    ):
++        raise ValueError("raw command schema/flag types differ")
++    extra = {"target_open"} if kind == "gripper" else {"target_positions_rad"}
++    if kind == "hold_current_joints" or (kind == "joint_target" and accepted):
++        extra.add("applied_target_positions_rad")
++    if set(command) != common | extra:
++        raise ValueError("raw command object schema is incomplete or unknown")
++    if kind == "gripper":
++        if type(command["target_open"]) is not bool:
++            raise ValueError("gripper command must be a strict boolean")
++    else:
++        _array(command["target_positions_rad"], (7,))
++        if "applied_target_positions_rad" in command:
++            _array(command["applied_target_positions_rad"], (7,))
++
++
+ def _controls(
+-    commands: Any, controls: Any, raw: Sequence[PhysicsStepObservation], case: RawCaseRegistration
++    commands: Any,
++    controls: Any,
++    raw: Sequence[PhysicsStepObservation],
++    case: RawCaseRegistration,
++    basis: Mapping[str, np.ndarray[Any, Any] | float],
+ ) -> None:
+     if (
+         not isinstance(commands, list)
+@@ -334,8 +438,12 @@
+         raise ValueError("command/actuator coverage or shape differs")
+     if [_integer(row["command_seq"]) for row in commands] != list(range(1, len(commands) + 1)):
+         raise ValueError("raw command prefix is incomplete")
++    keys = {item.name for item in fields(ActuatorStepObservation)}
++    if any(set(row) != keys for row in controls):
++        raise ValueError("raw actuator object schema is incomplete or unknown")
+     initial = case.context["initial_controller_targets"]
+-    targets, fingers = np.asarray(initial["joints_rad"]), np.asarray(initial["fingers_m"])
++    targets = _array(initial["joints_rad"], (7,))
++    fingers = _array(initial["fingers_m"], (2,))
+     if (
+         targets.shape != (7,)
+         or fingers.shape != (2,)
+@@ -352,6 +460,7 @@
+         raise ValueError("unsupported initial controller state/delay")
+     previous = -1
+     for command in commands:
++        _command_schema(command)
+         step = _integer(command["physics_step"])
+         if (
+             step < previous
+@@ -362,6 +471,14 @@
+             or (type(command.get("accepted")) is not bool)
+         ):
+             raise ValueError("command source/time/semantics differ")
++        if command["type"] == "hold_current_joints" and (
++            command["accepted"] is not True
++            or not np.array_equal(command["target_positions_rad"], raw[step].joint_positions_rad)
++            or not np.array_equal(
++                command["applied_target_positions_rad"], raw[step].joint_positions_rad
++            )
++        ):
++            raise ValueError("hold_current_joints must hold measured dispatch joint positions")
+         previous = step
+     cursor = 0
+     for index, control in enumerate(controls, start=1):
+@@ -378,26 +495,30 @@
+                         raise ValueError("gripper command must be a strict boolean")
+                     fingers = np.full(2, 0.039 if command["target_open"] else 0.0)
+                 else:
+-                    requested = np.asarray(command["target_positions_rad"], dtype=float)
+-                    applied = np.asarray(command["applied_target_positions_rad"], dtype=float)
++                    requested = _array(command["target_positions_rad"], (7,))
++                    applied = _array(command["applied_target_positions_rad"], (7,))
+                     if (
+                         requested.shape != (7,)
+                         or not np.isfinite(requested).all()
+-                        or (not np.array_equal(applied, np.clip(requested, -2.8, 2.8)))
++                        or (
++                            not np.array_equal(
++                                applied,
++                                requested
++                                if command["type"] == "hold_current_joints"
++                                else np.clip(requested, -2.8, 2.8),
++                            )
++                        )
+                     ):
+                         raise ValueError("accepted joint target does not reproduce")
+                     targets = applied
+             cursor += 1
+-        q, gains, ranges, bias, actual = (
+-            np.asarray(control[key], dtype=float)
+-            for key in (
+-                "pre_joint_positions_rad",
+-                "actuator_gains",
+-                "actuator_ctrl_ranges",
+-                "pre_gravity_bias_nm",
+-                "control_rad",
+-            )
+-        )
++        q = _array(control["pre_joint_positions_rad"], (7,))
++        gains = _array(control["actuator_gains"], (7,))
++        ranges = _array(control["actuator_ctrl_ranges"], (7, 2))
++        bias = _array(control["pre_gravity_bias_nm"], (7,))
++        actual = _array(control["control_rad"], (7,))
++        applied_targets = _array(control["applied_joint_targets_rad"], (7,))
++        finger_targets = _array(control["finger_control_targets_m"], (2,))
+         if any(v.shape != (7,) or not np.isfinite(v).all() for v in (q, gains, bias, actual)) or (
+             ranges.shape != (7, 2)
+             or not np.isfinite(ranges).all()
+@@ -405,13 +526,15 @@
+             or np.any(ranges[:, 0] >= ranges[:, 1])
+         ):
+             raise ValueError("controller vectors/gains/ranges differ")
++        if not np.array_equal(gains, basis["gains"]) or not np.array_equal(ranges, basis["ranges"]):
++            raise ValueError("controller gain/ranges differ from registered compiled asset")
+         expected = np.clip(
+             q + np.clip(targets - q, -0.10, 0.10) + bias / gains, ranges[:, 0], ranges[:, 1]
+         )
+         if not np.allclose(q, raw[index - 1].joint_positions_rad, atol=1e-9, rtol=0) or (
+             not np.allclose(actual, expected, atol=1e-9, rtol=0)
+-            or not np.allclose(control["applied_joint_targets_rad"], targets, atol=1e-9, rtol=0)
+-            or not np.allclose(control["finger_control_targets_m"], fingers, atol=1e-9, rtol=0)
++            or not np.allclose(applied_targets, targets, atol=1e-9, rtol=0)
++            or not np.allclose(finger_targets, fingers, atol=1e-9, rtol=0)
+         ):
+             raise ValueError("controller outputs do not reproduce actual command/physical state")
+     if cursor != len(commands):
+@@ -430,6 +553,8 @@
+         or any(not isinstance(row, dict) for row in rows)
+     ):
+         raise ValueError("raw action coverage/shape differs")
++    if commands and not rows:
++        raise FileNotFoundError("typed_action_ranges_for_original_commands_unavailable")
+     ids = set()
+     step_cursor, seq_cursor = 120, 1
+     for row in rows:
+@@ -605,7 +730,15 @@
+         and not (directory / "raw-actions.json").exists()
+     ):
+         raise FileNotFoundError("CED_raw_action_ranges_unavailable")
+-    _controls(commands, controls, raw, case)
++    basis = _controller_basis(registration, scene)
++    if any(
++        not np.array_equal(_array(item.joint_ranges_rad, (7, 2)), basis["joint_ranges"])
++        or not np.array_equal(_array(item.finger_ranges_m, (2, 2)), basis["finger_ranges"])
++        or _number(item.table_top_m) != basis["table_top"]
++        for item in raw
++    ):
++        raise ValueError("raw fixed joint/finger/table geometry differs from registered asset")
++    _controls(commands, controls, raw, case, basis)
+     _actions(actions, commands, raw, case)
+     if case.layout == "MARKER_MOTION_DEVELOPMENT_RAW_V1":
+         declared_actions = _json(directory / "actions.json")
+--- original/tests/test_research_risk_sources.py
++++ fix1/tests/test_research_risk_sources.py
+@@ -43,7 +43,10 @@
+ def sources() -> dict[str, str]:
+     return {
+         name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+-        for name in required_source_paths()
++        for name in (
++            *required_source_paths(),
++            "assets/robots/franka_panda/scene_pose_marker_color_v2.xml",
++        )
+     }
+ 
+ 
+@@ -398,6 +401,8 @@
+         "episode_id": case.context["episode_id"],
+         "type": "joint_target",
+         "accepted": True,
++        "reason": "",
++        "after_emergency_stop": False,
+         "target_positions_rad": [-0.5, 0, 0, 0, 0, 0, 0],
+         "applied_target_positions_rad": [-0.5, 0, 0, 0, 0, 0, 0],
+     }
+@@ -413,7 +418,10 @@
+         expected_counts={**dict(case.expected_counts), "commands": 1},
+     )
+     result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+-    assert result.status == ("INVALID" if bad_clamp else "VALID")
++    assert result.status == ("INVALID" if bad_clamp else "UNKNOWN")
++    if not bad_clamp:
++        # Correct controller math still lacks the original typed action ranges.
++        assert any("typed_action_ranges" in reason for reason in result.reasons)
+ 
+ 
+ def test_role_binding_nested_snapshots_copy_without_mutable_aliases(tmp_path: Path) -> None:
+@@ -540,3 +548,199 @@
+         )
+     with pytest.raises(ValueError, match="integer"):
+         replace(case, expected_counts={**dict(case.expected_counts), "frames": True})
++
++
++def motion_software_case(tmp_path: Path) -> tuple[RawCaseRegistration, Path]:
++    """Derived complete source copy is SOFTWARE_ONLY, never new measured evidence."""
++    import shutil
++
++    directory = tmp_path / "attempt"
++    shutil.copytree(MOTION / "attempt-1", directory)
++    header = json.loads((MOTION / "header.json").read_bytes())
++    summary = json.loads((directory / "summary.json").read_bytes())
++    case = RawCaseRegistration(
++        "derived-software-motion",
++        "attempt",
++        "MARKER_MOTION_DEVELOPMENT_RAW_V1",
++        hashes(directory),
++        header["scene"],
++        {
++            "episode_id": summary["episode_id"],
++            "physics_dt_s": header["config"]["physics_dt_s"],
++            "evaluation_start_step": 120,
++            "initial_controller_targets": {
++                "joints_rad": [-0.8, 0, 0, 0, 0, 0, 0],
++                "fingers_m": [0.039, 0.039],
++            },
++            "actuator_delay_steps": 0,
++        },
++        {"physics_steps": 4806, "commands": 743, "actions": 9, "frames": 10},
++        source_kind="SOFTWARE_ONLY",
++        marker_registration=PoseMarkerRegistration(
++            7, 0.045, "2ba368bb5150becd1c021fe52495f3c59bd155f862502ec590b2ecd3a57899e4"
++        ),
++    )
++    return case, directory
++
++
++def rewrite_jsonl(path: Path, rows: list[dict]) -> None:
++    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
++
++
++@pytest.mark.parametrize("mutation", ["overwritten_hold", "asset_gain", "fixed_geometry"])
++def test_full_software_action_source_rejects_independent_consistency_counterexamples(
++    tmp_path: Path, mutation: str
++) -> None:
++    case, directory = motion_software_case(tmp_path)
++    if mutation == "overwritten_hold":
++        path = directory / "commands.json"
++        commands = json.loads(path.read_bytes())
++        index = next(
++            i
++            for i, command in enumerate(commands[:-1])
++            if command["type"] == "hold_current_joints"
++            and commands[i + 1]["physics_step"] == command["physics_step"]
++        )
++        commands[index]["target_positions_rad"][0] += 0.01
++        commands[index]["applied_target_positions_rad"][0] += 0.01
++        json_file(path, commands)
++        reason = "hold"
++    elif mutation == "asset_gain":
++        path = directory / "raw-actuators.jsonl"
++        rows = [json.loads(line) for line in path.read_bytes().splitlines()]
++        rows[5]["actuator_gains"][1] = 40.0
++        rows[5]["control_rad"][1] = (
++            rows[5]["pre_joint_positions_rad"][1] + rows[5]["pre_gravity_bias_nm"][1] / 40
++        )
++        rewrite_jsonl(path, rows)
++        reason = "asset"
++    else:
++        from dataclasses import asdict
++
++        from cloud_edge_robot_arm.research.protocol_evidence import _observation
++        from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
++            sample_physical_observation,
++        )
++
++        path = directory / "raw-physics.jsonl"
++        rows = [json.loads(line) for line in path.read_bytes().splitlines()]
++        rows[5]["object_half_extent_m"][0] = 0.0001
++        rewrite_jsonl(path, rows)
++        samples = json.loads((directory / "physical-samples.json").read_bytes())
++        samples[5] = asdict(
++            sample_physical_observation(
++                _observation(rows[5]), CompletionCriteria("object", "target_region")
++            )
++        )
++        json_file(directory / "physical-samples.json", samples)
++        reason = "geometry"
++    result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
++        "fixture", scope="RAW_EXECUTION"
++    )
++    assert result.status == "INVALID", result.reasons
++    assert any(reason in value for value in result.reasons)
++    assert result.counts["allocated"] == result.counts["unknown"] == 1
++    assert result.counts["physical_success"] == 0
++    assert result.formal_source_eligible is False
++
++
++def test_full_software_commands_cannot_delete_every_typed_action(tmp_path: Path) -> None:
++    case, directory = motion_software_case(tmp_path)
++    (directory / "raw-actions.jsonl").write_text("")
++    json_file(directory / "actions.json", [])
++    case = replace(
++        case,
++        original_file_hashes=hashes(directory),
++        expected_counts={**dict(case.expected_counts), "actions": 0},
++    )
++    result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
++    assert result.status == "UNKNOWN", result.reasons
++    assert any("action" in reason for reason in result.reasons)
++    assert result.counts["unknown"] == result.counts["allocated"] == 1
++    assert result.counts["reconstructed"] == result.counts["physical_success"] == 0
++
++
++@pytest.mark.parametrize(
++    "mutation",
++    [
++        "unknown",
++        "bias_bool",
++        "q_bool",
++        "gain_bool",
++        "range_bool",
++        "output_bool",
++        "target_bool",
++        "finger_bool",
++    ],
++)
++def test_strict_actuator_schema_and_numeric_types(tmp_path: Path, mutation: str) -> None:
++    case, directory = fixture_case(tmp_path)
++    path = directory / "raw-actuators.jsonl"
++    rows = [json.loads(line) for line in path.read_bytes().splitlines()]
++    if mutation == "unknown":
++        rows[5]["unrecognized_authority"] = True
++    else:
++        key = {
++            "bias_bool": "pre_gravity_bias_nm",
++            "q_bool": "pre_joint_positions_rad",
++            "gain_bool": "actuator_gains",
++            "range_bool": "actuator_ctrl_ranges",
++            "output_bool": "control_rad",
++            "target_bool": "applied_joint_targets_rad",
++            "finger_bool": "finger_control_targets_m",
++        }[mutation]
++        if mutation == "range_bool":
++            rows[5][key][0][0] = False
++        else:
++            rows[5][key][0 if mutation == "bias_bool" else 1] = False
++    rewrite_jsonl(path, rows)
++    result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
++        "fixture", scope="RAW_EXECUTION"
++    )
++    assert result.status == "INVALID", result.reasons
++
++
++def test_missing_registered_controller_asset_is_unknown(tmp_path: Path) -> None:
++    case, _ = fixture_case(tmp_path)
++    inventory = sources()
++    del inventory["assets/robots/franka_panda/scene_pose_marker_color_v2.xml"]
++    registration = RiskSourceRegistration(
++        tmp_path, ROOT, inventory, (case,), CompletionCriteria("object", "target_region")
++    )
++    result = RiskSourceAuditor({"fixture": registration}).audit("fixture", scope="RAW_EXECUTION")
++    assert result.status == "UNKNOWN", result.reasons
++    assert any("asset" in reason for reason in result.reasons)
++
++
++@pytest.mark.parametrize("mutation", ["unknown", "requested_bool", "applied_bool", "string"])
++def test_command_typed_schema_cannot_be_waived_by_rehashed_inventory(
++    tmp_path: Path, mutation: str
++) -> None:
++    case, directory = fixture_case(tmp_path)
++    command = {
++        "command_seq": 1,
++        "physics_step": 120,
++        "sim_time_s": 120 * 0.0041666667,
++        "episode_id": case.context["episode_id"],
++        "type": "joint_target",
++        "accepted": True,
++        "reason": "",
++        "after_emergency_stop": False,
++        "target_positions_rad": [-0.8, 0, 0, 0, 0, 0, 0],
++        "applied_target_positions_rad": [-0.8, 0, 0, 0, 0, 0, 0],
++    }
++    if mutation == "unknown":
++        command["authority"] = True
++    else:
++        key = (
++            "applied_target_positions_rad" if mutation == "applied_bool" else "target_positions_rad"
++        )
++        command[key][1] = "0" if mutation == "string" else False
++    json_file(directory / "commands.json", [command])
++    changed = replace(
++        case,
++        original_file_hashes=hashes(directory),
++        expected_counts={**dict(case.expected_counts), "commands": 1},
++    )
++    result = registered(tmp_path, changed).audit("fixture", scope="RAW_EXECUTION")
++    assert result.status == "INVALID", result.reasons

@@ -1,0 +1,95 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_terminal_boundaries_consider_all_actions_including_later_zero_step_rejection[True] _
+
+capture_after_rejection = True
+
+    @pytest.mark.parametrize("capture_after_rejection", [False, True])
+    def test_terminal_boundaries_consider_all_actions_including_later_zero_step_rejection(
+        capture_after_rejection,
+    ):
+        envelope, records = fixture()
+        base = next(i for i in records.intervals if i.interval_id == "attempt")
+        rejected = clock_interval(
+            base, "grasp-rejected", "EXECUTOR_ATTEMPT", 121, 121, 230000000, 240000000
+        )
+        action = replace(
+            records.actions[0],
+            span_id="span-2",
+            step_id="grasp",
+            interval_id=rejected.interval_id,
+            command_seq_start=2,
+            command_seq_end=2,
+            returned_result=None,
+            disposition="REJECTED",
+            error="precondition_rejected",
+            executed_step_payload=records.actions[0]
+            .original_plan.requirements["grasp"]
+            .original_step.model_dump(mode="json"),
+        )
+        before_second = replace(records.joins[1], span_id="span-2", relation="BEFORE_SUBMIT")
+        terminal = replace(records.joins[1], relation="TERMINAL")
+        extra_frames, extra_intervals = (), ()
+        if capture_after_rejection:
+            source = records.frames[-1]
+            payload = {
+                **dict(source.observation_payload),
+                "frame_id": "terminal",
+                "observation_id": "terminal",
+                "captured_at": (NOW + timedelta(microseconds=241000)).isoformat(),
+                "checksum_sha256": "",
+            }
+            observation = RGBDObservation.model_validate(payload)
+            files = {
+                name.replace("/after/", "/terminal/"): digest
+                for name, digest in source.file_hashes.items()
+            }
+            acquisition = clock_interval(
+                base, "acq-terminal", "ACQUISITION", 121, 121, 241000000, 242000000
+            )
+            frame = replace(
+                source,
+                acquisition_id="terminal",
+                interval_id=acquisition.interval_id,
+                observation_payload=observation.model_dump(mode="json"),
+                file_hashes=files,
+            )
+            extra_frames, extra_intervals = (frame,), (
+                acquisition,
+                clock_interval(base, "earlier-termination", "TERMINATION", 121, 121, 220100000, 220900000),
+                clock_interval(base, "final-termination", "TERMINATION", 121, 121, 240100000, 240900000),
+            )
+            terminal = replace(
+                terminal,
+                acquisition_id="terminal",
+                observation_id=observation.observation_id,
+                checksum_sha256=observation.checksum_sha256,
+            )
+            envelope = replace(
+                envelope,
+                allocated_acquisition_ids=(*envelope.allocated_acquisition_ids, "terminal"),
+                original_file_hashes={**dict(envelope.original_file_hashes), **files},
+            )
+        view = api().validate_raw_episode_v3(
+            replace(envelope, allocated_action_span_ids=("span-1", "span-2")),
+            renumber(
+                replace(
+                    records,
+                    intervals=(*records.intervals, rejected, *extra_intervals),
+                    actions=(*records.actions, action),
+                    frames=(*records.frames, *extra_frames),
+                    joins=(*records.joins, before_second, terminal),
+                )
+            ),
+        )
+>       assert view.status == ("COMPLETE" if capture_after_rejection else "INVALID"), view.reasons
+E       AssertionError: ('termination_precedes_recorded_completion',)
+E       assert 'INVALID' == 'COMPLETE'
+E         
+E         - COMPLETE
+E         + INVALID
+
+tests/test_raw_episode_v3.py:1197: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_terminal_boundaries_consider_all_actions_including_later_zero_step_rejection[True]
+1 failed, 1 passed, 58 deselected in 1.49s

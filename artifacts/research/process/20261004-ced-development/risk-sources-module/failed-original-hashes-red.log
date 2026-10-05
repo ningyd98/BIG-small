@@ -1,0 +1,27 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_missing_attempt_retained_in_all_assigned_denominator ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-839/test_missing_attempt_retained_0')
+
+    def test_missing_attempt_retained_in_all_assigned_denominator(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+        missing = replace(case, case_id="failed-original", relative_directory="absent")
+        registration = RiskSourceRegistration(
+            tmp_path, ROOT, sources(), (case, missing), CompletionCriteria("object", "target_region")
+        )
+        result = RiskSourceAuditor({"fixture": registration}).audit("fixture", scope="RAW_EXECUTION")
+        assert result.status == "UNKNOWN"
+        assert result.counts["allocated"] == 2
+        assert result.counts["failed"] == result.counts["unknown"] == 1
+>       assert len(result.original_file_hashes) == 2 * len(case.original_file_hashes)
+E       AssertionError: assert 6 == (2 * 6)
+E        +  where 6 = len(mappingproxy({'sw-case/actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570', 'sw-case/com...6a047f548416794', 'sw-case/unframed-actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570'}))
+E        +    where mappingproxy({'sw-case/actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570', 'sw-case/com...6a047f548416794', 'sw-case/unframed-actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570'}) = RiskSourceAudit(requested_scope='RAW_EXECUTION', verified_scope=None, status='UNKNOWN', reasons=('failed-original:unav...e9880b3db533265e27c5de5c2576c7fa3859f36516'}), formal_source_eligible=False, schema_version='ced.risk-source-audit.v1').original_file_hashes
+E        +  and   6 = len(mappingproxy({'actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570', 'commands.json': '37...54390f706a047f548416794', 'unframed-actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570'}))
+E        +    where mappingproxy({'actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570', 'commands.json': '37...54390f706a047f548416794', 'unframed-actions.json': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570'}) = RawCaseRegistration(case_id='sw-case', relative_directory='case', layout='MARKER_MOTION_DEVELOPMENT_RAW_V1', original_...physics_steps': 121, 'commands': 0, 'actions': 0, 'frames': 0}), source_kind='SOFTWARE_ONLY', marker_registration=None).original_file_hashes
+
+tests/test_research_risk_sources.py:236: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_missing_attempt_retained_in_all_assigned_denominator
+1 failed, 34 deselected in 0.34s

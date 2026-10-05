@@ -1,0 +1,21 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_role_reader_derives_exact_legacy_model_digest_from_effective_settings __
+
+    def test_role_reader_derives_exact_legacy_model_digest_from_effective_settings():
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot, resolve_visual_planner
+        from cloud_edge_robot_arm.vision.role_models import cloud_request_settings
+    
+        model = ModelConfigSnapshot(provider="openai_compatible", model="qwen3.8-max",
+            endpoint="https://example.invalid", weight_digest=None, quantization=None,
+            image_size=(320, 240), generation_parameters={"temperature": 0., "num_predict": 512},
+            timeout_s=30., grasp_profile="mujoco_upright_box_v2")
+        settings = cloud_request_settings(resolve_visual_planner(model, allow_paid=False))
+>       assert api()._model_evidence(settings) == model.evidence()
+               ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_model_evidence'
+
+tests/test_ced_initial_freeze.py:184: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_ced_initial_freeze.py::test_role_reader_derives_exact_legacy_model_digest_from_effective_settings
+1 failed, 15 deselected in 0.27s

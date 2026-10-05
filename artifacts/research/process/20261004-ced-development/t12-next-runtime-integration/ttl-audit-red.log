@@ -1,0 +1,93 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_discard_rechecks_ttl_before_recording_its_owned_reason[EXPIRED] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74765ed4b2f0>
+second_classification = 'EXPIRED'
+
+    @pytest.mark.parametrize("second_classification", ["EXPIRED", "CURRENT"])
+    def test_discard_rechecks_ttl_before_recording_its_owned_reason(monkeypatch, second_classification):
+        from cloud_edge_robot_arm.vision.supervision import SupervisionDecision
+    
+        run, calls = supervised_episode()
+        frame = run.capture_supervision_frame()
+        run.observation = frame.observation
+        decision = SupervisionDecision(
+            episode_id=frame.context.episode_id,
+            plan_version=frame.context.plan_version,
+            state_version=frame.context.state_version,
+            observation_id=frame.context.observation_id,
+            next_step_id=frame.context.next_step_id,
+            recommendation="CONTINUE",
+            reason="SOFTWARE_ONLY",
+        )
+        response = {
+            "episode_id": frame.context.episode_id,
+            "captured_at": frame.observation.captured_at,
+            "context": frame.context.model_dump(mode="json"),
+            "decision": decision.model_dump(mode="json"),
+            "worker_claim_id": frame.claim_id,
+        }
+        run.supervision = SimpleNamespace(poll=lambda **kwargs: [response])
+        classifications = iter(["CURRENT", second_classification])
+        run.worker_runtime.classify_supervision_reply = lambda owned: next(classifications)
+        monkeypatch.setattr(
+            "cloud_edge_robot_arm.vision.supervision.decide_supervision", lambda *args, **kwargs: "DISCARD"
+        )
+        if second_classification == "EXPIRED":
+            run.apply_supervision()
+>           assert run.records[-1]["reason"] == "original_frame_ttl_expired"
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'reason'
+
+tests/test_visual_worker_supervision_execution.py:235: KeyError
+_____ test_discard_rechecks_ttl_before_recording_its_owned_reason[CURRENT] _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74765eb66210>
+second_classification = 'CURRENT'
+
+    @pytest.mark.parametrize("second_classification", ["EXPIRED", "CURRENT"])
+    def test_discard_rechecks_ttl_before_recording_its_owned_reason(monkeypatch, second_classification):
+        from cloud_edge_robot_arm.vision.supervision import SupervisionDecision
+    
+        run, calls = supervised_episode()
+        frame = run.capture_supervision_frame()
+        run.observation = frame.observation
+        decision = SupervisionDecision(
+            episode_id=frame.context.episode_id,
+            plan_version=frame.context.plan_version,
+            state_version=frame.context.state_version,
+            observation_id=frame.context.observation_id,
+            next_step_id=frame.context.next_step_id,
+            recommendation="CONTINUE",
+            reason="SOFTWARE_ONLY",
+        )
+        response = {
+            "episode_id": frame.context.episode_id,
+            "captured_at": frame.observation.captured_at,
+            "context": frame.context.model_dump(mode="json"),
+            "decision": decision.model_dump(mode="json"),
+            "worker_claim_id": frame.claim_id,
+        }
+        run.supervision = SimpleNamespace(poll=lambda **kwargs: [response])
+        classifications = iter(["CURRENT", second_classification])
+        run.worker_runtime.classify_supervision_reply = lambda owned: next(classifications)
+        monkeypatch.setattr(
+            "cloud_edge_robot_arm.vision.supervision.decide_supervision", lambda *args, **kwargs: "DISCARD"
+        )
+        if second_classification == "EXPIRED":
+            run.apply_supervision()
+            assert run.records[-1]["reason"] == "original_frame_ttl_expired"
+            assert run.records[-1]["worker_claim_id"] == frame.claim_id
+        else:
+            with pytest.raises(_EpisodeStopped, match="WORKER_SUPERVISION_CONTEXT_CHANGED"):
+                run.apply_supervision()
+>           assert not any(record.get("action") == "DISCARD" for record in run.records)
+E           assert not True
+E            +  where True = any(<generator object test_discard_rechecks_ttl_before_recording_its_owned_reason.<locals>.<genexpr> at 0x74765eb6c380>)
+
+tests/test_visual_worker_supervision_execution.py:240: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_worker_supervision_execution.py::test_discard_rechecks_ttl_before_recording_its_owned_reason[EXPIRED]
+FAILED tests/test_visual_worker_supervision_execution.py::test_discard_rechecks_ttl_before_recording_its_owned_reason[CURRENT]
+2 failed in 0.50s

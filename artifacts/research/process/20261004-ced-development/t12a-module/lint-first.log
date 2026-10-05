@@ -1,0 +1,1008 @@
+E501 Line too long (135 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/candidates.py:43:101
+   |
+41 | def content_hash(value: Any) -> str:
+42 |     """计算严格有限JSON的内容hash。"""
+43 |     return hashlib.sha256(json.dumps(canonical_value(value),sort_keys=True,separators=(',', ':'),allow_nan=False).encode()).hexdigest()
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:101:101
+    |
+ 99 |     observation=context.online_evidence.observation
+100 |     evidence=contract.evidence
+101 |     return (evidence.observation_id==observation.observation_id and evidence.captured_at==observation.captured_at
+    |                                                                                                     ^^^^^^^^^^^^^
+102 |             and evidence.calibration_version==observation.calibration_version
+103 |             and contract.plan_version==context.plan_version and contract.command_seq==context.command_seq
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:103:101
+    |
+101 |     return (evidence.observation_id==observation.observation_id and evidence.captured_at==observation.captured_at
+102 |             and evidence.calibration_version==observation.calibration_version
+103 |             and contract.plan_version==context.plan_version and contract.command_seq==context.command_seq
+    |                                                                                                     ^^^^^
+104 |             and contract.context_hash==context.online_evidence.context_hash)
+    |
+
+E501 Line too long (128 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:107:101
+    |
+107 | def fresh_cloud_input(context: DecisionContext, contracts: Mapping[DecisionAction,ActionEvidenceContract],now:datetime) -> bool:
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+108 |     """云观测请求需要当前帧的真实TTL，但不授予任何物理动作权限。"""
+109 |     if now.tzinfo is None or now.utcoffset() is None:
+    |
+
+E501 Line too long (121 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:118:101
+    |
+116 |                 or not set(contract.sensor_requirements).issubset(e.available_sensors)):
+117 |             continue
+118 |         if not _contract_current(context,contract) or not _number(contract.ordinary_ttl_s) or contract.ordinary_ttl_s<=0:
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+119 |             continue
+120 |         age=(now-context.online_evidence.observation.captured_at).total_seconds()
+    |
+
+E501 Line too long (144 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:126:101
+    |
+126 | …_contracts: Mapping[DecisionAction,ActionEvidenceContract] | None=None) -> CandidateSet:
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+127 | …
+128 | …e for key,value in (action_contracts or {}).items()})
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:128:101
+    |
+126 | def build_candidates(context: DecisionContext, *, action_contracts: Mapping[DecisionAction,ActionEvidenceContract] | None=None) -> Ca…
+127 |     """按真实当前契约、证据、能力、预算和原子边界生成五个有限候选。"""
+128 |     contracts=MappingProxyType({DecisionAction(key):value for key,value in (action_contracts or {}).items()})
+    |                                                                                                     ^^^^^^^^^
+129 |     now=context.event.occurred_at
+130 |     state=context.online_evidence.robot_state
+    |
+
+E501 Line too long (119 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:132:101
+    |
+130 |     state=context.online_evidence.robot_state
+131 |     budget=context.verification_budget
+132 |     hard=(state.estop_engaged or state.collision_detected or not state.connected or budget.exhausted_reason is not None
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+133 |           or now>=budget.deadline_at or budget.consecutive_no_progress>=budget.limits.max_no_progress
+134 |           or any(row.measured_values.get('hard_safety_fault') is True for row in context.condition_verdicts))
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:133:101
+    |
+131 |     budget=context.verification_budget
+132 |     hard=(state.estop_engaged or state.collision_detected or not state.connected or budget.exhausted_reason is not None
+133 |           or now>=budget.deadline_at or budget.consecutive_no_progress>=budget.limits.max_no_progress
+    |                                                                                                     ^
+134 |           or any(row.measured_values.get('hard_safety_fault') is True for row in context.condition_verdicts))
+135 |     identity=content_hash({'task':context.task_id,'episode':context.episode_id,'observation':context.event.observation_id,
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:134:101
+    |
+132 |     hard=(state.estop_engaged or state.collision_detected or not state.connected or budget.exhausted_reason is not None
+133 |           or now>=budget.deadline_at or budget.consecutive_no_progress>=budget.limits.max_no_progress
+134 |           or any(row.measured_values.get('hard_safety_fault') is True for row in context.condition_verdicts))
+    |                                                                                                     ^^^^^^^^^
+135 |     identity=content_hash({'task':context.task_id,'episode':context.episode_id,'observation':context.event.observation_id,
+136 |         'plan':context.plan_version,'command':context.command_seq,'mode':context.mode_version,'context':context.online_evidence.conte…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:139:19
+    |
+137 |     result=[]
+138 |     for action in DecisionAction:
+139 |         reasons=[];contract=contracts.get(action)
+    |                   ^
+140 |         if action!=DecisionAction.STOP:
+141 |             if hard: reasons.append('hard_stop_or_budget_exhausted')
+    |
+
+E701 Multiple statements on one line (colon)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:141:20
+    |
+139 |         reasons=[];contract=contracts.get(action)
+140 |         if action!=DecisionAction.STOP:
+141 |             if hard: reasons.append('hard_stop_or_budget_exhausted')
+    |                    ^
+142 |             if action not in context.capabilities: reasons.append('capability_unavailable')
+143 |             if context.event.atomic_action_active: reasons.append('ordinary_decision_deferred_atomic')
+    |
+
+E701 Multiple statements on one line (colon)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:142:50
+    |
+140 |         if action!=DecisionAction.STOP:
+141 |             if hard: reasons.append('hard_stop_or_budget_exhausted')
+142 |             if action not in context.capabilities: reasons.append('capability_unavailable')
+    |                                                  ^
+143 |             if context.event.atomic_action_active: reasons.append('ordinary_decision_deferred_atomic')
+144 |         if action==DecisionAction.LOCAL_RECOVER:
+    |
+
+E701 Multiple statements on one line (colon)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:143:50
+    |
+141 |             if hard: reasons.append('hard_stop_or_budget_exhausted')
+142 |             if action not in context.capabilities: reasons.append('capability_unavailable')
+143 |             if context.event.atomic_action_active: reasons.append('ordinary_decision_deferred_atomic')
+    |                                                  ^
+144 |         if action==DecisionAction.LOCAL_RECOVER:
+145 |             reasons.append('recovery_not_accepted_t13')
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:143:101
+    |
+141 |             if hard: reasons.append('hard_stop_or_budget_exhausted')
+142 |             if action not in context.capabilities: reasons.append('capability_unavailable')
+143 |             if context.event.atomic_action_active: reasons.append('ordinary_decision_deferred_atomic')
+    |                                                                                                     ^^
+144 |         if action==DecisionAction.LOCAL_RECOVER:
+145 |             reasons.append('recovery_not_accepted_t13')
+    |
+
+E701 Multiple statements on one line (colon)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:149:60
+    |
+147 |             reasons.append('reobservation_budget_exhausted')
+148 |         elif action==DecisionAction.REQUEST_CLOUD:
+149 |             if not fresh_cloud_input(context,contracts,now): reasons.append('cloud_input_ttl_missing_or_expired')
+    |                                                            ^
+150 |             if (any(row.status==ConditionStatus.FAIL for row in context.condition_verdicts)
+151 |                     or context.event.verification_status == ConditionStatus.FAIL
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:149:101
+    |
+147 |             reasons.append('reobservation_budget_exhausted')
+148 |         elif action==DecisionAction.REQUEST_CLOUD:
+149 |             if not fresh_cloud_input(context,contracts,now): reasons.append('cloud_input_ttl_missing_or_expired')
+    |                                                                                                     ^^^^^^^^^^^^^
+150 |             if (any(row.status==ConditionStatus.FAIL for row in context.condition_verdicts)
+151 |                     or context.event.verification_status == ConditionStatus.FAIL
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:152:101
+    |
+150 |             if (any(row.status==ConditionStatus.FAIL for row in context.condition_verdicts)
+151 |                     or context.event.verification_status == ConditionStatus.FAIL
+152 |                     or context.evidence_verdict.status == "INVALID") and budget.remaining_retries<=0:
+    |                                                                                                     ^
+153 |                 reasons.append('recovery_retry_budget_exhausted')
+154 |         elif action==DecisionAction.CONTINUE:
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:157:101
+    |
+155 |             estimate=context.risk_estimate
+156 |             probability=estimate.failure_probability_by_action.get(action.value)
+157 |             if estimate.status!='VALID' or not _number(probability) or probability is None or not 0<=probability<=1:
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+158 |                 reasons.append('calibrated_action_risk_unavailable')
+159 |             if (not _number(estimate.geometric_error_bound_m) or not _number(estimate.motion_bound_m_s)
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:159:101
+    |
+157 |             if estimate.status!='VALID' or not _number(probability) or probability is None or not 0<=probability<=1:
+158 |                 reasons.append('calibrated_action_risk_unavailable')
+159 |             if (not _number(estimate.geometric_error_bound_m) or not _number(estimate.motion_bound_m_s)
+    |                                                                                                     ^^^
+160 |                     or estimate.geometric_error_bound_m is None or estimate.motion_bound_m_s is None
+161 |                     or min(estimate.geometric_error_bound_m,estimate.motion_bound_m_s)<0):
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:163:101
+    |
+161 |                     or min(estimate.geometric_error_bound_m,estimate.motion_bound_m_s)<0):
+162 |                 reasons.append('physical_bounds_unknown')
+163 |             if (context.evidence_verdict.status!='VALID' or context.event.verification_status != ConditionStatus.PASS
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+164 |                     or not context.condition_verdicts or any(row.status!=ConditionStatus.PASS for row in context.condition_verdicts)):
+165 |                 reasons.append('current_online_evidence_not_valid')
+    |
+
+E501 Line too long (134 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:164:101
+    |
+162 |                 reasons.append('physical_bounds_unknown')
+163 |             if (context.evidence_verdict.status!='VALID' or context.event.verification_status != ConditionStatus.PASS
+164 |                     or not context.condition_verdicts or any(row.status!=ConditionStatus.PASS for row in context.condition_verdicts)):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+165 |                 reasons.append('current_online_evidence_not_valid')
+166 |             if contract is None:
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:172:101
+    |
+170 |             else:
+171 |                 verdict=validate_evidence(contract,now,context.online_evidence.context_hash,
+172 |                     context.online_evidence.observation.calibration_version or '',online_evidence=context.online_evidence)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+173 |                 if verdict.status!='VALID': reasons.extend(verdict.reasons)
+174 |                 e=contract.evidence
+    |
+
+E701 Multiple statements on one line (colon)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:173:43
+    |
+171 | …     verdict=validate_evidence(contract,now,context.online_evidence.context_hash,
+172 | …         context.online_evidence.observation.calibration_version or '',online_evidence=context.online_evidence)
+173 | …     if verdict.status!='VALID': reasons.extend(verdict.reasons)
+    |                                 ^
+174 | …     e=contract.evidence
+175 | …     if (estimate.geometric_error_bound_m is not None and (not _number(e.geometric_error_bound_m) or e.geometric_error_bound_m<estim…
+    |
+
+E501 Line too long (171 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:175:101
+    |
+173 | …sons)
+174 | …
+175 | …not _number(e.geometric_error_bound_m) or e.geometric_error_bound_m<estimate.geometric_error_bound_m)
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+176 | …not _number(e.motion_bound_m_s) or e.motion_bound_m_s<estimate.motion_bound_m_s)):
+177 | …unds')
+    |
+
+E501 Line too long (152 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:176:101
+    |
+174 | …
+175 | …None and (not _number(e.geometric_error_bound_m) or e.geometric_error_bound_m<estimate.geometric_error_bound_m)
+176 | …None and (not _number(e.motion_bound_m_s) or e.motion_bound_m_s<estimate.motion_bound_m_s)):
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+177 | …ibrated_bounds')
+178 | …)}-{identity[:24]}',action,not reasons,tuple(reasons),contract))
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/candidates.py:178:101
+    |
+176 |                         or estimate.motion_bound_m_s is not None and (not _number(e.motion_bound_m_s) or e.motion_bound_m_s<estimate.…
+177 |                     reasons.append('contract_understates_calibrated_bounds')
+178 |         result.append(ActionCandidate(f'{action.value.lower()}-{identity[:24]}',action,not reasons,tuple(reasons),contract))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+179 |     return CandidateSet(tuple(result),'')
+    |
+
+E501 Line too long (103 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:93:101
+   |
+91 |         if probability is not None and (not _number(probability) or not 0 <= probability <= 1):
+92 |             probability = None
+93 |         loss = frozen['stop_failure_loss'] if action == DecisionAction.STOP else frozen['failure_loss']
+   |                                                                                                     ^^^
+94 |         if action == DecisionAction.REQUEST_CLOUD:
+95 |             inference = (measured_costs.inference_s / attempts * frozen['inference_weight']
+   |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:129:101
+    |
+127 |         if any(v is None for v in (row.inference_cost, row.network_cost, row.switch_cost)):
+128 |             continue
+129 |         assert row.inference_cost is not None and row.network_cost is not None and row.switch_cost is not None
+    |                                                                                                     ^^^^^^^^^^
+130 |         score = risk_cost + row.inference_cost + row.network_cost + row.switch_cost
+131 |         if math.isfinite(score):
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:160:101
+    |
+158 |         if not self.candidate_weights or not self.source_hashes:
+159 |             raise ValueError('joint admission requires finite preregistered candidates and sources')
+160 |         object.__setattr__(self, 'candidate_weights', tuple(_weights(row) for row in self.candidate_weights))
+    |                                                                                                     ^^^^^^^^^
+161 |         object.__setattr__(self, 'source_hashes', MappingProxyType(dict(self.source_hashes)))
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:245:101
+    |
+243 |         record = {'schema_version': 'ced.decision-trace.v1',
+244 |                   'content_hash': content_hash(payload), 'payload': payload}
+245 |         encoded = json.dumps(record, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+    |                                                                                                     ^
+246 |         self.directory.mkdir(parents=True, exist_ok=True)
+247 |         target = self.directory / f'{identity}.json'
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:248:101
+    |
+246 |         self.directory.mkdir(parents=True, exist_ok=True)
+247 |         target = self.directory / f'{identity}.json'
+248 |         with tempfile.NamedTemporaryFile(dir=self.directory, prefix='.decision-', delete=False) as handle:
+    |                                                                                                     ^^^^^^
+249 |             temporary = Path(handle.name)
+250 |             handle.write(encoded)
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:285:101
+    |
+283 |         if type(software_only) is not bool or not _number(judge_timeout_s) or judge_timeout_s <= 0:
+284 |             raise ValueError('explicit software mode and finite judgment timeout are required')
+285 |         self.risk_model = replace(risk_model, feature_schema=MappingProxyType(dict(risk_model.feature_schema)))
+    |                                                                                                     ^^^^^^^^^^^
+286 |         self.weights = _weights(weights)
+287 |         self.cost_ledger = cost_ledger
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:320:101
+    |
+318 |             expiry = now
+319 |         envelope = DecisionEnvelope(
+320 |             'decision-' + content_hash({'event': context.event.event_id, 'candidates': candidates.content_hash,
+    |                                                                                                     ^^^^^^^^^^^
+321 |                 'policy': self.policy_version, 'action': action, 'created_at': now})[:32],
+322 |             context.task_id, context.episode_id, context.event.observation_id,
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:328:101
+    |
+326 |         )
+327 |         trace = DecisionTrace(envelope, candidates, judgment, estimates, disposition,
+328 |             tuple(reasons), (context.event.event_id,), costs.model_dump(), self.risk_model.model_hash,
+    |                                                                                                     ^^
+329 |             self.weights_hash, self.source_hashes, context.online_evidence.observation.checksum_sha256,
+330 |             context.online_evidence.observation.calibration_version or '', self.software_only,
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:329:101
+    |
+327 |         trace = DecisionTrace(envelope, candidates, judgment, estimates, disposition,
+328 |             tuple(reasons), (context.event.event_id,), costs.model_dump(), self.risk_model.model_hash,
+329 |             self.weights_hash, self.source_hashes, context.online_evidence.observation.checksum_sha256,
+    |                                                                                                     ^^^
+330 |             context.online_evidence.observation.calibration_version or '', self.software_only,
+331 |             rule_ms, provider_ms)
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:342:101
+    |
+340 |                   estimates: Sequence[ActionCostEstimate], costs: CostSnapshot,
+341 |                   judgment: JudgmentResult, reasons: Sequence[str], now: datetime,
+342 |                   *, rule_ms: float | None = None, provider_ms: float | None = None) -> DecisionAction:
+    |                                                                                                     ^^^
+343 |         available = next(row for row in candidates.candidates if row.action == DecisionAction.REOBSERVE)
+344 |         if _hard_stop(context, now):
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:343:101
+    |
+341 |                   judgment: JudgmentResult, reasons: Sequence[str], now: datetime,
+342 |                   *, rule_ms: float | None = None, provider_ms: float | None = None) -> DecisionAction:
+343 |         available = next(row for row in candidates.candidates if row.action == DecisionAction.REOBSERVE)
+    |                                                                                                     ^^^^
+344 |         if _hard_stop(context, now):
+345 |             return self._save(context, candidates, estimates, costs, judgment, DecisionAction.STOP,
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:365:101
+    |
+363 |         costs = self.cost_ledger.snapshot()
+364 |         current = replace(context, event=replace(context.event, occurred_at=now))
+365 |         empty = JudgmentResult(None, {}, None, None, 'ABSTAIN', CostDecisionJudge.provider_version, 0.)
+    |                                                                                                     ^^^
+366 |         # No contract/model/judge provider precedes these unconditional stops.
+367 |         if _hard_stop(context, now) or not self.software_only or context.event.atomic_action_active:
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:370:101
+    |
+368 |             candidates = build_candidates(current)
+369 |             if _hard_stop(context, now):
+370 |                 action, disposition, reasons = DecisionAction.STOP, 'HARD_STOP', ('hard_stop_or_budget_exhausted',)
+    |                                                                                                     ^^^^^^^^^^^^^^^
+371 |             elif not self.software_only:
+372 |                 action, disposition, reasons = DecisionAction.STOP, 'NOT_ADMITTED', (
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:377:101
+    |
+375 |                 action, disposition, reasons = DecisionAction.CONTINUE, 'DEFERRED_ATOMIC', (
+376 |                     'await_atomic_boundary', 'no_new_physical_authority')
+377 |             return self._save(context, candidates, (), costs, empty, action, disposition, reasons, now)
+    |                                                                                                     ^^^
+378 |         contracts: Mapping[DecisionAction, ActionEvidenceContract] = MappingProxyType({})
+379 |         contract_error = None
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:388:101
+    |
+386 |         candidates = build_candidates(current, action_contracts=contracts)
+387 |         estimates = estimate_action_costs(context, costs, self.weights)
+388 |         key = content_hash({'task': context.task_id, 'episode': context.episode_id, 'mode': context.mode,
+    |                                                                                                     ^^^^^
+389 |             'mode_version': context.mode_version, 'plan': context.plan_version, 'command': context.command_seq,
+390 |             'event': context.event, 'online_evidence': context.online_evidence,
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:389:101
+    |
+387 |         estimates = estimate_action_costs(context, costs, self.weights)
+388 |         key = content_hash({'task': context.task_id, 'episode': context.episode_id, 'mode': context.mode,
+389 |             'mode_version': context.mode_version, 'plan': context.plan_version, 'command': context.command_seq,
+    |                                                                                                     ^^^^^^^^^^^
+390 |             'event': context.event, 'online_evidence': context.online_evidence,
+391 |             'contracts': contracts, 'contract_error': contract_error, 'evidence': context.evidence_verdict,
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:391:101
+    |
+389 |             'mode_version': context.mode_version, 'plan': context.plan_version, 'command': context.command_seq,
+390 |             'event': context.event, 'online_evidence': context.online_evidence,
+391 |             'contracts': contracts, 'contract_error': contract_error, 'evidence': context.evidence_verdict,
+    |                                                                                                     ^^^^^^^
+392 |             'risk_estimate': context.risk_estimate, 'risk_features': context.risk_features,
+393 |             'network': context.network_cost, 'conditions': context.condition_verdicts,
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:395:101
+    |
+393 |             'network': context.network_cost, 'conditions': context.condition_verdicts,
+394 |             'costs': costs.model_dump(), 'deadline': context.verification_budget.deadline_at,
+395 |             'capabilities': context.capabilities, 'budget_limits': context.verification_budget.limits})
+    |                                                                                                     ^^^
+396 |         old = self._events.get(context.event.event_id)
+397 |         if old is not None:
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:405:101
+    |
+403 |                 current_choice = next(row for row in candidates.candidates if row.action == action)
+404 |                 still_valid = (current_choice.executable if action == DecisionAction.CONTINUE else
+405 |                     fresh_cloud_input(context, contracts, now) if action == DecisionAction.REQUEST_CLOUD else True)
+    |                                                                                                     ^^^^^^^^^^^^^^^
+406 |                 if still_valid:
+407 |                     self.last_trace = old[1]
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:410:101
+    |
+408 |                     return action
+409 |             action = self._save(context, candidates, estimates, costs, empty, DecisionAction.STOP,
+410 |                                'DUPLICATE_CHANGED', ('duplicate_event_inputs_changed_or_expired',), now)
+    |                                                                                                     ^^^^
+411 |         elif contract_error is not None or not any(row.executable and row.action in {
+412 |             DecisionAction.CONTINUE, DecisionAction.REQUEST_CLOUD} for row in candidates.candidates):
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:412:101
+    |
+410 |                                'DUPLICATE_CHANGED', ('duplicate_event_inputs_changed_or_expired',), now)
+411 |         elif contract_error is not None or not any(row.executable and row.action in {
+412 |             DecisionAction.CONTINUE, DecisionAction.REQUEST_CLOUD} for row in candidates.candidates):
+    |                                                                                                     ^
+413 |             action = self._fallback(context, candidates, estimates, costs, empty,
+414 |                 (contract_error or 'current_evidence_requires_new_observation',), now)
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:435:101
+    |
+433 |             if finished.tzinfo is None or finished.utcoffset() is None or finished < now:
+434 |                 raise ValueError('judgment clock is missing or reversed')
+435 |             if elapsed > self.judge_timeout_s * 1000 or finished >= context.verification_budget.deadline_at:
+    |                                                                                                     ^^^^^^^^
+436 |                 result = JudgmentResult(None, {}, None, None, 'ERROR', result.provider_version, elapsed)
+437 |                 failure = 'judge_failure:TimeoutError'
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:436:101
+    |
+434 |                 raise ValueError('judgment clock is missing or reversed')
+435 |             if elapsed > self.judge_timeout_s * 1000 or finished >= context.verification_budget.deadline_at:
+436 |                 result = JudgmentResult(None, {}, None, None, 'ERROR', result.provider_version, elapsed)
+    |                                                                                                     ^^^^
+437 |                 failure = 'judge_failure:TimeoutError'
+438 |             refreshed = build_candidates(replace(context, event=replace(context.event, occurred_at=finished)),
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:438:101
+    |
+436 |                 result = JudgmentResult(None, {}, None, None, 'ERROR', result.provider_version, elapsed)
+437 |                 failure = 'judge_failure:TimeoutError'
+438 |             refreshed = build_candidates(replace(context, event=replace(context.event, occurred_at=finished)),
+    |                                                                                                     ^^^^^^^^^^
+439 |                                            action_contracts=contracts)
+440 |             selected = next((row for row in refreshed.candidates
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:457:101
+    |
+455 |             if failure is not None:
+456 |                 action = self._fallback(context, refreshed, estimates, costs, result,
+457 |                                         (failure,), finished, rule_ms=rule_ms, provider_ms=provider_ms)
+    |                                                                                                     ^^^
+458 |             else:
+459 |                 assert selected is not None
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/joint_policy.py:471:101
+    |
+469 |                     context.verification_budget.remaining_retries -= 1
+470 |                 action = self._save(context, refreshed, estimates, costs, result, action,
+471 |                     'SOFTWARE_ONLY_SELECTED', reasons, finished, rule_ms=rule_ms, provider_ms=provider_ms)
+    |                                                                                                     ^^^^^^
+472 |         assert self.last_trace is not None
+473 |         self._events[context.event.event_id] = (key, self.last_trace)
+    |
+
+E501 Line too long (138 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/judgment.py:42:101
+   |
+40 | …elected_candidate_id):
+41 | …ify a selected candidate')
+42 | … or not self.provider_version or not _finite(self.latency_ms) or self.latency_ms < 0:
+   |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+43 | …inite measured/reported latency are required')
+44 | …
+   |
+
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/judgment.py:52:101
+   |
+50 |             probabilities = dict(self.candidate_probabilities)
+51 |             if any(not isinstance(key, str) or not key or not _finite(value) or not 0 <= value <= 1
+52 |                    for key, value in probabilities.items()) or sum(probabilities.values()) > 1 + 1e-9:
+   |                                                                                                     ^^
+53 |                 raise ValueError('candidate probabilities conflict or are outside [0,1]')
+54 |             object.__setattr__(self, 'candidate_probabilities', MappingProxyType(probabilities))
+   |
+
+E501 Line too long (105 > 100)
+  --> tests/test_decision_judgment.py:27:101
+   |
+25 |     fact={'source':'rgbd_estimate','target_id':'cube','identity_confirmed':True,
+26 |           'observation_id':'fresh','pixel':[0,0],'value':True}
+27 |     return replace(ctx,online_evidence=replace(ctx.online_evidence,visual_facts={'target_visible':fact}))
+   |                                                                                                     ^^^^^
+   |
+
+E501 Line too long (110 > 100)
+  --> tests/test_decision_judgment.py:40:101
+   |
+39 | def weights():
+40 |     return dict(failure_loss=10.,stop_failure_loss=20.,inference_weight=1.,network_weight=1.,switch_weight=1.)
+   |                                                                                                     ^^^^^^^^^^
+   |
+
+E501 Line too long (126 > 100)
+  --> tests/test_decision_judgment.py:45:101
+   |
+43 | def estimates(ctx):
+44 |     module=import_module('cloud_edge_robot_arm.auto_mode.joint_policy')
+45 |     return module.estimate_action_costs(ctx,CostSnapshot(model_requests=1,inference_s=.2,network_s=.1,switch_s=.05),weights())
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:49:20
+   |
+48 | def test_unsafe_low_cost_action_cannot_win():
+49 |     c,j,p=modules();ctx=prepared_context()
+   |                    ^
+50 |     supplied=contracts(ctx)
+51 |     supplied[DecisionAction.CONTINUE]=replace(supplied[DecisionAction.CONTINUE],context_hash='stale')
+   |
+
+E501 Line too long (107 > 100)
+  --> tests/test_decision_judgment.py:53:101
+   |
+51 |     supplied[DecisionAction.CONTINUE]=replace(supplied[DecisionAction.CONTINUE],context_hash='stale')
+52 |     candidates=c.build_candidates(ctx,action_contracts=supplied)
+53 |     assert not next(row for row in candidates.candidates if row.action==DecisionAction.CONTINUE).executable
+   |                                                                                                     ^^^^^^^
+54 |     result=j.CostDecisionJudge().choose(ctx,candidates,estimates(ctx))
+55 |     assert result.selected_candidate_id != next(row.candidate_id for row in candidates.candidates if row.action==DecisionAction.CONTIN…
+   |
+
+E501 Line too long (137 > 100)
+  --> tests/test_decision_judgment.py:55:101
+   |
+53 | …ates if row.action==DecisionAction.CONTINUE).executable
+54 | …es,estimates(ctx))
+55 | …candidate_id for row in candidates.candidates if row.action==DecisionAction.CONTINUE)
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:59:20
+   |
+58 | def test_missing_action_contract_and_unaccepted_recovery_are_masked():
+59 |     c,j,p=modules();ctx=prepared_context()
+   |                    ^
+60 |     candidates=c.build_candidates(ctx)
+61 |     assert not next(row for row in candidates.candidates if row.action==DecisionAction.CONTINUE).executable
+   |
+
+E501 Line too long (107 > 100)
+  --> tests/test_decision_judgment.py:61:101
+   |
+59 |     c,j,p=modules();ctx=prepared_context()
+60 |     candidates=c.build_candidates(ctx)
+61 |     assert not next(row for row in candidates.candidates if row.action==DecisionAction.CONTINUE).executable
+   |                                                                                                     ^^^^^^^
+62 |     assert not next(row for row in candidates.candidates if row.action==DecisionAction.LOCAL_RECOVER).executable
+63 |     assert next(row for row in candidates.candidates if row.action==DecisionAction.STOP).executable
+   |
+
+E501 Line too long (112 > 100)
+  --> tests/test_decision_judgment.py:62:101
+   |
+60 |     candidates=c.build_candidates(ctx)
+61 |     assert not next(row for row in candidates.candidates if row.action==DecisionAction.CONTINUE).executable
+62 |     assert not next(row for row in candidates.candidates if row.action==DecisionAction.LOCAL_RECOVER).executable
+   |                                                                                                     ^^^^^^^^^^^^
+63 |     assert next(row for row in candidates.candidates if row.action==DecisionAction.STOP).executable
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:67:20
+   |
+66 | def test_atomic_ordinary_candidates_are_deferred_but_stop_remains():
+67 |     c,j,p=modules();ctx=prepared_context();ctx=replace(ctx,event=replace(ctx.event,atomic_action_active=True))
+   |                    ^
+68 |     candidates=c.build_candidates(ctx,action_contracts=contracts(ctx))
+69 |     assert all(not row.executable for row in candidates.candidates if row.action!=DecisionAction.STOP)
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:67:43
+   |
+66 | def test_atomic_ordinary_candidates_are_deferred_but_stop_remains():
+67 |     c,j,p=modules();ctx=prepared_context();ctx=replace(ctx,event=replace(ctx.event,atomic_action_active=True))
+   |                                           ^
+68 |     candidates=c.build_candidates(ctx,action_contracts=contracts(ctx))
+69 |     assert all(not row.executable for row in candidates.candidates if row.action!=DecisionAction.STOP)
+   |
+
+E501 Line too long (102 > 100)
+  --> tests/test_decision_judgment.py:69:101
+   |
+67 |     c,j,p=modules();ctx=prepared_context();ctx=replace(ctx,event=replace(ctx.event,atomic_action_active=True))
+68 |     candidates=c.build_candidates(ctx,action_contracts=contracts(ctx))
+69 |     assert all(not row.executable for row in candidates.candidates if row.action!=DecisionAction.STOP)
+   |                                                                                                     ^^
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:73:20
+   |
+72 | def test_candidate_hash_rejects_mutation_and_duplicate_options():
+73 |     c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+   |                    ^
+74 |     wrong=replace(built.candidates[0],executable=not built.candidates[0].executable,unavailable_reasons=("tampered",))
+75 |     with pytest.raises(ValueError,match='hash'):
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:73:43
+   |
+72 | def test_candidate_hash_rejects_mutation_and_duplicate_options():
+73 |     c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+   |                                           ^
+74 |     wrong=replace(built.candidates[0],executable=not built.candidates[0].executable,unavailable_reasons=("tampered",))
+75 |     with pytest.raises(ValueError,match='hash'):
+   |
+
+E501 Line too long (118 > 100)
+  --> tests/test_decision_judgment.py:74:101
+   |
+72 | def test_candidate_hash_rejects_mutation_and_duplicate_options():
+73 |     c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+74 |     wrong=replace(built.candidates[0],executable=not built.candidates[0].executable,unavailable_reasons=("tampered",))
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^
+75 |     with pytest.raises(ValueError,match='hash'):
+76 |         c.CandidateSet((wrong,*built.candidates[1:]),built.content_hash)
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:82:20
+   |
+81 | def test_rule_scores_have_no_fabricated_probabilities():
+82 |     c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+   |                    ^
+83 |     result=j.CostDecisionJudge().choose(ctx,built,estimates(ctx))
+84 |     assert result.status=='SELECTED' and result.rule_scores
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:82:43
+   |
+81 | def test_rule_scores_have_no_fabricated_probabilities():
+82 |     c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+   |                                           ^
+83 |     result=j.CostDecisionJudge().choose(ctx,built,estimates(ctx))
+84 |     assert result.status=='SELECTED' and result.rule_scores
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:91:20
+   |
+90 | def test_equal_scores_have_deterministic_tie_break():
+91 |     c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+   |                    ^
+92 |     values=[p.ActionCostEstimate(row.action,0.,0.,0.,0.,0.) for row in built.candidates]
+93 |     expected=min(row.candidate_id for row in built.candidates if row.executable)
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_decision_judgment.py:91:43
+   |
+90 | def test_equal_scores_have_deterministic_tie_break():
+91 |     c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+   |                                           ^
+92 |     values=[p.ActionCostEstimate(row.action,0.,0.,0.,0.,0.) for row in built.candidates]
+93 |     expected=min(row.candidate_id for row in built.candidates if row.executable)
+   |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_decision_judgment.py:109:20
+    |
+108 | def test_candidate_identity_changes_with_observation_and_versions():
+109 |     c,j,p=modules();ctx=prepared_context();first=c.build_candidates(ctx,action_contracts=contracts(ctx))
+    |                    ^
+110 |     fresh=ctx.online_evidence.observation.model_copy(update={'frame_id':'next','observation_id':'next'})
+111 |     from cloud_edge_robot_arm.vision.risk.models import RiskFeatures
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_decision_judgment.py:109:43
+    |
+108 | def test_candidate_identity_changes_with_observation_and_versions():
+109 |     c,j,p=modules();ctx=prepared_context();first=c.build_candidates(ctx,action_contracts=contracts(ctx))
+    |                                           ^
+110 |     fresh=ctx.online_evidence.observation.model_copy(update={'frame_id':'next','observation_id':'next'})
+111 |     from cloud_edge_robot_arm.vision.risk.models import RiskFeatures
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_decision_judgment.py:114:101
+    |
+112 |     newer=replace(ctx,online_evidence=replace(ctx.online_evidence,observation=fresh),
+113 |                   event=replace(ctx.event,observation_id='next'),risk_features=RiskFeatures({},'next'),
+114 |                   condition_verdicts=tuple(replace(v,observation_id='next') for v in ctx.condition_verdicts))
+    |                                                                                                     ^^^^^^^^^
+115 |     assert c.build_candidates(newer).content_hash!=first.content_hash
+    |
+
+E501 Line too long (111 > 100)
+   --> tests/test_decision_judgment.py:125:101
+    |
+123 |                 for action, value in supplied.items()}
+124 |     choices = c.build_candidates(ctx, action_contracts=supplied)
+125 |     assert not next(row for row in choices.candidates if row.action == DecisionAction.REQUEST_CLOUD).executable
+    |                                                                                                     ^^^^^^^^^^^
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/test_decision_judgment.py:134:101
+    |
+132 |     ctx = replace(ctx, event=replace(ctx.event, verification_status=ConditionStatus.FAIL))
+133 |     choices = c.build_candidates(ctx, action_contracts=contracts(ctx))
+134 |     assert not next(row for row in choices.candidates if row.action == DecisionAction.CONTINUE).executable
+    |                                                                                                     ^^^^^^
+    |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_joint_visual_policy.py:63:25
+   |
+61 |     assert chosen.decide(ctx)==DecisionAction.REOBSERVE
+62 |     assert 'requires_new_capture' in chosen.last_trace.reason_codes
+63 |     no_contract=policy();no_contract.contract_provider=None
+   |                         ^
+64 |     assert no_contract.decide(prepared_context())==DecisionAction.REOBSERVE
+   |
+
+E501 Line too long (108 > 100)
+  --> tests/test_joint_visual_policy.py:70:101
+   |
+68 |     ctx=prepared_context(risk_estimate=RiskEstimate(None,{},None,None,'UNKNOWN'))
+69 |     chosen=policy()
+70 |     assert chosen.decide(ctx) in {DecisionAction.REOBSERVE,DecisionAction.REQUEST_CLOUD,DecisionAction.STOP}
+   |                                                                                                     ^^^^^^^^
+71 |     assert not next(row for row in chosen.last_trace.candidates.candidates if row.action==DecisionAction.CONTINUE).executable
+   |
+
+E501 Line too long (125 > 100)
+  --> tests/test_joint_visual_policy.py:71:101
+   |
+69 |     chosen=policy()
+70 |     assert chosen.decide(ctx) in {DecisionAction.REOBSERVE,DecisionAction.REQUEST_CLOUD,DecisionAction.STOP}
+71 |     assert not next(row for row in chosen.last_trace.candidates.candidates if row.action==DecisionAction.CONTINUE).executable
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_joint_visual_policy.py:84:27
+   |
+83 | def test_atomic_non_safety_defer_does_not_authorize_next_action():
+84 |     ctx=prepared_context();ctx=replace(ctx,event=replace(ctx.event,atomic_action_active=True))
+   |                           ^
+85 |     chosen=policy()
+86 |     assert chosen.decide(ctx)==DecisionAction.CONTINUE
+   |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_joint_visual_policy.py:100:27
+    |
+ 98 |             return module.JudgmentResult('outside' if mode=='out_of_set' else None,{},None,None,
+ 99 |                    'SELECTED' if mode=='out_of_set' else 'ABSTAIN','fake-provider',1.)
+100 |     ctx=prepared_context();chosen=policy(judge=BadJudge())
+    |                           ^
+101 |     assert chosen.decide(ctx)==DecisionAction.REOBSERVE
+102 |     assert ctx.verification_budget.remaining_reobservations==1
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_joint_visual_policy.py:111:27
+    |
+110 | def test_exhausted_budget_stops_instead_of_silent_fallback():
+111 |     ctx=prepared_context();ctx.verification_budget.remaining_reobservations=0
+    |                           ^
+112 |     chosen=policy();chosen.contract_provider=None
+113 |     assert chosen.decide(ctx)==DecisionAction.STOP
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_joint_visual_policy.py:112:20
+    |
+110 | def test_exhausted_budget_stops_instead_of_silent_fallback():
+111 |     ctx=prepared_context();ctx.verification_budget.remaining_reobservations=0
+112 |     chosen=policy();chosen.contract_provider=None
+    |                    ^
+113 |     assert chosen.decide(ctx)==DecisionAction.STOP
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_joint_visual_policy.py:117:19
+    |
+116 | def test_policy_reads_live_ledger_and_does_not_count_rules_as_model_calls():
+117 |     costs=ledger();chosen=policy(costs=costs)
+    |                   ^
+118 |     ctx=prepared_context(risk_estimate=RiskEstimate(.09,{'CONTINUE':.09,'REQUEST_CLOUD':.01},.001,.001,'VALID'))
+119 |     assert chosen.decide(ctx)==DecisionAction.REQUEST_CLOUD
+    |
+
+E501 Line too long (133 > 100)
+   --> tests/test_joint_visual_policy.py:140:101
+    |
+138 |         costs.record_request(RequestCost(request_id=f'attempt-{number}',sent_at=NOW,finished_at=NOW+timedelta(seconds=1),
+139 |             is_cloud_model=True,model_role='SUPERVISOR',deployment='CLOUD',provider_location='REMOTE_SERVICE',
+140 |             provider_version='frozen',status=status,serialized_sent_bytes=7,serialized_received_bytes=5 if status=='SUCCESS' else 0))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+141 |     costs.record_telemetry(3,4)
+142 |     chosen=policy(costs=costs);chosen.decide(prepared_context())
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_joint_visual_policy.py:142:31
+    |
+140 |             provider_version='frozen',status=status,serialized_sent_bytes=7,serialized_received_bytes=5 if status=='SUCCESS' else 0))
+141 |     costs.record_telemetry(3,4)
+142 |     chosen=policy(costs=costs);chosen.decide(prepared_context())
+    |                               ^
+143 |     summary=costs.snapshot()
+144 |     assert summary.model_requests==3 and summary.cloud_model_requests==3
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/test_joint_visual_policy.py:185:101
+    |
+183 |     class RebindingJudge:
+184 |         def choose(self, context, candidates, estimates):
+185 |             row = next(row for row in candidates.candidates if row.action == DecisionAction.LOCAL_RECOVER)
+    |                                                                                                     ^^^^^^
+186 |             object.__setattr__(row, "executable", True)
+187 |             return module.JudgmentResult(row.candidate_id, {}, None, None, "SELECTED", "tampering-provider", 0.)
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_joint_visual_policy.py:187:101
+    |
+185 |             row = next(row for row in candidates.candidates if row.action == DecisionAction.LOCAL_RECOVER)
+186 |             object.__setattr__(row, "executable", True)
+187 |             return module.JudgmentResult(row.candidate_id, {}, None, None, "SELECTED", "tampering-provider", 0.)
+    |                                                                                                     ^^^^^^^^^^^^
+188 |     chosen = policy(judge=RebindingJudge())
+189 |     assert chosen.decide(prepared_context()) == DecisionAction.REOBSERVE
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_joint_visual_policy.py:221:101
+    |
+219 |     ctx = prepared_context()
+220 |     assert chosen.decide(ctx) == DecisionAction.CONTINUE
+221 |     unknown = replace(ctx, risk_estimate=RiskEstimate(None, {"CONTINUE": None}, None, None, "UNKNOWN"))
+    |                                                                                                     ^^^
+222 |     assert chosen.decide(unknown) == DecisionAction.STOP
+223 |     assert ctx.verification_budget.remaining_reobservations == 2
+    |
+
+E501 Line too long (168 > 100)
+   --> tests/test_joint_visual_policy.py:230:101
+    |
+228 | …
+229 | …
+230 | … geometric_error_bound_m=.002, motion_bound_m_s=.004), expected_duration_s=1., allowed_error_m=.014)
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+231 | …tract, NOW) == NOW + timedelta(seconds=2)
+232 | …motion_bound_m_s=None))
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_joint_visual_policy.py:231:101
+    |
+229 |     contract = contracts(ctx)[DecisionAction.CONTINUE]
+230 |     contract = replace(contract, evidence=replace(contract.evidence, geometric_error_bound_m=.002, motion_bound_m_s=.004), expected_d…
+231 |     assert module._envelope_expiry(ctx, DecisionAction.CONTINUE, contract, NOW) == NOW + timedelta(seconds=2)
+    |                                                                                                     ^^^^^^^^^
+232 |     missing = replace(contract, evidence=replace(contract.evidence, motion_bound_m_s=None))
+233 |     assert module._envelope_expiry(ctx, DecisionAction.CONTINUE, missing, NOW) == NOW
+    |
+
+E501 Line too long (115 > 100)
+   --> tests/test_joint_visual_policy.py:234:101
+    |
+232 |     missing = replace(contract, evidence=replace(contract.evidence, motion_bound_m_s=None))
+233 |     assert module._envelope_expiry(ctx, DecisionAction.CONTINUE, missing, NOW) == NOW
+234 |     assert module._envelope_expiry(ctx, DecisionAction.REOBSERVE, None, NOW) == ctx.verification_budget.deadline_at
+    |                                                                                                     ^^^^^^^^^^^^^^^
+235 |     assert module._envelope_expiry(ctx, DecisionAction.STOP, None, NOW) == NOW
+    |
+
+E501 Line too long (118 > 100)
+   --> tests/test_joint_visual_policy.py:262:101
+    |
+260 |     chosen.decide(prepared_context())
+261 |     with pytest.raises(ValueError, match="software"):
+262 |         replace(chosen.last_trace, envelope=replace(chosen.last_trace.envelope, valid_until=NOW+timedelta(seconds=1)))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+    |
+
+Found 100 errors (4 fixed, 96 remaining).

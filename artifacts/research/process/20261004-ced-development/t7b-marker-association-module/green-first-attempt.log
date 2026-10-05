@@ -1,0 +1,62 @@
+..F.................                                                     [100%]
+=================================== FAILURES ===================================
+______ test_accepted_registry_scope_and_result_status_cannot_be_requested ______
+
+    def test_accepted_registry_scope_and_result_status_cannot_be_requested():
+        module, observation, registration, context = inputs()
+        payload = yaml.safe_load(CONFIG.read_text())
+        payload["admission_scope"] = "ACCEPTED_IDENTITY_SOURCE"
+        with pytest.raises(ValueError, match="DEVELOPMENT_ONLY"):
+            module.MarkerObjectRegistration.from_payload(payload, root=ROOT)
+        result = module.replay_marker_target_development(observation, registration, context)
+        with pytest.raises(TypeError):
+>           replace(result, admission_status="ACCEPTED")
+
+tests/test_marker_association.py:75: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = MarkerTargetAssociation(status='OBSERVED_CANDIDATE', reasons=('registered_tag_and_color_ring_diagnostic_only',), obser...se, geometric_error_bound_m=None, motion_bound_m_s=None, angular_velocity_bound_rad_s=None, stability_status='UNKNOWN')
+changes = {'admission_status': 'ACCEPTED', 'context_sha256': 'c23a12496ead473e7545ff367f4a5d8b2877a1605e1976e26f2374966a0d9f08',...al_quiet_pixels': 186}), 'observation_sha256': '98404f7842992664586ca2e620972ad61b8466fc0ffa57dfe3417e1a21e4e156', ...}
+f = Field(name='admission_status',type="Literal['NOT_ADMITTED']",default='NOT_ADMITTED',default_factory=<dataclasses._MISS...0x7f6cbc664ec0>,init=False,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+>                   raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+E                   ValueError: field admission_status is declared with init=False, it cannot be specified with replace()
+
+/usr/lib/python3.12/dataclasses.py:1565: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_marker_association.py::test_accepted_registry_scope_and_result_status_cannot_be_requested
+1 failed, 19 passed in 4.66s

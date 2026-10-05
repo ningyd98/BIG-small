@@ -1,0 +1,146 @@
+--- fix-round-1-baseline/source/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py
++++ fix-round-1-source/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py
+@@ -507,6 +507,33 @@
+             return ("condition_target_not_bound_to_current_contract",)
+     step = next((item for item in active.contract.steps if item.step_id == step_id), None)
+     if step is not None:
++        supplied_pre = {item.name for item in proof.action.preconditions}
++        if not set(step.preconditions) <= supplied_pre or len(supplied_pre) != len(
++            proof.action.preconditions
++        ):
++            return ("frozen_recovery_preconditions_missing_or_ambiguous",)
++        for condition in proof.action.preconditions:
++            target = (
++                active.contract.task_target.target_region_id
++                if condition.name == "tcp_above_region"
++                else active.contract.task_target.object_id
++            )
++            if (condition.target_id is not None and condition.target_id != target) or (
++                condition.name
++                in {
++                    "target_visible",
++                    "target_reachable",
++                    "tcp_above_target",
++                    "tcp_near_target",
++                    "tcp_above_region",
++                    "object_held",
++                    "object_lifted",
++                    "object_inside_target_region",
++                    "object_stable",
++                }
++                and condition.target_id != target
++            ):
++                return ("precondition_target_not_bound_to_current_contract",)
+         required = set(step.success_conditions)
+         supplied = {item.name for item in record.conditions}
+         if (required and supplied != required) or (
+--- fix-round-1-baseline/source/tests/test_recovery_lifecycle_module.py
++++ fix-round-1-source/tests/test_recovery_lifecycle_module.py
+@@ -146,7 +146,9 @@
+         assert actual.state.deadline_at == now + timedelta(seconds=10)
+ 
+ 
+-def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
++def detected_record(
++    repo, *, event_id="event-1", recovery_id="recovery-1", required_preconditions=()
++):
+     """Complete software failure identity, with no gateway or physical effect."""
+     from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+     from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+@@ -156,9 +158,9 @@
+     now = datetime.now(UTC)
+     active = repo.get_active_contract("task")
+     if active is None:
+-        repo.save_active_contract(
+-            _contract(task_id="task", retry_limit=3), plan_id="plan", robot_id="robot"
+-        )
++        contract = _contract(task_id="task", retry_limit=3)
++        contract.steps[1].preconditions = list(required_preconditions)
++        repo.save_active_contract(contract, plan_id="plan", robot_id="robot")
+         repo.initialize_retry_budget_if_absent(
+             RecoveryBudget(
+                 budget_id="authority",
+@@ -1376,3 +1378,83 @@
+     )
+     service.advance_recovery(record.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", ())
+     assert calls == []
++
++
++def test_existing_action_contract_already_isolates_original_nested_condition_maps():
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    repo = InMemoryEventAutonomyRepository()
++    record = repo.initialize_recovery_if_absent(detected_record(repo))
++    original = authorization_proof(record)
++    tolerances = {"nested": {"values": [1, 2]}}
++    action = replace(
++        original.action, preconditions=(ConditionSpec("target_visible", "obj-1", tolerances),)
++    )
++    proof = replace(original, action=action)
++    tolerances["nested"]["values"][0] = 99
++    assert proof.action.preconditions[0].tolerances["nested"]["values"] == (1, 2)
++    with pytest.raises(TypeError):
++        proof.action.preconditions[0].tolerances["nested"]["values"][0] = 77
++
++
++def test_original_required_preconditions_cannot_be_dropped(lifecycle_repo):
++    saved = lifecycle_repo.initialize_recovery_if_absent(
++        detected_record(lifecycle_repo, required_preconditions=("gripper_open",))
++    )
++    proof = authorization_proof(saved)
++    pool = lifecycle_repo.get_verification_budget("task")
++    retry = lifecycle_repo.get_retry_budget("task")
++    assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
++    assert lifecycle_repo.get_verification_budget("task") == pool
++    assert lifecycle_repo.get_retry_budget("task") == retry
++
++
++def test_bound_required_preconditions_are_validated_canonically(lifecycle_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(
++        detected_record(lifecycle_repo, required_preconditions=("gripper_open",))
++    )
++    proof = authorization_proof(saved)
++    proof = replace(
++        proof,
++        action=replace(
++            proof.action,
++            preconditions=(
++                *proof.action.preconditions,
++                ConditionSpec("gripper_open"),
++            ),
++        ),
++    )
++    assert atomic_authorize(lifecycle_repo, saved, proof).authorized
++
++
++@pytest.mark.parametrize("target", [None, "decoy"])
++def test_required_precondition_cannot_bind_an_unselected_object(lifecycle_repo, target):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(
++        detected_record(lifecycle_repo, required_preconditions=("target_visible",))
++    )
++    proof = authorization_proof(saved)
++    proof = replace(
++        proof,
++        action=replace(proof.action, preconditions=(ConditionSpec("target_visible", target),)),
++        online_evidence=replace(
++            proof.online_evidence,
++            visual_facts={
++                "target_visible": {
++                    **proof.online_evidence.visual_facts["target_visible"],
++                    "target_id": "decoy",
++                }
++            },
++        ),
++    )
++    assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
++    assert lifecycle_repo.get_retry_budget("task").retry_count_used == 0

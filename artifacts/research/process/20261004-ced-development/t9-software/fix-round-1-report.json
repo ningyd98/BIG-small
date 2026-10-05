@@ -1,0 +1,69 @@
+{
+  "status": "SOFTWARE_REVIEW_FIXES_READY",
+  "research_status": "NOT_RUN",
+  "enabled": false,
+  "baseline_preserved": "artifacts/research/process/20261004-ced-development/t9-software/fix-round-1-before",
+  "findings": {
+    "P1_official_split": "Only reports/split_audit.json may supply fitting partitions. It is the exact audit independently validated against committed splits by validate_dataset; source supervision roles must match official assignments.",
+    "P2_selection_evidence": "FROZEN YAML is insufficient. A recorded selection_artifact_sha256 must match a separately read snapshot. Snapshot binds method/seed/settings/parameter hash, exact official selection groups and samples/provenance, live method source hashes, raw dataset/official split digests, and separately verified INITIAL stage/hash. Its separately checksummed result must contain all isolated selection-source outcomes and candidate probabilities; code recomputes Brier scores and verifies deterministic chosen-parameter rule. All selection hashes/source groups persist in source_bindings before source_accepted can become true.",
+    "P2_coverage_values": "coverage_curve uses actual residual thresholds in metres with fraction of independent group maxima <= threshold, counts duplicate residuals together, reports empirical coverage at the finite-sample conformal bound and requested coverage separately, and leaves independent test coverage null. coverage.svg labels calibration-set empirical coverage, metre thresholds, group maxima, requested/empirical values and independent test NOT_RUN; coverage.json stores inspectable values."
+  },
+  "verification": {
+    "tests": "36 passed (27 baseline + 9 review regressions)",
+    "ruff": "PASS",
+    "mypy": "PASS: 6 owned source files; unused external override note only",
+    "preserved_baseline_replay": "9 failed, 27 passed, exit 1; fix-round-1-baseline-red.log",
+    "real_capture_cli": "exit 2: INCOMPLETE / NOT_RUN / enabled=false due missing dedicated risk supervision"
+  },
+  "new_selection_source_schema": {
+    "config": "selection_artifact: reports/risk_selection.json, selection_artifact_sha256: null by default; only a real independently recorded raw SHA256 can pass",
+    "snapshot": {
+      "schema_version": "risk.selection.v1",
+      "status": "FROZEN",
+      "initial_protocol_stage": "INITIAL",
+      "initial_protocol_hash": "matches separately loaded INITIAL",
+      "dataset_manifest_sha256": "same accepted raw manifest digest",
+      "split_manifest_sha256": "same accepted official audit digest",
+      "parameters": "{method, seed, settings: all SETTINGS fields}",
+      "parameters_hash": "canonical content_digest(parameters)",
+      "source_hashes": "exact current models/features/fit/calibration/calibration-command SHA256 values",
+      "selection_group_ids": "exact sorted official selection source groups",
+      "selection_sample_ids": "exact sorted official selection sample IDs",
+      "selection_provenance": "exact existing provenance(selection)",
+      "results_ref": "raw independent selection result dataset-relative path",
+      "results_sha256": "SHA256 of that raw selection result"
+    },
+    "results": {
+      "schema_version": "risk.selection.results.v1",
+      "initial_protocol_hash": "same verified INITIAL identity",
+      "selection_group_ids": "same exact selection groups",
+      "selection_sample_ids": "same exact selection samples",
+      "selection_rule": "minimum_brier_then_parameters_hash",
+      "chosen_parameters_hash": "matches frozen parameter snapshot",
+      "candidate_results": "list of {parameters_hash, sample_results: [{sample_id, failure: actual bound offline bool, failure_probability: finite value in [0,1]}]}; each candidate exactly covers official selection samples; mean squared probability error is recomputed and ties use parameter hash"
+    }
+  },
+  "not_performed": [
+    "No genuine risk labels, selection acceptance files, INITIAL protocol or accepted model artifacts were invented.",
+    "No genuine fit/calibration or method enablement.",
+    "No GPU, renderer, network, cloud, full suite, commits or global documentation edits.",
+    "Temporary unit selection fixtures only exercise software checks; they are not research acceptance."
+  ],
+  "changed_owned_files": [
+    "scripts/calibrate_rgbd_risk.py",
+    "configs/research/risk.yaml",
+    "tests/test_rgbd_risk_calibration.py"
+  ],
+  "source_files": {
+    "src/cloud_edge_robot_arm/vision/risk/__init__.py": "ba475daddbcd8a7e8fb2c416ebb1cc0cfa979935258c5d4d58b4af13b62b17f4",
+    "src/cloud_edge_robot_arm/vision/risk/calibration.py": "e12971386d1e0252d960d41f600d6c37578a23047063f2433933dcf8fce4e8e6",
+    "src/cloud_edge_robot_arm/vision/risk/features.py": "a345c378ee62225570d8bc3090c6ffdd4f57166a7a4f02830b172eb9db2b52d8",
+    "src/cloud_edge_robot_arm/vision/risk/fit.py": "1be688311313f073de3bc2523c429906b0adf04e5c8a229ac5dbd2f99ee5d9d6",
+    "src/cloud_edge_robot_arm/vision/risk/models.py": "eae6d6d034cc62b2497742288cba2947ea3f5566e88d16cabdb0d748fd032b7f",
+    "scripts/calibrate_rgbd_risk.py": "728bba634580afc427e28b4943bf69e46162a79b08f400448749023dafe1f2f7",
+    "configs/research/risk.yaml": "97d2a60f68ea5de2b971f310beb7a07b167979305aabd38e74ec3138d31dd235",
+    "tests/test_rgbd_risk_calibration.py": "310346c81fdcb535804cdcc04f654260a68e98cf876657cfb3674115b1a26167"
+  },
+  "diff": "artifacts/research/process/20261004-ced-development/t9-software/fix-round-1.diff",
+  "limitations": "Hash/schema/provenance checks verify consistency of trusted independent source records; they do not authenticate an arbitrary evaluator declaration or substitute for real physics/geometry evaluation. Actual selection, calibration-set quality, independent test coverage and online method acceptance remain NOT_RUN."
+}

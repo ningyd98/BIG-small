@@ -1,0 +1,146 @@
+{
+  "stage": "prospective before any v2 model load/inference",
+  "authorization": "root SERIAL_ROOT_MOLMO2_V2_20261004_0515",
+  "hypothesis": "The trailing full task may overshadow the role-specific query; moving the identical complete task before the identical role query may improve destination separation and field/skill adherence. This is a development diagnosis, not an independent estimate.",
+  "single_model_behavior_variable": "Only task/query order: complete task precedes the unchanged final role query for target/destination/evidence.",
+  "bookkeeping_change": "method version v1 -> v2; no other inference/source/precision/image/decoder/token budget changes",
+  "v1_bridge_sha256": "4e03406d9133ffc877e9e07f4a731eb9ecdf3d9fb00e9ff59b21ddeec836ffc3",
+  "v2_bridge_sha256": "e8e7c66b31f452e4f95e1508ed5b97cfbb58bff90000211895287b152adf5a22",
+  "native_adapter_sha256": "dfac1fce8bd5ac469e5bce14abf8f36d33f6f13252db3dc022bb6eaacc894ff9",
+  "exact_diff": "--- v1\n+++ v2\n@@ -19,7 +19,7 @@\n os.environ['TRANSFORMERS_OFFLINE']='1'\n os.environ['HF_HUB_DISABLE_TELEMETRY']='1'\n \n-_METHOD='molmo.native.rgbd.two_localization_calls.v1'\n+_METHOD='molmo.native.rgbd.two_localization_calls.v2'\n _EVIDENCE_PROMPT=(\n  'Inspect image 1 RGB and image 2 aligned depth for the task. Return only a JSON object with exactly '\n  'target_label (your observed object description), target_present (boolean), destination_present '\n@@ -45,7 +45,7 @@\n     elif role=='evidence':query=_EVIDENCE_PROMPT\n     else:raise ValueError('unknown query role')\n     text=('Image 1 is RGB. Image 2 is aligned depth '\n-          'for spatial context. Ground only in RGB image 1. '+query+'\\nTask instruction: '+instruction)\n+          'for spatial context. Ground only in RGB image 1. Task instruction: '+instruction+'\\n'+query)\n     rgb=Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64,validate=True))).convert('RGB')\n     depth=Image.open(io.BytesIO(base64.b64decode(observation.depth_png_base64(),validate=True))).convert('RGB')\n     return [{'role':'user','content':[{'type':'text','text':text},\n@@ -166,7 +166,7 @@\n         if full_contract:\n             evidence=invoke('evidence',256)\n             calls.append(evidence);output['call_count']=3\n-            output['method']='molmo.native.rgbd.two_localization_plus_evidence.v1'\n+            output['method']='molmo.native.rgbd.two_localization_plus_evidence.v2'\n             try:\n                 decision=build_visual_decision(calls[0]['localization'],calls[1]['localization'],\n                                               evidence.get('evidence'))\n@@ -292,7 +292,7 @@\n         bindings.append({'case_id':None,'instruction':instruction,'transport_sha256':hashlib.sha256(raw).hexdigest(),\n                          'observation':obs.evidence()})\n     protocol={'mode':args.mode,'model':args.model,'method':_METHOD if not args.full_contract else\n-               'molmo.native.rgbd.two_localization_plus_evidence.v1',\n+               'molmo.native.rgbd.two_localization_plus_evidence.v2',\n               'precision':'BF16' if args.model=='Molmo2-4B' else 'bitsandbytes INT8 linear + BF16 remaining',\n               'gpu_lease':args.gpu_lease,'planned_calls_per_task':0 if args.mode=='cpu-preflight' else 3 if args.full_contract else 2,\n               'generation':{'localization_max_new_tokens':160,'evidence_max_new_tokens':256,'do_sample':False,\n",
+  "bank_manifest_sha256": "d68d3c96d732a512c632ade51646d7e91664e680940072f07e71e87305579015",
+  "allocation": [
+    {
+      "case_id": "fixed-s01-1",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "2416846a0bd13a436726bb3c6e652f14e664aae63dcb3f1b9cf952fd0690d56e"
+    },
+    {
+      "case_id": "fixed-s01-2",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "5838393b1c0311a4e5028b805327b5c30c4adf2c6c5ce3b473244f184ee4ea21"
+    },
+    {
+      "case_id": "fixed-s01-3",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "a8e19b443b8e9154f0e8fc5d18fae5608a64599e83de23582713c85a6d8e1955"
+    },
+    {
+      "case_id": "fixed-s01-4",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "529ad7950c3f4c273c33715e68bd8bbc06f2275a41e2787ace41921cf453682e"
+    },
+    {
+      "case_id": "positive-01",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "6aca1cd307f4cfe3a7a273445b16b7d872b2d6a06ae96a52c82c40d9deeaf160"
+    },
+    {
+      "case_id": "positive-02",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "dfed4649af498ae90bc338768647c491e22f5f4a990b7328af0f44cc4aed8535"
+    },
+    {
+      "case_id": "positive-03",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "2370e1191ffc7ca19aba5ae66daece8168fb3e8881fb126b825f55df39668050"
+    },
+    {
+      "case_id": "positive-04",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "065fa14b9ec99e63e9ed72a93af64936898a5ee62e63b3f7ae2814e05403ebe2"
+    },
+    {
+      "case_id": "positive-05",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "8bb877174291bd342351126aca33c9a0f9fdaa41adb8f888c0a2de7efbb36ee1"
+    },
+    {
+      "case_id": "positive-06",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "8e4c9eb4fc450c7b7a3bd6c3c0bc7e74dc0cdd7aa02a999cd229dae8d6dd917f"
+    },
+    {
+      "case_id": "positive-07",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "7d62d6d14b1569de9fba4ae7ff3aee5852e62bc4cc2d8b13cc475ee166fca05d"
+    },
+    {
+      "case_id": "positive-08",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "634a81064987b8c7f809cbb9492e9d9f47cf1c6a1362dc8fd05c8a7c07337b14"
+    },
+    {
+      "case_id": "positive-09",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "ec3e287d434ce18d9e590d7e068c6e1fa5a4e792300dd84a1c64bddede47cb55"
+    },
+    {
+      "case_id": "positive-10",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "45e2f963b1f2da25c1002d4239bf2aad3742ce7d0aad72654291f2b7209b3322"
+    },
+    {
+      "case_id": "positive-11",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "a6ccec7deb33297a58d2d40300cbd2eb8ea72f734ddfe9a2a26111dde7fd53cc"
+    },
+    {
+      "case_id": "positive-12",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "5ee85eb4ad09c272913240de5c31048b59e0c27f85fe3b9ca6c7f211731e7553"
+    },
+    {
+      "case_id": "negative_absent-01",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "810b374cad0e24d2ed3eb033ebdbd19f75169aac9a1f0b38275cbdaccf90b312"
+    },
+    {
+      "case_id": "negative_absent-02",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "a2e4380242a82c593d473c41f3baf444bd38fe048af49cc3ae8a56951e19ee0a"
+    },
+    {
+      "case_id": "negative_absent-03",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "0ccea36ce2e3c534f58f2da5b5a2a6b7e53b1fd87a08498f255c77d01a0a2a60"
+    },
+    {
+      "case_id": "negative_absent-04",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "8b129dced919492f230a119213e870d6a871463f171a73953bc2b6ecf328f2b8"
+    }
+  ],
+  "case_count": 20,
+  "planned_calls_per_case": 3,
+  "planned_total_calls": 60,
+  "model_metadata_sha256": "360b6e6685bd122b91b4db4d2deac4aeb2b4565c7c1354f4cc86edfe1223bf78",
+  "precision": "BF16",
+  "localization_max_new_tokens": 160,
+  "evidence_max_new_tokens": 256,
+  "do_sample": false,
+  "image_count": 2,
+  "image_size": [
+    320,
+    240
+  ],
+  "ground_truth_used_online": false,
+  "semantic_coordinate_label_confidence_skill_repairs": false,
+  "stop_rule": "If v2 fails fixed capability gate, stop Molmo2 development; retain all failures.",
+  "launch_command": [
+    "artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/.venv/bin/python",
+    "artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/native_bridge.py",
+    "--model",
+    "Molmo2-4B",
+    "--mode",
+    "screen",
+    "--bank",
+    "artifacts/research/process/20261004-t7-parallel-local-models-physics/shared/scene-bank",
+    "--full-contract",
+    "--gpu-lease",
+    "SERIAL_ROOT_MOLMO2_V2_20261004_0515",
+    "--out",
+    "artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/development-full20-v2"
+  ],
+  "cpu_tests_passed": 26
+}

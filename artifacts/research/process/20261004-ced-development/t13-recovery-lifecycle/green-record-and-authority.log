@@ -1,0 +1,352 @@
+..............FFFFFFF                                                    [100%]
+=================================== FAILURES ===================================
+______ test_detected_recovery_is_persisted_and_remains_unresolved[memory] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7726ffb28d70>
+
+    def test_detected_recovery_is_persisted_and_remains_unresolved(lifecycle_repo):
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7726ffb28d70>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+        from tests.test_phase6_2_replan_resume import _contract
+    
+        now = datetime.now(UTC)
+        active = repo.get_active_contract("task")
+        if active is None:
+            repo.save_active_contract(_contract(task_id="task", retry_limit=3),
+                                      plan_id="plan", robot_id="robot")
+            repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", per_step_retry_limit=3,
+                per_skill_retry_limit=8, task_total_retry_limit=8, remaining_retries=8,
+                retry_deadline=now + timedelta(seconds=60),
+            ))
+            repo.initialize_verification_budget_if_absent(
+                "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now))
+            repo.save_execution_checkpoint(ExecutionCheckpoint(
+                checkpoint_id="checkpoint", task_id="task", plan_id="plan", robot_id="robot",
+                plan_version=1, command_seq=1, failed_step_id="grasp", execution_state="PAUSED",
+                created_at=now, updated_at=now,
+            ))
+>       repo.save_event(EdgeEvent(
+            task_id="task", plan_version=1, command_seq=1, event_id=event_id,
+            event_type="GRASP_FAILED", step_id="grasp", timestamp=now,
+        ))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EdgeEvent
+E       severity
+E         Field required [type=missing, input_value={'task_id': 'task', 'plan...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_recovery_lifecycle_module.py:149: ValidationError
+______ test_detected_recovery_is_persisted_and_remains_unresolved[sqlite] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7726fdc2d4f0>
+
+    def test_detected_recovery_is_persisted_and_remains_unresolved(lifecycle_repo):
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7726fdc2d4f0>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+        from tests.test_phase6_2_replan_resume import _contract
+    
+        now = datetime.now(UTC)
+        active = repo.get_active_contract("task")
+        if active is None:
+            repo.save_active_contract(_contract(task_id="task", retry_limit=3),
+                                      plan_id="plan", robot_id="robot")
+            repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", per_step_retry_limit=3,
+                per_skill_retry_limit=8, task_total_retry_limit=8, remaining_retries=8,
+                retry_deadline=now + timedelta(seconds=60),
+            ))
+            repo.initialize_verification_budget_if_absent(
+                "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now))
+            repo.save_execution_checkpoint(ExecutionCheckpoint(
+                checkpoint_id="checkpoint", task_id="task", plan_id="plan", robot_id="robot",
+                plan_version=1, command_seq=1, failed_step_id="grasp", execution_state="PAUSED",
+                created_at=now, updated_at=now,
+            ))
+>       repo.save_event(EdgeEvent(
+            task_id="task", plan_version=1, command_seq=1, event_id=event_id,
+            event_type="GRASP_FAILED", step_id="grasp", timestamp=now,
+        ))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EdgeEvent
+E       severity
+E         Field required [type=missing, input_value={'task_id': 'task', 'plan...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_recovery_lifecycle_module.py:149: ValidationError
+___ test_public_initialization_cannot_assert_authorized_or_resolved[memory] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7726fdc2ce60>
+
+    def test_public_initialization_cannot_assert_authorized_or_resolved(lifecycle_repo):
+        from dataclasses import replace
+    
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7726fdc2ce60>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+        from tests.test_phase6_2_replan_resume import _contract
+    
+        now = datetime.now(UTC)
+        active = repo.get_active_contract("task")
+        if active is None:
+            repo.save_active_contract(_contract(task_id="task", retry_limit=3),
+                                      plan_id="plan", robot_id="robot")
+            repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", per_step_retry_limit=3,
+                per_skill_retry_limit=8, task_total_retry_limit=8, remaining_retries=8,
+                retry_deadline=now + timedelta(seconds=60),
+            ))
+            repo.initialize_verification_budget_if_absent(
+                "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now))
+            repo.save_execution_checkpoint(ExecutionCheckpoint(
+                checkpoint_id="checkpoint", task_id="task", plan_id="plan", robot_id="robot",
+                plan_version=1, command_seq=1, failed_step_id="grasp", execution_state="PAUSED",
+                created_at=now, updated_at=now,
+            ))
+>       repo.save_event(EdgeEvent(
+            task_id="task", plan_version=1, command_seq=1, event_id=event_id,
+            event_type="GRASP_FAILED", step_id="grasp", timestamp=now,
+        ))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EdgeEvent
+E       severity
+E         Field required [type=missing, input_value={'task_id': 'task', 'plan...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_recovery_lifecycle_module.py:149: ValidationError
+___ test_public_initialization_cannot_assert_authorized_or_resolved[sqlite] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7726fdc2f140>
+
+    def test_public_initialization_cannot_assert_authorized_or_resolved(lifecycle_repo):
+        from dataclasses import replace
+    
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7726fdc2f140>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+        from tests.test_phase6_2_replan_resume import _contract
+    
+        now = datetime.now(UTC)
+        active = repo.get_active_contract("task")
+        if active is None:
+            repo.save_active_contract(_contract(task_id="task", retry_limit=3),
+                                      plan_id="plan", robot_id="robot")
+            repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", per_step_retry_limit=3,
+                per_skill_retry_limit=8, task_total_retry_limit=8, remaining_retries=8,
+                retry_deadline=now + timedelta(seconds=60),
+            ))
+            repo.initialize_verification_budget_if_absent(
+                "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now))
+            repo.save_execution_checkpoint(ExecutionCheckpoint(
+                checkpoint_id="checkpoint", task_id="task", plan_id="plan", robot_id="robot",
+                plan_version=1, command_seq=1, failed_step_id="grasp", execution_state="PAUSED",
+                created_at=now, updated_at=now,
+            ))
+>       repo.save_event(EdgeEvent(
+            task_id="task", plan_version=1, command_seq=1, event_id=event_id,
+            event_type="GRASP_FAILED", step_id="grasp", timestamp=now,
+        ))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EdgeEvent
+E       severity
+E         Field required [type=missing, input_value={'task_id': 'task', 'plan...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_recovery_lifecycle_module.py:149: ValidationError
+____ test_recovery_identity_conflict_cannot_replace_original_event[memory] _____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7726fdc2e750>
+
+    def test_recovery_identity_conflict_cannot_replace_original_event(lifecycle_repo):
+        from dataclasses import replace
+    
+        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7726fdc2e750>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+        from tests.test_phase6_2_replan_resume import _contract
+    
+        now = datetime.now(UTC)
+        active = repo.get_active_contract("task")
+        if active is None:
+            repo.save_active_contract(_contract(task_id="task", retry_limit=3),
+                                      plan_id="plan", robot_id="robot")
+            repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", per_step_retry_limit=3,
+                per_skill_retry_limit=8, task_total_retry_limit=8, remaining_retries=8,
+                retry_deadline=now + timedelta(seconds=60),
+            ))
+            repo.initialize_verification_budget_if_absent(
+                "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now))
+            repo.save_execution_checkpoint(ExecutionCheckpoint(
+                checkpoint_id="checkpoint", task_id="task", plan_id="plan", robot_id="robot",
+                plan_version=1, command_seq=1, failed_step_id="grasp", execution_state="PAUSED",
+                created_at=now, updated_at=now,
+            ))
+>       repo.save_event(EdgeEvent(
+            task_id="task", plan_version=1, command_seq=1, event_id=event_id,
+            event_type="GRASP_FAILED", step_id="grasp", timestamp=now,
+        ))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EdgeEvent
+E       severity
+E         Field required [type=missing, input_value={'task_id': 'task', 'plan...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_recovery_lifecycle_module.py:149: ValidationError
+____ test_recovery_identity_conflict_cannot_replace_original_event[sqlite] _____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7726fdc2fda0>
+
+    def test_recovery_identity_conflict_cannot_replace_original_event(lifecycle_repo):
+        from dataclasses import replace
+    
+        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7726fdc2fda0>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+        from tests.test_phase6_2_replan_resume import _contract
+    
+        now = datetime.now(UTC)
+        active = repo.get_active_contract("task")
+        if active is None:
+            repo.save_active_contract(_contract(task_id="task", retry_limit=3),
+                                      plan_id="plan", robot_id="robot")
+            repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", per_step_retry_limit=3,
+                per_skill_retry_limit=8, task_total_retry_limit=8, remaining_retries=8,
+                retry_deadline=now + timedelta(seconds=60),
+            ))
+            repo.initialize_verification_budget_if_absent(
+                "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now))
+            repo.save_execution_checkpoint(ExecutionCheckpoint(
+                checkpoint_id="checkpoint", task_id="task", plan_id="plan", robot_id="robot",
+                plan_version=1, command_seq=1, failed_step_id="grasp", execution_state="PAUSED",
+                created_at=now, updated_at=now,
+            ))
+>       repo.save_event(EdgeEvent(
+            task_id="task", plan_version=1, command_seq=1, event_id=event_id,
+            event_type="GRASP_FAILED", step_id="grasp", timestamp=now,
+        ))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EdgeEvent
+E       severity
+E         Field required [type=missing, input_value={'task_id': 'task', 'plan...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_recovery_lifecycle_module.py:149: ValidationError
+_____ test_detected_record_restart_preserves_bindings_and_shared_task_pool _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-679/test_detected_record_restart_p0')
+
+    def test_detected_record_restart_preserves_bindings_and_shared_task_pool(tmp_path):
+        path = tmp_path / "record.sqlite"
+        repo = SQLiteEventAutonomyRepository(path)
+>       proposal = detected_record(repo)
+                   ^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7726fdca5880>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+        from tests.test_phase6_2_replan_resume import _contract
+    
+        now = datetime.now(UTC)
+        active = repo.get_active_contract("task")
+        if active is None:
+            repo.save_active_contract(_contract(task_id="task", retry_limit=3),
+                                      plan_id="plan", robot_id="robot")
+            repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", per_step_retry_limit=3,
+                per_skill_retry_limit=8, task_total_retry_limit=8, remaining_retries=8,
+                retry_deadline=now + timedelta(seconds=60),
+            ))
+            repo.initialize_verification_budget_if_absent(
+                "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now))
+            repo.save_execution_checkpoint(ExecutionCheckpoint(
+                checkpoint_id="checkpoint", task_id="task", plan_id="plan", robot_id="robot",
+                plan_version=1, command_seq=1, failed_step_id="grasp", execution_state="PAUSED",
+                created_at=now, updated_at=now,
+            ))
+>       repo.save_event(EdgeEvent(
+            task_id="task", plan_version=1, command_seq=1, event_id=event_id,
+            event_type="GRASP_FAILED", step_id="grasp", timestamp=now,
+        ))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for EdgeEvent
+E       severity
+E         Field required [type=missing, input_value={'task_id': 'task', 'plan...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_recovery_lifecycle_module.py:149: ValidationError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_detected_recovery_is_persisted_and_remains_unresolved[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_detected_recovery_is_persisted_and_remains_unresolved[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_public_initialization_cannot_assert_authorized_or_resolved[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_public_initialization_cannot_assert_authorized_or_resolved[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_recovery_identity_conflict_cannot_replace_original_event[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_recovery_identity_conflict_cannot_replace_original_event[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_detected_record_restart_preserves_bindings_and_shared_task_pool
+7 failed, 14 passed in 3.37s

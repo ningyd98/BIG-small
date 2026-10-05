@@ -1,0 +1,125 @@
+FFFFFF.                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_missing_exterior_neighbor_depth_blocks_candidate_even_outside_projected_face[pixel0] _
+
+pixel = (344, 230)
+
+    @pytest.mark.parametrize("pixel", [(344, 230), (372, 235)])
+    def test_missing_exterior_neighbor_depth_blocks_candidate_even_outside_projected_face(pixel):
+        # Break caught: checking only projected layout depth ignores the real boundary neighborhood.
+        observation = RGBDObservation.model_validate_json(STATIC.read_text())
+        original, registration = replay(observation)
+        face = np.frombuffer(original.region_hypotheses["face_region"], np.uint8).reshape(480, 640)
+        x, y = pixel
+        assert face[y, x] == 0 and original.status == "OBSERVED_CANDIDATE"
+        changed = depth_changed(observation, 0.0, pixel)
+        assert detect_pose_marker(changed, registration.pose_marker).status == "OBSERVED"
+        result, _ = replay(changed)
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'OBSERVED_CANDIDATE' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED_CANDIDATE
+
+tests/test_marker_extent_integration.py:84: AssertionError
+_ test_missing_exterior_neighbor_depth_blocks_candidate_even_outside_projected_face[pixel1] _
+
+pixel = (372, 235)
+
+    @pytest.mark.parametrize("pixel", [(344, 230), (372, 235)])
+    def test_missing_exterior_neighbor_depth_blocks_candidate_even_outside_projected_face(pixel):
+        # Break caught: checking only projected layout depth ignores the real boundary neighborhood.
+        observation = RGBDObservation.model_validate_json(STATIC.read_text())
+        original, registration = replay(observation)
+        face = np.frombuffer(original.region_hypotheses["face_region"], np.uint8).reshape(480, 640)
+        x, y = pixel
+        assert face[y, x] == 0 and original.status == "OBSERVED_CANDIDATE"
+        changed = depth_changed(observation, 0.0, pixel)
+        assert detect_pose_marker(changed, registration.pose_marker).status == "OBSERVED"
+        result, _ = replay(changed)
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'OBSERVED_CANDIDATE' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED_CANDIDATE
+
+tests/test_marker_extent_integration.py:84: AssertionError
+_ test_raw_outer_contour_and_neighbor_samples_are_separate_from_region_hypotheses[path0] _
+
+path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-pose-marker-color/actual-capture-640/frame/observation-full.json')
+
+    @pytest.mark.parametrize("path", [STATIC, INITIAL])
+    def test_raw_outer_contour_and_neighbor_samples_are_separate_from_region_hypotheses(path):
+        # Break caught: returning projected/fill pixels as measured outer support or omitting RGBD samples.
+        observation = RGBDObservation.model_validate_json(path.read_text())
+        result, _ = replay(observation)
+        support = getattr(result, "boundary_support", None)
+>       assert support is not None, "measured outer-boundary RGBD samples are missing"
+E       AssertionError: measured outer-boundary RGBD samples are missing
+E       assert None is not None
+
+tests/test_marker_extent_integration.py:95: AssertionError
+_ test_raw_outer_contour_and_neighbor_samples_are_separate_from_region_hypotheses[path1] _
+
+path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/observation-full.json')
+
+    @pytest.mark.parametrize("path", [STATIC, INITIAL])
+    def test_raw_outer_contour_and_neighbor_samples_are_separate_from_region_hypotheses(path):
+        # Break caught: returning projected/fill pixels as measured outer support or omitting RGBD samples.
+        observation = RGBDObservation.model_validate_json(path.read_text())
+        result, _ = replay(observation)
+        support = getattr(result, "boundary_support", None)
+>       assert support is not None, "measured outer-boundary RGBD samples are missing"
+E       AssertionError: measured outer-boundary RGBD samples are missing
+E       assert None is not None
+
+tests/test_marker_extent_integration.py:95: AssertionError
+_ test_finite_positive_exterior_foreground_is_reported_without_claiming_complete_extent _
+
+    def test_finite_positive_exterior_foreground_is_reported_without_claiming_complete_extent():
+        # Break caught: geometry is inferred solely from tag/layout while ignoring real exterior depth.
+        observation = RGBDObservation.model_validate_json(STATIC.read_text())
+        baseline, registration = replay(observation)
+        changed = depth_changed(observation, 0.5)
+        assert detect_pose_marker(changed, registration.pose_marker).status == "OBSERVED"
+        result, _ = replay(changed)
+        support = getattr(result, "boundary_support", None)
+>       assert support is not None, "exterior foreground measurement is missing"
+E       AssertionError: exterior foreground measurement is missing
+E       assert None is not None
+
+tests/test_marker_extent_integration.py:139: AssertionError
+_ test_color_outer_boundary_clipping_cannot_be_explained_by_an_unclipped_tag_layout _
+
+    def test_color_outer_boundary_clipping_cannot_be_explained_by_an_unclipped_tag_layout():
+        # Break caught: an unclipped small tag/layout hides a color component extending off image.
+        observation = RGBDObservation.model_validate_json(STATIC.read_text())
+        _, registration = replay(observation)
+        rgb = np.asarray(Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64)))).copy()
+        rgb[230:232, :346] = [255, 0, 0]  # joins the visible red rim to the image edge
+        png = io.BytesIO()
+        Image.fromarray(rgb).save(png, format="PNG")
+        changed = RGBDObservation.model_validate(
+            {
+                **observation.model_dump(),
+                "rgb_png_base64": base64.b64encode(png.getvalue()).decode(),
+                "checksum_sha256": "",
+            }
+        )
+        assert detect_pose_marker(changed, registration.pose_marker).status == "OBSERVED"
+        result, _ = replay(changed)
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'OBSERVED_CANDIDATE' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED_CANDIDATE
+
+tests/test_marker_extent_integration.py:167: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_marker_extent_integration.py::test_missing_exterior_neighbor_depth_blocks_candidate_even_outside_projected_face[pixel0]
+FAILED tests/test_marker_extent_integration.py::test_missing_exterior_neighbor_depth_blocks_candidate_even_outside_projected_face[pixel1]
+FAILED tests/test_marker_extent_integration.py::test_raw_outer_contour_and_neighbor_samples_are_separate_from_region_hypotheses[path0]
+FAILED tests/test_marker_extent_integration.py::test_raw_outer_contour_and_neighbor_samples_are_separate_from_region_hypotheses[path1]
+FAILED tests/test_marker_extent_integration.py::test_finite_positive_exterior_foreground_is_reported_without_claiming_complete_extent
+FAILED tests/test_marker_extent_integration.py::test_color_outer_boundary_clipping_cannot_be_explained_by_an_unclipped_tag_layout
+6 failed, 1 passed in 6.21s

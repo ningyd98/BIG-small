@@ -1,0 +1,28 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_missing_profile_secret_blocks_before_transport_or_renderer ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-438/test_missing_profile_secret_bl0')
+
+    def test_missing_profile_secret_blocks_before_transport_or_renderer(tmp_path):
+        from pathlib import Path
+        from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
+        from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
+        from cloud_edge_robot_arm.model_control.service import ModelControlService
+        from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+        from scripts.probe_rgbd_roles import run_probe
+    
+        service = ModelControlService(repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+                                      secret_store=InMemorySecretStore())
+        profile = service.create_profile(display_name="max", provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+                                         model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com")
+        report = run_probe(Path("configs/research/ced_roles.yaml"), tmp_path / "missing-secret", service=service,
+                           profile_id=profile.profile_id, execute=True, allow_paid=True)
+        assert report["status"] == "BLOCKED"
+>       assert report["transport"] is None
+E       AssertionError: assert 'REAL_HTTP' is None
+
+tests/test_rgbd_role_models.py:250: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_missing_profile_secret_blocks_before_transport_or_renderer
+1 failed, 1 passed, 22 deselected in 0.65s

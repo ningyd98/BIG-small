@@ -1,0 +1,9 @@
+# INITIAL source auditor: frozen software checks, prerequisite review pending
+
+2026-10-04. Two owned source/test files are stable. The software snapshot and complete 768-file final T8/resource fix3 reference closure are preserved under `source/`; manifest SHA256 `db5ab161b94d4ee1c49b3f527cd4203b99475781d6cd2023148600f60bee2b22`. The root's independent final prerequisite verdict is PASS for software scope; the auditor's independent review is PENDING. Actual billing remains UNAVAILABLE.
+
+Original missing-feature RED, two forged-admission result RED cases and one observed-source digest RED are retained. Own scope grew from 19 to 31 tests. On the exact final immutable closure, own31 + relevant reconstruction/resource129 = **160 passed in 9.22s**, scoped Ruff2/mypy1 pass. All 768 hashes and Python AST parses match. Both prior runtime composition owned files remain unchanged. See `report.md`, `freeze-validation.json`, `final-dependency-overlay.json` and final verification logs.
+
+No actual complete INITIAL exists locally or is claimed accepted. Every public software fixture remains UNKNOWN/INVALID; pure comparison unit fixtures are not source admission. METHOD/EXECUTION remain explicitly unavailable and false. The final resource prerequisite cannot turn raw numeric remote fee metadata into independently verified billing. Actual risk/selection/owner/native certificates remain unavailable, and source changes require fresh evidence rather than inheritance from old marker/model bindings.
+
+Remaining: parent reviews this auditor frozen package. Root reported independent final T8/resource software PASS (129 +184 CPU, static and768 post-test hashes). No production/test edits are planned until findings or an explicitly coordinated new source capture. Historical fix1 dependency status and logs remain preserved as REQUEST CHANGES; they are not final prerequisite acceptance.

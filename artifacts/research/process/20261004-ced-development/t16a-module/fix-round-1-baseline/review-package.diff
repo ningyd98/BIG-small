@@ -1,0 +1,1733 @@
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/statistics.py
+@@ -0,0 +1,355 @@
++"""配对多项得分区间、五假设 Holm 和基础场景簇统计。"""
++
++from __future__ import annotations
++
++import math
++from collections import Counter, defaultdict
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, field
++from statistics import NormalDist
++from typing import TYPE_CHECKING, Literal
++
++import numpy as np
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.research.assignments import EpisodeRecord
++
++
++@dataclass(frozen=True)
++class EffectEstimate:
++    """原始区间与检验结果分列；校正 p 值不能冒充校正区间。"""
++
++    point: float | None
++    lower95: float | None
++    upper95: float | None
++    p_value: float | None
++    adjusted_p_value: float | None
++    denominator: int
++    method: str
++    one_sided_lower95: float | None = field(default=None, kw_only=True)
++    one_sided_upper95: float | None = field(default=None, kw_only=True)
++
++    def __post_init__(self) -> None:
++        if type(self.denominator) is not int or self.denominator < 0 or not self.method:
++            raise ValueError("effect denominator/method invalid")
++        for value in (
++            self.point,
++            self.lower95,
++            self.upper95,
++            self.one_sided_lower95,
++            self.one_sided_upper95,
++        ):
++            if value is not None and not math.isfinite(value):
++                raise ValueError("effect estimates must be finite or N/A")
++        for value in (self.p_value, self.adjusted_p_value):
++            if value is not None and (not math.isfinite(value) or not 0 <= value <= 1):
++                raise ValueError("effect p values must be valid probabilities or N/A")
++        if self.lower95 is not None and self.upper95 is not None and self.lower95 > self.upper95:
++            raise ValueError("effect interval order invalid")
++
++
++def _counts(pairs: Sequence[tuple[bool, bool]]) -> tuple[int, int, int]:
++    if not pairs or any(
++        not isinstance(row, (tuple, list))
++        or len(row) != 2
++        or any(type(value) is not bool for value in row)
++        for row in pairs
++    ):
++        raise ValueError("paired binary inference requires nonempty strict boolean pairs")
++    plus = sum(left and not right for left, right in pairs)
++    minus = sum(right and not left for left, right in pairs)
++    return plus, minus, len(pairs) - plus - minus
++
++
++def _null_q(plus: int, minus: int, zero: int, delta: float) -> float:
++    # Multinomial likelihood for P(D=+1)=(q+delta)/2,
++    # P(D=-1)=(q-delta)/2, P(D=0)=1-q. Maximizing over q gives
++    # n*q^2 - [discord+(plus-minus)*delta]*q
++    # - [(minus-plus)*delta + zero*delta^2] = 0, constrained q>=|delta|.
++    n = plus + minus + zero
++    b = plus + minus + (plus - minus) * delta
++    c = (minus - plus) * delta + zero * delta * delta
++    discriminant = max(0.0, b * b + 4 * n * c)
++    q = (b + math.sqrt(discriminant)) / (2 * n)
++    return min(1.0, max(abs(delta), q))
++
++
++def _score(counts: tuple[int, int, int], delta: float) -> float:
++    plus, minus, zero = counts
++    n = plus + minus + zero
++    difference = (plus - minus) / n - delta
++    variance = _null_q(plus, minus, zero, delta) - delta * delta
++    if difference == 0:
++        return 0.0
++    if variance <= 0:
++        return math.copysign(math.inf, difference)
++    return math.sqrt(n) * difference / math.sqrt(variance)
++
++
++def _score_bounds(counts: tuple[int, int, int], critical: float) -> tuple[float, float]:
++    plus, minus, zero = counts
++    point = (plus - minus) / (plus + minus + zero)
++    lower, upper = -1.0, 1.0
++    if _score(counts, -1.0) > critical:
++        lo, hi = -1.0, point
++        for _ in range(80):
++            mid = (lo + hi) / 2
++            if _score(counts, mid) > critical:
++                lo = mid
++            else:
++                hi = mid
++        lower = (lo + hi) / 2
++    if _score(counts, 1.0) < -critical:
++        lo, hi = point, 1.0
++        for _ in range(80):
++            mid = (lo + hi) / 2
++            if _score(counts, mid) < -critical:
++                hi = mid
++            else:
++                lo = mid
++        upper = (lo + hi) / 2
++    return lower, upper
++
++
++def paired_binary_effect(
++    pairs: Sequence[tuple[bool, bool]],
++    *,
++    null_difference: float = 0.0,
++    alternative: Literal["two-sided", "greater", "less"] = "two-sided",
++) -> EffectEstimate:
++    """按 JOINT−基线的匹配二项差计算受约束多项得分区间/检验。"""
++    if not math.isfinite(null_difference) or not -1 <= null_difference <= 1:
++        raise ValueError("paired binary null difference invalid")
++    if alternative not in {"two-sided", "greater", "less"}:
++        raise ValueError("paired binary alternative invalid")
++    counts = _counts(pairs)
++    plus, minus, _ = counts
++    lower, upper = _score_bounds(counts, NormalDist().inv_cdf(0.975))
++    lower_one, upper_one = _score_bounds(counts, NormalDist().inv_cdf(0.95))
++    score = _score(counts, null_difference)
++    p_value = (
++        math.erfc(abs(score) / math.sqrt(2))
++        if alternative == "two-sided"
++        else (
++            0.5 * math.erfc(score / math.sqrt(2))
++            if alternative == "greater"
++            else 0.5 * math.erfc(-score / math.sqrt(2))
++        )
++    )
++    return EffectEstimate(
++        (plus - minus) / len(pairs),
++        lower,
++        upper,
++        p_value,
++        None,
++        len(pairs),
++        "MATCHED_MULTINOMIAL_CONSTRAINED_SCORE_80_BISECTIONS",
++        one_sided_lower95=lower_one,
++        one_sided_upper95=upper_one,
++    )
++
++
++def zero_event_upper_bound(n: int, alpha: float = 0.05) -> float:
++    """零事件的精确单侧二项上界；零观察不意味着风险为零。"""
++    if type(n) is not int or n <= 0 or not math.isfinite(alpha) or not 0 < alpha < 1:
++        raise ValueError("zero event bound requires positive independent N and valid alpha")
++    return -math.expm1(math.log(alpha) / n)
++
++
++def holm_adjust(p_values: Mapping[str, float]) -> dict[str, float]:
++    """对整个预声明假设族进行逐步 Holm 校正并保持原始键。"""
++    if not p_values or any(
++        not math.isfinite(value) or not 0 <= value <= 1 for value in p_values.values()
++    ):
++        raise ValueError("Holm requires nonempty finite p values in [0,1]")
++    ordered = sorted(p_values, key=lambda key: (p_values[key], key))
++    adjusted = {}
++    running = 0.0
++    for index, key in enumerate(ordered):
++        running = max(running, min(1.0, p_values[key] * (len(ordered) - index)))
++        adjusted[key] = running
++    return {key: adjusted[key] for key in p_values}
++
++
++def _value(record: EpisodeRecord, metric: str) -> float:
++    if metric.startswith("cloud_requests"):
++        return float(record.costs.cloud_model_requests)
++    if metric.startswith("application_bytes"):
++        return float(record.costs.application_bytes)
++    if metric.startswith("duration_penalized_s"):
++        return record.duration_penalized_s
++    if metric.startswith("decision_latency_s"):
++        return record.costs.decision_latency_s
++    if metric.startswith("recovery_duration_s"):
++        # Before raw independent recovery validation, no declaration shortens Rcap.
++        return 60.0
++    raise ValueError("unsupported prespecified bootstrap metric")
++
++
++def _paired_groups(
++    records: Sequence[EpisodeRecord],
++    metric: str,
++    baseline: str,
++    joint: str,
++) -> tuple[np.ndarray, np.ndarray, list[str]]:
++    ids = [record.assignment.assignment_id for record in records]
++    if len(set(ids)) != len(ids):
++        raise ValueError("duplicate assignment cannot create extra independent samples")
++    groups: dict[str, dict[str, list[EpisodeRecord]]] = defaultdict(lambda: defaultdict(list))
++    for record in records:
++        if record.assignment.method_id in {baseline, joint}:
++            groups[record.assignment.group_id][record.assignment.method_id].append(record)
++    if not groups:
++        raise ValueError("paired group records missing")
++    x, y, strata = [], [], []
++    for group in sorted(groups):
++        methods = groups[group]
++        if set(methods) != {baseline, joint}:
++            raise ValueError("all groups must retain paired method records")
++        layer = {record.assignment.stratum_id for rows in methods.values() for record in rows}
++        if len(layer) != 1:
++            raise ValueError("paired base group crosses strata")
++        schedules = [
++            Counter(
++                (record.assignment.physics_seed, record.assignment.network_schedule_id)
++                for record in methods[method]
++            )
++            for method in (baseline, joint)
++        ]
++        if schedules[0] != schedules[1] or len(methods[baseline]) != len(methods[joint]):
++            raise ValueError("paired scene seeds or network schedules differ")
++        # Repeated seeds remain inside the base scene cluster, never extra N.
++        x.append(float(np.mean([_value(record, metric) for record in methods[baseline]])))
++        y.append(float(np.mean([_value(record, metric) for record in methods[joint]])))
++        strata.append(next(iter(layer)))
++    return np.asarray(x), np.asarray(y), strata
++
++
++def _aggregate(x: np.ndarray, y: np.ndarray, metric: str) -> np.ndarray:
++    if "_p95" in metric:
++        base, joint = np.quantile(x, 0.95, axis=-1), np.quantile(y, 0.95, axis=-1)
++    elif "_median" in metric:
++        base, joint = np.median(x, axis=-1), np.median(y, axis=-1)
++    else:
++        base, joint = np.mean(x, axis=-1), np.mean(y, axis=-1)
++    if metric.endswith("_relative_reduction"):
++        with np.errstate(divide="ignore", invalid="ignore"):
++            return np.asarray(np.where(base != 0, (base - joint) / base, np.nan))
++    return np.asarray(joint - base)
++
++
++def _permutation_p(
++    x: np.ndarray,
++    y: np.ndarray,
++    metric: str,
++    point: float,
++    iterations: int,
++    seed: int,
++) -> float | None:
++    n = len(x)
++    exact = n <= 16
++    total = 2**n if exact else iterations
++    rng = np.random.default_rng(seed)
++    extreme = 0
++    for start in range(0, total, 256):
++        count = min(256, total - start)
++        if exact:
++            indices = np.arange(start, start + count, dtype=np.uint64)[:, None]
++            swap = ((indices >> np.arange(n, dtype=np.uint64)) & 1).astype(bool)
++        else:
++            swap = rng.integers(0, 2, size=(count, n)).astype(bool)
++        permuted = _aggregate(np.where(swap, y, x), np.where(swap, x, y), metric)
++        if not np.all(np.isfinite(permuted)):
++            return None
++        if metric.endswith("_relative_reduction"):
++            extreme += int(np.count_nonzero(permuted >= point - 1e-12))
++        else:
++            extreme += int(np.count_nonzero(permuted <= point + 1e-12))
++    return extreme / total if exact else (extreme + 1) / (total + 1)
++
++
++def stratified_paired_bootstrap(
++    records: Sequence[EpisodeRecord],
++    metric: str,
++    iterations: int = 10000,
++    seed: int = 20261003,
++    *,
++    baseline_method: str = "B0",
++    joint_method: str = "JOINT",
++) -> EffectEstimate:
++    """按基础场景簇在每层配对重采样，不把帧或重复种子增加独立 N。"""
++    if type(iterations) is not int or iterations < 10000:
++        raise ValueError("paired stratified bootstrap requires at least 10000 iterations")
++    x, y, strata = _paired_groups(records, metric, baseline_method, joint_method)
++    return _bootstrap_arrays(x, y, strata, metric, iterations, seed)
++
++
++def clustered_rate_reduction(
++    counts: Sequence[tuple[float, float]],
++    strata: Sequence[str],
++    iterations: int = 10000,
++    seed: int = 20261003,
++) -> EffectEstimate:
++    """固定机会在基础场景内汇总事件数，配对公共分母不因方法变化。"""
++    if (
++        not counts
++        or len(counts) != len(strata)
++        or any(
++            len(pair) != 2 or any(not math.isfinite(value) or value < 0 for value in pair)
++            for pair in counts
++        )
++        or any(not value for value in strata)
++    ):
++        raise ValueError("clustered opportunity counts/strata invalid")
++    if type(iterations) is not int or iterations < 10000:
++        raise ValueError("clustered rate bootstrap requires at least 10000 iterations")
++    x = np.asarray([base for base, _ in counts], dtype=float)
++    y = np.asarray([joint for _, joint in counts], dtype=float)
++    return _bootstrap_arrays(
++        x, y, list(strata), "cloud_requests_relative_reduction", iterations, seed
++    )
++
++
++def _bootstrap_arrays(
++    x: np.ndarray,
++    y: np.ndarray,
++    strata: Sequence[str],
++    metric: str,
++    iterations: int,
++    seed: int,
++) -> EffectEstimate:
++    point = float(_aggregate(x, y, metric))
++    method = "STRATIFIED_PAIRED_BASE_GROUP_PERCENTILE_WITH_LABEL_EXCHANGE_TEST"
++    if not math.isfinite(point):
++        return EffectEstimate(None, None, None, None, None, len(x), method + "_BASELINE_ZERO")
++    layers = [
++        np.asarray([i for i, value in enumerate(strata) if value == layer])
++        for layer in sorted(set(strata))
++    ]
++    rng = np.random.default_rng(seed)
++    draws = []
++    for start in range(0, iterations, 256):
++        count = min(256, iterations - start)
++        sampled = np.concatenate(
++            [rng.choice(layer, size=(count, len(layer))) for layer in layers], axis=1
++        )
++        draws.extend(_aggregate(x[sampled], y[sampled], metric).tolist())
++    estimates = np.asarray(draws)
++    if not np.all(np.isfinite(estimates)):
++        return EffectEstimate(
++            point, None, None, None, None, len(x), method + "_UNDEFINED_RESAMPLES"
++        )
++    lower, upper = (float(value) for value in np.quantile(estimates, [0.025, 0.975]))
++    one_lower, one_upper = (float(value) for value in np.quantile(estimates, [0.05, 0.95]))
++    p = _permutation_p(x, y, metric, point, iterations, seed + 1)
++    return EffectEstimate(
++        point,
++        lower,
++        upper,
++        p,
++        None,
++        len(x),
++        method,
++        one_sided_lower95=one_lower,
++        one_sided_upper95=one_upper,
++    )
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/metrics.py
+@@ -0,0 +1,298 @@
++"""研究全分母诊断；正式物理来源重算未整合时不接受元数据成功。"""
++
++from __future__ import annotations
++
++from collections import Counter
++from collections.abc import Mapping, Sequence
++from dataclasses import asdict
++from typing import Any
++
++import numpy as np
++
++from cloud_edge_robot_arm.edge.evidence.opportunities import (
++    GateReplayRecord,
++    Opportunity,
++    summarize_gate_replay,
++)
++from cloud_edge_robot_arm.research.assignments import EpisodeRecord
++from cloud_edge_robot_arm.research.provenance import audit_provenance
++from cloud_edge_robot_arm.research.statistics import (
++    clustered_rate_reduction,
++    holm_adjust,
++    paired_binary_effect,
++    stratified_paired_bootstrap,
++    zero_event_upper_bound,
++)
++
++PRIMARY_FAMILY = ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY", "G3_FALSE_ACCEPT", "G4_DURATION")
++
++
++def _rate(count: int, n: int) -> float | None:
++    return count / n if n else None
++
++
++def _verification_statuses(record: EpisodeRecord) -> list[str]:
++    statuses = []
++    for value in record.verification_records:
++        raw = value.get("record", value)
++        if isinstance(raw, Mapping):
++            statuses.append(str(raw.get("status", "UNKNOWN")))
++    return statuses
++
++
++def _method_metrics(rows: Sequence[EpisodeRecord], *, software_only: bool) -> dict[str, Any]:
++    n = len(rows)
++    online = sum(row.outcome.online_reported_complete is True for row in rows)
++    false_completion = sum(
++        row.outcome.online_reported_complete is True and not row.outcome.physical_success
++        for row in rows
++    )
++    declared_success = sum(
++        bool(
++            row.outcome.success
++            and row.outcome.physical_success
++            and row.outcome.online_reported_complete
++        )
++        for row in rows
++    )
++    safety = sum(row.outcome.safety_violation for row in rows)
++    group_n = len({row.assignment.group_id for row in rows})
++    progress = sum(
++        any(
++            marker in (row.outcome.terminal_reason or row.outcome.failure_reason or "").upper()
++            for marker in ("NO_PROGRESS", "STALL")
++        )
++        for row in rows
++    )
++    fallback = sum(row.run_status == "FALLBACK" for row in rows)
++    unknown = sum("UNKNOWN" in _verification_statuses(row) for row in rows)
++    roles: Counter[str] = Counter()
++    for row in rows:
++        roles.update(row.costs.requests_by_role)
++    durations = [row.duration_penalized_s for row in rows]
++    latency = [row.costs.decision_latency_s for row in rows]
++    return {
++        "assigned_denominator": n,
++        "diagnostic_only": True,
++        "task_success_count": declared_success if software_only else 0,
++        "task_success_rate": _rate(declared_success, n) if software_only else None,
++        "declared_task_success_count": declared_success,
++        "declared_safety_violation_count": safety,
++        "safety_violation_rate": _rate(safety, n) if software_only else None,
++        "safety_zero_event_upper95": zero_event_upper_bound(group_n)
++        if group_n and safety == 0
++        else None,
++        "safety_zero_event_bound_basis": "INDEPENDENT_BASE_GROUP_ANY_VIOLATION",
++        "provider_refusal_rate": None,
++        "provider_refusal_status": "NOT_RECORDED",
++        "fault_response_p90_s": None,
++        "fault_response_status": "RAW_FAULT_TIMELINE_NOT_VERIFIED",
++        "online_done_denominator": online,
++        "false_completion_count": false_completion,
++        "false_completion_rate": _rate(false_completion, online),
++        "false_completion_basis": "DECLARED_UNVERIFIED_PHYSICAL_OUTCOME",
++        "fallback_count": fallback,
++        "fallback_rate": _rate(fallback, n),
++        "no_progress_count": progress,
++        "no_progress_rate": _rate(progress, n),
++        "unknown_episode_count": unknown,
++        "unknown_episode_rate": _rate(unknown, n),
++        "terminal_status_counts": dict(Counter(row.run_status for row in rows)),
++        "cloud_requests_total": sum(row.costs.cloud_model_requests for row in rows),
++        "cloud_requests_mean": float(np.mean([row.costs.cloud_model_requests for row in rows]))
++        if n
++        else None,
++        "model_requests_total": sum(row.costs.model_requests for row in rows),
++        "model_requests_by_role": dict(roles),
++        "telemetry_messages_total": sum(row.costs.telemetry_messages for row in rows),
++        "application_bytes_total": sum(row.costs.application_bytes for row in rows),
++        "penalized_duration_p95_s": float(np.quantile(durations, 0.95)) if n else None,
++        "penalized_duration_mean_s": float(np.mean(durations)) if n else None,
++        "recovery_failed_penalty_s": 60.0,
++        "decision_latency_mean_s": float(np.mean(latency)) if n else None,
++        "latency_scope": "DECLARED_MEASURED_COMPONENT_SUM",
++        "inference_unknown_count": sum(row.costs.inference_s is None for row in rows),
++        "provider_versions": [dict(row.provider_versions) for row in rows],
++    }
++
++
++def compute_research_metrics(
++    records: Sequence[EpisodeRecord],
++    opportunities: Sequence[Opportunity],
++    gate_records: Sequence[GateReplayRecord],
++    *,
++    software_only: bool = False,
++) -> Mapping[str, object]:
++    """保留全部分配及回放分母；显式软件结果只供数学实现校验。"""
++    ids = [record.assignment.assignment_id for record in records]
++    if len(set(ids)) != len(ids):
++        raise ValueError("duplicate run assignment cannot inflate research denominator")
++    method_ids = sorted({record.assignment.method_id for record in records})
++    methods = {
++        method: _method_metrics(
++            [row for row in records if row.assignment.method_id == method],
++            software_only=software_only,
++        )
++        for method in method_ids
++    }
++    audit = audit_provenance([record.provenance for record in records])
++    metrics: dict[str, Any] = {
++        "schema_version": "ced.research-metrics.v1",
++        "scope": "SOFTWARE_ONLY" if software_only else "UNVERIFIED",
++        "formal_accepted": False,
++        "source_validation_status": "NOT_CONFIGURED",
++        "source_validation_reason": (
++            "independent raw physics/capture/model/decision source verifier is not integrated"
++        ),
++        "assignment_denominator": len(records),
++        "independent_group_denominator": len({row.assignment.group_id for row in records}),
++        "accepted_physical_success": 0,
++        "methods": methods,
++        "gate": {},
++        "effects": {},
++        "declared_stage_audit": audit.model_dump(),
++        "physical_source_validation": {"accepted": 0, "missing": len(records)},
++        "goal_source_status": {
++            key: "NOT_RUN" for key in ("G0", "G1", "G2", "G2a", "G3", "G4", "G5")
++        },
++        "recovery": {
++            "assigned_groups": len(
++                {
++                    row.assignment.group_id
++                    for row in records
++                    if row.provenance.split_role == "recovery"
++                }
++            ),
++            "accepted_recovery_success": 0,
++            "failure_penalty_s": 60.0,
++        },
++    }
++    if {"B0", "JOINT"}.issubset(methods):
++        pairs: dict[str, dict[str, EpisodeRecord]] = {}
++        for row in records:
++            if (
++                row.assignment.method_id in {"B0", "JOINT"}
++                and row.provenance.split_role == "formal"
++            ):
++                pair = pairs.setdefault(row.assignment.group_id, {})
++                if row.assignment.method_id in pair:
++                    raise ValueError(
++                        "repeated base group needs hierarchical explicit seed analysis"
++                    )
++                pair[row.assignment.method_id] = row
++        if any(set(pair) != {"B0", "JOINT"} for pair in pairs.values()):
++            raise ValueError("main analysis must retain all paired assigned groups")
++        if pairs:
++            success = [
++                (
++                    bool(
++                        pair["JOINT"].outcome.success
++                        and pair["JOINT"].outcome.physical_success
++                        and pair["JOINT"].outcome.online_reported_complete
++                    ),
++                    bool(
++                        pair["B0"].outcome.success
++                        and pair["B0"].outcome.physical_success
++                        and pair["B0"].outcome.online_reported_complete
++                    ),
++                )
++                for pair in pairs.values()
++            ]
++            safety = [
++                (pair["JOINT"].outcome.safety_violation, pair["B0"].outcome.safety_violation)
++                for pair in pairs.values()
++            ]
++            effects = metrics["effects"]
++            effects["G2_SUCCESS"] = asdict(
++                paired_binary_effect(success, null_difference=-0.03, alternative="greater")
++            )
++            effects["G2_SAFETY"] = asdict(
++                paired_binary_effect(safety, null_difference=0.01, alternative="less")
++            )
++            formal_rows = [row for row in records if row.provenance.split_role == "formal"]
++            for goal, metric in (
++                ("G2_REQUESTS", "cloud_requests_relative_reduction"),
++                ("G2A_BYTES", "application_bytes_relative_reduction"),
++                ("G2A_DURATION", "duration_penalized_s_p95_relative_reduction"),
++            ):
++                effects[goal] = asdict(stratified_paired_bootstrap(formal_rows, metric))
++            metrics["main_paired_group_denominator"] = len(pairs)
++    if gate_records:
++        if not opportunities:
++            raise ValueError("gate records require their identical fixed source opportunities")
++        for method in sorted({row.method_id for row in gate_records}):
++            metrics["gate"][method] = summarize_gate_replay(
++                opportunities, [row for row in gate_records if row.method_id == method]
++            )
++        if {"B3", "JOINT"}.issubset(metrics["gate"]):
++            base = metrics["gate"]["B3"]["false_acceptance_rate"]
++            joint = metrics["gate"]["JOINT"]["false_acceptance_rate"]
++            metrics["gate"]["relative_false_acceptance_reduction"] = (
++                (base - joint) / base if base else None
++            )
++            # All opportunities remain in the descriptive table. Only independently
++            # INVALID opportunities enter FA counts; multiple frames/actions from one
++            # base scene remain a single resampling unit, including zero-count groups.
++            groups = sorted({value.group_id for value in opportunities})
++            by_method = {
++                method: {row.opportunity_id: row for row in gate_records if row.method_id == method}
++                for method in ("B3", "JOINT")
++            }
++            counts = []
++            for group in groups:
++                invalid = [
++                    value
++                    for value in opportunities
++                    if value.group_id == group and value.oracle_label == "INVALID"
++                ]
++                method_counts = [
++                    sum(
++                        by_method[method][value.opportunity_id].verdict.status == "VALID"
++                        for value in invalid
++                    )
++                    for method in ("B3", "JOINT")
++                ]
++                counts.append((method_counts[0], method_counts[1]))
++            strata_by_group = {
++                row.assignment.group_id: row.assignment.stratum_id for row in records
++            }
++            if any(group not in strata_by_group for group in groups) and not software_only:
++                metrics["gate"]["cluster_analysis_status"] = "NOT_RUN_NO_SOURCE_STRATA"
++            else:
++                # Explicit SOFTWARE_ONLY fixtures may omit a formal scene assignment;
++                # they use one declared diagnostic stratum, never a formal stratum claim.
++                strata = [strata_by_group.get(group, "SOFTWARE_UNBOUND") for group in groups]
++                metrics["effects"]["G3_FALSE_ACCEPT"] = asdict(
++                    clustered_rate_reduction(counts, strata)
++                )
++            metrics["fixed_opportunity_group_denominator"] = len(groups)
++            invalid_groups = len(
++                {value.group_id for value in opportunities if value.oracle_label == "INVALID"}
++            )
++            for method in ("B3", "JOINT"):
++                summary = metrics["gate"][method]
++                summary["false_acceptance_zero_event_group_upper95"] = (
++                    zero_event_upper_bound(invalid_groups)
++                    if invalid_groups and summary["false_acceptance"] == 0
++                    else None
++                )
++                summary["zero_event_bound_basis"] = "INDEPENDENT_BASE_GROUP_ANY_FALSE_ACCEPT"
++    elif opportunities:
++        metrics["gate"]["status"] = "NOT_RUN"
++        metrics["gate"]["fixed_opportunity_denominator"] = len(opportunities)
++    raw_p = {key: metrics["effects"].get(key, {}).get("p_value") for key in PRIMARY_FAMILY}
++    adjusted = holm_adjust(
++        {key: value if value is not None else 1.0 for key, value in raw_p.items()}
++    )
++    for key in PRIMARY_FAMILY:
++        if key in metrics["effects"]:
++            metrics["effects"][key]["adjusted_p_value"] = adjusted[key]
++    metrics["primary_family"] = {
++        "hypotheses": list(PRIMARY_FAMILY),
++        "raw_p": raw_p,
++        "holm_adjusted_p": adjusted,
++        "missing_p_for_correction": 1.0,
++        "interval_scope": "RAW_UNADJUSTED_95_PERCENT",
++        "family_alpha": 0.05,
++    }
++    return metrics
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/acceptance.py
+@@ -0,0 +1,463 @@
++"""预注册目标判定及可复用分析入口；正式来源未验收时严格 NOT_RUN。"""
++
++from __future__ import annotations
++
++import csv
++import json
++import math
++import os
++from collections.abc import Mapping
++from dataclasses import asdict, dataclass, field
++from pathlib import Path
++from typing import Any, Literal
++
++from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
++from cloud_edge_robot_arm.research.assignments import (
++    EpisodeAssignment,
++    build_assignments,
++    episode_record_from_payload,
++    validate_formal_protocol,
++)
++from cloud_edge_robot_arm.research.metrics import compute_research_metrics
++from cloud_edge_robot_arm.research.protocol import FrozenProtocol, load_protocol
++from cloud_edge_robot_arm.research.statistics import EffectEstimate, holm_adjust
++
++GoalStatus = Literal["PASS", "FAIL", "INSUFFICIENT_EVIDENCE", "NOT_RUN"]
++GOAL_IDS = ("G0", "G1", "G2", "G2a", "G3", "G4", "G5", "C1", "C2")
++CORE_METHODS = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY", "NO_TIME_VALIDITY", "NO_LOCAL_REPAIR")
++
++
++@dataclass(frozen=True)
++class GoalVerdict:
++    """明确区分数学软件判定、未执行和实际来源验收状态。"""
++
++    goal_id: str
++    status: GoalStatus
++    estimate: object
++    reasons: tuple[str, ...]
++    evidence_scope: str = field(default="UNVERIFIED", kw_only=True)
++
++
++def noninferiority_passes(success: EffectEstimate, safety: EffectEstimate) -> bool:
++    """成功差单侧下界严格大于 -.03，安全差上界不超过 +.01。"""
++    return bool(
++        success.one_sided_lower95 is not None
++        and safety.one_sided_upper95 is not None
++        and success.one_sided_lower95 > -0.03
++        and safety.one_sided_upper95 <= 0.01
++    )
++
++
++def improvement_status(estimate: EffectEstimate, target: float) -> GoalStatus:
++    """点目标和可靠改善分别检查；基线零、区间跨零均不是可靠收益。"""
++    if estimate.point is None or estimate.lower95 is None or estimate.upper95 is None:
++        return "INSUFFICIENT_EVIDENCE"
++    if estimate.point < target:
++        return "FAIL"
++    if estimate.lower95 <= 0:
++        return "INSUFFICIENT_EVIDENCE"
++    return "PASS"
++
++
++def g1_status(localization_p90_m: float | None, static_success_rate: float | None) -> GoalStatus:
++    """标称定位10毫米与独立静态成功90%分别满足才通过数值门。"""
++    if localization_p90_m is None or static_success_rate is None:
++        return "NOT_RUN"
++    if (
++        not math.isfinite(localization_p90_m)
++        or localization_p90_m < 0
++        or (not math.isfinite(static_success_rate) or not 0 <= static_success_rate <= 1)
++    ):
++        raise ValueError("nominal metric invalid")
++    return "PASS" if localization_p90_m <= 0.01 and static_success_rate >= 0.9 else "FAIL"
++
++
++def g3_status(
++    reduction: EffectEstimate,
++    absolute_false_acceptance: float | None,
++    false_rejection: float | None,
++) -> GoalStatus:
++    """误放行绝对2%、错误拒绝5%与相对改善50%分列，UNKNOWN不补拒绝。"""
++    if absolute_false_acceptance is None or false_rejection is None:
++        return "NOT_RUN"
++    if any(
++        not math.isfinite(value) or not 0 <= value <= 1
++        for value in (absolute_false_acceptance, false_rejection)
++    ):
++        raise ValueError("gate replay rates invalid")
++    if absolute_false_acceptance > 0.02 or false_rejection > 0.05:
++        return "FAIL"
++    return improvement_status(reduction, 0.5)
++
++
++def g4_status(
++    fault_groups: int,
++    recovery_success_rate: float | None,
++    duration_reduction: EffectEstimate,
++    completed_resubmissions: int | None,
++) -> GoalStatus:
++    """固定200故障、恢复80%、可靠中位数减少30%且完成动作重提0。"""
++    if type(fault_groups) is not int or fault_groups < 0:
++        raise ValueError("fault group denominator invalid")
++    if fault_groups != 200:
++        return "INSUFFICIENT_EVIDENCE"
++    if recovery_success_rate is None or completed_resubmissions is None:
++        return "NOT_RUN"
++    if (
++        not math.isfinite(recovery_success_rate)
++        or not 0 <= recovery_success_rate <= 1
++        or (type(completed_resubmissions) is not int or completed_resubmissions < 0)
++    ):
++        raise ValueError("recovery success/resubmission metric invalid")
++    if recovery_success_rate < 0.8 or completed_resubmissions:
++        return "FAIL"
++    return improvement_status(duration_reduction, 0.3)
++
++
++def _effect(values: Mapping[str, Any], key: str) -> EffectEstimate | None:
++    raw = values.get(key)
++    return EffectEstimate(**raw) if isinstance(raw, Mapping) else None
++
++
++def evaluate_goals(
++    metrics: Mapping[str, object],
++    protocol: FrozenProtocol,
++    *,
++    software_only: bool = False,
++) -> list[GoalVerdict]:
++    """评估同一冻结规则；缺真实来源验收器时正式目标一律未执行。"""
++    scope = "SOFTWARE_ONLY" if software_only else "UNVERIFIED"
++    # This module exposes no declaration flag that can make formal acceptance true.
++    # Integration must supply independent raw-source verification before replacing
++    # this closed boundary; source_verified/formal_accepted metadata are insufficient.
++    if not software_only:
++        return [
++            GoalVerdict(
++                goal,
++                "NOT_RUN",
++                None,
++                ("independent raw source verification is not integrated",),
++                evidence_scope=scope,
++            )
++            for goal in GOAL_IDS
++        ]
++    if metrics.get("scope") != "SOFTWARE_ONLY":
++        raise ValueError(
++            "software goal diagnostics require an explicit SOFTWARE_ONLY metrics scope"
++        )
++    validate_formal_protocol(protocol)
++    if protocol.spec.hypothesis_family != (
++        "G2_REQUESTS",
++        "G2_SUCCESS",
++        "G2_SAFETY",
++        "G3_FALSE_ACCEPT",
++        "G4_DURATION",
++    ):
++        raise ValueError("pre-registered five hypothesis family cannot change")
++    effects = metrics.get("effects", {})
++    if not isinstance(effects, Mapping):
++        raise ValueError("goal effect table malformed")
++    raw_p = {
++        key: (effects[key].get("p_value") if isinstance(effects.get(key), Mapping) else None)
++        for key in protocol.spec.hypothesis_family
++    }
++    adjusted = holm_adjust(
++        {key: float(value) if value is not None else 1.0 for key, value in raw_p.items()}
++    )
++    estimates = {
++        key: _effect(effects, key)
++        for key in (*protocol.spec.hypothesis_family, "G2A_BYTES", "G2A_DURATION")
++    }
++    verdicts: dict[str, GoalVerdict] = {}
++    for goal in GOAL_IDS:
++        verdicts[goal] = GoalVerdict(
++            goal,
++            "NOT_RUN",
++            None,
++            ("required source-bound metric has not been produced",),
++            evidence_scope=scope,
++        )
++    n = metrics.get("main_paired_group_denominator", 0)
++    required = protocol.spec.selected_n or 0
++    if n != required:
++        verdicts["G2"] = GoalVerdict(
++            "G2",
++            "INSUFFICIENT_EVIDENCE",
++            {"paired_groups": n, "required": required},
++            ("complete frozen N paired groups are required",),
++            evidence_scope=scope,
++        )
++    else:
++        requests, success, safety = (
++            estimates[key] for key in ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY")
++        )
++        if requests is not None and success is not None and safety is not None:
++            status = improvement_status(requests, 0.3)
++            if not noninferiority_passes(success, safety):
++                status = "INSUFFICIENT_EVIDENCE"
++            if any(adjusted[key] > 0.05 for key in ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY")):
++                status = "INSUFFICIENT_EVIDENCE" if status != "FAIL" else status
++            verdicts["G2"] = GoalVerdict(
++                "G2",
++                status,
++                {
++                    "requests": asdict(requests),
++                    "success": asdict(success),
++                    "safety": asdict(safety),
++                    "holm_adjusted_p": adjusted,
++                },
++                ("software threshold evaluation only; no accepted physical evidence",),
++                evidence_scope=scope,
++            )
++    secondary: dict[str, GoalStatus] = {}
++    for key, target in (("G2A_BYTES", 0.25), ("G2A_DURATION", 0.15)):
++        estimate = estimates[key]
++        secondary[key] = improvement_status(estimate, target) if estimate is not None else "NOT_RUN"
++    if any(status != "NOT_RUN" for status in secondary.values()):
++        secondary_status: GoalStatus = (
++            "PASS"
++            if all(value == "PASS" for value in secondary.values())
++            else ("FAIL" if "FAIL" in secondary.values() else "INSUFFICIENT_EVIDENCE")
++        )
++        verdicts["G2a"] = GoalVerdict(
++            "G2a",
++            secondary_status,
++            secondary,
++            ("bytes and penalized P95 duration are separate secondary targets",),
++            evidence_scope=scope,
++        )
++    nominal = metrics.get("nominal")
++    if isinstance(nominal, Mapping):
++        verdicts["G1"] = GoalVerdict(
++            "G1",
++            g1_status(nominal.get("localization_p90_m"), nominal.get("static_success_rate")),
++            dict(nominal),
++            ("coverage and correct identity/valid depth eligibility must be reported separately",),
++            evidence_scope=scope,
++        )
++    gate = metrics.get("gate")
++    reduction = estimates["G3_FALSE_ACCEPT"]
++    if isinstance(gate, Mapping) and isinstance(gate.get("JOINT"), Mapping) and reduction:
++        joint = gate["JOINT"]
++        gate_status = g3_status(
++            reduction, joint.get("false_acceptance_rate"), joint.get("false_rejection_rate")
++        )
++        if gate_status == "PASS" and adjusted["G3_FALSE_ACCEPT"] > 0.05:
++            gate_status = "INSUFFICIENT_EVIDENCE"
++        if metrics.get("fixed_opportunity_group_denominator") != required:
++            gate_status = "INSUFFICIENT_EVIDENCE"
++        verdicts["G3"] = GoalVerdict(
++            "G3",
++            gate_status,
++            {
++                "reduction": asdict(reduction),
++                "rates": dict(joint),
++                "holm_adjusted_p": adjusted["G3_FALSE_ACCEPT"],
++            },
++            ("fixed group-clustered replay only",),
++            evidence_scope=scope,
++        )
++    recovery = metrics.get("recovery")
++    duration = estimates["G4_DURATION"]
++    if isinstance(recovery, Mapping) and duration:
++        recovery_status = g4_status(
++            recovery.get("assigned_groups", 0),
++            recovery.get("success_rate"),
++            duration,
++            recovery.get("completed_resubmissions"),
++        )
++        if recovery_status == "PASS" and adjusted["G4_DURATION"] > 0.05:
++            recovery_status = "INSUFFICIENT_EVIDENCE"
++        verdicts["G4"] = GoalVerdict(
++            "G4",
++            recovery_status,
++            {
++                "duration": asdict(duration),
++                "rates": dict(recovery),
++                "holm_adjusted_p": adjusted["G4_DURATION"],
++            },
++            ("requires complete200 verified fault episodes",),
++            evidence_scope=scope,
++        )
++    # G0/G5 still need independent stage/data evidence.
++    # Neither a replay nor a success declaration fills those prerequisites.
++    return [verdicts[goal] for goal in GOAL_IDS]
++
++
++def _write_outputs(output: Path, report: Mapping[str, Any], metrics: Mapping[str, object]) -> None:
++    output.mkdir(parents=True, exist_ok=True)
++    for name, payload in (
++        ("report.json", report),
++        ("metrics.json", metrics),
++        ("goal_verdicts.json", report["goal_verdicts"]),
++    ):
++        text = canonical_json(payload) + "\n"
++        path = output / name
++        if path.exists() and path.read_text() != text:
++            raise ValueError(
++                "existing analysis output differs; preserve it and use a new directory"
++            )
++        path.write_text(text)
++    with (output / "goal_verdicts.csv").open("w", newline="") as stream:
++        writer = csv.writer(stream)
++        writer.writerow(("goal_id", "status", "evidence_scope", "reasons"))
++        for value in report["goal_verdicts"]:
++            writer.writerow(
++                (
++                    value["goal_id"],
++                    value["status"],
++                    value["evidence_scope"],
++                    "; ".join(value["reasons"]),
++                )
++            )
++    _render_goal_status(output, report)
++
++
++def _render_goal_status(output: Path, report: Mapping[str, Any]) -> None:
++    os.environ.setdefault("MPLCONFIGDIR", str(output / "mpl-cache"))
++    import matplotlib
++
++    matplotlib.use("Agg")
++    import matplotlib.pyplot as plt
++
++    colors = {
++        "NOT_RUN": "#64748b",
++        "INSUFFICIENT_EVIDENCE": "#a16207",
++        "FAIL": "#b91c1c",
++        "PASS": "#15803d",
++    }
++    with plt.rc_context({"svg.hashsalt": "ced.research-analysis.v1", "font.family": "DejaVu Sans"}):
++        figure, axis = plt.subplots(figsize=(7, 4.2))
++        for index, value in enumerate(report["goal_verdicts"]):
++            axis.barh(index, 1, color=colors[value["status"]], height=0.65)
++            axis.text(0.03, index, value["status"], color="white", va="center", fontsize=9)
++        axis.set_yticks(
++            range(len(report["goal_verdicts"])),
++            [value["goal_id"] for value in report["goal_verdicts"]],
++        )
++        axis.set_xticks([])
++        axis.set_xlim(0, 1)
++        axis.invert_yaxis()
++        axis.set_title(str(report["status"]) + " / no physical acceptance")
++        for spine in axis.spines.values():
++            spine.set_visible(False)
++        figure.tight_layout()
++        temporary = output / "goal_status.svg.tmp"
++        figure.savefig(temporary, format="svg", metadata={"Date": None})
++        plt.close(figure)
++        target = output / "goal_status.svg"
++        if target.exists() and target.read_bytes() != temporary.read_bytes():
++            temporary.unlink()
++            raise ValueError("existing analysis chart differs; preserve original output")
++        temporary.replace(target)
++
++
++def analyze_research_runs(
++    runs: Path,
++    protocol: Path,
++    output: Path,
++    *,
++    software_only: bool = False,
++) -> Mapping[str, object]:
++    """从不可变记录重建确定性分析；复现工具调用同一函数而不执行存储命令。"""
++    scope = "SOFTWARE_ONLY" if software_only else "UNVERIFIED"
++    metrics: Mapping[str, object] = {
++        "schema_version": "ced.research-metrics.v1",
++        "scope": scope,
++        "formal_accepted": False,
++        "accepted_physical_success": 0,
++        "source_validation_status": "NOT_CONFIGURED",
++        "coverage_status": "INCOMPLETE",
++    }
++    verdicts = [
++        GoalVerdict(
++            goal, "NOT_RUN", None, ("analysis prerequisites missing",), evidence_scope=scope
++        )
++        for goal in GOAL_IDS
++    ]
++    status = "NOT_RUN"
++    reasons = []
++    source_hashes: dict[str, str] = {}
++    try:
++        frozen = load_protocol(protocol)
++        validate_formal_protocol(frozen)
++        manifest_path = runs / "assignments.json"
++        record_path = runs / "records.jsonl"
++        manifest = json.loads(manifest_path.read_text())
++        expected_hash = manifest.pop("content_hash", None)
++        if (
++            manifest.get("schema_version") != "ced.assignments.v1"
++            or content_digest(manifest) != expected_hash
++        ):
++            raise ValueError("frozen assignment manifest schema/hash mismatch")
++        if manifest.get("protocol_hash") != frozen.content_hash:
++            raise ValueError("assignment manifest differs from frozen protocol")
++        assignments = [EpisodeAssignment(**raw) for raw in manifest["assignments"]]
++        expected = {value.assignment_id: value for value in assignments}
++        if len(expected) != len(assignments) or not assignments:
++            raise ValueError("assignment manifest missing or duplicate entries")
++        # A self-hashed manifest cannot prove that assigned failures were retained.
++        # Rebuild from the full independently hash-bound 2400-scene pool. This checks
++        # fixed N, seven methods, twelve strata, prefix selection, paired physics and
++        # network facts, full scene/perturbation content and frozen random execution order.
++        pool_path = runs / "pools.json"
++        if not pool_path.exists():
++            raise ValueError("coverage incomplete: full frozen scene pool archive is required")
++        pools = json.loads(pool_path.read_text())
++        pool = pools.get("formal") if isinstance(pools, Mapping) else None
++        if not isinstance(pool, list):
++            raise ValueError("coverage incomplete: archived formal scene pool is missing")
++        rebuilt = build_assignments(frozen, CORE_METHODS, scene_pool=pool)
++        if assignments != rebuilt:
++            raise ValueError(
++                "coverage incomplete: manifest must retain exact frozen N, all methods, "
++                "balanced strata and paired scene/schedule/order bindings"
++            )
++        rows = [
++            episode_record_from_payload(json.loads(line), protocol=frozen)
++            for line in record_path.read_text().splitlines()
++        ]
++        actual = {row.assignment.assignment_id: row for row in rows}
++        if len(actual) != len(rows) or set(actual) != set(expected):
++            raise ValueError(
++                "coverage incomplete: every preassigned episode, including blocked failures, "
++                "must have its original record"
++            )
++        if any(row.assignment != expected[key] for key, row in actual.items()):
++            raise ValueError("episode differs from its frozen preassigned identity")
++        metrics = compute_research_metrics(rows, (), (), software_only=software_only)
++        metrics = {
++            **metrics,
++            "coverage_status": "COMPLETE",
++            "coverage_assignment_denominator": len(rebuilt),
++            "coverage_group_denominator": frozen.spec.selected_n,
++            "coverage_methods": list(CORE_METHODS),
++        }
++        verdicts = evaluate_goals(metrics, frozen, software_only=software_only)
++        status = "SOFTWARE_ONLY" if software_only else "NOT_RUN"
++        reasons = ["independent raw physical source verifier is not integrated"]
++        import hashlib
++
++        source_hashes = {
++            name: hashlib.sha256(path.read_bytes()).hexdigest()
++            for name, path in (
++                ("protocol", protocol / "protocol.json"),
++                ("assignments", manifest_path),
++                ("records", record_path),
++                ("pools", pool_path),
++            )
++        }
++    except (OSError, ValueError, KeyError, TypeError) as error:
++        reasons = [str(error)]
++    report = {
++        "schema_version": "ced.research-analysis.v1",
++        "status": status,
++        "scope": scope,
++        "formal_accepted": False,
++        "physical_success": 0,
++        "source_hashes": source_hashes,
++        "reasons": reasons,
++        "goal_verdicts": [asdict(value) for value in verdicts],
++    }
++    _write_outputs(output, report, metrics)
++    return report
+--- /dev/null
++++ b/scripts/analyze_rgbd_research.py
+@@ -0,0 +1,32 @@
++"""调用生产研究分析函数；不从历史命令字段执行脚本或调用模型。"""
++
++from __future__ import annotations
++
++import argparse
++import sys
++from pathlib import Path
++
++if __package__ in {None, ""}:
++    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
++
++from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json
++from cloud_edge_robot_arm.research.acceptance import analyze_research_runs
++
++
++def main(argv: list[str] | None = None) -> int:
++    """保存完整机器可读/CSV诊断，正式来源不齐时返回 NOT_RUN 和exit3。"""
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--runs", type=Path, required=True)
++    parser.add_argument("--protocol", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--software-only", action="store_true")
++    args = parser.parse_args(argv)
++    result = analyze_research_runs(
++        args.runs, args.protocol, args.output, software_only=args.software_only
++    )
++    print(canonical_json(result))
++    return 0 if result["status"] == "SOFTWARE_ONLY" else 3
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- /dev/null
++++ b/tests/test_research_statistics.py
+@@ -0,0 +1,192 @@
++"""配对得分区间、Holm 与场景簇 bootstrap 的独立数值反例。"""
++
++from importlib import import_module, util
++
++import pytest
++
++
++def api():
++    name = "cloud_edge_robot_arm.research.statistics"
++    assert util.find_spec(name) is not None, "missing production research statistics"
++    return import_module(name)
++
++
++def test_matched_binary_uses_fixed_four_cell_score_counts():
++    # ++40,+-20,-+10,--30 -> JOINT-B0=.1, McNemar score z=10/sqrt(30).
++    pairs = (
++        [(True, True)] * 40 + [(True, False)] * 20 + [(False, True)] * 10 + [(False, False)] * 30
++    )
++    result = api().paired_binary_effect(pairs)
++    assert result.point == pytest.approx(0.1)
++    assert result.denominator == 100
++    assert result.p_value == pytest.approx(0.0678891549, abs=1e-8)
++    assert result.lower95 < result.point < result.upper95
++    # Same marginal .6/.5, different paired concordance => larger uncertainty.
++    less_concordant = (
++        [(True, True)] * 30 + [(True, False)] * 30 + [(False, True)] * 20 + [(False, False)] * 20
++    )
++    wider = api().paired_binary_effect(less_concordant)
++    assert wider.point == pytest.approx(0.1)
++    assert wider.p_value == pytest.approx(0.1572992071, abs=1e-8)
++    assert wider.upper95 - wider.lower95 > result.upper95 - result.lower95
++
++
++def test_all_concordant_difference_has_nonzero_score_interval():
++    result = api().paired_binary_effect([(False, False)] * 100)
++    # Analytic boundary score inversion z^2/(n+z^2), not zero-width Wald.
++    assert result.point == 0
++    assert result.p_value == 1
++    assert result.upper95 == pytest.approx(0.0369934982, abs=1e-8)
++    assert result.lower95 == pytest.approx(-0.0369934982, abs=1e-8)
++    assert result.one_sided_upper95 == pytest.approx(0.0263427208, abs=1e-8)
++
++
++def test_zero_events_have_nonzero_upper_bound():
++    assert api().zero_event_upper_bound(100) == pytest.approx(0.0295130496, abs=1e-8)
++    assert api().zero_event_upper_bound(1) == pytest.approx(0.95)
++    with pytest.raises(ValueError):
++        api().zero_event_upper_bound(0)
++
++
++@pytest.mark.parametrize("values", [[], [(1, 0)], [(True,)], [None]])
++def test_binary_estimate_rejects_missing_or_nonboolean_pairs(values):
++    with pytest.raises(ValueError):
++        api().paired_binary_effect(values)
++
++
++def test_holm_adjustment_is_applied():
++    adjusted = api().holm_adjust(
++        {"requests": 0.001, "success": 0.01, "safety": 0.02, "gate": 0.2, "recovery": 0.5}
++    )
++    assert adjusted == {
++        "requests": 0.005,
++        "success": 0.04,
++        "safety": 0.06,
++        "gate": 0.4,
++        "recovery": 0.5,
++    }
++    with pytest.raises(ValueError):
++        api().holm_adjust({"bad": float("nan")})
++
++
++def records(group_count=8, *, baseline=10, joint=5):
++    from cloud_edge_robot_arm.research.assignments import EpisodeAssignment, EpisodeRecord
++    from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
++    from cloud_edge_robot_arm.research.models import EvidenceKind, RunProvenance
++    from cloud_edge_robot_arm.research.protocol import STRATA
++    from cloud_edge_robot_arm.vision.evaluation import VisualEpisodeOutcome
++
++    result = []
++    for index in range(group_count):
++        for method, calls in (("B0", baseline), ("JOINT", joint)):
++            row = EpisodeAssignment(
++                f"g{index}::{method}",
++                f"g{index}",
++                STRATA[index % 12],
++                method,
++                index,
++                f"network-{index}",
++                len(result),
++            )
++            provenance = RunProvenance(
++                run_id=row.assignment_id,
++                source_tree_hash="",
++                scene_group_id=row.group_id,
++                split_role="formal",
++                physics_steps=0,
++                evidence_kind=EvidenceKind.MOCK,
++            )
++            outcome = VisualEpisodeOutcome(False, "FAILED", False, "SOFTWARE_FIXTURE", 0, 0, 0, 1.0)
++            result.append(
++                EpisodeRecord(
++                    row,
++                    outcome,
++                    provenance,
++                    CostSnapshot(model_requests=calls, cloud_model_requests=calls),
++                    120.0,
++                    None,
++                    (),
++                    (),
++                    (),
++                    {},
++                    run_status="FAILED",
++                )
++            )
++    return result
++
++
++def test_bootstrap_resamples_groups_not_frames():
++    from dataclasses import replace
++
++    rows = records()
++    result = api().stratified_paired_bootstrap(rows, "cloud_requests_relative_reduction")
++    duplicated_frames = [
++        replace(row, verification_records=tuple({"status": "UNKNOWN"} for _ in range(100)))
++        for row in rows
++    ]
++    repeated = api().stratified_paired_bootstrap(
++        duplicated_frames, "cloud_requests_relative_reduction"
++    )
++    assert repeated == result
++    assert result.denominator == 8
++    assert result.point == result.lower95 == result.upper95 == 0.5
++
++
++def test_baseline_zero_returns_na_relative_gain():
++    result = api().stratified_paired_bootstrap(
++        records(baseline=0, joint=0), "cloud_requests_relative_reduction"
++    )
++    assert result.point is result.lower95 is result.upper95 is None
++    assert result.p_value is None
++
++
++def test_bootstrap_rejects_less_than_ten_thousand_or_unpaired_groups():
++    with pytest.raises(ValueError, match="10000"):
++        api().stratified_paired_bootstrap(
++            records(), "cloud_requests_relative_reduction", iterations=9999
++        )
++    with pytest.raises(ValueError, match="paired"):
++        api().stratified_paired_bootstrap(records()[:-1], "cloud_requests_relative_reduction")
++
++
++def test_score_noninferiority_p_value_is_not_zero_difference_p_value():
++    module = api()
++    concordant = [(True, True)] * 600
++    success = module.paired_binary_effect(concordant, null_difference=-0.03, alternative="greater")
++    safety = module.paired_binary_effect(concordant, null_difference=0.01, alternative="less")
++    assert success.p_value < 0.01
++    assert safety.p_value < 0.01
++    assert module.paired_binary_effect(concordant).p_value == 1
++
++
++def test_fixed_opportunity_reduction_clusters_multiple_opportunities_per_group():
++    effect = api().clustered_rate_reduction([(10, 5), (20, 10)], ("STATIC_RTT0", "STATIC_RTT100"))
++    assert effect.denominator == 2
++    assert effect.point == effect.lower95 == effect.upper95 == 0.5
++    assert effect.p_value == 0.25
++
++
++def test_bootstrap_rejects_mismatched_repeated_seed_multiplicity():
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.research.assignments import EpisodeAssignment
++
++    originals = records(1)
++    rows = []
++    for method, seeds in (("B0", (1, 1, 2)), ("JOINT", (1, 2, 2))):
++        base = next(row for row in originals if row.assignment.method_id == method)
++        for index, seed in enumerate(seeds):
++            assignment = EpisodeAssignment(
++                f"g0::{method}::{index}", "g0", "STATIC_RTT0", method, seed, "network", index
++            )
++            rows.append(
++                replace(
++                    base,
++                    assignment=assignment,
++                    provenance=base.provenance.model_copy(
++                        update={"run_id": assignment.assignment_id}
++                    ),
++                )
++            )
++    with pytest.raises(ValueError, match="paired"):
++        api().stratified_paired_bootstrap(rows, "cloud_requests_relative_reduction")
+--- /dev/null
++++ b/tests/test_research_acceptance.py
+@@ -0,0 +1,375 @@
++"""研究判定与全分母反例；软件诊断不能冒称正式目标通过。"""
++
++from dataclasses import replace
++from importlib import import_module, util
++
++import pytest
++
++from tests.test_research_assignments import scene_pool  # noqa: F401
++from tests.test_research_statistics import records
++
++
++def api(name):
++    full = "cloud_edge_robot_arm.research." + name
++    assert util.find_spec(full) is not None, "missing production research " + name
++    return import_module(full)
++
++
++def effect(point, lower, upper, p=0.001):
++    return api("statistics").EffectEstimate(
++        point,
++        lower,
++        upper,
++        p,
++        p,
++        600,
++        "SOFTWARE_ONLY",
++        one_sided_lower95=lower,
++        one_sided_upper95=upper,
++    )
++
++
++@pytest.mark.parametrize(
++    "success_lower,safety_upper,want",
++    [(-0.031, 0.009, False), (-0.029, 0.011, False), (-0.029, 0.01, True), (-0.03, 0.009, False)],
++)
++def test_noninferiority_is_not_failure_to_find_significance(success_lower, safety_upper, want):
++    result = api("acceptance").noninferiority_passes(
++        effect(0, success_lower, 0.01, p=0.9), effect(0, -0.01, safety_upper, p=0.9)
++    )
++    assert result is want
++
++
++def test_point_target_without_interval_excluding_zero_is_not_reliable_gain():
++    module = api("acceptance")
++    assert module.improvement_status(effect(0.4, -0.01, 0.6), 0.3) == "INSUFFICIENT_EVIDENCE"
++    assert module.improvement_status(effect(0.3, 0.01, 0.6), 0.3) == "PASS"
++    assert module.improvement_status(effect(0.2, 0.01, 0.6), 0.3) == "FAIL"
++
++
++def test_penalized_duration_includes_failures():
++    rows = records(2)
++    rows = [replace(row, duration_penalized_s=120.0, run_status="BLOCKED") for row in rows]
++    metrics = api("metrics").compute_research_metrics(rows, (), (), software_only=True)
++    assert metrics["methods"]["JOINT"]["assigned_denominator"] == 2
++    assert metrics["methods"]["JOINT"]["penalized_duration_p95_s"] == 120.0
++    assert metrics["methods"]["JOINT"]["recovery_failed_penalty_s"] == 60.0
++
++
++def test_false_completion_rate_uses_online_done_denominator():
++    rows = records(3)
++    changed = []
++    for row in rows:
++        if row.assignment.method_id == "JOINT":
++            index = int(row.assignment.group_id[1:])
++            changed.append(
++                replace(
++                    row,
++                    outcome=replace(
++                        row.outcome, online_reported_complete=index < 2, physical_success=index == 0
++                    ),
++                )
++            )
++        else:
++            changed.append(row)
++    metrics = api("metrics").compute_research_metrics(changed, (), (), software_only=True)
++    assert metrics["methods"]["JOINT"]["online_done_denominator"] == 2
++    assert metrics["methods"]["JOINT"]["false_completion_rate"] == 0.5
++    assert metrics["methods"]["B0"]["false_completion_rate"] is None
++
++
++def test_remote_judge_is_in_total_cloud_cost():
++    from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
++
++    rows = records(1)
++    changed = [
++        replace(
++            row,
++            costs=CostSnapshot(
++                model_requests=2,
++                cloud_model_requests=2,
++                requests_by_role={"JUDGE": 1, "PLANNER": 1},
++            ),
++        )
++        for row in rows
++    ]
++    metrics = api("metrics").compute_research_metrics(changed, (), (), software_only=True)
++    assert metrics["methods"]["JOINT"]["cloud_requests_total"] == 2
++    assert metrics["methods"]["JOINT"]["model_requests_by_role"]["JUDGE"] == 1
++
++
++def test_stall_and_fallback_keep_assignment_denominator():
++    rows = records(2)
++    changed = [
++        replace(
++            row,
++            run_status="FALLBACK" if row.assignment.group_id == "g0" else "STOP",
++            outcome=replace(row.outcome, terminal_reason="NO_PROGRESS"),
++        )
++        for row in rows
++    ]
++    metrics = api("metrics").compute_research_metrics(changed, (), (), software_only=True)
++    joint = metrics["methods"]["JOINT"]
++    assert joint["assigned_denominator"] == 2
++    assert joint["fallback_rate"] == 0.5
++    assert joint["no_progress_rate"] == 1.0
++
++
++def test_false_rejection_excludes_unknown():
++    from cloud_edge_robot_arm.research.runner import run_gate_replay
++    from tests.test_fixed_opportunity_replay import opportunities
++
++    values = opportunities()
++    metrics = api("metrics").compute_research_metrics(
++        (), values, run_gate_replay(values, "JOINT"), software_only=True
++    )
++    gate = metrics["gate"]["JOINT"]
++    assert gate["eligible_valid"] == gate["eligible_invalid"] == 1
++    assert gate["oracle_unknown"] == 1
++    assert gate["false_rejection"] == 0
++    assert gate["false_rejection_rate"] == 0
++
++
++def test_g3_replay_never_counts_as_task_success():
++    from cloud_edge_robot_arm.research.runner import run_gate_replay
++    from tests.test_fixed_opportunity_replay import opportunities
++
++    values = opportunities()
++    metrics = api("metrics").compute_research_metrics(
++        (), values, run_gate_replay(values, "JOINT"), software_only=True
++    )
++    assert metrics["accepted_physical_success"] == 0
++    assert metrics["assignment_denominator"] == 0
++    assert metrics["scope"] == "SOFTWARE_ONLY"
++
++
++def test_default_formal_metrics_fail_closed_without_raw_physics_verifier():
++    from cloud_edge_robot_arm.research.models import EvidenceKind
++
++    rows = [
++        replace(
++            row,
++            run_status="COMPLETED",
++            provenance=row.provenance.model_copy(
++                update={
++                    "evidence_kind": EvidenceKind.PHYSICS,
++                    "task_success": True,
++                    "physics_steps": 100,
++                }
++            ),
++            outcome=replace(
++                row.outcome,
++                success=True,
++                status="SUCCESS",
++                failure_reason=None,
++                physical_success=True,
++                online_reported_complete=True,
++            ),
++        )
++        for row in records(2)
++    ]
++    metrics = api("metrics").compute_research_metrics(rows, (), ())
++    assert metrics["source_validation_status"] == "NOT_CONFIGURED"
++    assert metrics["accepted_physical_success"] == 0
++    assert metrics["formal_accepted"] is False
++
++
++def test_zero_safety_metric_retains_positive_cluster_boundary_and_missing_fields():
++    metrics = api("metrics").compute_research_metrics(records(2), (), (), software_only=True)
++    joint = metrics["methods"]["JOINT"]
++    assert joint["safety_zero_event_upper95"] > 0
++    assert joint["provider_refusal_rate"] is None
++    assert joint["fault_response_p90_s"] is None
++
++
++def test_metrics_exposes_full_five_primary_holm_family_without_dropping_unrun_goals():
++    metrics = api("metrics").compute_research_metrics(records(), (), (), software_only=True)
++    primary = metrics["primary_family"]
++    assert set(primary["holm_adjusted_p"]) == {
++        "G2_REQUESTS",
++        "G2_SUCCESS",
++        "G2_SAFETY",
++        "G3_FALSE_ACCEPT",
++        "G4_DURATION",
++    }
++    assert primary["raw_p"]["G3_FALSE_ACCEPT"] is None
++    assert primary["holm_adjusted_p"]["G3_FALSE_ACCEPT"] == 1
++    assert (
++        metrics["effects"]["G2_REQUESTS"]["adjusted_p_value"]
++        == primary["holm_adjusted_p"]["G2_REQUESTS"]
++    )
++
++
++def test_gate_metrics_uses_common_fixed_group_clusters_not_frame_count():
++    from cloud_edge_robot_arm.research.runner import run_gate_replay
++    from tests.test_fixed_opportunity_replay import opportunities
++
++    values = opportunities()
++    replay = run_gate_replay(values, "JOINT") + run_gate_replay(values, "B3")
++    metrics = api("metrics").compute_research_metrics((), values, replay, software_only=True)
++    assert metrics["fixed_opportunity_group_denominator"] == len(
++        {value.group_id for value in values}
++    )
++    assert metrics["effects"]["G3_FALSE_ACCEPT"]["denominator"] == len(
++        {value.group_id for value in values}
++    )
++    assert metrics["gate"]["JOINT"]["false_acceptance_zero_event_group_upper95"] > 0
++
++
++def test_analysis_cli_missing_final_is_not_run(tmp_path):
++    import json
++    import subprocess
++    import sys
++
++    result = subprocess.run(
++        [
++            sys.executable,
++            "scripts/analyze_rgbd_research.py",
++            "--runs",
++            str(tmp_path / "empty"),
++            "--protocol",
++            str(tmp_path / "absent"),
++            "--output",
++            str(tmp_path / "out"),
++        ],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert result.returncode == 3
++    report = json.loads((tmp_path / "out" / "report.json").read_text())
++    assert report["status"] == "NOT_RUN"
++    assert all(value["status"] == "NOT_RUN" for value in report["goal_verdicts"])
++
++
++def test_production_analysis_callable_is_deterministic_and_ignores_stored_commands(tmp_path):
++    import json
++
++    module = api("acceptance")
++    runs = tmp_path / "runs"
++    runs.mkdir()
++    (runs / "command.json").write_text(json.dumps({"cmd": "touch SHOULD_NOT_EXIST"}))
++    first = module.analyze_research_runs(runs, tmp_path / "missing-protocol", tmp_path / "first")
++    second = module.analyze_research_runs(runs, tmp_path / "missing-protocol", tmp_path / "second")
++    assert first == second
++    assert first["status"] == "NOT_RUN"
++    assert not (tmp_path / "SHOULD_NOT_EXIST").exists()
++    assert (tmp_path / "first" / "goal_verdicts.csv").read_bytes() == (
++        tmp_path / "second" / "goal_verdicts.csv"
++    ).read_bytes()
++    assert (tmp_path / "first" / "goal_status.svg").read_bytes() == (
++        tmp_path / "second" / "goal_status.svg"
++    ).read_bytes()
++
++
++@pytest.mark.parametrize(
++    "absolute,false_rejection,reduction,want",
++    [
++        (0.02, 0.05, 0.5, "PASS"),
++        (0.021, 0.01, 0.6, "FAIL"),
++        (0.01, 0.051, 0.6, "FAIL"),
++        (0.01, 0.01, 0.49, "FAIL"),
++    ],
++)
++def test_g3_thresholds_keep_absolute_rejection_and_relative_gates_separate(
++    absolute, false_rejection, reduction, want
++):
++    assert (
++        api("acceptance").g3_status(effect(reduction, 0.1, 0.9), absolute, false_rejection) == want
++    )
++
++
++def test_g4_requires_two_hundred_faults_eighty_percent_and_no_completed_replay():
++    module = api("acceptance")
++    assert module.g4_status(200, 0.8, effect(0.3, 0.01, 0.6), 0) == "PASS"
++    assert module.g4_status(199, 0.9, effect(0.4, 0.01, 0.6), 0) == "INSUFFICIENT_EVIDENCE"
++    assert module.g4_status(200, 0.79, effect(0.4, 0.01, 0.6), 0) == "FAIL"
++    assert module.g4_status(200, 0.9, effect(0.4, 0.01, 0.6), 1) == "FAIL"
++
++
++def test_nominal_gate_reports_missing_localization_or_static_evidence():
++    module = api("acceptance")
++    assert module.g1_status(0.01, 0.9) == "PASS"
++    assert module.g1_status(0.01001, 0.95) == "FAIL"
++    assert module.g1_status(0.009, 0.899) == "FAIL"
++    assert module.g1_status(None, 0.95) == "NOT_RUN"
++
++
++@pytest.mark.parametrize("tamper", ["omit_failed", "omit_pool", "complete"])
++def test_final_analysis_rejects_rehashed_incomplete_coverage(
++    scene_pool, tmp_path, tamper  # noqa: F811
++):
++    import json
++    from dataclasses import asdict
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
++    from cloud_edge_robot_arm.research.assignments import build_assignments
++    from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec
++    from cloud_edge_robot_arm.research.runner import run_assignment
++
++    methods = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY", "NO_TIME_VALIDITY", "NO_LOCAL_REPAIR")
++    spec = ProtocolSpec(
++        selected_n=600,
++        tcap_s=120,
++        pool_hashes={"formal": content_digest(scene_pool)},
++        model_snapshot_hash="a" * 64,
++        method_hashes={key: content_digest(key) for key in methods},
++        initial_protocol_hash="b" * 64,
++        opportunity_hash="c" * 64,
++        recovery_fault_manifest_hash="d" * 64,
++    )
++    frozen = FrozenProtocol(
++        spec=spec,
++        stage="FINAL",
++        content_hash=content_digest({"spec": spec.model_dump(mode="json"), "stage": "FINAL"}),
++    )
++    protocol = tmp_path / "protocol"
++    protocol.mkdir()
++    (protocol / "protocol.json").write_text(frozen.model_dump_json())
++    runs = tmp_path / "runs"
++    runs.mkdir()
++    assignments = build_assignments(frozen, methods, scene_pool=scene_pool)
++    # A producer can recompute a valid manifest hash after deleting failed episodes.
++    # The fixed N and actual pool, rather than this self-declared subset, govern coverage.
++    selected = assignments[:2] if tamper == "omit_failed" else assignments
++    manifest = {
++        "schema_version": "ced.assignments.v1",
++        "protocol_hash": frozen.content_hash,
++        "assignments": [asdict(row) for row in selected],
++    }
++    manifest["content_hash"] = content_digest(manifest)
++    (runs / "assignments.json").write_text(canonical_json(manifest))
++    if tamper != "omit_pool":
++        (runs / "pools.json").write_text(canonical_json({"formal": scene_pool}))
++    # Missing pool must reject before record decoding, so this case needs no large file.
++    recorded = selected if tamper == "complete" else selected[:2]
++    (runs / "records.jsonl").write_text(
++        "\n".join(
++            canonical_json(run_assignment(row, frozen).to_payload(protocol=frozen))
++            for row in recorded
++        )
++        + "\n"
++    )
++    original = (runs / "records.jsonl").read_bytes()
++    result = api("acceptance").analyze_research_runs(
++        runs, protocol, tmp_path / "out", software_only=True
++    )
++    saved_metrics = json.loads((tmp_path / "out" / "metrics.json").read_text())
++    if tamper == "complete":
++        assert result["status"] == "SOFTWARE_ONLY"
++        assert saved_metrics["coverage_status"] == "COMPLETE"
++        assert saved_metrics["assignment_denominator"] == 4200
++        assert saved_metrics["main_paired_group_denominator"] == 600
++        assert {row["assigned_denominator"] for row in saved_metrics["methods"].values()} == {600}
++        assert {row["penalized_duration_p95_s"] for row in saved_metrics["methods"].values()} == {
++            120
++        }
++        assert saved_metrics["accepted_physical_success"] == 0
++        default = api("acceptance").analyze_research_runs(runs, protocol, tmp_path / "formal-out")
++        assert default["status"] == "NOT_RUN"
++        assert all(row["status"] == "NOT_RUN" for row in default["goal_verdicts"])
++    else:
++        assert result["status"] == "NOT_RUN"
++        assert "coverage" in result["reasons"][0]
++        assert saved_metrics["coverage_status"] == "INCOMPLETE"
++    assert (runs / "records.jsonl").read_bytes() == original

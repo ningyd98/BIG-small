@@ -1,0 +1,110 @@
+--- before/src/cloud_edge_robot_arm/research/reproducibility.py
++++ after/src/cloud_edge_robot_arm/research/reproducibility.py
+@@ -137,6 +137,32 @@
+     return ReproductionManifest(**payload["manifest"])
+ 
+ 
++def _archived_assignment_ids(root: Path, hashes: Mapping[str, str]) -> set[str]:
++    """Find original episode identities in the declared archive, including failures.
++
++    Unrelated JSON may contain raw malformed model responses and is byte evidence,
++    so only structured episode records with an assignment identity join coverage.
++    """
++    identities: set[str] = set()
++    for name in hashes:
++        path = _resolve(root, name)
++        if path.suffix not in {".json", ".jsonl"} or not path.is_file():
++            continue
++        try:
++            rows = [json.loads(line) for line in path.read_text().splitlines()] if (
++                path.suffix == ".jsonl"
++            ) else [json.loads(path.read_text())]
++        except (ValueError, UnicodeError):
++            continue
++        for row in rows:
++            if not isinstance(row, dict) or not isinstance(row.get("assignment"), dict):
++                continue
++            identity = row["assignment"].get("assignment_id")
++            if isinstance(identity, str) and identity:
++                identities.add(identity)
++    return identities
++
++
+ def verify_reproduction_bundle(root: Path) -> Mapping[str, object]:
+     """Read all declared bytes; integrity is separate from experiment acceptance."""
+     errors: list[str] = []
+@@ -160,6 +186,17 @@
+                 errors.append(f"missing source file: {name}")
+             elif hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                 errors.append(f"file hash mismatch: {name}")
++        if manifest.protocol_path:
++            protocol_file = _resolve(root, manifest.protocol_path) / "protocol.json"
++            if protocol_file.relative_to(root).as_posix() not in manifest.artifact_hashes:
++                raise ValueError("bound protocol absent from artifact inventory")
++            from cloud_edge_robot_arm.research.protocol import load_protocol
++
++            frozen = load_protocol(_resolve(root, manifest.protocol_path))
++            if manifest.protocol_hash != frozen.content_hash:
++                raise ValueError("reproduction protocol hash differs from its bound protocol")
++            if manifest.model_snapshot_hash != frozen.spec.model_snapshot_hash:
++                raise ValueError("reproduction model hash differs from its bound protocol")
+         if manifest.assignment_index_path:
+             if manifest.assignment_index_path not in manifest.artifact_hashes:
+                 raise ValueError("assignment index must be in the artifact inventory")
+@@ -176,6 +213,8 @@
+                     or set(assignments) != set(records)):
+                 raise ValueError("assignment coverage must retain every failed/blocked original")
+             assigned, recorded = len(assignments), len(records)
++            if _archived_assignment_ids(root, manifest.artifact_hashes) != set(assignments):
++                raise ValueError("assignment index omits archived original episode records")
+             for path in set(records.values()):
+                 if path not in manifest.artifact_hashes:
+                     raise ValueError("assignment record absent from artifact inventory")
+@@ -231,6 +270,8 @@
+     frozen = load_protocol(protocol)
+     if manifest.protocol_hash != frozen.content_hash:
+         raise ValueError("reproduction protocol hash differs from its bound protocol")
++    if manifest.model_snapshot_hash != frozen.spec.model_snapshot_hash:
++        raise ValueError("reproduction model hash differs from its bound protocol")
+     from cloud_edge_robot_arm.research.acceptance import analyze_research_runs
+ 
+     analysis = analyze_research_runs(runs, protocol, output, software_only=software_only)
+--- before/tests/test_research_reproducibility.py
++++ after/tests/test_research_reproducibility.py
+@@ -62,6 +62,22 @@
+     manifest = bundle(tmp_path)
+     path = tmp_path / "assignments.json"
+     index = json.loads(path.read_text())
++    del index["records"]["a"]
++    path.write_text(json.dumps(index))
++    payload = manifest.to_payload()
++    payload["artifact_hashes"]["assignments.json"] = hashlib.sha256(path.read_bytes()).hexdigest()
++    (tmp_path / "reproduction-manifest.json").write_text(json.dumps({
++        "schema_version": "ced.reproduction-manifest.v1", "manifest": payload,
++        "content_hash": digest(payload),
++    }))
++    assert api().verify_reproduction_bundle(tmp_path)["integrity_valid"] is False
++
++
++def test_rehashed_index_cannot_delete_both_assignment_and_failed_record_reference(tmp_path):
++    manifest = bundle(tmp_path)
++    path = tmp_path / "assignments.json"
++    index = json.loads(path.read_text())
++    index["assignments"].remove("a")
+     del index["records"]["a"]
+     path.write_text(json.dumps(index))
+     payload = manifest.to_payload()
+@@ -242,3 +258,13 @@
+     assert rebuilt["research_accepted"] is False
+     assert json.loads((saved / "metrics.json").read_text()) == json.loads(
+         (output / "metrics.json").read_text())
++    payload = manifest.to_payload()
++    payload["model_snapshot_hash"] = "f" * 64
++    (tmp_path / "reproduction-manifest.json").write_text(json.dumps({
++        "schema_version": "ced.reproduction-manifest.v1", "manifest": payload,
++        "content_hash": digest(payload),
++    }))
++    assert api().verify_reproduction_bundle(tmp_path)["integrity_valid"] is False
++    with pytest.raises(ValueError, match="model"):
++        api().rebuild_analysis(tmp_path, tmp_path / "wrong-model", software_only=True)
++    assert not (tmp_path / "wrong-model").exists()

@@ -1,0 +1,44 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_strict_actuator_schema_and_numeric_types[bias_bool] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-857/test_strict_actuator_schema_an0')
+mutation = 'bias_bool'
+
+    @pytest.mark.parametrize("mutation", [
+        "unknown", "bias_bool", "q_bool", "gain_bool", "range_bool", "output_bool",
+        "target_bool", "finger_bool",
+    ])
+    def test_strict_actuator_schema_and_numeric_types(tmp_path: Path, mutation: str) -> None:
+        case, directory = fixture_case(tmp_path)
+        path = directory / "raw-actuators.jsonl"
+        rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+        if mutation == "unknown":
+            rows[5]["unrecognized_authority"] = True
+        else:
+            key = {
+                "bias_bool": "pre_gravity_bias_nm", "q_bool": "pre_joint_positions_rad",
+                "gain_bool": "actuator_gains", "range_bool": "actuator_ctrl_ranges",
+                "output_bool": "control_rad", "target_bool": "applied_joint_targets_rad",
+                "finger_bool": "finger_control_targets_m",
+            }[mutation]
+            if mutation == "range_bool":
+                rows[5][key][0][0] = False
+            else:
+                rows[5][key][0 if mutation == "bias_bool" else 1] = False
+        rewrite_jsonl(path, rows)
+        result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+>       assert result.status == "INVALID", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_sources.py:679: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_strict_actuator_schema_and_numeric_types[bias_bool]
+1 failed, 47 deselected in 0.35s

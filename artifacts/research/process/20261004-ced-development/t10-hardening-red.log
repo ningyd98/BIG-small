@@ -1,0 +1,112 @@
+..........FF..........FF...FF                                            [100%]
+=================================== FAILURES ===================================
+_____________ test_precondition_verdict_is_bound_to_current_frame ______________
+
+    def test_precondition_verdict_is_bound_to_current_frame():
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        sample = contract(preconditions=(ConditionSpec("target_visible", target_id="object"),))
+        online = online_evidence()
+>       assert verdict(sample, online_evidence=online).status == "VALID"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_evidence_contract.py:83: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...uirements=('rgbd',)),), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+kwargs = {'online_evidence': OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', c...'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')}
+_ = <module 'cloud_edge_robot_arm.edge.evidence.models' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/evidence/models.py'>
+validator = <module 'cloud_edge_robot_arm.edge.evidence.validator' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/evidence/validator.py'>
+
+    def verdict(value, **kwargs):
+        _, validator = api()
+>       return validator.validate_evidence(
+            value, now=NOW, current_context_hash="context-1", calibration_version="cal-1",
+            **kwargs,
+        )
+E       TypeError: validate_evidence() got an unexpected keyword argument 'online_evidence'
+
+tests/test_visual_evidence_contract.py:35: TypeError
+___________ test_b3_keeps_basic_sensor_context_and_condition_checks ____________
+
+    def test_b3_keeps_basic_sensor_context_and_condition_checks():
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        _, validator = api()
+        sample = contract(preconditions=(ConditionSpec("target_reachable", target_id="object"),))
+        online = online_evidence()
+        online = replace(online, visual_facts={"target_reachable": {
+            **online.visual_facts["target_visible"], "value": False}})
+>       assert validator.validate_b3(sample, NOW, "context-1", "cal-1",
+                                     online_evidence=online).status == "INVALID"
+E       TypeError: validate_b3() got an unexpected keyword argument 'online_evidence'
+
+tests/test_visual_evidence_contract.py:98: TypeError
+__________ test_current_boolean_version_cannot_alias_integer_version ___________
+
+    def test_current_boolean_version_cannot_alias_integer_version():
+        decision, current, validator = decisions()
+>       assert validator.validate_decision_commit(
+            decision, replace(current, plan_version=True), NOW).status == "INVALID"
+E       AssertionError: assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_visual_evidence_contract.py:160: AssertionError
+____________ test_contract_copies_nested_condition_and_sensor_state ____________
+
+    def test_contract_copies_nested_condition_and_sensor_state():
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        nested = {"thresholds": {"minimum": 1}}
+        requirements = ["rgbd"]
+        value = contract(preconditions=(ConditionSpec("target_visible", "object", nested,
+                                                    requirements),))
+        nested["thresholds"]["minimum"] = 99
+        requirements.append("unavailable")
+>       assert value.preconditions[0].tolerances["thresholds"]["minimum"] == 1
+E       assert 99 == 1
+
+tests/test_visual_evidence_contract.py:172: AssertionError
+______ test_invalid_contract_metadata_cannot_authorize[plan_version-True] ______
+
+field = 'plan_version', value = True
+
+    @pytest.mark.parametrize("field,value", [
+        ("expected_duration_s", float("inf")), ("ordinary_ttl_s", 0),
+        ("allowed_error_m", float("nan")), ("plan_version", True), ("command_seq", -1),
+    ])
+    def test_invalid_contract_metadata_cannot_authorize(field, value):
+>       assert verdict(replace(contract(), **{field: value})).status != "VALID"
+E       AssertionError: assert 'VALID' != 'VALID'
+E        +  where 'VALID' = EvidenceVerdict(status='VALID', reasons=('completion_bound_within_tolerance',), bound_at_completion_m=0.008).status
+E        +    where EvidenceVerdict(status='VALID', reasons=('completion_bound_within_tolerance',), bound_at_completion_m=0.008) = verdict(ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...), preconditions=(), postconditions=(), plan_version=True, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0))
+E        +      where ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...), preconditions=(), postconditions=(), plan_version=True, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0) = replace(ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0), **{'plan_version': True})
+E        +        where ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0) = contract()
+
+tests/test_visual_evidence_contract.py:183: AssertionError
+_______ test_invalid_contract_metadata_cannot_authorize[command_seq--1] ________
+
+field = 'command_seq', value = -1
+
+    @pytest.mark.parametrize("field,value", [
+        ("expected_duration_s", float("inf")), ("ordinary_ttl_s", 0),
+        ("allowed_error_m", float("nan")), ("plan_version", True), ("command_seq", -1),
+    ])
+    def test_invalid_contract_metadata_cannot_authorize(field, value):
+>       assert verdict(replace(contract(), **{field: value})).status != "VALID"
+E       AssertionError: assert 'VALID' != 'VALID'
+E        +  where 'VALID' = EvidenceVerdict(status='VALID', reasons=('completion_bound_within_tolerance',), bound_at_completion_m=0.008).status
+E        +    where EvidenceVerdict(status='VALID', reasons=('completion_bound_within_tolerance',), bound_at_completion_m=0.008) = verdict(ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...',), preconditions=(), postconditions=(), plan_version=1, command_seq=-1, context_hash='context-1', ordinary_ttl_s=5.0))
+E        +      where ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...',), preconditions=(), postconditions=(), plan_version=1, command_seq=-1, context_hash='context-1', ordinary_ttl_s=5.0) = replace(ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0), **{'command_seq': -1})
+E        +        where ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0) = contract()
+
+tests/test_visual_evidence_contract.py:183: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_evidence_contract.py::test_precondition_verdict_is_bound_to_current_frame
+FAILED tests/test_visual_evidence_contract.py::test_b3_keeps_basic_sensor_context_and_condition_checks
+FAILED tests/test_visual_evidence_contract.py::test_current_boolean_version_cannot_alias_integer_version
+FAILED tests/test_visual_evidence_contract.py::test_contract_copies_nested_condition_and_sensor_state
+FAILED tests/test_visual_evidence_contract.py::test_invalid_contract_metadata_cannot_authorize[plan_version-True]
+FAILED tests/test_visual_evidence_contract.py::test_invalid_contract_metadata_cannot_authorize[command_seq--1]
+6 failed, 23 passed in 0.28s

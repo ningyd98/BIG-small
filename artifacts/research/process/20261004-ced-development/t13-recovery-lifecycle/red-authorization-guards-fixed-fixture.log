@@ -1,0 +1,204 @@
+...FF....FF.                                                             [100%]
+=================================== FAILURES ===================================
+_ test_authorization_rechecks_transaction_current_guards[memory-actual_skill_limit] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x73f5dfddf6b0>
+change = 'actual_skill_limit'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint", "critical_event",
+                                       "actual_skill_limit", "boolean_counters", "expired_retry"])
+    def test_authorization_rechecks_transaction_current_guards(lifecycle_repo, change):
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent
+    
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        params = {}
+        if change == "cancel":
+            lifecycle_repo.save_state("task", "CANCELLED", "MOCK late cancellation")
+        elif change == "checkpoint":
+            checkpoint = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                "checkpoint_id": "changed", "checkpoint_hash": "",
+                "updated_at": datetime.now(UTC),
+            }))
+        elif change == "critical_event":
+            lifecycle_repo.save_event(EdgeEvent(
+                task_id="task", plan_version=1, command_seq=1, event_id="critical",
+                event_type="GRASP_FAILED", severity="CRITICAL", step_id="grasp",
+                timestamp=datetime.now(UTC),
+            ))
+        elif change == "actual_skill_limit":
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "skill_retry_counts": {"GRASP": 3}, "retry_count_used": 3,
+                "task_retry_count": 3, "remaining_retries": 5,
+            }))
+        elif change == "boolean_counters":
+            params = {"expected_recovery_revision": False,
+                      "expected_verification_budget_revision": False, "expected_retry_count": False}
+        else:
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "retry_deadline": datetime.now(UTC) - timedelta(seconds=1),
+            }))
+        before = lifecycle_repo.get_retry_budget("task")
+        pool_before = lifecycle_repo.get_verification_budget("task")
+        result = atomic_authorize(lifecycle_repo, saved, proof, **params)
+>       assert not result.authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='92fd7d9e596337ad7550d599320f803812e039a3d244589c06dd6f4f9593f4c3'), reasons=()).authorized
+
+tests/test_recovery_lifecycle_module.py:382: AssertionError
+_ test_authorization_rechecks_transaction_current_guards[memory-boolean_counters] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x73f5de16f290>
+change = 'boolean_counters'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint", "critical_event",
+                                       "actual_skill_limit", "boolean_counters", "expired_retry"])
+    def test_authorization_rechecks_transaction_current_guards(lifecycle_repo, change):
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent
+    
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        params = {}
+        if change == "cancel":
+            lifecycle_repo.save_state("task", "CANCELLED", "MOCK late cancellation")
+        elif change == "checkpoint":
+            checkpoint = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                "checkpoint_id": "changed", "checkpoint_hash": "",
+                "updated_at": datetime.now(UTC),
+            }))
+        elif change == "critical_event":
+            lifecycle_repo.save_event(EdgeEvent(
+                task_id="task", plan_version=1, command_seq=1, event_id="critical",
+                event_type="GRASP_FAILED", severity="CRITICAL", step_id="grasp",
+                timestamp=datetime.now(UTC),
+            ))
+        elif change == "actual_skill_limit":
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "skill_retry_counts": {"GRASP": 3}, "retry_count_used": 3,
+                "task_retry_count": 3, "remaining_retries": 5,
+            }))
+        elif change == "boolean_counters":
+            params = {"expected_recovery_revision": False,
+                      "expected_verification_budget_revision": False, "expected_retry_count": False}
+        else:
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "retry_deadline": datetime.now(UTC) - timedelta(seconds=1),
+            }))
+        before = lifecycle_repo.get_retry_budget("task")
+        pool_before = lifecycle_repo.get_verification_budget("task")
+        result = atomic_authorize(lifecycle_repo, saved, proof, **params)
+>       assert not result.authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='8af0a1fe1d187cf3e83e05d24bd9f0b40db1a93e3151d77032e7768c91bb32db'), reasons=()).authorized
+
+tests/test_recovery_lifecycle_module.py:382: AssertionError
+_ test_authorization_rechecks_transaction_current_guards[sqlite-actual_skill_limit] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x73f5de1e6900>
+change = 'actual_skill_limit'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint", "critical_event",
+                                       "actual_skill_limit", "boolean_counters", "expired_retry"])
+    def test_authorization_rechecks_transaction_current_guards(lifecycle_repo, change):
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent
+    
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        params = {}
+        if change == "cancel":
+            lifecycle_repo.save_state("task", "CANCELLED", "MOCK late cancellation")
+        elif change == "checkpoint":
+            checkpoint = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                "checkpoint_id": "changed", "checkpoint_hash": "",
+                "updated_at": datetime.now(UTC),
+            }))
+        elif change == "critical_event":
+            lifecycle_repo.save_event(EdgeEvent(
+                task_id="task", plan_version=1, command_seq=1, event_id="critical",
+                event_type="GRASP_FAILED", severity="CRITICAL", step_id="grasp",
+                timestamp=datetime.now(UTC),
+            ))
+        elif change == "actual_skill_limit":
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "skill_retry_counts": {"GRASP": 3}, "retry_count_used": 3,
+                "task_retry_count": 3, "remaining_retries": 5,
+            }))
+        elif change == "boolean_counters":
+            params = {"expected_recovery_revision": False,
+                      "expected_verification_budget_revision": False, "expected_retry_count": False}
+        else:
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "retry_deadline": datetime.now(UTC) - timedelta(seconds=1),
+            }))
+        before = lifecycle_repo.get_retry_budget("task")
+        pool_before = lifecycle_repo.get_verification_budget("task")
+        result = atomic_authorize(lifecycle_repo, saved, proof, **params)
+>       assert not result.authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='cd98c079a7f9fd21d66063cb0571a43b56f826464f161592a3851f09014e0469'), reasons=()).authorized
+
+tests/test_recovery_lifecycle_module.py:382: AssertionError
+_ test_authorization_rechecks_transaction_current_guards[sqlite-boolean_counters] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x73f5de1e7530>
+change = 'boolean_counters'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint", "critical_event",
+                                       "actual_skill_limit", "boolean_counters", "expired_retry"])
+    def test_authorization_rechecks_transaction_current_guards(lifecycle_repo, change):
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent
+    
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        params = {}
+        if change == "cancel":
+            lifecycle_repo.save_state("task", "CANCELLED", "MOCK late cancellation")
+        elif change == "checkpoint":
+            checkpoint = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                "checkpoint_id": "changed", "checkpoint_hash": "",
+                "updated_at": datetime.now(UTC),
+            }))
+        elif change == "critical_event":
+            lifecycle_repo.save_event(EdgeEvent(
+                task_id="task", plan_version=1, command_seq=1, event_id="critical",
+                event_type="GRASP_FAILED", severity="CRITICAL", step_id="grasp",
+                timestamp=datetime.now(UTC),
+            ))
+        elif change == "actual_skill_limit":
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "skill_retry_counts": {"GRASP": 3}, "retry_count_used": 3,
+                "task_retry_count": 3, "remaining_retries": 5,
+            }))
+        elif change == "boolean_counters":
+            params = {"expected_recovery_revision": False,
+                      "expected_verification_budget_revision": False, "expected_retry_count": False}
+        else:
+            budget = lifecycle_repo.get_retry_budget("task")
+            lifecycle_repo.save_retry_budget(budget.model_copy(update={
+                "retry_deadline": datetime.now(UTC) - timedelta(seconds=1),
+            }))
+        before = lifecycle_repo.get_retry_budget("task")
+        pool_before = lifecycle_repo.get_verification_budget("task")
+        result = atomic_authorize(lifecycle_repo, saved, proof, **params)
+>       assert not result.authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='5b7a848e8f288e0d3e391bc1b3dba049557d4c5c4bcdb18fd968a02e7eb8f785'), reasons=()).authorized
+
+tests/test_recovery_lifecycle_module.py:382: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_rechecks_transaction_current_guards[memory-actual_skill_limit]
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_rechecks_transaction_current_guards[memory-boolean_counters]
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_rechecks_transaction_current_guards[sqlite-actual_skill_limit]
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_rechecks_transaction_current_guards[sqlite-boolean_counters]
+4 failed, 8 passed, 40 deselected in 2.28s

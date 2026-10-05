@@ -1,0 +1,94 @@
+...........................FFF.                                          [100%]
+=================================== FAILURES ===================================
+__ test_expired_task_contract_stops_even_when_verification_deadline_is_later ___
+
+    def test_expired_task_contract_stops_even_when_verification_deadline_is_later():
+        snap = snapshot()
+        snap = replace(snap, active_contract=snap.active_contract.model_copy(
+            update={"valid_until": NOW + timedelta(seconds=.15)}))
+        adapter, selected = software_adapter(snap)
+        result = adapter.evaluate(event(snap))
+>       assert result.action == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...: 'REOBSERVE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + REOBSERVE
+
+tests/test_runtime_composition.py:326: AssertionError
+___ test_naive_contract_time_fails_closed_without_ordinary_choice[timestamp] ___
+
+field = 'timestamp'
+
+    @pytest.mark.parametrize("field", ["timestamp", "valid_until"])
+    def test_naive_contract_time_fails_closed_without_ordinary_choice(field):
+        snap = snapshot()
+>       snap = replace(snap, active_contract=snap.active_contract.model_copy(
+            update={field: getattr(snap.active_contract, field).replace(tzinfo=None)}))
+
+tests/test_runtime_composition.py:335: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:16: in __init__
+    ???
+src/cloud_edge_robot_arm/auto_mode/runtime_composition.py:86: in __post_init__
+    object.__setattr__(self, name, _isolated(getattr(self, name)))
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0), control_mo...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+
+    def _isolated(value: Any) -> Any:
+        if isinstance(value, BaseModel):
+            if set(vars(value)) - set(type(value).model_fields):
+                raise ValueError("undeclared runtime model fields")
+>           return type(value).model_validate(_isolated(value.model_dump()))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for TaskContract
+E           timestamp
+E             Value error, timestamp must include timezone information [type=value_error, input_value=datetime.datetime(2026, 10, 4, 0, 0), input_type=datetime]
+E               For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+src/cloud_edge_robot_arm/auto_mode/runtime_composition.py:44: ValidationError
+__ test_naive_contract_time_fails_closed_without_ordinary_choice[valid_until] __
+
+field = 'valid_until'
+
+    @pytest.mark.parametrize("field", ["timestamp", "valid_until"])
+    def test_naive_contract_time_fails_closed_without_ordinary_choice(field):
+        snap = snapshot()
+>       snap = replace(snap, active_contract=snap.active_contract.model_copy(
+            update={field: getattr(snap.active_contract, field).replace(tzinfo=None)}))
+
+tests/test_runtime_composition.py:335: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:16: in __init__
+    ???
+src/cloud_edge_robot_arm/auto_mode/runtime_composition.py:86: in __post_init__
+    object.__setattr__(self, name, _isolated(getattr(self, name)))
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+
+    def _isolated(value: Any) -> Any:
+        if isinstance(value, BaseModel):
+            if set(vars(value)) - set(type(value).model_fields):
+                raise ValueError("undeclared runtime model fields")
+>           return type(value).model_validate(_isolated(value.model_dump()))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for TaskContract
+E           valid_until
+E             Value error, contract datetimes must include timezone information [type=value_error, input_value=datetime.datetime(2026, 10, 4, 0, 1), input_type=datetime]
+E               For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+src/cloud_edge_robot_arm/auto_mode/runtime_composition.py:44: ValidationError
+=========================== short test summary info ============================
+FAILED tests/test_runtime_composition.py::test_expired_task_contract_stops_even_when_verification_deadline_is_later
+FAILED tests/test_runtime_composition.py::test_naive_contract_time_fails_closed_without_ordinary_choice[timestamp]
+FAILED tests/test_runtime_composition.py::test_naive_contract_time_fails_closed_without_ordinary_choice[valid_until]
+3 failed, 28 passed in 0.75s

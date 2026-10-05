@@ -1,0 +1,188 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____ test_expired_preflight_does_not_acquire_another_evidence_frame[memory] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x76f19e16e900>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76f19e16c110>
+
+    def test_expired_preflight_does_not_acquire_another_evidence_frame(lifecycle_repo, monkeypatch):
+        import cloud_edge_robot_arm.edge.recovery.lifecycle as lifecycle
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "UNKNOWN")
+        future = record.budget_state.deadline_at + timedelta(seconds=1)
+        class FutureClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return future
+        monkeypatch.setattr(lifecycle, "datetime", FutureClock)
+        calls = []
+        def acquire(_):
+            calls.append("MOCK acquisition")
+            return source
+        service = lifecycle.RecoveryLifecycleService(repository=lifecycle_repo,
+                                                     evidence_provider=acquire)
+>       service.advance_recovery(record.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", ())
+
+tests/test_recovery_lifecycle_module.py:1377: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/edge/recovery/lifecycle.py:970: in advance_recovery
+    updated = self.repository.advance_recovery_if_current(
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:332: in advance_recovery_if_current
+    values = transition_values(current, pool, verified_transition,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+record = RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=..._scope='SOFTWARE_ONLY', authorized_at=datetime.datetime(2026, 10, 4, 11, 55, 24, 483982, tzinfo=datetime.timezone.utc))
+pool = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=7...486482, tzinfo=datetime.timezone.utc), content_hash='6d2110f2ac91528430baa095fb33959e8b499df46ec48bb1c845d7e19585815e')
+proof = RecoveryTransitionEvidence(requested_state='VERIFIED_RESOLVED', verification=(), execution=None, online_evidence=Onlin...y({}), plan_version=1, command_seq=1, context_hash='22cd483f842e7db0fb1307ac00246c59aa3e2cc004808a9f5859bba809152fb1'))
+active = ActiveTaskContractRecord(task_id='task', plan_id='plan', robot_id='robot', plan_version=1, command_seq=1, scene_versio...uperseded_at=None, correlation_id='', contract_hash='d5759249f076a284d85699265fd656a5f0fb59d7a652729c03069a3183b17db6')
+checkpoint = ExecutionCheckpoint(checkpoint_id='c942291f822c4e2699315d151ec44c81', task_id='task', plan_id='plan', plan_version=1, ...e.timezone.utc), correlation_id='', checkpoint_hash='22cd483f842e7db0fb1307ac00246c59aa3e2cc004808a9f5859bba809152fb1')
+cancelled = False
+now = datetime.datetime(2026, 10, 4, 11, 55, 24, 488239, tzinfo=datetime.timezone.utc)
+
+    def transition_values(
+        record: RecoveryRecord,
+        pool: VerificationBudgetRecord,
+        proof: RecoveryTransitionEvidence,
+        active: ActiveTaskContractRecord | None,
+        checkpoint: ExecutionCheckpoint | None,
+        cancelled: bool,
+        now: datetime,
+    ) -> tuple[RecoveryRecord, VerificationBudgetRecord] | None:
+        """Pure derivation inside repository CAS; providers are never invoked under its lock."""
+        if not isinstance(proof, RecoveryTransitionEvidence):
+            raise ValueError("typed actual transition source required")
+        if record.state in {"VERIFIED_RESOLVED", "EXHAUSTED", "UNRECOVERABLE"}:
+            return None
+        state = copy_budget(pool.state)
+        changes: dict[str, Any] = {}
+        next_state = record.state
+        if now >= state.deadline_at or state.exhausted_reason:
+            state.exhausted_reason = state.exhausted_reason or "deadline_exhausted"
+            next_state = "EXHAUSTED"
+        elif proof.requested_state == "UNRECOVERABLE":
+            next_state = "UNRECOVERABLE"
+        elif not _current_source(record, active, checkpoint, cancelled) or checkpoint is None:
+            return None
+        elif record.state == "RECOVERY_AUTHORIZED" and proof.requested_state == "RETRY_EXECUTED":
+            if not _execution_available(record, proof.execution, checkpoint, now):
+                return None
+            assert proof.execution is not None and proof.execution.completion is not None
+            next_state = "RETRY_EXECUTED"
+            changes.update(
+                execution_receipt=proof.execution.receipt,
+                execution_completion=proof.execution.completion,
+                executed_at=proof.execution.completion.timestamp,
+                executed_checkpoint_hash=proof.execution.checkpoint_hash,
+            )
+        elif record.state == "RETRY_EXECUTED" and proof.requested_state in {
+            "RETRY_EXECUTED",
+            "VERIFIED_RESOLVED",
+        }:
+            source = proof.online_evidence
+            if (
+                source is None
+                or not _safe_robot(source.robot_state)
+                or (record.last_observation_id and not record.reobservation_reserved)
+            ):
+                return None
+            actual = tuple(evaluate_conditions(record.conditions, source, now=now))
+            if _plain_data(actual) != _plain_data(proof.verification):
+>               raise ValueError("supplied verdict differs from canonical actual source")
+E               ValueError: supplied verdict differs from canonical actual source
+
+src/cloud_edge_robot_arm/edge/recovery/lifecycle.py:798: ValueError
+____ test_expired_preflight_does_not_acquire_another_evidence_frame[sqlite] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x76f19a3b3ad0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76f19a3b3f80>
+
+    def test_expired_preflight_does_not_acquire_another_evidence_frame(lifecycle_repo, monkeypatch):
+        import cloud_edge_robot_arm.edge.recovery.lifecycle as lifecycle
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "UNKNOWN")
+        future = record.budget_state.deadline_at + timedelta(seconds=1)
+        class FutureClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return future
+        monkeypatch.setattr(lifecycle, "datetime", FutureClock)
+        calls = []
+        def acquire(_):
+            calls.append("MOCK acquisition")
+            return source
+        service = lifecycle.RecoveryLifecycleService(repository=lifecycle_repo,
+                                                     evidence_provider=acquire)
+>       service.advance_recovery(record.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", ())
+
+tests/test_recovery_lifecycle_module.py:1377: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/edge/recovery/lifecycle.py:970: in advance_recovery
+    updated = self.repository.advance_recovery_if_current(
+src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py:837: in advance_recovery_if_current
+    values = transition_values(current, pool, verified_transition,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+record = RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...idence_scope='SOFTWARE_ONLY', authorized_at=FutureClock(2026, 10, 4, 11, 55, 24, 775877, tzinfo=datetime.timezone.utc))
+pool = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=7...788075, tzinfo=datetime.timezone.utc), content_hash='d5053a864fd77c5d2f4d636fe1f4e6f494017a1eba6c7189e533cc260e22e5a2')
+proof = RecoveryTransitionEvidence(requested_state='VERIFIED_RESOLVED', verification=(), execution=None, online_evidence=Onlin...y({}), plan_version=1, command_seq=1, context_hash='7750514b9b505485e33b8b2cbf6817ae546cb81e57ac0b651da74b9fd5d32c9d'))
+active = ActiveTaskContractRecord(task_id='task', plan_id='plan', robot_id='robot', plan_version=1, command_seq=1, scene_versio...uperseded_at=None, correlation_id='', contract_hash='724ed31c4c8c29eb848d815350a405a821fa12058a486667d51dd6a63274d885')
+checkpoint = ExecutionCheckpoint(checkpoint_id='c59c16419e974035bb88fc0327ed58be', task_id='task', plan_id='plan', plan_version=1, ...info=TzInfo(0)), correlation_id='', checkpoint_hash='7750514b9b505485e33b8b2cbf6817ae546cb81e57ac0b651da74b9fd5d32c9d')
+cancelled = False
+now = datetime.datetime(2026, 10, 4, 11, 55, 24, 795728, tzinfo=datetime.timezone.utc)
+
+    def transition_values(
+        record: RecoveryRecord,
+        pool: VerificationBudgetRecord,
+        proof: RecoveryTransitionEvidence,
+        active: ActiveTaskContractRecord | None,
+        checkpoint: ExecutionCheckpoint | None,
+        cancelled: bool,
+        now: datetime,
+    ) -> tuple[RecoveryRecord, VerificationBudgetRecord] | None:
+        """Pure derivation inside repository CAS; providers are never invoked under its lock."""
+        if not isinstance(proof, RecoveryTransitionEvidence):
+            raise ValueError("typed actual transition source required")
+        if record.state in {"VERIFIED_RESOLVED", "EXHAUSTED", "UNRECOVERABLE"}:
+            return None
+        state = copy_budget(pool.state)
+        changes: dict[str, Any] = {}
+        next_state = record.state
+        if now >= state.deadline_at or state.exhausted_reason:
+            state.exhausted_reason = state.exhausted_reason or "deadline_exhausted"
+            next_state = "EXHAUSTED"
+        elif proof.requested_state == "UNRECOVERABLE":
+            next_state = "UNRECOVERABLE"
+        elif not _current_source(record, active, checkpoint, cancelled) or checkpoint is None:
+            return None
+        elif record.state == "RECOVERY_AUTHORIZED" and proof.requested_state == "RETRY_EXECUTED":
+            if not _execution_available(record, proof.execution, checkpoint, now):
+                return None
+            assert proof.execution is not None and proof.execution.completion is not None
+            next_state = "RETRY_EXECUTED"
+            changes.update(
+                execution_receipt=proof.execution.receipt,
+                execution_completion=proof.execution.completion,
+                executed_at=proof.execution.completion.timestamp,
+                executed_checkpoint_hash=proof.execution.checkpoint_hash,
+            )
+        elif record.state == "RETRY_EXECUTED" and proof.requested_state in {
+            "RETRY_EXECUTED",
+            "VERIFIED_RESOLVED",
+        }:
+            source = proof.online_evidence
+            if (
+                source is None
+                or not _safe_robot(source.robot_state)
+                or (record.last_observation_id and not record.reobservation_reserved)
+            ):
+                return None
+            actual = tuple(evaluate_conditions(record.conditions, source, now=now))
+            if _plain_data(actual) != _plain_data(proof.verification):
+>               raise ValueError("supplied verdict differs from canonical actual source")
+E               ValueError: supplied verdict differs from canonical actual source
+
+src/cloud_edge_robot_arm/edge/recovery/lifecycle.py:798: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_expired_preflight_does_not_acquire_another_evidence_frame[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_expired_preflight_does_not_acquire_another_evidence_frame[sqlite]
+2 failed, 154 deselected in 0.86s

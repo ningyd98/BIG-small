@@ -1,0 +1,30 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_foreground_depth_on_quiet_area_is_unknown_even_if_tag_and_red_remain ___
+
+    def test_foreground_depth_on_quiet_area_is_unknown_even_if_tag_and_red_remain():
+        module, observation, registration, context = inputs()
+        data = np.frombuffer(base64.b64decode(observation.depth_float32_base64), dtype="<f4").copy()
+        depths = data.reshape(observation.height, observation.width)
+        depths[237:242, 347:350] = 0.5  # finite positive foreground; tag corners/center stay intact
+        changed = RGBDObservation.model_validate(
+            {
+                **observation.model_dump(),
+                "depth_float32_base64": base64.b64encode(data.tobytes()).decode(),
+                "checksum_sha256": "",
+            }
+        )
+        result = module.replay_marker_target_development(
+            changed, registration, replace(context, observation_sha256=changed.checksum_sha256)
+        )
+        assert result.pose_estimate.status == "OBSERVED"  # qualified non-tag occlusion fixture
+>       assert result.status == "UNKNOWN" and "quiet_plane_sanity_failed" in result.reasons
+E       AssertionError: assert ('OBSERVED_CANDIDATE' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + OBSERVED_CANDIDATE)
+
+tests/test_marker_association.py:362: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_marker_association.py::test_foreground_depth_on_quiet_area_is_unknown_even_if_tag_and_red_remain
+1 failed in 0.78s

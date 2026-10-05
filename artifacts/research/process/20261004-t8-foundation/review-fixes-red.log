@@ -1,0 +1,68 @@
+.........FF.......F......FF                                              [100%]
+=================================== FAILURES ===================================
+___ test_online_summary_uses_elapsed_roundtrip_and_never_injection_bandwidth ___
+
+    def test_online_summary_uses_elapsed_roundtrip_and_never_injection_bandwidth():
+        injector = NetworkInjector(NetworkSchedule(schedule_id="unit", rtt_ms=600, seed=1),
+                                   wait=lambda _: None)
+        transfer = injector.begin(100)
+        time.sleep(.015)  # stand-in for actual provider transport, not the configured RTT
+        injector.finish(transfer, 200)
+        observed = injector.snapshot()
+>       assert .01 <= observed.observed_rtt_s < .2
+E       assert 0.5122474185869762 < 0.2
+E        +  where 0.5122474185869762 = NetworkCostSnapshot(observed_rtt_s=0.5122474185869762, observed_loss_rate=0.0, observed_bandwidth_bytes_s=1250000.0, sampled_at=datetime.datetime(2026, 10, 4, 3, 52, 49, 111895, tzinfo=datetime.timezone.utc)).observed_rtt_s
+
+tests/test_research_network.py:73: AssertionError
+___________ test_response_direction_can_lose_an_already_sent_request ___________
+
+    def test_response_direction_can_lose_an_already_sent_request():
+        injector = NetworkInjector(NetworkSchedule(schedule_id="unit", rtt_ms=0,
+                                   loss_rate=.5, seed=0), wait=lambda _: None)
+        transfer = injector.begin(10)
+>       with pytest.raises(TimeoutError, match="response"):
+E       Failed: DID NOT RAISE <class 'TimeoutError'>
+
+tests/test_research_network.py:81: Failed
+___________ test_final_cost_publications_include_late_response_bytes ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-380/test_final_cost_publications_i0')
+
+    def test_final_cost_publications_include_late_response_bytes(tmp_path):
+        import json
+        from datetime import UTC, datetime
+    
+        from cloud_edge_robot_arm.research.cost_ledger import CostLedger, RequestCost
+>       from scripts.run_rgbd_pilot import publish_final_costs
+E       ImportError: cannot import name 'publish_final_costs' from 'scripts.run_rgbd_pilot' (/home/ningyd/文档/ChatGPT/BIGsmall/scripts/run_rgbd_pilot.py)
+
+tests/test_research_pilot.py:46: ImportError
+______ test_each_stratum_has_balanced_independent_perturbation_parameters ______
+
+    def test_each_stratum_has_balanced_independent_perturbation_parameters():
+        pools = build_scene_pools(seed=81001, excluded_groups=set())
+        for stratum in ProtocolSpec().strata:
+            rows = [row for row in pools["foundation"] if row["stratum_id"] == stratum]
+            for parameter in ("movement_speed_m_s", "noise_m", "invalid_fraction",
+                              "occlusion_fraction"):
+>               values = [row["perturbation"][parameter] for row in rows]
+                          ^^^^^^^^^^^^^^^^^^^
+E               KeyError: 'perturbation'
+
+tests/test_research_protocol.py:76: KeyError
+_____________ test_tcap_alone_cannot_manufacture_an_initial_freeze _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-380/test_tcap_alone_cannot_manufac0')
+
+    def test_tcap_alone_cannot_manufacture_an_initial_freeze(tmp_path):
+>       with pytest.raises(ValueError, match="evidence"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_protocol.py:83: Failed
+=========================== short test summary info ============================
+FAILED tests/test_research_network.py::test_online_summary_uses_elapsed_roundtrip_and_never_injection_bandwidth
+FAILED tests/test_research_network.py::test_response_direction_can_lose_an_already_sent_request
+FAILED tests/test_research_pilot.py::test_final_cost_publications_include_late_response_bytes
+FAILED tests/test_research_protocol.py::test_each_stratum_has_balanced_independent_perturbation_parameters
+FAILED tests/test_research_protocol.py::test_tcap_alone_cannot_manufacture_an_initial_freeze
+5 failed, 22 passed in 1.50s

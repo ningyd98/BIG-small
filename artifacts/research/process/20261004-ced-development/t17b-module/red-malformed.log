@@ -1,0 +1,326 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+____________ test_malformed_result_shapes_fail_closed[report.json] _____________
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-651/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78b44653d8b0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-651/test_malformed_result_shapes_f0')
+artifact = 'report.json'
+
+    @pytest.mark.parametrize("artifact", ["report.json", "metrics.json", "goal_verdicts.json"])
+    def test_malformed_result_shapes_fail_closed(prepared_sources, monkeypatch, tmp_path, artifact):
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        (root / "run-1/analysis" / artifact).write_text("null\n")
+>       response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_results_api.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/starlette/testclient.py:473: in get
+    return super().get(
+.venv/lib/python3.12/site-packages/httpx/_client.py:1053: in get
+    return self.request(
+.venv/lib/python3.12/site-packages/starlette/testclient.py:445: in request
+    return super().request(
+.venv/lib/python3.12/site-packages/httpx/_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_client.py:914: in send
+    response = self._send_handling_auth(
+.venv/lib/python3.12/site-packages/httpx/_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv/lib/python3.12/site-packages/httpx/_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/starlette/testclient.py:348: in handle_request
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv/lib/python3.12/site-packages/anyio/from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+.venv/lib/python3.12/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/applications.py:1159: in __call__
+    await super().__call__(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:736: in app
+    await route.handle(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:290: in handle
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/fastapi/routing.py:134: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.12/site-packages/fastapi/routing.py:120: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/routing.py:674: in app
+    raw_response = await run_endpoint_function(
+.venv/lib/python3.12/site-packages/fastapi/routing.py:330: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/starlette/concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/cloud/api/research_results.py:350: in get_research_evidence
+    return _load_view(request, run_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+request = <starlette.requests.Request object at 0x78b4486b33b0>
+run_id = 'run-1'
+
+    def _load_view(request: Request, run_id: str) -> ResearchRunView:
+        registry = _registry(request)
+        if _RUN_ID.fullmatch(run_id) is None or run_id not in registry:
+            raise HTTPException(404, "research_run_not_found")
+        try:
+            registered = registry[run_id]
+            config = (
+                registered
+                if isinstance(registered, ResearchRunRegistration)
+                else ResearchRunRegistration.model_validate(registered)
+            )
+            configured_root = getattr(request.app.state, "research_artifact_root", None)
+            if configured_root is None:
+                return _missing(run_id, ["configured_artifact_root"])
+            root = Path(configured_root).absolute()
+            paths = {
+                "protocol": _resolve(root, config.protocol_path + "/protocol.json"),
+                "assignments": _resolve(root, config.runs_path + "/assignments.json"),
+                "records": _resolve(root, config.runs_path + "/records.jsonl"),
+                "pools": _resolve(root, config.runs_path + "/pools.json"),
+                "report": _resolve(root, config.analysis_path + "/report.json"),
+                "metrics": _resolve(root, config.analysis_path + "/metrics.json"),
+                "goals": _resolve(root, config.analysis_path + "/goal_verdicts.json"),
+            }
+            missing = [name for name, path in paths.items() if not path.is_file()]
+            if missing:
+                return _missing(run_id, missing)
+            source_bytes = {name: path.read_bytes() for name, path in paths.items()}
+            fingerprints = {name: hashlib.sha256(raw).hexdigest() for name, raw in source_bytes.items()}
+            cache = getattr(request.app.state, "research_results_cache", {})
+            fingerprint = content_digest({"paths": config.model_dump(), "hashes": fingerprints})
+            cached = cache.get(run_id)
+            if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == fingerprint:
+                cached_view = cached[1]
+                if isinstance(cached_view, ResearchRunView):
+                    return cached_view.model_copy(deep=True)
+            frozen = load_protocol(paths["protocol"].parent)
+            validate_formal_protocol(frozen)
+            report = json.loads(source_bytes["report"])
+            metrics = json.loads(source_bytes["metrics"])
+            goals = json.loads(source_bytes["goals"])
+>           if report.get("schema_version") != "ced.research-analysis.v1" or (
+               ^^^^^^^^^^
+                metrics.get("schema_version") != "ced.research-metrics.v1"
+                or report.get("formal_accepted") is not False
+                or report.get("physical_success") != 0
+            ):
+E           AttributeError: 'NoneType' object has no attribute 'get'
+
+src/cloud_edge_robot_arm/cloud/api/research_results.py:213: AttributeError
+____________ test_malformed_result_shapes_fail_closed[metrics.json] ____________
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-651/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78b4488b7a10>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-651/test_malformed_result_shapes_f1')
+artifact = 'metrics.json'
+
+    @pytest.mark.parametrize("artifact", ["report.json", "metrics.json", "goal_verdicts.json"])
+    def test_malformed_result_shapes_fail_closed(prepared_sources, monkeypatch, tmp_path, artifact):
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        (root / "run-1/analysis" / artifact).write_text("null\n")
+>       response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_results_api.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/starlette/testclient.py:473: in get
+    return super().get(
+.venv/lib/python3.12/site-packages/httpx/_client.py:1053: in get
+    return self.request(
+.venv/lib/python3.12/site-packages/starlette/testclient.py:445: in request
+    return super().request(
+.venv/lib/python3.12/site-packages/httpx/_client.py:825: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_client.py:914: in send
+    response = self._send_handling_auth(
+.venv/lib/python3.12/site-packages/httpx/_client.py:942: in _send_handling_auth
+    response = self._send_handling_redirects(
+.venv/lib/python3.12/site-packages/httpx/_client.py:979: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_client.py:1014: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/starlette/testclient.py:348: in handle_request
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/testclient.py:345: in handle_request
+    portal.call(self.app, scope, receive, send)
+.venv/lib/python3.12/site-packages/anyio/from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+.venv/lib/python3.12/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/applications.py:1159: in __call__
+    await super().__call__(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/applications.py:107: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:716: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:736: in app
+    await route.handle(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:290: in handle
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/fastapi/routing.py:134: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.12/site-packages/fastapi/routing.py:120: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/routing.py:674: in app
+    raw_response = await run_endpoint_function(
+.venv/lib/python3.12/site-packages/fastapi/routing.py:330: in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/starlette/concurrency.py:32: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/cloud/api/research_results.py:350: in get_research_evidence
+    return _load_view(request, run_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+request = <starlette.requests.Request object at 0x78b44a51ff80>
+run_id = 'run-1'
+
+    def _load_view(request: Request, run_id: str) -> ResearchRunView:
+        registry = _registry(request)
+        if _RUN_ID.fullmatch(run_id) is None or run_id not in registry:
+            raise HTTPException(404, "research_run_not_found")
+        try:
+            registered = registry[run_id]
+            config = (
+                registered
+                if isinstance(registered, ResearchRunRegistration)
+                else ResearchRunRegistration.model_validate(registered)
+            )
+            configured_root = getattr(request.app.state, "research_artifact_root", None)
+            if configured_root is None:
+                return _missing(run_id, ["configured_artifact_root"])
+            root = Path(configured_root).absolute()
+            paths = {
+                "protocol": _resolve(root, config.protocol_path + "/protocol.json"),
+                "assignments": _resolve(root, config.runs_path + "/assignments.json"),
+                "records": _resolve(root, config.runs_path + "/records.jsonl"),
+                "pools": _resolve(root, config.runs_path + "/pools.json"),
+                "report": _resolve(root, config.analysis_path + "/report.json"),
+                "metrics": _resolve(root, config.analysis_path + "/metrics.json"),
+                "goals": _resolve(root, config.analysis_path + "/goal_verdicts.json"),
+            }
+            missing = [name for name, path in paths.items() if not path.is_file()]
+            if missing:
+                return _missing(run_id, missing)
+            source_bytes = {name: path.read_bytes() for name, path in paths.items()}
+            fingerprints = {name: hashlib.sha256(raw).hexdigest() for name, raw in source_bytes.items()}
+            cache = getattr(request.app.state, "research_results_cache", {})
+            fingerprint = content_digest({"paths": config.model_dump(), "hashes": fingerprints})
+            cached = cache.get(run_id)
+            if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == fingerprint:
+                cached_view = cached[1]
+                if isinstance(cached_view, ResearchRunView):
+                    return cached_view.model_copy(deep=True)
+            frozen = load_protocol(paths["protocol"].parent)
+            validate_formal_protocol(frozen)
+            report = json.loads(source_bytes["report"])
+            metrics = json.loads(source_bytes["metrics"])
+            goals = json.loads(source_bytes["goals"])
+            if report.get("schema_version") != "ced.research-analysis.v1" or (
+>               metrics.get("schema_version") != "ced.research-metrics.v1"
+                ^^^^^^^^^^^
+                or report.get("formal_accepted") is not False
+                or report.get("physical_success") != 0
+            ):
+E           AttributeError: 'NoneType' object has no attribute 'get'
+
+src/cloud_edge_robot_arm/cloud/api/research_results.py:214: AttributeError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:45
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_research_results_api.py::test_malformed_result_shapes_fail_closed[report.json]
+FAILED tests/test_research_results_api.py::test_malformed_result_shapes_fail_closed[metrics.json]
+2 failed, 1 passed, 12 deselected, 1 warning in 7.21s

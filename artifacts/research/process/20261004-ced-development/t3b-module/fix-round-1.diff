@@ -1,0 +1,763 @@
+--- a/src/cloud_edge_robot_arm/vision/role_models.py
++++ b/src/cloud_edge_robot_arm/vision/role_models.py
+@@ -197,12 +197,14 @@
+         coordinate_system=coordinate_system,
+         grasp_profile=grasp_profile,
+     )
+-    request_settings = model_snapshot.evidence() | {
+-        "chat_path": profile.chat_completions_path,
+-        "config_version": profile.config_version,
+-        "response_format": {"type": "json_object"},
+-        "allow_paid": allow_paid,
+-    }
++    planner = resolve_visual_planner(
++        model_snapshot,
++        api_key=service.secret_store.get_secret(profile.profile_id) or "",
++        chat_path=profile.chat_completions_path,
++        allow_paid=allow_paid,
++    )
++    planner.role_config_version = profile.config_version  # type: ignore[attr-defined]
++    request_settings = cloud_request_settings(planner)
+     location: Literal["LOCAL_HOST", "REMOTE_SERVICE"] = (
+         "LOCAL_HOST"
+         if urlparse(model_snapshot.endpoint).hostname in {"localhost", "127.0.0.1", "::1"}
+@@ -219,11 +221,27 @@
+         request_config_hash=configuration_hash(request_settings),
+         source_hashes=source_hashes,
+     )
+-    planner = resolve_visual_planner(
+-        model_snapshot,
+-        api_key=service.secret_store.get_secret(profile.profile_id) or "",
+-        chat_path=profile.chat_completions_path,
+-        allow_paid=allow_paid,
+-    )
+     planner.role_snapshot = snapshot  # type: ignore[attr-defined]
+     return planner, snapshot
++
++
++def cloud_request_settings(planner: RGBDPlannerAdapter) -> dict[str, object]:
++    """Canonical effective adapter settings, derived again at the wire boundary.
++
++    Mutable transport fields override the immutable model snapshot so an endpoint,
++    model, path, provider, timeout or payment-setting drift changes this binding.
++    Secrets and HTTP headers are never included.
++    """
++    snapshot = planner.model_snapshot
++    if snapshot is None:
++        raise ValueError("cloud role requires a model request snapshot")
++    return snapshot.evidence() | {
++        "provider": planner.provider,
++        "model": planner.model_name,
++        "endpoint_hash": hashlib.sha256(planner.base_url.encode()).hexdigest(),
++        "timeout_s": planner.timeout_s,
++        "chat_path": planner.chat_path,
++        "config_version": getattr(planner, "role_config_version", 1),
++        "response_format": {"type": "json_object"},
++        "allow_paid": planner.allow_paid,
++    }
+--- a/scripts/probe_rgbd_roles.py
++++ b/scripts/probe_rgbd_roles.py
+@@ -28,6 +28,7 @@
+ from cloud_edge_robot_arm.vision.role_models import (
+     RoleModelBundle,
+     RoleProviderSnapshot,
++    cloud_request_settings,
+     configuration_hash,
+     resolve_cloud_role,
+ )
+@@ -161,6 +162,72 @@
+     return cast(dict[str, Any], config)
+ 
+ 
++def validate_role_probe_bindings(report: Mapping[str, Any]) -> bool:
++    """Validate the full nominal role/config binding, independent of task success."""
++    try:
++        cloud = RoleProviderSnapshot(**report["bundle"]["cloud_snapshot"])
++        bundle = RoleModelBundle(
++            cloud,
++            report["bundle"]["edge_provider_id"],
++            report["bundle"]["edge_provider_hash"],
++            report["bundle"]["device_pipeline_hash"],
++        )
++        edge = RoleProviderSnapshot(**report["edge_snapshot"])
++        device_sources = report["device_source_hashes"]
++        settings = report["request_settings"]
++        if _sha(Path(report["config_path"]).read_bytes()) != report["config_sha256"]:
++            return False
++        if cloud.role != "CLOUD" or cloud.provider_location != "REMOTE_SERVICE":
++            return False
++        if bundle.digest() != report["bundle_hash"]:
++            return False
++        if edge.role != "EDGE" or edge.provider_id != bundle.edge_provider_id:
++            return False
++        if edge.digest() != bundle.edge_provider_hash:
++            return False
++        if dict(cloud.source_hashes) != source_fingerprints():
++            return False
++        if dict(edge.source_hashes) != _hash_sources(list(edge.source_hashes)):
++            return False
++        if device_sources != _hash_sources(list(device_sources)):
++            return False
++        if configuration_hash(device_sources) != bundle.device_pipeline_hash:
++            return False
++        if configuration_hash(report["edge_policy"]) != edge.request_config_hash:
++            return False
++        if configuration_hash(settings) != cloud.request_config_hash:
++            return False
++        if settings["model"] != cloud.model_id or settings["allow_paid"] is not True:
++            return False
++        if report["final_request_settings"] != settings:
++            return False
++        for attempt in report["attempts"]:
++            if attempt["actual_request_settings"] != settings:
++                return False
++        return True
++    except (KeyError, TypeError, ValueError, OSError):
++        return False
++
++
++def _validate_wire_artifacts(attempt: Mapping[str, Any]) -> bool:
++    try:
++        directory = Path(attempt["artifact_directory"])
++        request_raw = (directory / "request.raw").read_bytes()
++        response_raw = (directory / "response.raw").read_bytes()
++        return (
++            not attempt.get("wire_artifact_suppressed", False)
++            and len(request_raw) <= 2_000_000
++            and len(response_raw) <= 2_000_000
++            and _sha(request_raw) == attempt["request_sha256"]
++            and _sha(response_raw) == attempt["response_sha256"]
++            and len(request_raw) == attempt["serialized_sent_bytes"]
++            and len(response_raw) == attempt["serialized_received_bytes"]
++            and summarize_role_request(json.loads(request_raw)) == attempt["request_summary"]
++        )
++    except (KeyError, TypeError, ValueError, OSError):
++        return False
++
++
+ def can_accept_role_probe(report: Mapping[str, Any]) -> bool:
+     """Nominal role-probe gate; never means physical, edge, or final acceptance."""
+     try:
+@@ -169,6 +236,8 @@
+         if report["capture"]["synchronized"] is not True:
+             return False
+         if report["capture"]["image_size"] != [320, 240]:
++            return False
++        if not validate_role_probe_bindings(report):
+             return False
+         cloud = RoleProviderSnapshot(**report["bundle"]["cloud_snapshot"])
+         if cloud.role != "CLOUD" or cloud.provider_location != "REMOTE_SERVICE":
+@@ -184,6 +253,8 @@
+         if report["probe_config"]["warm_runs"] < 3:
+             return False
+         for attempt in attempts:
++            if not _validate_wire_artifacts(attempt):
++                return False
+             if not all(
+                 attempt.get(key) is True
+                 for key in (
+@@ -236,6 +307,7 @@
+         "started_at": datetime.now(UTC).isoformat(),
+         "probe_config": config["probe"],
+         "config_sha256": _sha(config_path.read_bytes()),
++        "config_path": str(config_path.resolve()),
+         "bundle": None,
+         "acceptance_scope": "nominal cloud RGB-D planning probe only",
+         "physical_acceptance": False,
+@@ -278,14 +350,21 @@
+                 request_config_hash=configuration_hash(edge_config["policy"]),
+                 source_hashes=_hash_sources(edge_config["source_paths"]),
+             )
++            device_sources = _hash_sources(config["device"]["source_paths"])
++            request_settings = cloud_request_settings(planner)
+             bundle = RoleModelBundle(
+                 cloud,
+                 edge.provider_id,
+                 edge.digest(),
+-                configuration_hash(_hash_sources(config["device"]["source_paths"])),
++                configuration_hash(device_sources),
+             )
+             report.update(
+-                bundle=bundle.evidence(), bundle_hash=bundle.digest(), edge_snapshot=edge.evidence()
++                bundle=bundle.evidence(),
++                bundle_hash=bundle.digest(),
++                edge_snapshot=edge.evidence(),
++                edge_policy=edge_config["policy"],
++                device_source_hashes=device_sources,
++                request_settings=request_settings,
+             )
+             if cloud.provider_location != "REMOTE_SERVICE" or not allow_paid:
+                 raise ValueError("real cloud probe requires a remote profile and --allow-paid")
+@@ -327,10 +406,19 @@
+                         scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
+                         observation=frame.observation,
+                     )
+-                    attempt = _attempt(planner, request, frame, output, index, cloud)
++                    attempt = _attempt(
++                        planner,
++                        request,
++                        frame,
++                        output,
++                        index,
++                        cloud,
++                        request_settings=request_settings,
++                    )
+                     report["attempts"].append(attempt)
+                     if attempt["status"] == "BLOCKED":
+                         raise RuntimeError("cloud attempt failed; preserve unexecuted denominator")
++            report["final_request_settings"] = cloud_request_settings(planner)
+             report["status"] = "PASS" if can_accept_role_probe(report) else "FAIL"
+     except Exception as exc:
+         # Endpoint, HTTP errors and credential-bearing exception text are never persisted.
+@@ -345,7 +433,14 @@
+ 
+ 
+ def _attempt(
+-    planner: Any, request: Any, frame: Any, output: Path, index: int, cloud: RoleProviderSnapshot
++    planner: Any,
++    request: Any,
++    frame: Any,
++    output: Path,
++    index: int,
++    cloud: RoleProviderSnapshot,
++    *,
++    request_settings: Mapping[str, Any] | None = None,
+ ) -> dict[str, Any]:
+     from cloud_edge_robot_arm.research.cost_ledger import CostLedger
+     from cloud_edge_robot_arm.vision.capture import save_captured_frame
+@@ -355,38 +450,56 @@
+     directory = output / f"attempt-{index:02d}"
+     directory.mkdir()
+     save_captured_frame(frame, directory)
+-    snapshot = planner.model_snapshot
++    settings = dict(request_settings or cloud_request_settings(planner))
+     messages = build_visual_messages(
+         request.user_instruction,
+         frame.observation,
+-        image_size=snapshot.image_size,
+-        coordinate_system=snapshot.coordinate_system,
++        image_size=tuple(settings["image_size"]),
++        coordinate_system=settings["coordinate_system"],
+         decision_schema=VisualDecision.model_json_schema(),
+     )
+     expected = summarize_role_request(
+         {
+-            "model": planner.model_name,
++            "model": settings["model"],
+             "messages": compatible_messages(messages),
+-            "temperature": snapshot.generation_parameters["temperature"],
+-            "max_tokens": snapshot.generation_parameters["num_predict"],
++            "temperature": settings["generation_parameters"]["temperature"],
++            "max_tokens": settings["generation_parameters"]["num_predict"],
+             "response_format": {"type": "json_object"},
+         }
+     )
+-    actual: dict[str, Any] = {}
++    actual: dict[str, Any] = {"artifact_directory": str(directory.resolve())}
+     # The transport ledger measures the actual received raw bytes before parsing.
+     ledger = CostLedger()
+     previous_ledger = planner.cost_ledger
+     planner.cost_ledger = ledger
+-    post = planner._post
+-
+-    def instrumented(path: str, body: dict[str, Any]) -> dict[str, Any]:
+-        actual.update(request_summary=summarize_role_request(body))
+-        actual["request_sha256"] = _write(directory / "request.json", body)
+-        response = post(path, body)
+-        actual["response_sha256"] = _write(directory / "response.json", response)
+-        return cast(dict[str, Any], response)
+-
+-    planner._post = instrumented
++    previous_observer = planner.raw_transport_observer
++
++    def observe(phase: str, path: str, raw: bytes) -> None:
++        label = "request" if phase == "REQUEST" else "response"
++        actual[f"{label}_sha256"] = _sha(raw)
++        actual[f"serialized_{'sent' if phase == 'REQUEST' else 'received'}_bytes"] = len(raw)
++        secret = planner._api_key
++        patterns = (secret.encode(), json.dumps(secret)[1:-1].encode()) if secret else ()
++        if any(pattern and pattern in raw for pattern in patterns):
++            actual["wire_artifact_suppressed"] = True
++            raise ValueError("credential-bearing body withheld")
++        with (directory / f"{label}.raw").open("xb") as stream:
++            stream.write(raw)
++        try:
++            parsed = json.loads(raw)
++        except (ValueError, UnicodeDecodeError):
++            parsed = None
++        if parsed is not None:
++            actual[f"{label}_parsed_sha256"] = _write(directory / f"{label}.json", parsed)
++        if phase == "REQUEST":
++            actual["actual_request_settings"] = cloud_request_settings(planner) | {
++                "chat_path": path
++            }
++            actual["request_summary"] = summarize_role_request(parsed)
++        if previous_observer is not None:
++            previous_observer(phase, path, raw)
++
++    planner.raw_transport_observer = observe
+     started = time.monotonic()
+     try:
+         draft = planner.plan(request)
+@@ -401,11 +514,15 @@
+             destination_hit=False,
+             wall_latency_ms=(time.monotonic() - started) * 1000,
+             cost_ledger=ledger.export(),
++            serialized_received_bytes=sum(
++                row.serialized_received_bytes for row in ledger.requests()
++            ),
++            serialized_sent_bytes=sum(row.serialized_sent_bytes for row in ledger.requests()),
+         )
+         _write(directory / "attempt.json", actual)
+         return actual
+     finally:
+-        planner._post = post
++        planner.raw_transport_observer = previous_observer
+         planner.cost_ledger = previous_ledger
+     rows = ledger.requests()
+     actual["cost_ledger"] = ledger.export()
+--- a/tests/test_rgbd_role_models.py
++++ b/tests/test_rgbd_role_models.py
+@@ -470,3 +470,380 @@
+     report = json.loads((output / "role-probe-report.json").read_text())
+     assert report["attempts"] == []
+     assert report["transport"] is None
++
++
++def _nominal_gate_fixture_for_rejection_only():
++    """In-memory predicate fixture; never saved, executed, or used as real acceptance."""
++    from scripts import probe_rgbd_roles as probe
++
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++
++    model = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="qwen3.8-max",
++        endpoint="https://dashscope.aliyuncs.com",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0, "num_predict": 512},
++        timeout_s=30,
++    )
++    planner = resolve_visual_planner(model, allow_paid=True)
++    settings = model.evidence() | {
++        "chat_path": planner.chat_path,
++        "config_version": 1,
++        "response_format": {"type": "json_object"},
++        "allow_paid": True,
++    }
++    cloud_snapshot = cloud(
++        request_config_hash=roles().configuration_hash(settings),
++        source_hashes=probe.source_fingerprints(),
++    )
++    edge_sources = probe._hash_sources(["src/cloud_edge_robot_arm/vision/role_models.py"])
++    device_sources = probe._hash_sources(["src/cloud_edge_robot_arm/vision/tracking.py"])
++    edge_policy = {"dispatch": False}
++    edge = cloud(
++        role="EDGE",
++        provider_id="rules-v1",
++        provider_location="LOCAL_HOST",
++        model_id=None,
++        request_config_hash=roles().configuration_hash(edge_policy),
++        source_hashes=edge_sources,
++    )
++    bundle = roles().RoleModelBundle(
++        cloud_snapshot, edge.provider_id, edge.digest(), roles().configuration_hash(device_sources)
++    )
++    summary = {
++        "model": cloud_snapshot.model_id,
++        "image_count": 2,
++        "distinct_image_count": 2,
++        "serialized_sent_bytes": 100,
++    }
++    attempt = {
++        "transport_two_images": True,
++        "parsed": True,
++        "grounded": True,
++        "target_hit": True,
++        "destination_hit": True,
++        "request_summary": summary,
++        "expected_request_summary": summary.copy(),
++        "serialized_received_bytes": 50,
++        "actual_request_settings": settings.copy(),
++        "observation_evidence": {
++            "top_grasp_offset_status": "CALIBRATED_RGBD_TOP_GRASP_V1",
++            "cloud_snapshot_hash": cloud_snapshot.digest(),
++        },
++    }
++    config_path = probe.ROOT / "configs/research/ced_roles.yaml"
++    return {
++        "config_path": str(config_path),
++        "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
++        "source": "mujoco_camera",
++        "transport": "REAL_HTTP",
++        "capture": {"synchronized": True, "image_size": [320, 240]},
++        "bundle": bundle.evidence(),
++        "bundle_hash": bundle.digest(),
++        "edge_snapshot": edge.evidence(),
++        "edge_policy": edge_policy,
++        "device_source_hashes": device_sources,
++        "request_settings": settings,
++        "final_request_settings": settings.copy(),
++        "probe_config": {"warm_runs": 3},
++        "attempts": [dict(attempt) for _ in range(4)],
++    }
++
++
++@pytest.mark.parametrize(
++    "drift",
++    [
++        "config_source",
++        "device_source",
++        "edge_source",
++        "bundle_hash",
++        "edge_hash",
++        "device_hash",
++        "endpoint",
++        "chat_path",
++        "timeout",
++        "allow_paid",
++    ],
++)
++def test_nominal_freeze_rejects_full_role_and_actual_transport_drift(drift):
++    from scripts import probe_rgbd_roles as probe
++
++    report = _nominal_gate_fixture_for_rejection_only()
++    if drift == "config_source":
++        report["config_sha256"] = "0" * 64
++    elif drift == "device_source":
++        report["device_source_hashes"]["src/cloud_edge_robot_arm/vision/tracking.py"] = "0" * 64
++    elif drift == "edge_source":
++        report["edge_snapshot"]["source_hashes"][
++            "src/cloud_edge_robot_arm/vision/role_models.py"
++        ] = "0" * 64
++    elif drift == "bundle_hash":
++        report["bundle_hash"] = "0" * 64
++    elif drift == "edge_hash":
++        report["bundle"]["edge_provider_hash"] = "0" * 64
++    elif drift == "device_hash":
++        report["bundle"]["device_pipeline_hash"] = "0" * 64
++    else:
++        key = {
++            "endpoint": "endpoint_hash",
++            "chat_path": "chat_path",
++            "timeout": "timeout_s",
++            "allow_paid": "allow_paid",
++        }[drift]
++        value = {
++            "endpoint": "0" * 64,
++            "chat_path": "/chat/completions",
++            "timeout": 10,
++            "allow_paid": False,
++        }[drift]
++        report["attempts"][0]["actual_request_settings"] = report["request_settings"] | {key: value}
++    assert probe.validate_role_probe_bindings(report) is False
++    assert probe.can_accept_role_probe(report) is False
++
++
++@pytest.mark.parametrize("response_kind", ["whitespace_json", "non_json", "http_error"])
++def test_probe_preserves_exact_wire_response_and_error_body(tmp_path, monkeypatch, response_kind):
++    import io
++    import urllib.error
++    import urllib.request
++
++    from scripts.probe_rgbd_roles import _attempt
++
++    from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
++    from cloud_edge_robot_arm.vision.capture import CapturedFrame
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from tests.test_rgbd_observations import observation_payload
++
++    raw = {
++        "whitespace_json": b'  {"choices": []}  \n',
++        "non_json": b"not-json\x00\r\n",
++        "http_error": b"error response\r\n",
++    }[response_kind]
++    sent = []
++
++    class ExternalBoundary:
++        def open(self, request, timeout):
++            sent.append(request.data)
++            if response_kind == "http_error":
++                raise urllib.error.HTTPError(
++                    request.full_url, 503, "unavailable", {}, io.BytesIO(raw)
++                )
++            return io.BytesIO(raw)
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
++    model = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="qwen3.8-max",
++        endpoint="https://dashscope.aliyuncs.com",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0, "num_predict": 512},
++        timeout_s=30,
++    )
++    planner = resolve_visual_planner(model, api_key="credential-marker", allow_paid=True)
++    observation = RGBDObservation.model_validate(observation_payload())
++    frame = CapturedFrame(
++        observation,
++        (0, 11, 12, -1),
++        {0: "table", 11: "object_geom", 12: "target_region_geom"},
++        "fixture",
++        ("fixture",) * 3,
++    )
++    request = InitialPlanningRequest(
++        request_id="software-raw-contract",
++        user_instruction="pick red cube",
++        scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
++        observation=observation,
++    )
++    attempt = _attempt(planner, request, frame, tmp_path, 0, cloud())
++    directory = tmp_path / "attempt-00"
++    assert (directory / "response.raw").is_file(), "exact response bytes were not archived"
++    assert (directory / "response.raw").read_bytes() == raw
++    assert (directory / "request.raw").read_bytes() == sent[0]
++    assert attempt["response_sha256"] == hashlib.sha256(raw).hexdigest()
++    assert attempt["request_sha256"] == hashlib.sha256(sent[0]).hexdigest()
++    assert attempt["serialized_received_bytes"] == len(raw)
++    assert all(
++        b"credential-marker" not in path.read_bytes()
++        for path in directory.iterdir()
++        if path.is_file()
++    )
++
++
++def test_unchanged_role_bindings_validate_without_claiming_nominal_acceptance():
++    from scripts import probe_rgbd_roles as probe
++
++    report = _nominal_gate_fixture_for_rejection_only()
++    assert probe.validate_role_probe_bindings(report) is True
++    # No real/raw transport evidence exists for this in-memory predicate fixture.
++    assert probe.can_accept_role_probe(report) is False
++
++
++@pytest.mark.parametrize("source_kind", ["edge", "device"])
++def test_current_edge_and_device_source_drift_rejects_original_report(monkeypatch, source_kind):
++    from scripts import probe_rgbd_roles as probe
++
++    report = _nominal_gate_fixture_for_rejection_only()
++    key = (
++        "src/cloud_edge_robot_arm/vision/role_models.py"
++        if source_kind == "edge"
++        else "src/cloud_edge_robot_arm/vision/tracking.py"
++    )
++    original = probe._hash_sources
++
++    def changed_current_source(paths):
++        result = original(paths)
++        if paths == [key]:
++            result[key] = "0" * 64
++        return result
++
++    monkeypatch.setattr(probe, "_hash_sources", changed_current_source)
++    assert probe.validate_role_probe_bindings(report) is False
++
++
++@pytest.mark.parametrize("phase", ["REQUEST", "RESPONSE"])
++def test_raw_observer_failure_preserves_actual_call_count_and_exact_costs(monkeypatch, phase):
++    import io
++    import urllib.request
++
++    from cloud_edge_robot_arm.research.cost_ledger import CostLedger
++    from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
++
++    raw = b'  {"choices": []}\n'
++    sent = []
++
++    class ExternalBoundary:
++        def open(self, request, timeout):
++            sent.append(request.data)
++            return io.BytesIO(raw)
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
++    observed = []
++
++    def failing_observer(actual_phase, path, body):
++        observed.append((actual_phase, path, body))
++        if actual_phase == phase:
++            raise RuntimeError("private observer failure")
++
++    ledger = CostLedger()
++    adapter = RGBDPlannerAdapter(
++        base_url="https://dashscope.aliyuncs.com",
++        model="qwen3.8-max",
++        provider="openai_compatible",
++        api_key="credential-marker",
++        allow_paid=True,
++        cost_ledger=ledger,
++        raw_transport_observer=failing_observer,
++    )
++    with pytest.raises(RGBDModelUnavailable, match="observer"):
++        adapter._post("/chat/completions", {"model": "qwen3.8-max"})
++    rows = ledger.requests()
++    assert len(rows) == (1 if phase == "RESPONSE" else 0)
++    if rows:
++        assert rows[0].status == "ERROR"
++        assert rows[0].serialized_received_bytes == len(raw)
++    assert len(sent) == (1 if phase == "RESPONSE" else 0)
++    assert all(b"credential-marker" not in item[2] for item in observed)
++
++
++def test_raw_observer_is_bounded_and_oversized_error_keeps_byte_count(monkeypatch):
++    import io
++    import urllib.error
++    import urllib.request
++
++    from cloud_edge_robot_arm.research.cost_ledger import CostLedger
++    from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
++
++    captured = []
++
++    class ExternalBoundary:
++        def open(self, request, timeout):
++            raise urllib.error.HTTPError(
++                request.full_url, 503, "error", {}, io.BytesIO(b"x" * 2_000_010)
++            )
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
++    ledger = CostLedger()
++    adapter = RGBDPlannerAdapter(
++        base_url="https://dashscope.aliyuncs.com",
++        model="qwen3.8-max",
++        provider="openai_compatible",
++        allow_paid=True,
++        cost_ledger=ledger,
++        raw_transport_observer=lambda phase, path, body: captured.append((phase, len(body))),
++    )
++    with pytest.raises(RGBDModelUnavailable):
++        adapter._post("/chat/completions", {"model": "qwen3.8-max"})
++    assert captured[-1] == ("RESPONSE", 2_000_001)
++    assert ledger.requests()[0].serialized_received_bytes == 2_000_001
++
++
++def test_credential_echo_is_withheld_and_cannot_create_freeze(tmp_path, monkeypatch):
++    import io
++    import urllib.request
++
++    from scripts.probe_rgbd_roles import _attempt
++
++    from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
++    from cloud_edge_robot_arm.vision.capture import CapturedFrame
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from tests.test_rgbd_observations import observation_payload
++
++    raw = b'{"error":"credential-marker"}'
++
++    class ExternalBoundary:
++        def open(self, request, timeout):
++            return io.BytesIO(raw)
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
++    model = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="qwen3.8-max",
++        endpoint="https://dashscope.aliyuncs.com",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0, "num_predict": 512},
++        timeout_s=30,
++    )
++    planner = resolve_visual_planner(model, api_key="credential-marker", allow_paid=True)
++    observation = RGBDObservation.model_validate(observation_payload())
++    frame = CapturedFrame(
++        observation,
++        (0, 11, 12, -1),
++        {0: "table", 11: "object_geom", 12: "target_region_geom"},
++        "fixture",
++        ("fixture",) * 3,
++    )
++    request = InitialPlanningRequest(
++        request_id="software-secret-boundary",
++        user_instruction="pick red cube",
++        scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
++        observation=observation,
++    )
++    attempt = _attempt(planner, request, frame, tmp_path, 0, cloud())
++    assert attempt.get("wire_artifact_suppressed") is True
++    assert attempt["status"] == "BLOCKED"
++    assert attempt["serialized_received_bytes"] == 29
++    assert not (tmp_path / "attempt-00" / "response.raw").exists()
++    assert not (tmp_path / "attempt-00" / "response.json").exists()
++    assert all(
++        b"credential-marker" not in path.read_bytes()
++        for path in tmp_path.rglob("*")
++        if path.is_file()
++    )
+--- a/src/cloud_edge_robot_arm/vision/planner.py
++++ b/src/cloud_edge_robot_arm/vision/planner.py
+@@ -12,6 +12,7 @@
+ import urllib.error
+ import urllib.request
+ import uuid
++from collections.abc import Callable
+ from datetime import UTC, datetime
+ from pathlib import Path
+ from typing import TYPE_CHECKING, Any, Literal, cast
+@@ -160,6 +161,8 @@
+         cost_ledger: CostLedger | None = None,
+         network_injector: NetworkInjector | None = None,
+         model_role: Literal["PLANNER", "SUPERVISOR", "REPLANNER", "JUDGE"] = "PLANNER",
++        raw_transport_observer: Callable[[Literal["REQUEST", "RESPONSE"], str, bytes], None]
++        | None = None,
+     ) -> None:
+         kind = (
+             PlannerProviderKind.OLLAMA
+@@ -176,6 +179,7 @@
+         self.cost_ledger = cost_ledger
+         self.network_injector = network_injector
+         self.model_role = model_role
++        self.raw_transport_observer = raw_transport_observer
+         if chat_path not in {"/chat/completions", "/v1/chat/completions"}:
+             raise ValueError("unsupported visual chat path")
+         self.chat_path = chat_path
+@@ -213,6 +217,18 @@
+         payload = json.dumps(body).encode()
+         request = urllib.request.Request(self.base_url + path, data=payload,
+                                          headers=headers, method="POST")
++        def observe(phase: Literal["REQUEST", "RESPONSE"], data: bytes) -> None:
++            if self.raw_transport_observer is not None:
++                try:
++                    self.raw_transport_observer(phase, path, data)
++                except Exception:
++                    raise RGBDModelUnavailable("raw transport observer failed") from None
++
++        # A request-observer failure occurs before transmission and records no sent call.
++        if self.raw_transport_observer is not None:
++            if len(payload) > 2_000_000:
++                raise RGBDModelUnavailable("observed request exceeds body limit")
++            observe("REQUEST", payload)
+         # Registry probes are telemetry. Only actual inference endpoints are model attempts.
+         is_model = path in {"/api/chat", "/chat/completions", "/v1/chat/completions"}
+         sent_at, started = datetime.now(UTC), time.monotonic()
+@@ -245,6 +261,7 @@
+                 request, timeout=self.timeout_s
+             ) as response:
+                 raw = response.read(2_000_001)
++                observe("RESPONSE", raw)
+                 if transfer is not None:
+                     before = time.monotonic()
+                     try:
+@@ -263,6 +280,7 @@
+             status = "TIMEOUT" if isinstance(exc, TimeoutError) else "ERROR"
+             if isinstance(exc, urllib.error.HTTPError):
+                 raw = exc.read(2_000_001)
++                observe("RESPONSE", raw)
+             # Do not expose endpoint credentials or remote response bodies.
+             exception_type = RGBDModelCallFailed if is_model and (
+                 isinstance(exc, (TimeoutError, ValueError)) or

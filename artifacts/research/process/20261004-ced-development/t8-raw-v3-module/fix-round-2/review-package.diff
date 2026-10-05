@@ -1,0 +1,255 @@
+--- a/src/cloud_edge_robot_arm/research/raw_episode_v3.py
++++ b/src/cloud_edge_robot_arm/research/raw_episode_v3.py
+@@ -1138,8 +1138,9 @@
+             issue("control_pre_step_identity_mismatch")
+         if physical_control["pre_joint_positions_rad"] != previous_snapshot["joint_positions_rad"]:
+             issue("control_pre_joint_state_mismatch")
+-        for target, bias, gain, output, bounds in zip(
++        for target, current, bias, gain, output, bounds in zip(
+             physical_control["applied_joint_targets_rad"],
++            physical_control["pre_joint_positions_rad"],
+             physical_control["pre_gravity_bias_nm"],
+             physical_control["actuator_gains"],
+             physical_control["control_rad"],
+@@ -1147,7 +1148,12 @@
+             strict=True,
+         ):
+             if gain <= 0 or not math.isclose(
+-                output, min(bounds[1], max(bounds[0], target + bias / gain)), abs_tol=1e-9
++                output,
++                min(
++                    bounds[1],
++                    max(bounds[0], current + min(0.10, max(-0.10, target - current)) + bias / gain),
++                ),
++                abs_tol=1e-9,
+             ):
+                 issue("recorded_control_equation_mismatch")
+         physics_interval = interval_for(physical_record.physics_interval_id, "PHYSICS_STEP")
+@@ -1590,16 +1596,21 @@
+         if obs.episode_id != identity.episode_id:
+             issue("frame_foreign_episode")
+         if interval:
+-            if (
++            if interval.end is None:
++                issue("frame_acquisition_end_boundary_unavailable", missing=True)
++            elif (
+                 interval.start_step != interval.end_step
+                 or interval.start_sim_time_s != interval.end_sim_time_s
+             ):
+                 issue("acquisition_crossed_physics_state")
+-            if (
+-                not math.isclose(obs.sim_time_s, interval.start_sim_time_s, abs_tol=1e-9)
+-                or obs.captured_at != interval.start.utc_at
+-            ):
++            if not math.isclose(obs.sim_time_s, interval.start_sim_time_s, abs_tol=1e-9):
+                 issue("frame_acquisition_time_join_mismatch")
++            if obs.captured_at < interval.start.utc_at or (
++                interval.end is not None and obs.captured_at > interval.end.utc_at
++            ):
++                issue("frame_camera_timestamp_outside_acquisition_bracket")
++            if interval.end is not None and interval.end.utc_at < interval.start.utc_at:
++                issue("frame_acquisition_utc_bracket_reversed")
+             if frame.camera_state_payload is None or frame.joined_physics_observation_hash is None:
+                 issue("camera_full_state_source_missing", missing=True)
+             else:
+@@ -1721,12 +1732,14 @@
+             ):
+                 issue("terminal_capture_precedes_final_boundary")
+         if acquisition and attempt:
+-            if join.relation == "BEFORE_SUBMIT" and (
+-                acquisition.end is None
+-                or acquisition.end.mono_after_ns > attempt.start.mono_before_ns
+-                or acquisition.start_step != attempt.start_step
+-            ):
+-                issue("before_frame_not_fresh_action_boundary")
++            if join.relation == "BEFORE_SUBMIT":
++                if acquisition.end is None:
++                    issue("before_frame_acquisition_end_unavailable", missing=True)
++                if acquisition.start_step != attempt.start_step or (
++                    acquisition.end is not None
++                    and acquisition.end.mono_after_ns > attempt.start.mono_before_ns
++                ):
++                    issue("before_frame_not_fresh_action_boundary")
+             if join.relation == "AFTER_RETURN" and (
+                 attempt.end is None
+                 or acquisition.start.mono_before_ns < attempt.end.mono_after_ns
+--- a/tests/test_raw_episode_v3.py
++++ b/tests/test_raw_episode_v3.py
+@@ -1287,3 +1287,177 @@
+     assert (
+         "terminal_action_completion_boundary_unavailable" in view.reasons
+     ) is not has_termination
++
++
++@pytest.mark.parametrize(
++    "target,bias,gain,bounds,output,want",
++    [
++        (1.0, 0.0, 20.0, (-3.0, 3.0), 0.10, "COMPLETE"),
++        (-1.0, 0.0, 20.0, (-3.0, 3.0), -0.10, "COMPLETE"),
++        (0.04, 0.0, 20.0, (-3.0, 3.0), 0.04, "COMPLETE"),
++        (1.0, 4.0, 20.0, (-0.25, 0.25), 0.25, "COMPLETE"),
++        (-1.0, -4.0, 20.0, (-0.25, 0.25), -0.25, "COMPLETE"),
++        (1.0, 0.0, 20.0, (-3.0, 3.0), 1.0, "INVALID"),
++    ],
++)
++def test_original_control_replay_uses_real_displacement_limit_before_bias_and_range(
++    target, bias, gain, bounds, output, want
++):
++    envelope, records = fixture()
++    command = replace(
++        records.commands[0],
++        command_payload={
++            **dict(records.commands[0].command_payload),
++            "target_positions_rad": [target] * 7,
++            "applied_target_positions_rad": [target] * 7,
++        },
++    )
++    final = records.physics[-1]
++    actual_control = {
++        **dict(final.control_payload),
++        "applied_joint_targets_rad": [target] * 7,
++        "pre_gravity_bias_nm": [bias] * 7,
++        "actuator_gains": [gain] * 7,
++        "actuator_ctrl_ranges": [bounds] * 7,
++        "control_rad": [output] * 7,
++    }
++    view = api().validate_raw_episode_v3(
++        envelope,
++        replace(
++            records,
++            commands=(command,),
++            physics=(*records.physics[:-1], replace(final, control_payload=actual_control)),
++        ),
++    )
++    assert view.status == want, view.reasons
++    assert view.counts["physics_expected"] == view.counts["physics_recorded"] == 121
++    assert view.counts["commands_expected"] == view.counts["commands_recorded"] == 1
++
++
++@pytest.mark.parametrize("offset_us,want", [(10, "COMPLETE"), (-1, "INVALID"), (1001, "INVALID")])
++def test_actual_camera_timestamp_is_inside_the_original_acquisition_bracket(offset_us, want):
++    envelope, records = fixture()
++    frame = records.frames[0]
++    payload = dict(frame.observation_payload)
++    payload["captured_at"] = (
++        RGBDObservation.model_validate(payload).captured_at + timedelta(microseconds=offset_us)
++    ).isoformat()
++    payload["checksum_sha256"] = ""
++    observation = RGBDObservation.model_validate(payload)
++    updated_frame = replace(frame, observation_payload=observation.model_dump(mode="json"))
++    joins = tuple(
++        replace(row, checksum_sha256=observation.checksum_sha256)
++        if row.acquisition_id == frame.acquisition_id
++        else row
++        for row in records.joins
++    )
++    view = api().validate_raw_episode_v3(
++        envelope, replace(records, frames=(updated_frame, *records.frames[1:]), joins=joins)
++    )
++    assert view.status == want, view.reasons
++    assert view.utc_mapping == "UNAVAILABLE"
++    assert view.counts["allocated_acquisitions"] == view.counts["recorded_acquisitions"] == 2
++    assert (
++        updated_frame.observation_payload["captured_at"]
++        == observation.model_dump(mode="json")["captured_at"]
++    )
++
++
++def test_camera_original_missing_end_boundary_is_incomplete_without_inventing_a_return():
++    envelope, records = fixture()
++    frame = records.frames[0]
++    intervals = tuple(
++        replace(
++            interval,
++            end=None,
++            end_step=None,
++            end_sim_time_s=None,
++            disposition="PARTIAL",
++            error="acquisition-return-not-recorded",
++        )
++        if interval.interval_id == frame.interval_id
++        else interval
++        for interval in records.intervals
++    )
++    view = api().validate_raw_episode_v3(envelope, replace(records, intervals=intervals))
++    assert view.status == "INCOMPLETE", view.reasons
++    assert "frame_acquisition_end_boundary_unavailable" in view.reasons
++    assert view.counts["allocated_acquisitions"] == view.counts["recorded_acquisitions"] == 2
++
++
++def test_reversed_camera_utc_boundaries_are_invalid_even_with_monotonic_order():
++    envelope, records = fixture()
++    frame = records.frames[0]
++    original = next(i for i in records.intervals if i.interval_id == frame.interval_id)
++    reversed_interval = replace(
++        original,
++        end=replace(original.end, utc_at=original.start.utc_at - timedelta(microseconds=1)),
++    )
++    view = api().validate_raw_episode_v3(
++        envelope,
++        replace(
++            records,
++            intervals=tuple(
++                reversed_interval if row.interval_id == frame.interval_id else row
++                for row in records.intervals
++            ),
++        ),
++    )
++    assert view.status == "INVALID", view.reasons
++
++
++@pytest.mark.parametrize("missing_end", [False, True])
++def test_original_during_action_camera_end_is_preserved_or_explicitly_incomplete(missing_end):
++    envelope, records = fixture()
++    frame = records.frames[-1]
++    interval = next(row for row in records.intervals if row.interval_id == frame.interval_id)
++    inside = clock_interval(interval, "acq-during", "ACQUISITION", 121, 121, 215000000, 215500000)
++    if missing_end:
++        inside = replace(
++            inside,
++            end=None,
++            end_step=None,
++            end_sim_time_s=None,
++            disposition="PARTIAL",
++            error="actual-camera-return-missing",
++        )
++    payload = dict(frame.observation_payload)
++    payload.update(
++        frame_id="during-original",
++        observation_id="during-original",
++        captured_at=inside.start.utc_at.isoformat(),
++        checksum_sha256="",
++    )
++    observation = RGBDObservation.model_validate(payload)
++    file_hashes = {"during/" + name: sha for name, sha in frame.file_hashes.items()}
++    actual_frame = replace(
++        frame,
++        acquisition_id="acq-during",
++        interval_id="acq-during",
++        observation_payload=observation.model_dump(mode="json"),
++        file_hashes=file_hashes,
++    )
++    during_join = replace(
++        records.joins[-1],
++        acquisition_id="acq-during",
++        relation="DURING_ACTION",
++        observation_id=observation.observation_id,
++        checksum_sha256=observation.checksum_sha256,
++    )
++    view = api().validate_raw_episode_v3(
++        replace(
++            envelope,
++            allocated_acquisition_ids=(*envelope.allocated_acquisition_ids, "acq-during"),
++            original_file_hashes={**dict(envelope.original_file_hashes), **file_hashes},
++        ),
++        renumber(
++            replace(
++                records,
++                intervals=(*records.intervals, inside),
++                frames=(*records.frames, actual_frame),
++                joins=(*records.joins, during_join),
++            )
++        ),
++    )
++    assert view.status == ("INCOMPLETE" if missing_end else "COMPLETE"), view.reasons
++    assert view.counts["recorded_acquisitions"] == 3

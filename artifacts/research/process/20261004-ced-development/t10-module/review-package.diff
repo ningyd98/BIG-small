@@ -1,0 +1,861 @@
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/edge/evidence/models.py
+@@ -0,0 +1,108 @@
++"""Immutable online evidence and identity envelopes; no offline labels."""
++
++from __future__ import annotations
++
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, replace
++from datetime import datetime
++from types import MappingProxyType
++from typing import Literal
++
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++
++def _freeze(value: object) -> object:
++    if isinstance(value, Mapping):
++        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
++    if isinstance(value, (tuple, list)):
++        return tuple(_freeze(item) for item in value)
++    return value
++
++
++@dataclass(frozen=True)
++class VisualEvidence:
++    observation_id: str
++    calibration_version: str
++    captured_at: datetime
++    geometric_error_bound_m: float | None
++    motion_bound_m_s: float | None
++    identity_status: Literal["CONFIRMED", "UNKNOWN", "INVALID"]
++    sensor_status: Literal["VALID", "UNKNOWN", "INVALID"]
++    available_sensors: tuple[str, ...] = ("rgbd", "rgb", "depth")
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "available_sensors", tuple(self.available_sensors))
++
++
++@dataclass(frozen=True)
++class ActionEvidenceContract:
++    evidence: VisualEvidence
++    expected_duration_s: float
++    allowed_error_m: float
++    sensor_requirements: Sequence[str]
++    preconditions: Sequence[ConditionSpec]
++    postconditions: Sequence[ConditionSpec]
++    plan_version: int
++    command_seq: int
++    context_hash: str
++    ordinary_ttl_s: float = 5.0
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "sensor_requirements", tuple(self.sensor_requirements))
++        for name in ("preconditions", "postconditions"):
++            object.__setattr__(
++                self,
++                name,
++                tuple(
++                    replace(
++                        condition,
++                        tolerances=MappingProxyType(
++                            {key: _freeze(value) for key, value in condition.tolerances.items()}
++                        ),
++                        sensor_requirements=tuple(condition.sensor_requirements),
++                    )
++                    for condition in getattr(self, name)
++                ),
++            )
++
++
++@dataclass(frozen=True)
++class EvidenceVerdict:
++    status: Literal["VALID", "INVALID", "UNKNOWN"]
++    reasons: tuple[str, ...]
++    bound_at_completion_m: float | None = None
++
++
++@dataclass(frozen=True)
++class DecisionEnvelope:
++    decision_id: str
++    task_id: str
++    episode_id: str
++    observation_id: str
++    plan_version: int
++    command_seq: int
++    mode_version: int
++    context_hash: str
++    candidate_set_hash: str
++    action: DecisionAction
++    policy_version: str
++    provider_version: str
++    created_at: datetime
++    valid_until: datetime
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "action", DecisionAction(self.action))
++
++
++@dataclass(frozen=True)
++class CommitContext:
++    task_id: str
++    episode_id: str
++    observation_id: str
++    plan_version: int
++    command_seq: int
++    mode_version: int
++    context_hash: str
++    candidate_set_hash: str
++    cancelled: bool
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/edge/evidence/validator.py
+@@ -0,0 +1,183 @@
++"""Revalidate online evidence at cloud return and immediately before submission.
++
++Validation has no dispatch side effects. Canonical condition verdicts are supplied
++by the single online evaluate_conditions entry point; missing ones remain UNKNOWN.
++Postconditions belong to subsequent effect verification, never assumed here.
++"""
++
++from __future__ import annotations
++
++import math
++from datetime import datetime
++from typing import TypeGuard
++
++from cloud_edge_robot_arm.edge.evidence.conditions import (
++    ConditionStatus,
++    OnlineEvidenceSnapshot,
++    evaluate_conditions,
++)
++from cloud_edge_robot_arm.edge.evidence.models import (
++    ActionEvidenceContract,
++    CommitContext,
++    DecisionEnvelope,
++    EvidenceVerdict,
++)
++
++
++def _number(value: object) -> TypeGuard[int | float]:
++    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
++
++
++def _aware(value: object) -> TypeGuard[datetime]:
++    return (
++        isinstance(value, datetime) and value.tzinfo is not None and value.utcoffset() is not None
++    )
++
++
++def _base_validation(
++    contract: ActionEvidenceContract,
++    now: datetime,
++    current_context_hash: str,
++    calibration_version: str,
++    online_evidence: OnlineEvidenceSnapshot | None,
++) -> tuple[EvidenceVerdict | None, float | None]:
++    evidence = contract.evidence
++    if any(
++        type(value) is not int or value < 0
++        for value in (contract.plan_version, contract.command_seq)
++    ):
++        return EvidenceVerdict("INVALID", ("action_version_or_sequence_invalid",)), None
++    if not contract.context_hash or contract.context_hash != current_context_hash:
++        return EvidenceVerdict("INVALID", ("context_mismatch",)), None
++    if not evidence.observation_id or not evidence.calibration_version:
++        return EvidenceVerdict("UNKNOWN", ("observation_or_calibration_missing",)), None
++    if evidence.calibration_version != calibration_version:
++        return EvidenceVerdict("UNKNOWN", ("calibration_mismatch",)), None
++    if not _aware(now) or not _aware(evidence.captured_at):
++        return EvidenceVerdict("UNKNOWN", ("acquisition_clock_missing",)), None
++    age = (now - evidence.captured_at).total_seconds()
++    if age < 0:
++        return EvidenceVerdict("INVALID", ("future_observation",)), None
++    if evidence.identity_status == "INVALID" or evidence.sensor_status == "INVALID":
++        return EvidenceVerdict("INVALID", ("identity_or_sensor_invalid",)), None
++    if evidence.identity_status != "CONFIRMED" or evidence.sensor_status != "VALID":
++        return EvidenceVerdict("UNKNOWN", ("identity_or_sensor_unknown",)), None
++    if not set(contract.sensor_requirements).issubset(set(evidence.available_sensors)):
++        return EvidenceVerdict("UNKNOWN", ("required_sensor_unavailable",)), None
++    if (
++        not _number(contract.expected_duration_s)
++        or contract.expected_duration_s < 0
++        or not _number(contract.allowed_error_m)
++        or contract.allowed_error_m <= 0
++        or not _number(contract.ordinary_ttl_s)
++        or contract.ordinary_ttl_s <= 0
++    ):
++        return EvidenceVerdict("UNKNOWN", ("action_or_ttl_bound_missing",)), None
++    if age > contract.ordinary_ttl_s:
++        return EvidenceVerdict("INVALID", ("ordinary_ttl_expired",)), None
++    statuses = []
++    if contract.preconditions and online_evidence is None:
++        return EvidenceVerdict("UNKNOWN", ("precondition_evidence_missing",)), None
++    if online_evidence is not None:
++        observation = online_evidence.observation
++        if any(
++            (
++                observation.observation_id != evidence.observation_id,
++                observation.captured_at != evidence.captured_at,
++                observation.calibration_version != evidence.calibration_version,
++                online_evidence.context_hash != contract.context_hash,
++                online_evidence.plan_version != contract.plan_version,
++                online_evidence.command_seq != contract.command_seq,
++                type(online_evidence.plan_version) is not int,
++                type(online_evidence.command_seq) is not int,
++            )
++        ):
++            return EvidenceVerdict("INVALID", ("online_evidence_identity_mismatch",)), None
++        # Recompute exact target/tolerances through the canonical evaluator.
++        # A caller-supplied PASS for another target cannot authorize this action.
++        statuses = [
++            value.status for value in evaluate_conditions(contract.preconditions, online_evidence)
++        ]
++    if ConditionStatus.FAIL in statuses:
++        return EvidenceVerdict("INVALID", ("precondition_failed",)), None
++    if any(status != ConditionStatus.PASS for status in statuses):
++        return EvidenceVerdict("UNKNOWN", ("precondition_unknown",)), None
++    return None, age
++
++
++def validate_evidence(
++    contract: ActionEvidenceContract,
++    now: datetime,
++    current_context_hash: str,
++    calibration_version: str,
++    *,
++    online_evidence: OnlineEvidenceSnapshot | None = None,
++) -> EvidenceVerdict:
++    base, age = _base_validation(
++        contract, now, current_context_hash, calibration_version, online_evidence
++    )
++    if base is not None:
++        return base
++    evidence = contract.evidence
++    error, motion = evidence.geometric_error_bound_m, evidence.motion_bound_m_s
++    if not _number(error) or error < 0 or not _number(motion) or motion < 0:
++        return EvidenceVerdict("UNKNOWN", ("calibrated_error_or_motion_bound_missing",))
++    assert age is not None
++    bound = error + motion * (age + contract.expected_duration_s)
++    if not math.isfinite(bound):
++        return EvidenceVerdict("UNKNOWN", ("completion_bound_nonfinite",))
++    return EvidenceVerdict(
++        "VALID" if bound <= contract.allowed_error_m else "INVALID",
++        (
++            "completion_bound_within_tolerance"
++            if bound <= contract.allowed_error_m
++            else "completion_bound_exceeds_tolerance",
++        ),
++        bound,
++    )
++
++
++def validate_b3(
++    contract: ActionEvidenceContract,
++    now: datetime,
++    current_context_hash: str,
++    calibration_version: str,
++    *,
++    online_evidence: OnlineEvidenceSnapshot | None = None,
++) -> EvidenceVerdict:
++    """Ablate calibrated uncertainty/completion age; retain ordinary checks and TTL."""
++    base, _ = _base_validation(
++        contract, now, current_context_hash, calibration_version, online_evidence
++    )
++    return base if base is not None else EvidenceVerdict("VALID", ("b3_base_checks_passed",))
++
++
++def validate_decision_commit(
++    decision: DecisionEnvelope,
++    current: CommitContext,
++    now: datetime,
++) -> EvidenceVerdict:
++    if current.cancelled:
++        return EvidenceVerdict("INVALID", ("episode_cancelled",))
++    for field in ("task_id", "episode_id", "observation_id", "context_hash", "candidate_set_hash"):
++        value = getattr(decision, field)
++        if not value or value != getattr(current, field):
++            return EvidenceVerdict("INVALID", (f"{field}_mismatch_or_missing",))
++    for field in ("plan_version", "command_seq", "mode_version"):
++        value = getattr(decision, field)
++        current_value = getattr(current, field)
++        if (
++            type(value) is not int
++            or value < 0
++            or type(current_value) is not int
++            or current_value < 0
++            or value != current_value
++        ):
++            return EvidenceVerdict("INVALID", (f"{field}_mismatch_or_invalid",))
++    if not decision.decision_id or not decision.policy_version or not decision.provider_version:
++        return EvidenceVerdict("INVALID", ("decision_policy_or_provider_identity_missing",))
++    if not all(_aware(value) for value in (now, decision.created_at, decision.valid_until)):
++        return EvidenceVerdict("INVALID", ("decision_clock_missing",))
++    if decision.created_at > now or decision.valid_until <= now:
++        return EvidenceVerdict("INVALID", ("decision_future_or_expired",))
++    return EvidenceVerdict("VALID", ("decision_current",))
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/edge/evidence/opportunities.py
+@@ -0,0 +1,160 @@
++"""离线固定机会回放；真实标签仅供评价，不输入在线门控。"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, fields, is_dataclass
++from datetime import datetime
++from enum import Enum
++from typing import Any, Literal
++
++from cloud_edge_robot_arm.edge.evidence.conditions import OnlineEvidenceSnapshot
++from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract, EvidenceVerdict
++from cloud_edge_robot_arm.edge.evidence.validator import validate_b3, validate_evidence
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++
++def _canonical(value: Any) -> Any:
++    if isinstance(value, datetime):
++        return value.isoformat()
++    if isinstance(value, Enum):
++        return value.value
++    if is_dataclass(value) and not isinstance(value, type):
++        return {field.name: _canonical(getattr(value, field.name)) for field in fields(value)}
++    if isinstance(value, Mapping):
++        return {key: _canonical(item) for key, item in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [_canonical(item) for item in value]
++    return value
++
++
++@dataclass(frozen=True)
++class Opportunity:
++    """保持原始候选、来源组、快照和独立标签的不可变离线机会。"""
++
++    opportunity_id: str
++    group_id: str
++    observation: RGBDObservation
++    action_contract: ActionEvidenceContract
++    oracle_label: Literal["VALID", "INVALID", "UNKNOWN"]
++
++    def __post_init__(self) -> None:
++        evidence = self.action_contract.evidence
++        if not self.opportunity_id or not self.group_id:
++            raise ValueError("fixed opportunity identity missing")
++        if self.oracle_label not in {"VALID", "INVALID", "UNKNOWN"}:
++            raise ValueError("unsupported independent oracle label")
++        if (
++            evidence.observation_id != self.observation.observation_id
++            or evidence.captured_at != self.observation.captured_at
++            or evidence.calibration_version != self.observation.calibration_version
++        ):
++            raise ValueError("action evidence snapshot binding mismatch")
++
++    @property
++    def content_hash(self) -> str:
++        """绑定机会的全部不可变输入，阻止混用已变更的机会和旧判定。"""
++        payload = {
++            "opportunity_id": self.opportunity_id,
++            "group_id": self.group_id,
++            "observation_checksum": self.observation.checksum_sha256,
++            "action_contract": _canonical(self.action_contract),
++            "oracle_label": self.oracle_label,
++        }
++        return hashlib.sha256(
++            json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
++        ).hexdigest()
++
++
++@dataclass(frozen=True)
++class GateReplayRecord:
++    """固定机会判定记录；附属输入散列只供完整性审计。"""
++
++    opportunity_id: str
++    method_id: str
++    verdict: EvidenceVerdict
++    opportunity_hash: str
++
++
++def _unique(values: Sequence[Opportunity]) -> dict[str, Opportunity]:
++    result = {value.opportunity_id: value for value in values}
++    if len(result) != len(values):
++        raise ValueError("duplicate fixed opportunity")
++    if not result:
++        raise ValueError("fixed opportunities missing")
++    return result
++
++
++def replay_opportunities(
++    values: Sequence[Opportunity],
++    method_id: Literal["JOINT", "B3"],
++    now: datetime,
++    calibration_version: str,
++    *,
++    online_evidence_by_id: Mapping[str, OnlineEvidenceSnapshot] | None = None,
++) -> list[GateReplayRecord]:
++    """对全部固定机会回放，不按政策选择或独立标签过滤分母。"""
++    _unique(values)
++    if method_id not in {"JOINT", "B3"}:
++        raise ValueError("unsupported gate replay method")
++    validator = validate_b3 if method_id == "B3" else validate_evidence
++    online = online_evidence_by_id or {}
++    return [
++        GateReplayRecord(
++            value.opportunity_id,
++            method_id,
++            validator(
++                value.action_contract,
++                now,
++                value.action_contract.context_hash,
++                calibration_version,
++                online_evidence=online.get(value.opportunity_id),
++            ),
++            value.content_hash,
++        )
++        for value in values
++    ]
++
++
++def summarize_gate_replay(
++    values: Sequence[Opportunity],
++    records: Sequence[GateReplayRecord],
++) -> dict[str, Any]:
++    """分列误放行、错误拒绝与未知层；UNKNOWN 不计作错误拒绝。"""
++    fixed = _unique(values)
++    by_id = {record.opportunity_id: record for record in records}
++    if len(by_id) != len(records) or set(by_id) != set(fixed):
++        raise ValueError("replay must contain exactly the complete fixed opportunity set")
++    if len({record.method_id for record in records}) != 1:
++        raise ValueError("mixed replay methods")
++    if any(by_id[key].opportunity_hash != value.content_hash for key, value in fixed.items()):
++        raise ValueError("changed opportunity snapshot or candidate")
++    valid = invalid = oracle_unknown = false_acceptance = false_rejection = 0
++    unknown_on_valid = unknown_on_invalid = 0
++    for key, value in fixed.items():
++        status = by_id[key].verdict.status
++        if value.oracle_label == "VALID":
++            valid += 1
++            false_rejection += status == "INVALID"
++            unknown_on_valid += status == "UNKNOWN"
++        elif value.oracle_label == "INVALID":
++            invalid += 1
++            false_acceptance += status == "VALID"
++            unknown_on_invalid += status == "UNKNOWN"
++        else:
++            oracle_unknown += 1
++    return {
++        "total": len(fixed),
++        "method_id": records[0].method_id,
++        "eligible_valid": valid,
++        "eligible_invalid": invalid,
++        "oracle_unknown": oracle_unknown,
++        "false_acceptance": false_acceptance,
++        "false_rejection": false_rejection,
++        "unknown_on_valid": unknown_on_valid,
++        "unknown_on_invalid": unknown_on_invalid,
++        "false_acceptance_rate": false_acceptance / invalid if invalid else None,
++        "false_rejection_rate": false_rejection / valid if valid else None,
++    }
+--- /dev/null
++++ b/tests/test_visual_evidence_contract.py
+@@ -0,0 +1,297 @@
++"""Submit-time evidence checks; numerical expectations are hand calculated."""
++
++from dataclasses import replace
++from datetime import UTC, datetime, timedelta
++from importlib import import_module, util
++
++import pytest
++
++NOW = datetime.now(UTC)
++
++
++def api():
++    name = "cloud_edge_robot_arm.edge.evidence.validator"
++    assert util.find_spec(name) is not None, "missing production evidence validator"
++    return import_module("cloud_edge_robot_arm.edge.evidence.models"), import_module(name)
++
++
++def contract(**changes):
++    models, _ = api()
++    evidence = models.VisualEvidence(
++        observation_id="frame-1",
++        calibration_version="cal-1",
++        captured_at=NOW - timedelta(seconds=0.1),
++        geometric_error_bound_m=0.002,
++        motion_bound_m_s=0.02,
++        identity_status="CONFIRMED",
++        sensor_status="VALID",
++    )
++    return models.ActionEvidenceContract(
++        evidence=evidence,
++        expected_duration_s=changes.get("duration", 0.2),
++        allowed_error_m=0.01,
++        sensor_requirements=("rgbd",),
++        preconditions=changes.get("preconditions", ()),
++        postconditions=(),
++        plan_version=1,
++        command_seq=1,
++        context_hash="context-1",
++    )
++
++
++def verdict(value, **kwargs):
++    _, validator = api()
++    return validator.validate_evidence(
++        value,
++        now=NOW,
++        current_context_hash="context-1",
++        calibration_version="cal-1",
++        **kwargs,
++    )
++
++
++def test_completion_time_bound_is_action_specific():
++    # .002 + .02 * (.1 + .2) = .008; longer action gives .012.
++    assert verdict(contract()).status == "VALID"
++    assert verdict(contract()).bound_at_completion_m == pytest.approx(0.008)
++    assert verdict(contract(duration=0.4)).status == "INVALID"
++    assert verdict(contract(duration=0.4)).bound_at_completion_m == pytest.approx(0.012)
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("motion_bound_m_s", None),
++        ("geometric_error_bound_m", None),
++        ("motion_bound_m_s", float("nan")),
++        ("geometric_error_bound_m", -1.0),
++        ("identity_status", "UNKNOWN"),
++        ("sensor_status", "UNKNOWN"),
++    ],
++)
++def test_missing_motion_identity_or_depth_is_unknown(field, value):
++    from dataclasses import replace
++
++    sample = contract()
++    assert (
++        verdict(replace(sample, evidence=replace(sample.evidence, **{field: value}))).status
++        == "UNKNOWN"
++    )
++
++
++def test_calibration_mismatch_is_unknown():
++    _, validator = api()
++    assert (
++        validator.validate_evidence(contract(), NOW, "context-1", "other-cal").status == "UNKNOWN"
++    )
++
++
++def test_cloud_return_and_commit_both_revalidate():
++    _, validator = api()
++    sample = contract()
++    assert verdict(sample).status == "VALID"
++    assert (
++        validator.validate_evidence(sample, NOW + timedelta(seconds=1), "context-1", "cal-1").status
++        == "INVALID"
++    )
++    assert validator.validate_evidence(sample, NOW, "new-context", "cal-1").status == "INVALID"
++
++
++def test_missing_condition_evidence_is_unknown():
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    sample = contract(preconditions=(ConditionSpec("target_visible", target_id="object"),))
++    assert verdict(sample).status == "UNKNOWN"
++
++
++def test_precondition_verdict_is_bound_to_current_frame():
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    sample = contract(preconditions=(ConditionSpec("target_visible", target_id="object"),))
++    online = online_evidence()
++    assert verdict(sample, online_evidence=online).status == "VALID"
++    wrong = replace(
++        online,
++        visual_facts={
++            "target_visible": {**online.visual_facts["target_visible"], "target_id": "decoy"}
++        },
++    )
++    assert verdict(sample, online_evidence=wrong).status == "UNKNOWN"
++    assert verdict(sample, online_evidence=replace(online, command_seq=2)).status == "INVALID"
++
++
++def test_b3_keeps_basic_sensor_context_and_condition_checks():
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    _, validator = api()
++    sample = contract(preconditions=(ConditionSpec("target_reachable", target_id="object"),))
++    online = online_evidence()
++    online = replace(
++        online,
++        visual_facts={
++            "target_reachable": {**online.visual_facts["target_visible"], "value": False}
++        },
++    )
++    assert (
++        validator.validate_b3(sample, NOW, "context-1", "cal-1", online_evidence=online).status
++        == "INVALID"
++    )
++    sample = replace(sample, preconditions=())
++    assert validator.validate_b3(sample, NOW, "context-1", "cal-1").status == "VALID"
++    assert validator.validate_b3(sample, NOW, "changed", "cal-1").status == "INVALID"
++
++
++def decisions():
++    models, validator = api()
++    data = dict(
++        task_id="task",
++        episode_id="episode",
++        observation_id="frame-1",
++        plan_version=1,
++        command_seq=2,
++        mode_version=3,
++        context_hash="context",
++        candidate_set_hash="candidates",
++    )
++    current = models.CommitContext(**data, cancelled=False)
++    decision = models.DecisionEnvelope(
++        **data,
++        decision_id="decision",
++        action="CONTINUE",
++        policy_version="policy",
++        provider_version="provider",
++        created_at=NOW,
++        valid_until=NOW + timedelta(seconds=1),
++    )
++    return decision, current, validator
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("task_id", "other"),
++        ("episode_id", "other"),
++        ("observation_id", "other"),
++        ("plan_version", 2),
++        ("command_seq", 3),
++        ("mode_version", 4),
++        ("context_hash", "other"),
++        ("candidate_set_hash", "other"),
++    ],
++)
++def test_stale_decision_identity_blocks_commit(field, value):
++    from dataclasses import replace
++
++    decision, current, validator = decisions()
++    assert validator.validate_decision_commit(decision, current, NOW).status == "VALID"
++    assert (
++        validator.validate_decision_commit(decision, replace(current, **{field: value}), NOW).status
++        == "INVALID"
++    )
++
++
++def test_cancelled_or_expired_decision_cannot_commit():
++    from dataclasses import replace
++
++    decision, current, validator = decisions()
++    assert (
++        validator.validate_decision_commit(decision, replace(current, cancelled=True), NOW).status
++        == "INVALID"
++    )
++    assert (
++        validator.validate_decision_commit(decision, current, NOW + timedelta(seconds=1)).status
++        == "INVALID"
++    )
++    assert (
++        validator.validate_decision_commit(
++            replace(decision, created_at=NOW + timedelta(seconds=0.1)), current, NOW
++        ).status
++        == "INVALID"
++    )
++
++
++def test_empty_episode_cannot_match_empty_episode():
++    from dataclasses import replace
++
++    decision, current, validator = decisions()
++    assert (
++        validator.validate_decision_commit(
++            replace(decision, episode_id=""), replace(current, episode_id=""), NOW
++        ).status
++        == "INVALID"
++    )
++
++
++def online_evidence():
++    from cloud_edge_robot_arm.contracts import RobotState
++    from cloud_edge_robot_arm.edge.evidence.conditions import OnlineEvidenceSnapshot
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from tests.test_rgbd_observations import observation_payload
++
++    payload = observation_payload()
++    payload.update(
++        frame_id="frame-1",
++        captured_at=NOW - timedelta(seconds=0.1),
++        calibration_version="cal-1",
++        episode_id="episode",
++    )
++    observation = RGBDObservation.model_validate(payload)
++    return OnlineEvidenceSnapshot(
++        observation,
++        RobotState(connected=True),
++        {
++            "target_visible": {
++                "source": "rgbd_estimate",
++                "observation_id": "frame-1",
++                "target_id": "object",
++                "identity_confirmed": True,
++                "value": True,
++                "pixel": [0, 0],
++            },
++        },
++        1,
++        1,
++        "context-1",
++    )
++
++
++def test_current_boolean_version_cannot_alias_integer_version():
++    decision, current, validator = decisions()
++    assert (
++        validator.validate_decision_commit(
++            decision, replace(current, plan_version=True), NOW
++        ).status
++        == "INVALID"
++    )
++
++
++def test_contract_copies_nested_condition_and_sensor_state():
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    nested = {"thresholds": {"minimum": 1}}
++    requirements = ["rgbd"]
++    value = contract(
++        preconditions=(ConditionSpec("target_visible", "object", nested, requirements),)
++    )
++    nested["thresholds"]["minimum"] = 99
++    requirements.append("unavailable")
++    assert value.preconditions[0].tolerances["thresholds"]["minimum"] == 1
++    assert value.preconditions[0].sensor_requirements == ("rgbd",)
++    with pytest.raises(TypeError):
++        value.preconditions[0].tolerances["thresholds"]["minimum"] = 3
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("expected_duration_s", float("inf")),
++        ("ordinary_ttl_s", 0),
++        ("allowed_error_m", float("nan")),
++        ("plan_version", True),
++        ("command_seq", -1),
++    ],
++)
++def test_invalid_contract_metadata_cannot_authorize(field, value):
++    assert verdict(replace(contract(), **{field: value})).status != "VALID"
+--- /dev/null
++++ b/tests/test_fixed_opportunity_replay.py
+@@ -0,0 +1,98 @@
++"""Fixed offline opportunities preserve every label and policy-independent denominator."""
++
++from dataclasses import replace
++from importlib import import_module
++
++import pytest
++
++from tests.test_visual_evidence_contract import NOW, contract, online_evidence
++
++
++def api():
++    return import_module("cloud_edge_robot_arm.edge.evidence.opportunities")
++
++
++def opportunities():
++    observation = online_evidence().observation
++    return [
++        api().Opportunity("opp-safe", "episode-a", observation, contract(), "VALID"),
++        api().Opportunity(
++            "opp-unsafe",
++            "episode-b",
++            observation,
++            replace(contract(), expected_duration_s=0.4),
++            "INVALID",
++        ),
++        api().Opportunity(
++            "opp-unknown",
++            "episode-c",
++            observation,
++            replace(contract(), evidence=replace(contract().evidence, motion_bound_m_s=None)),
++            "UNKNOWN",
++        ),
++    ]
++
++
++def test_opportunity_denominators_do_not_depend_on_policy_actions():
++    values = opportunities()
++    gated = api().replay_opportunities(values, "JOINT", NOW, "cal-1")
++    b3 = api().replay_opportunities(values, "B3", NOW, "cal-1")
++    assert [value.opportunity_id for value in gated] == [value.opportunity_id for value in b3]
++    assert len(gated) == len(b3) == 3
++    summary = api().summarize_gate_replay(values, b3)
++    assert summary["eligible_valid"] == summary["eligible_invalid"] == 1
++    assert summary["oracle_unknown"] == 1
++    assert summary["false_acceptance"] == 1
++    assert summary["false_rejection"] == 0
++
++
++def test_unknown_is_not_false_rejection_denominator():
++    values = opportunities()
++    values[0] = replace(
++        values[0],
++        action_contract=replace(
++            contract(), evidence=replace(contract().evidence, motion_bound_m_s=None)
++        ),
++    )
++    records = api().replay_opportunities(values, "JOINT", NOW, "cal-1")
++    summary = api().summarize_gate_replay(values, records)
++    assert summary["eligible_valid"] == 1
++    assert summary["unknown_on_valid"] == 1
++    assert summary["false_rejection"] == 0
++    assert summary["false_rejection_rate"] == 0
++
++
++def test_missing_duplicate_or_changed_snapshot_cannot_publish_replay():
++    values = opportunities()
++    records = api().replay_opportunities(values, "JOINT", NOW, "cal-1")
++    with pytest.raises(ValueError, match="complete"):
++        api().summarize_gate_replay(values, records[:-1])
++    with pytest.raises(ValueError, match="duplicate"):
++        api().replay_opportunities([values[0], values[0]], "JOINT", NOW, "cal-1")
++    with pytest.raises(ValueError, match="snapshot"):
++        replace(
++            values[0],
++            action_contract=replace(
++                contract(), evidence=replace(contract().evidence, observation_id="different-frame")
++            ),
++        )
++
++
++def test_oracle_label_is_never_an_online_validation_input(monkeypatch):
++    module = api()
++    original = module.validate_evidence
++    seen = []
++
++    def observed(action_contract, *args, **kwargs):
++        seen.append(action_contract)
++        assert not hasattr(action_contract, "oracle_label")
++        return original(action_contract, *args, **kwargs)
++
++    monkeypatch.setattr(module, "validate_evidence", observed)
++    values = opportunities()
++    first = module.replay_opportunities(values, "JOINT", NOW, "cal-1")
++    second = module.replay_opportunities(
++        [replace(value, oracle_label="INVALID") for value in values], "JOINT", NOW, "cal-1"
++    )
++    assert [value.verdict for value in first] == [value.verdict for value in second]
++    assert len(seen) == 6

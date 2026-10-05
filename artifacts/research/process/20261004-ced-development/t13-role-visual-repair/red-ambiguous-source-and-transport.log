@@ -1,0 +1,133 @@
+......................FF..F............                                  [100%]
+=================================== FAILURES ===================================
+_ test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_precondition] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-772/test_ambiguous_frozen_conditio0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d628f9e51c0>
+bad = 'duplicate_precondition'
+
+    @pytest.mark.parametrize('bad', ['duplicate_precondition', 'duplicate_postcondition'])
+    def test_ambiguous_frozen_conditions_reject_before_paid_call(tmp_path, monkeypatch, bad):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        proofs = dict(source.action_evidence)
+        proof = proofs['grasp']
+        field = 'preconditions' if bad == 'duplicate_precondition' else 'postconditions'
+        proofs['grasp'] = replace(proof, **{field: getattr(proof, field)*2})
+        changed = api().RoleVisualRepairSource(source.context, proofs, 'SOFTWARE_ONLY')
+        adapter.source_provider = lambda *_: changed
+        result = adapter.replan(request)
+>       assert wire.requests == [] and result.new_steps == []
+E       assert ([b'{"model": ...on_object"}}'] == []
+E         
+E         Left contains one more item: b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth i...AAABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:267: AssertionError
+_ test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_postcondition] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-772/test_ambiguous_frozen_conditio1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d628fb6a420>
+bad = 'duplicate_postcondition'
+
+    @pytest.mark.parametrize('bad', ['duplicate_precondition', 'duplicate_postcondition'])
+    def test_ambiguous_frozen_conditions_reject_before_paid_call(tmp_path, monkeypatch, bad):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        proofs = dict(source.action_evidence)
+        proof = proofs['grasp']
+        field = 'preconditions' if bad == 'duplicate_precondition' else 'postconditions'
+        proofs['grasp'] = replace(proof, **{field: getattr(proof, field)*2})
+        changed = api().RoleVisualRepairSource(source.context, proofs, 'SOFTWARE_ONLY')
+        adapter.source_provider = lambda *_: changed
+        result = adapter.replan(request)
+>       assert wire.requests == [] and result.new_steps == []
+E       assert ([b'{"model": ...on_object"}}'] == []
+E         
+E         Left contains one more item: b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth i...AAABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:267: AssertionError
+_ test_incomplete_or_unsafe_actual_source_is_unavailable_before_paid_call[motion] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-772/test_incomplete_or_unsafe_actu2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d62bbda3560>
+bad = 'motion'
+
+    @pytest.mark.parametrize('bad', ['scope', 'duration', 'motion', 'estop', 'collision', 'disconnected'])
+    def test_incomplete_or_unsafe_actual_source_is_unavailable_before_paid_call(tmp_path, monkeypatch, bad):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        proofs = dict(source.action_evidence)
+        context = source.context
+        scope = 'SOFTWARE_ONLY'
+        if bad == 'scope':
+            scope = 'ACTUAL_SOURCE'
+        elif bad == 'duration':
+            proofs['grasp'] = replace(proofs['grasp'], expected_duration_s=.001)
+        elif bad == 'motion':
+>           proofs['grasp'] = replace(proofs['grasp'], evidence=replace(proofs['grasp'].evidence,
+                motion_bound_m=None))
+
+tests/test_role_visual_repair.py:281: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0,..., motion_bound_m_s=0.0, identity_status='CONFIRMED', sensor_status='VALID', available_sensors=('rgbd', 'rgb', 'depth'))
+changes = {'available_sensors': ('rgbd', 'rgb', 'depth'), 'calibration_version': 'cal-1', 'captured_at': datetime.datetime(2026, 10, 4, 0, 0, 0, 100000, tzinfo=datetime.timezone.utc), 'geometric_error_bound_m': 0.001, ...}
+f = Field(name='available_sensors',type='tuple[str, ...]',default=('rgbd', 'rgb', 'depth'),default_factory=<dataclasses._M... 0x7d62bd360e90>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: VisualEvidence.__init__() got an unexpected keyword argument 'motion_bound_m'
+
+/usr/lib/python3.12/dataclasses.py:1581: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_precondition]
+FAILED tests/test_role_visual_repair.py::test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_postcondition]
+FAILED tests/test_role_visual_repair.py::test_incomplete_or_unsafe_actual_source_is_unavailable_before_paid_call[motion]
+3 failed, 36 passed in 1.07s

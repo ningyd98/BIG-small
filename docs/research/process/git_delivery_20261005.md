@@ -1,0 +1,54 @@
+# Git delivery audit — 2026-10-05
+
+The first delivery should be a coherent Stage 49 backlog snapshot: validated application code, tests, configuration, robot assets, dashboard changes, project documentation, and the precise default/test evidence dependencies below. The new `step_rgbd` module and its tests, and `artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/`, stay outside this delivery while implementation and review continue. Independent core changes depend on one another; selecting only a few new modules would leave consumers, schemas, repositories, and tests inconsistent.
+
+This audit is read-only with respect to Git and live source. It neither stages nor commits nor pushes. The root agent owns those authorized actions on `research/20261004-continuation` and should establish its upstream when pushing to the supplied origin. Audit HEAD was `ddbeb92a1aa1dfa8039f6260d6b5887c58072383`. Existing tracked research artifacts remain tracked. All excluded local files remain on disk; there are no deletion recommendations.
+
+After the environment/weight ignore changes, the untracked artifact inventory contained 75,335 paths totaling 7,517,925,304 bytes. The explicit candidate manifest `/tmp/ced_git_artifact_candidates.json` selects 43,770 paths / 657,775,205 bytes and leaves 31,565 paths / 6,860,150,099 bytes local. Its SHA-256 is `16b8a575550942d6b6b13d9dbeb5663aa88a5b6b4251b81a8c1820f4c4938dbf`. Selected files have individual SHA-256/size records; excluded files have exact paths, sizes and reasons. This is a preparation-time review manifest, not a declaration that every candidate has been staged or validated. It is temporary local input for root's exact path selection; the resulting commit tree is the durable delivered inventory.
+
+Candidate policy retains authored reports, bounded manifests, scripts, validation logs, nonraw review images, and frozen text source/baseline archives. The source archive classification contains 20,932 paths / 186,923,697 bytes. It rejects ordinary bulk trial observations, commands, trajectories, raw arrays and raw capture images outside the explicit roots below. Nonrequired report/metadata files above 2,000,000 bytes are left local, except frozen source/baseline archives. Nine generated assignments/pools/dependency-index JSONs totaling 37,437,621 bytes were removed by that rule. Authored download scripts and revision/checksum provenance may be retained; downloaded model/tokenizer contents, wheel and toolchain contents are excluded regardless of file size.
+
+The following nine raw roots total 259 files / 223,058,602 bytes. All paths in the table are relative to `artifacts/research/process/`. Keep complete frame/stream joins and existing hashes within each root. Do not trim an observation file while retaining a manifest which authenticates the original bytes.
+
+| Required root | Files | Bytes | Current dependency |
+| --- | ---: | ---: | --- |
+| `20261004-gripper-project-migration/model-probe/` | 28 | 2,997,277 | `vision/defaults.py`, `test_rgbd_project_defaults.py`; `visual_smoke.yaml`, both pilot foundation configs; frozen-model evidence and captures |
+| `20261004-ced-development/t7b-pose-markers/actual-capture-1/` | 10 | 1,266,738 | `test_pose_marker_evidence.py` static 320-pixel decoder case |
+| `20261004-ced-development/t7b-pose-markers/actual-capture-640/` | 10 | 4,984,506 | Same test's 640-pixel decoder case |
+| `20261004-ced-development/t7b-pose-marker-color/actual-capture-640/` | 10 | 4,984,877 | `test_pose_marker_assets.py`, `test_marker_association.py`, `test_marker_extent_integration.py` |
+| `20261004-ced-development/t7b-real-capture-v2/initial/` | 5 | 877,364 | `test_opencv_target_evidence.py` |
+| `20261004-ced-development/t7b-real-clean-capture-2/initial/` | 7 | 1,253,965 | `test_opencv_target_evidence.py` |
+| `20261004-ced-development/t7b-pose-marker-motion-development/attempt-1/` | 80 | 73,751,253 | `test_research_risk_sources.py` stream/audit fixtures and copied complete fixture; association/extent tests; completed centered trial and outboard comparison |
+| `20261004-ced-development/t7b-visible-marker-next/attempt-1/` | 80 | 73,761,253 | Completed outboard trial, `verify_offline.py`, independent review and exact 4,807-row trajectory comparison |
+| `20261004-ced-development/t8-real-raw-development/` | 29 | 59,181,369 | Actual raw/source provenance and `ced_exclusions.yaml` pinned `assignment.json` |
+
+The centered trial's parent `header.json`, source hashes, scripts and reports belong in the durable metadata selection even though they are outside `attempt-1/`. Existing raw hash manifests bind the marker roots: 320 capture `08494e588a082c4d771a295a24c6f8e72910d605e35ee2557f4465353a16c6a6`; 640 capture `9e81fc1378f3faf288a12b29f67bef792d23414b60a657814f0614c691fa7436`; color capture `52486616e2a43b4dc8d14c1530216b142bbd6a3a857ec2be921cc2be7a80fc7a`; centered attempt `f2bbd9435438e94e835c400d6c5373fd5379bd10c5a0ff32312609b81d074b31`; outboard attempt `7e4f8931829f0d0271b6ee506653d4be93ccdf8d5efe25f606a3cc5a2c890bb9`. The T8 `source-and-payload-hashes.json` SHA is `b0d6d09e8752d0dbc77412deb238386306eb0d21268d61434845991df933b123`. The two OpenCV initial fixtures lack their own raw hash manifest; the candidate inventory records exact per-file hashes.
+
+One additional ignored provenance input is referenced by `configs/research/ced_exclusions.yaml`, `ced_foundation.yaml` and `ced_selection.yaml`: `datasets/rgbd-ced-dev-smoke-20261004/samples.jsonl`, 2,315,487 bytes, SHA-256 `595c3ee953e5169e16739ae0960c1abd821f548577dd15b82d99d83d7c2bf655`. It is outside the artifact-only candidate list and should be selected as that exact single file if these configuration paths are delivered as runnable inputs. This does not justify staging the whole ignored datasets tree. Delivering only the configurations and a hash leaves that provenance input unavailable in a clean checkout.
+
+Exclude these exact download/active prefixes:
+
+- `artifacts/research/process/20261004-t7-parallel-local-models-physics/gemma-minicpm/gemma-model/`
+- `artifacts/research/process/20261004-t7-parallel-local-models-physics/gemma-minicpm/minicpm-model/`
+- `artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/models/`
+- `artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/toolchain/`
+- `artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/wheelhouse/`
+- `artifacts/research/process/20261004-ced-development/t7b-continuous-visibility/`
+
+The Molmo toolchain includes approximately 28 MB of downloaded static Python libraries; its wheelhouse contains `tokenizers` and `transformers` wheels totaling 15,241,146 bytes. The earlier model/environment inventory included approximately 64 GB of downloaded weights and two extra environments totaling 11,659,945,041 bytes. The root's `.venv-*/` and weight suffix ignore rules prevent those from entering ordinary candidate enumeration. No remaining inventoried untracked nonmodel/nonenvironment artifact file exceeded 100,000,000 bytes; the largest was an older `physical-evidence.json` at 31,495,158 bytes, which is outside the required raw selection.
+
+All runtime database contents stay local. Exact database paths, relative to `artifacts/research/process/`, are:
+
+- `20261004-gripper-project-migration/{workbench,workbench-v2}/{model.db,runtime.db}`
+- `20261004-t17a-workbench/{e2e,e2e-final}/model_control.db`
+- `20261004-t7-parallel-local-models-physics/physics/{pre-corrected-fullsuite-db-state,pre-restoration-generated-db-archive}/{baseline-model_control.db,h3-model_control.db}`
+- `20261004-t7-parallel-local-models-physics/physics/regression-runtime/{baseline-model-control.db,baseline-relevant-v1-model-control.db,h3-model-control.db,h3-relevant-v1-model-control.db}`
+- `20261004-t7-parallel-local-models-physics/physics/workspace/data/model_control.db`
+
+These are 15 database files. Their names were inventoried; contents were not read. Artifact-wide ignore patterns for `.db`, `.db-shm`, `.db-wal`, SQLite variants and downloaded wheel/toolchain trees avoid accidental inclusion beyond the currently enumerated paths. Keep repository schemas and public initialization scripts. Real `.env` files, credentials and local profiles are excluded; no secret values were read during this audit.
+
+Older T7 retest/larger-model runs, T8 foundation's 120-trial bulk raw JSON/RGBD, repeated raw copies inside source archives, generated workbench databases, and the other excluded artifacts remain local. Their retained reports/hashes document their existence but do not make missing payloads reproducible from this Git delivery. Historical complete-package restoration and a portable bulk raw archive with retrieval information remain pending; this does not block pushing the validated implementation and required fixtures now. Do not claim that a source hash or a successful offline fixture test establishes new physical/calibration evidence.
+
+For this backlog, one coherent implementation/test/config/assets/default-fixture commit followed by a documentation/evidence-archive commit is reasonable if both are delivered together; one scoped backlog snapshot commit is also coherent. Future bounded changes should commit their code, relevant tests, docs, immutable input/source hashes and validation result together after checks, then push the branch. Preserve failures and exclusions in the evidence inventory. Use Git history for source versioning instead of continually copying the entire project and its old raw payloads into new module directories. A new actual trial needs its own exact source, group identity, protocol and raw inventory; a software-only change needs no repeated physical run unless its claims require one.
+
+This audit inspected filenames, sizes, content hashes, current literal source/test/config references and Git status. It ran no broad suites, simulation, rendering, model/provider calls or historical trial replay. The delivery commit and push result must be recorded by the root agent after its staged-tree review and required validation.

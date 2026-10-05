@@ -1,0 +1,166 @@
+--- a/src/cloud_edge_robot_arm/auto_mode/joint_policy.py
++++ b/src/cloud_edge_robot_arm/auto_mode/joint_policy.py
+@@ -410,6 +410,13 @@
+         """Immutable audit records; durable storage can be supplied as trace_sink."""
+         return tuple(self._traces)
+ 
++    def _clock_after(self, previous: datetime, boundary: str) -> datetime:
++        """Recheck observable time after callbacks, including exceptional returns."""
++        current = self.clock()
++        if current.tzinfo is None or current.utcoffset() is None or current < previous:
++            raise ValueError(f"{boundary} clock is missing or reversed")
++        return current
++
+     def _save(
+         self,
+         context: DecisionContext,
+@@ -488,8 +495,15 @@
+             raise RuntimeError("verification allowance changed before audit publication")
+         if self.trace_sink is not None:
+             self.trace_sink(trace)
++        acknowledged_at = self._clock_after(now, "audit acknowledgement")
++        if action != DecisionAction.STOP and _hard_stop(context, acknowledged_at):
++            # The sink may have archived an intent, but no ordinary choice,
++            # cache entry or allowance reservation is published after expiry.
++            raise RuntimeError(
++                "verification deadline or budget changed before audit acknowledgement"
++            )
+         if reservation is not None:
+-            if getattr(budget, reservation) <= 0 or _hard_stop(context, now):
++            if getattr(budget, reservation) <= 0:
+                 raise RuntimeError("verification budget changed before reservation commit")
+             setattr(budget, reservation, getattr(budget, reservation) - 1)
+         self._traces.append(trace)
+@@ -593,6 +607,22 @@
+                 )
+             except Exception as exc:
+                 contract_error = f"contract_provider_error:{type(exc).__name__}"
++            now = self._clock_after(now, "contract provider return")
++            current = replace(context, event=replace(context.event, occurred_at=now))
++            if _hard_stop(context, now):
++                return self._save(
++                    context,
++                    build_candidates(current, action_contracts=contracts),
++                    (),
++                    costs,
++                    empty,
++                    DecisionAction.STOP,
++                    "HARD_STOP",
++                    tuple(reason for reason in (
++                        contract_error, "hard_stop_or_budget_exhausted_after_contract_return"
++                    ) if reason is not None),
++                    now,
++                )
+         candidates = build_candidates(current, action_contracts=contracts)
+         estimates = tuple(estimate_action_costs(context, costs, self.weights))
+         key = content_hash(
+@@ -695,9 +725,7 @@
+                 )
+                 failure = f"judge_failure:{type(exc).__name__}"
+             elapsed = (perf_counter() - judge_started) * 1000
+-            finished = self.clock()
+-            if finished.tzinfo is None or finished.utcoffset() is None or finished < now:
+-                raise ValueError("judgment clock is missing or reversed")
++            finished = self._clock_after(now, "judgment")
+             if (
+                 elapsed > self.judge_timeout_s * 1000
+                 or finished >= context.verification_budget.deadline_at
+--- a/tests/test_joint_visual_policy.py
++++ b/tests/test_joint_visual_policy.py
+@@ -237,13 +237,14 @@
+ 
+ 
+ def test_provider_failure_after_absolute_deadline_cannot_reserve_new_capture():
+-    times = iter((NOW, NOW + timedelta(seconds=61)))
++    current_time = [NOW]
+ 
+     class SlowJudge:
+         def choose(self, context, candidates, estimates):
++            current_time[0] = NOW + timedelta(seconds=61)
+             raise TimeoutError("late provider")
+ 
+-    chosen = policy(judge=SlowJudge(), clock=lambda: next(times))
++    chosen = policy(judge=SlowJudge(), clock=lambda: current_time[0])
+     ctx = prepared_context()
+     assert chosen.decide(ctx) == DecisionAction.STOP
+     assert ctx.verification_budget.remaining_reobservations == 2
+@@ -386,15 +387,16 @@
+ 
+ def test_judge_cannot_extend_authoritative_absolute_deadline():
+     module = import_module("cloud_edge_robot_arm.auto_mode.judgment")
++    current_time = [NOW]
+ 
+     class DeadlineExtendingJudge:
+         def choose(self, context, candidates, estimates):
+             context.verification_budget.deadline_at = NOW + timedelta(seconds=600)
++            current_time[0] = NOW + timedelta(seconds=61)
+             return module.JudgmentResult(None, {}, None, None, "ABSTAIN", "deadline-mutator", 0.0)
+ 
+-    times = iter((NOW, NOW + timedelta(seconds=61)))
+-    ctx = prepared_context()
+-    chosen = policy(judge=DeadlineExtendingJudge(), clock=lambda: next(times))
++    ctx = prepared_context()
++    chosen = policy(judge=DeadlineExtendingJudge(), clock=lambda: current_time[0])
+     assert chosen.decide(ctx) == DecisionAction.STOP
+     assert ctx.verification_budget.deadline_at == NOW + timedelta(seconds=60)
+     assert ctx.verification_budget.remaining_reobservations == 2
+@@ -485,3 +487,59 @@
+     assert ctx.condition_verdicts[0].measured_values["auxiliary_pose"].x == 0.2
+     assert ctx.condition_verdicts[0].measured_values["cancelled"] is False
+     assert ctx.capabilities == original_capabilities
++
++
++@pytest.mark.parametrize("raises", [False, True])
++def test_late_contract_return_cannot_reserve_capture_after_absolute_deadline(raises):
++    current_time = [NOW]
++    chosen = policy(clock=lambda: current_time[0])
++
++    def late_provider(context):
++        current_time[0] = NOW + timedelta(seconds=61)
++        if raises:
++            raise TimeoutError("contract provider returned late")
++        return {}
++
++    chosen.contract_provider = late_provider
++    ctx = prepared_context()
++    assert chosen.decide(ctx) == DecisionAction.STOP
++    assert ctx.verification_budget.remaining_reobservations == 2
++    assert chosen.last_trace.envelope.created_at == current_time[0]
++    assert chosen.last_trace.envelope.valid_until == current_time[0]
++
++
++def test_late_audit_acknowledgement_never_publishes_capture_or_charges_quota():
++    current_time = [NOW]
++    chosen = policy(clock=lambda: current_time[0])
++    chosen.contract_provider = None
++    acknowledged = []
++
++    def late_ack(trace):
++        acknowledged.append(trace)
++        current_time[0] = NOW + timedelta(seconds=61)
++
++    chosen.trace_sink = late_ack
++    ctx = prepared_context()
++    with pytest.raises(RuntimeError, match="deadline|budget changed"):
++        chosen.decide(ctx)
++    assert len(acknowledged) == 1
++    assert ctx.verification_budget.remaining_reobservations == 2
++    assert chosen.last_trace is None
++    assert chosen.traces == ()
++    assert chosen._events == {}
++    assert chosen.decide(ctx) == DecisionAction.STOP
++    assert ctx.verification_budget.remaining_reobservations == 2
++
++
++def test_late_audit_acknowledgement_cannot_return_ordinary_continue():
++    current_time = [NOW]
++    chosen = policy(clock=lambda: current_time[0])
++
++    def late_ack(trace):
++        current_time[0] = NOW + timedelta(seconds=61)
++
++    chosen.trace_sink = late_ack
++    with pytest.raises(RuntimeError, match="deadline|budget changed"):
++        chosen.decide(prepared_context())
++    assert chosen.last_trace is None
++    assert chosen.traces == ()

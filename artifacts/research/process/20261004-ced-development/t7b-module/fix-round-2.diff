@@ -1,0 +1,322 @@
+--- artifacts/research/process/20261004-ced-development/t7b-module/fix-round-2-baseline/tracking.py
++++ src/cloud_edge_robot_arm/vision/tracking.py
+@@ -53,6 +53,9 @@
+     Pixel footprint uncertainty is half a pixel in this fixed registered-camera
+     scope. The initial fully observed upright top defines its horizontal extent;
+     current top dimensions must agree within 15% (sampling/perspective tolerance).
++    This module has no verified continuous-motion or symmetry-resolving sensor
++    evidence. Stability/placement completion facts therefore remain UNKNOWN;
++    endpoint consistency is retained only as a diagnostic, never a certificate.
+     """
+ 
+     def __init__(self, observation: RGBDObservation, grounding: dict[str, Any]) -> None:
+@@ -198,13 +201,20 @@
+         points = self._points(observation, xs, ys, depth[ys, xs])
+         if float(np.ptp(points[:, 2])) > 0.012:
+             return None, "depth_surface_not_scoped_upright_top"
++        # This v2 rectangle interior is supported only by a directly observed
++        # level plane (float32 rounding tolerance). Noisy/nonplanar boundaries
++        # need a separately validated polygon estimator rather than AABB proof.
++        if not target and float(np.ptp(points[:, 2])) > 1e-7:
++            return None, "region_plane_depth_unresolved"
+         center = np.median(points, axis=0)
+         if not target:
+             corner_x = np.array([xs.min(), xs.max(), xs.max(), xs.min()])
+             corner_y = np.array([ys.min(), ys.min(), ys.max(), ys.max()])
+-            rectangle = self._points(
+-                observation, corner_x, corner_y, np.full(4, np.median(depth[ys, xs]))
+-            )[:, :2]
++            if not np.all(selected[corner_y, corner_x]):
++                return None, "region_corner_depth_not_observed"
++            rectangle = self._points(observation, corner_x, corner_y, depth[corner_y, corner_x])[
++                :, :2
++            ]
+             edges = np.roll(rectangle, -1, axis=0) - rectangle
+             if np.any(np.min(np.abs(edges), axis=1) > 1e-7):
+                 return None, "region_world_orientation_not_supported"
+@@ -297,6 +307,15 @@
+             return "calibration_version_missing"
+         if not observation.episode_id or not observation.episode_id.strip():
+             return "episode_binding_missing"
++        rotation = np.asarray(observation.camera_to_world).reshape(4, 4)[:3, :3]
++        aligned_axis = np.isclose(np.abs(rotation[:2, :2]), 0.0, atol=1e-9) | np.isclose(
++            np.abs(rotation[:2, :2]), 1.0, atol=1e-9
++        )
++        if not (
++            np.allclose(rotation[:, 2], [0.0, 0.0, -1.0], atol=1e-9, rtol=0.0)
++            and aligned_axis.all()
++        ):
++            return "camera_orientation_not_supported"
+         age = (datetime.now(UTC) - observation.captured_at).total_seconds()
+         if age < -0.05 or age > 5.0:
+             return "capture_time_not_fresh"
+@@ -340,8 +359,8 @@
+             angular_upper = (
+                 delta_angle + sample["orientation_error_rad"] + previous["orientation_error_rad"]
+             ) / elapsed
+-            sample["linear_speed_upper_m_s"] = speed_upper
+-            sample["angular_speed_upper_rad_s"] = angular_upper
++            sample["net_endpoint_displacement_rate_upper_m_s"] = speed_upper
++            sample["modulo_quarter_turn_endpoint_rate_upper_rad_s"] = angular_upper
+             first_center = np.asarray(samples[0]["center"])
+             if (
+                 speed_upper > _MAX_STABLE_SPEED_M_S
+@@ -385,6 +404,42 @@
+             "stability_tolerance_m": _STABILITY_M,
+             "maximum_stable_linear_speed_m_s": _MAX_STABLE_SPEED_M_S,
+             "maximum_stable_angular_speed_rad_s": _MAX_STABLE_ANGULAR_SPEED_RAD_S,
++        }
++
++    @staticmethod
++    def _physical_stability_unknown(
++        envelope: dict[str, Any],
++        window: dict[str, Any],
++        required_duration_s: float,
++        **measurements: Any,
++    ) -> dict[str, Any]:
++        """Do not convert endpoint consistency into unsupported interval proof.
++
++        No input gate enables this fact. A future separately verified sensor
++        integration must establish interval-wide object-speed envelopes, source
++        identity/freshness/coverage and symmetry-resolved orientation. Grounding
++        booleans, synthetic error bounds and robot TCP endpoints cannot do so.
++        """
++        return {
++            **envelope,
++            "value": None,
++            "measured_values": {
++                **window,
++                **measurements,
++                "required_duration_s": required_duration_s,
++                "endpoint_window_consistent": window["evidence_duration_s"]
++                >= required_duration_s - 1e-9,
++                "physical_stability_support": {
++                    "status": "UNAVAILABLE",
++                    "accepted_support_sources": [],
++                    "required_evidence": [
++                        "source_attested_same_episode_object_identity_and_capture_coverage",
++                        "validated_interval_wide_object_linear_speed_upper_bound_le_0.02_m_s",
++                        "symmetry_resolved_interval_wide_angular_speed_upper_bound_le_0.5_rad_s",
++                    ],
++                },
++            },
++            "reasons": ["inter_frame_motion_not_bounded", "quarter_turn_symmetry_unresolved"],
+         }
+ 
+     def facts(
+@@ -497,18 +552,9 @@
+             if not repeat:
+                 self._append(self._lift_samples, self._sample(observation, target, lift))
+             window = self._window(self._lift_samples)
+-            result["object_stable"] = {
+-                **envelope,
+-                "value": True if window["evidence_duration_s"] >= 0.5 - 1e-9 else None,
+-                "measured_values": {
+-                    **window,
+-                    "required_duration_s": 0.5,
+-                    "continuous_holding_feedback": True,
+-                },
+-                "reasons": []
+-                if window["evidence_duration_s"] >= 0.5 - 1e-9
+-                else ["lift_hold_duration_incomplete"],
+-            }
++            result["object_stable"] = self._physical_stability_unknown(
++                envelope, window, 0.5, holding_feedback_at_sampled_endpoints=True
++            )
+         else:
+             self._lift_samples.clear()
+         destination, reason = self._geometry(
+@@ -568,19 +614,14 @@
+             if not repeat and not initial_repeat:
+                 self._append(self._placement_samples, self._sample(observation, target, lift))
+             window = self._window(self._placement_samples)
+-            stable = window["evidence_duration_s"] >= 1.0 - 1e-9
+             for name in ("placement_stable", "object_placed"):
+-                result[name] = {
+-                    **envelope,
+-                    "value": True if stable else None,
+-                    "measured_values": {
+-                        **window,
+-                        "required_duration_s": 1.0,
+-                        "release_observed": True,
+-                        "whole_object_inside": True,
+-                    },
+-                    "reasons": [] if stable else ["placement_stability_duration_incomplete"],
+-                }
++                result[name] = self._physical_stability_unknown(
++                    envelope,
++                    window,
++                    1.0,
++                    release_observed_at_sampled_endpoints=True,
++                    whole_object_inside_at_sampled_endpoints=True,
++                )
+         else:
+             self._placement_samples.clear()
+         return result
+--- artifacts/research/process/20261004-ced-development/t7b-module/fix-round-2-baseline/test_opencv_target_evidence.py
++++ tests/test_opencv_target_evidence.py
+@@ -313,3 +313,50 @@
+     )
+     with pytest.raises(ValueError):
+         tracker(RGBDObservation.model_validate(payload))
++
++
++def test_observed_horizontal_plane_with_pitched_camera_is_unsupported():
++    original = scene(resolution=10)
++    pitch = np.pi / 6
++    cosine, sine = np.cos(pitch), np.sin(pitch)
++
++    def observed_plane(rgb, depth):
++        ys = np.indices(depth.shape)[0]
++        depth[:] = 1 / (cosine - sine * (ys - 320) / 1000)
++        depth[rgb[:, :, 0] > 200] *= 0.94
++
++    pitched = image_variant(original, observed_plane)
++    payload = pitched.model_dump()
++    payload.update(
++        camera_to_world=(
++            1.0,
++            0.0,
++            0.0,
++            0.0,
++            0.0,
++            -cosine,
++            -sine,
++            0.0,
++            0.0,
++            sine,
++            -cosine,
++            1.0,
++            0.0,
++            0.0,
++            0.0,
++            1.0,
++        ),
++        checksum_sha256="",
++    )
++    acquisition = RGBDObservation.model_validate(payload)
++    with pytest.raises(ValueError, match="camera_orientation_not_supported"):
++        tracker(acquisition, depth_error_bound_m=0.000001)
++
++
++def test_equal_corner_depth_does_not_certify_nonplanar_region_interior():
++    def deform_region(rgb, depth):
++        depth[26:30, 52:56] = 1.006
++
++    acquisition = image_variant(scene(), deform_region)
++    with pytest.raises(ValueError, match="region_plane_depth_unresolved"):
++        tracker(acquisition, depth_error_bound_m=0.000001)
+--- artifacts/research/process/20261004-ced-development/t7b-module/fix-round-2-baseline/test_visual_effect_evidence.py
++++ tests/test_visual_effect_evidence.py
+@@ -26,7 +26,7 @@
+     assert facts["object_stable"]["value"] is None
+ 
+ 
+-def test_metric_lift_and_fresh_half_second_hold_prove_effect():
++def test_precision_endpoints_prove_lift_but_not_unobserved_interval_stability():
+     initial = scene(resolution=10, source="mujoco_camera")
+     tracked = tracker(initial, depth_error_bound_m=0.000001)
+     for index in range(7):
+@@ -44,11 +44,14 @@
+         if index < 5:
+             assert facts["object_stable"]["value"] is None
+     assert facts["object_lifted"]["value"] is True
+-    assert facts["object_stable"]["value"] is True
++    assert facts["object_stable"]["value"] is None
+     measured = facts["object_stable"]["measured_values"]
+     assert measured["observed_sim_duration_s"] >= 0.5
+     assert measured["minimum_visual_lift_m"] >= 0.05
+     assert len(measured["samples"]) >= 6
++    assert measured["endpoint_window_consistent"] is True
++    assert "inter_frame_motion_not_bounded" in facts["object_stable"]["reasons"]
++    assert "quarter_turn_symmetry_unresolved" in facts["object_stable"]["reasons"]
+ 
+ 
+ @pytest.mark.parametrize("lift", [0.049, 0.05])
+@@ -94,7 +97,7 @@
+     assert facts["object_stable"]["value"] is None
+ 
+ 
+-def test_release_requires_fresh_full_extent_and_one_second_stability():
++def test_release_geometry_and_endpoint_duration_do_not_prove_physical_stability():
+     initial = scene(resolution=10, source="mujoco_camera")
+     tracked = tracker(initial, depth_error_bound_m=0.000001)
+     for index, x in enumerate((20, 30, 40, 48), 1):
+@@ -125,8 +128,9 @@
+         if index < 10:
+             assert facts["object_placed"]["value"] is None
+     assert facts["object_inside_target_region"]["value"] is True
+-    assert facts["placement_stable"]["value"] is True
+-    assert facts["object_placed"]["value"] is True
++    assert facts["placement_stable"]["value"] is None
++    assert facts["object_placed"]["value"] is None
++    assert facts["object_placed"]["measured_values"]["endpoint_window_consistent"] is True
+ 
+ 
+ def test_release_feedback_alone_cannot_prove_stability():
+@@ -157,7 +161,7 @@
+         )
+         current = type(current).model_validate(payload)
+         facts = tracked.facts(current, held())
+-    assert facts["object_stable"]["value"] is True
++    assert facts["object_stable"]["value"] is None
+     assert facts["object_stable"]["measured_values"]["observed_sim_duration_s"] >= 0.5
+     assert facts["object_stable"]["measured_values"]["observed_capture_duration_s"] < 0.01
+ 
+@@ -229,3 +233,56 @@
+         facts = tracked.facts(image_variant(current, rotate_top), held())
+         assert facts["target_visible"]["value"] is True
+     assert facts["object_stable"]["value"] is None
++
++
++@pytest.mark.parametrize("unsupported_motion", ["out_and_back", "quarter_turn"])
++def test_identical_precision_frames_do_not_resolve_unobserved_motion(unsupported_motion):
++    # Both possible motions have these exact observed endpoints. We do not give
++    # the estimator hidden trajectories or fabricate a ground-truth fixture.
++    initial = scene(resolution=10, source="mujoco_camera")
++    tracked = tracker(
++        initial, depth_error_bound_m=0.000001, stability_verified=True, max_object_speed_m_s=0.0
++    )
++    for index in range(7):
++        time = 0.1 + index * 0.1
++        facts = tracked.facts(
++            scene(
++                f"{unsupported_motion}-{index}",
++                time=time,
++                lift=0.06,
++                resolution=10,
++                source="mujoco_camera",
++                started=datetime.now(UTC) - timedelta(seconds=time),
++            ),
++            held(),
++        )
++    stable = facts["object_stable"]
++    assert stable["value"] is None
++    assert stable["measured_values"]["endpoint_window_consistent"] is True
++    assert stable["measured_values"]["physical_stability_support"]["status"] == "UNAVAILABLE"
++    assert "inter_frame_motion_not_bounded" in stable["reasons"]
++    assert "quarter_turn_symmetry_unresolved" in stable["reasons"]
++
++
++def test_precision_translation_oscillation_rejects_endpoint_consistency():
++    initial = scene(resolution=10, source="mujoco_camera")
++    tracked = tracker(initial, depth_error_bound_m=0.000001)
++    for index in range(7):
++        time = 0.1 + index * 0.1
++        facts = tracked.facts(
++            scene(
++                str(index),
++                time=time,
++                x=10 + index % 2,
++                lift=0.06,
++                resolution=10,
++                source="mujoco_camera",
++                started=datetime.now(UTC) - timedelta(seconds=time),
++            ),
++            held(),
++        )
++        assert facts["target_visible"]["value"] is True
++    diagnostic = facts["object_stable"]["measured_values"]
++    assert facts["object_stable"]["value"] is None
++    assert diagnostic["endpoint_window_consistent"] is False
++    assert diagnostic["samples"][-1]["net_endpoint_displacement_rate_upper_m_s"] > 0.08

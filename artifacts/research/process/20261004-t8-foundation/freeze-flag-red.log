@@ -1,0 +1,40 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____ test_complete_batch_cannot_claim_freeze_before_independent_evidence[5] ____
+
+succeeded = 5
+
+    @pytest.mark.parametrize("succeeded", [5, 120])
+    def test_complete_batch_cannot_claim_freeze_before_independent_evidence(succeeded):
+        report = PilotReport(assigned=120, records=[
+            {"success": index < succeeded, "blocked": False} for index in range(120)
+        ])
+        summary = report.summary()
+        assert summary["unrecorded"] == 0
+        assert summary["succeeded"] == succeeded
+        # Even a perfect summary does not prove snapshots, fault traces or provenance.
+>       assert summary["freeze_ready"] is False
+E       assert True is False
+
+tests/test_research_pilot.py:39: AssertionError
+___ test_complete_batch_cannot_claim_freeze_before_independent_evidence[120] ___
+
+succeeded = 120
+
+    @pytest.mark.parametrize("succeeded", [5, 120])
+    def test_complete_batch_cannot_claim_freeze_before_independent_evidence(succeeded):
+        report = PilotReport(assigned=120, records=[
+            {"success": index < succeeded, "blocked": False} for index in range(120)
+        ])
+        summary = report.summary()
+        assert summary["unrecorded"] == 0
+        assert summary["succeeded"] == succeeded
+        # Even a perfect summary does not prove snapshots, fault traces or provenance.
+>       assert summary["freeze_ready"] is False
+E       assert True is False
+
+tests/test_research_pilot.py:39: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_pilot.py::test_complete_batch_cannot_claim_freeze_before_independent_evidence[5]
+FAILED tests/test_research_pilot.py::test_complete_batch_cannot_claim_freeze_before_independent_evidence[120]
+2 failed, 9 deselected in 0.12s

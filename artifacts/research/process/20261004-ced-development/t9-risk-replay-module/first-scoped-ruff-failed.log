@@ -1,0 +1,1244 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/cloud_edge_robot_arm/research/risk_replay.py:7:1
+   |
+ 5 |   creates committed SampleRecord labels, source acceptance or a METHOD permit.
+ 6 |   """
+ 7 | / from __future__ import annotations
+ 8 | |
+ 9 | | import json
+10 | | import math
+11 | | import platform
+12 | | from collections.abc import Mapping, Sequence
+13 | | from dataclasses import asdict, dataclass, field, replace
+14 | | from pathlib import Path
+15 | | from types import MappingProxyType
+16 | | from typing import Any
+17 | |
+18 | | import cv2
+19 | | import numpy
+20 | | import PIL
+21 | | import pydantic
+22 | |
+23 | | from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
+24 | | from cloud_edge_robot_arm.research.risk_sources import (
+25 | |     Status, _copied, _hashes, _inventory, _number, _plain, _relative, _safe,
+26 | | )
+27 | | from cloud_edge_robot_arm.research.risk_supervision import (
+28 | |     RiskObservationAllocation, RiskSupervisionAuditor, RiskSupervisionRegistration,
+29 | | )
+30 | | from cloud_edge_robot_arm.vision.risk.calibration import isotonic_fit, isotonic_predict
+31 | | from cloud_edge_robot_arm.vision.risk.fit import REGRESSORS, SETTINGS, logistic_fit, predict
+32 | | from cloud_edge_robot_arm.vision.risk.models import ACTIONS, FEATURE_SOURCES, FeatureValue, RiskFeatures
+   | |________________________________________________________________________________________________________^
+33 |
+34 |   _SUPERVISION_SHA = "b5d0118b733f3da25747d50ac704b9e036a07bdf17aa958868b9d2c411ee268b"
+   |
+help: Organize imports
+
+E501 Line too long (104 > 100)
+  --> src/cloud_edge_robot_arm/research/risk_replay.py:32:101
+   |
+30 | from cloud_edge_robot_arm.vision.risk.calibration import isotonic_fit, isotonic_predict
+31 | from cloud_edge_robot_arm.vision.risk.fit import REGRESSORS, SETTINGS, logistic_fit, predict
+32 | from cloud_edge_robot_arm.vision.risk.models import ACTIONS, FEATURE_SOURCES, FeatureValue, RiskFeatures
+   |                                                                                                     ^^^^
+33 |
+34 | _SUPERVISION_SHA = "b5d0118b733f3da25747d50ac704b9e036a07bdf17aa958868b9d2c411ee268b"
+   |
+
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/research/risk_replay.py:60:101
+   |
+58 | def risk_replay_environment() -> Mapping[str, str]:
+59 |     return _copied({"python": platform.python_version(), "pydantic": pydantic.__version__,
+60 |                     "Pillow": PIL.__version__, "numpy": numpy.__version__, "opencv": cv2.__version__})
+   |                                                                                                     ^^
+   |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:109:101
+    |
+107 |                    "assignment": _plain(c.assignment), "context": _plain(c.context),
+108 |                    "expected_counts": dict(c.expected_counts), "source_kind": c.source_kind,
+109 |                    "marker_registration": asdict(c.marker_registration) if c.marker_registration else None}
+    |                                                                                                     ^^^^^^^
+110 |                   for c in raw.cases],
+111 |         "criteria": asdict(raw.criteria), "current_source_hashes": dict(raw.current_source_hashes),
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:117:101
+    |
+115 |                       for h in registration.histories],
+116 |         "measurements": {"original_file_hashes": dict(measured.original_file_hashes),
+117 |                          "clock_path": measured.clock_path, "calibration_path": measured.calibration_path}
+    |                                                                                                     ^^^^^^
+118 |                         if measured else None,
+119 |         "initial": {"protocol_path": str(initial.protocol_path),
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:176:101
+    |
+174 |         if row["geometry_scope"] != "MARKER_CENTER_TRANSLATION":
+175 |             raise ValueError("only marker-center point residual scope is supported")
+176 |         labels = _object(row["offline_labels"], {"failure", "geometric_error_m", "motion_residual_m_s"}, "offline labels")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+177 |         failure = labels["failure"]
+178 |         if failure is not None and type(failure) is not bool:
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:182:101
+    |
+180 |         if failure is not None:
+181 |             if row["case_id"] in case_failures and case_failures[row["case_id"]] != failure:
+182 |                 raise ValueError("one original episode cannot have contradictory terminal failure labels")
+    |                                                                                                     ^^^^^^
+183 |             case_failures[row["case_id"]] = failure
+184 |         for key in ("geometric_error_m", "motion_residual_m_s"):
+    |
+
+E501 Line too long (144 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:189:101
+    |
+187 | …
+188 | …e point residual required")
+189 | …", "evaluation_start_step", "terminal_step", "terminal_sim_time_s"}, "terminal horizon")
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+190 | …L"
+191 | … not int or horizon["evaluation_start_step"] != 120
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:191:101
+    |
+189 | …     horizon = _object(row["failure_horizon"], {"kind", "evaluation_start_step", "terminal_step", "terminal_sim_time_s"}, "terminal …
+190 | …     if (horizon["kind"] != "ORIGINAL_EPISODE_TERMINAL"
+191 | …         or type(horizon["evaluation_start_step"]) is not int or horizon["evaluation_start_step"] != 120
+    |                                                                                                   ^^^^^^^
+192 | …         or type(horizon["terminal_step"]) is not int or horizon["terminal_step"] < 120
+193 | …         or _number(horizon["terminal_sim_time_s"]) < 0):
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:204:101
+    |
+202 |             "observation_id": item.observation_id, "split": item.split, "group_id": None,
+203 |             "scene_hash": None, "features": None, "history_available": False,
+204 |             "offline_labels": {"failure": None, "geometric_error_m": None, "motion_residual_m_s": None}}))
+    |                                                                                                     ^^^^^^
+205 |     return output, len(observed)
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:219:101
+    |
+217 |     for index in range(len(REGRESSORS)):
+218 |         mean = sum(row[index] for row in vectors) / len(vectors)
+219 |         if not math.isfinite(mean) or any(not math.isfinite((row[index]-mean)*(row[index]-mean)) for row in vectors):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+220 |             raise ValueError("fixed fit recipe arithmetic exceeds finite range")
+221 |     data = logistic_fit(vectors, [row["offline_labels"]["failure"] for row in rows], parameters["seed"])
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:221:101
+    |
+219 |         if not math.isfinite(mean) or any(not math.isfinite((row[index]-mean)*(row[index]-mean)) for row in vectors):
+220 |             raise ValueError("fixed fit recipe arithmetic exceeds finite range")
+221 |     data = logistic_fit(vectors, [row["offline_labels"]["failure"] for row in rows], parameters["seed"])
+    |                                                                                                     ^^^^
+222 |     data.update({"schema_version": "ced.risk-replay-model.v1", "scope": "SOFTWARE_ONLY",
+223 |         "target": "ORIGINAL_EPISODE_TERMINAL_FAILURE", "seed": parameters["seed"],
+    |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:227:101
+    |
+225 |         "regressors": list(REGRESSORS), "fit_group_ids": sorted({row["group_id"] for row in rows}),
+226 |         "fit_provenance": _provenance(rows),
+227 |         "calibration_fingerprints": sorted({row["features"].values["calibration_fingerprint"].value for row in rows}),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+228 |         "feature_ranges": {key: [min(row["features"].values[key].value for row in rows),
+229 |                                   max(row["features"].values[key].value for row in rows)] for key in REGRESSORS},
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:229:101
+    |
+227 |         "calibration_fingerprints": sorted({row["features"].values["calibration_fingerprint"].value for row in rows}),
+228 |         "feature_ranges": {key: [min(row["features"].values[key].value for row in rows),
+229 |                                   max(row["features"].values[key].value for row in rows)] for key in REGRESSORS},
+    |                                                                                                     ^^^^^^^^^^^^^
+230 |         "action_models": {action: None for action in ACTIONS}, "source_accepted": False, "formal_use": "FORBIDDEN"})
+231 |     return data
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:230:101
+    |
+228 |         "feature_ranges": {key: [min(row["features"].values[key].value for row in rows),
+229 |                                   max(row["features"].values[key].value for row in rows)] for key in REGRESSORS},
+230 |         "action_models": {action: None for action in ACTIONS}, "source_accepted": False, "formal_use": "FORBIDDEN"})
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+231 |     return data
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:236:101
+    |
+234 | def _bound(rows, key, motion=False):
+235 |     groups = {}
+236 |     eligible = [row for row in rows if not motion or row["features"].values["motion_pair_valid"].value == 1]
+    |                                                                                                     ^^^^^^^^
+237 |     for row in eligible:
+238 |         value = row["offline_labels"][key]
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:244:101
+    |
+242 |     rank = math.ceil((len(residuals)+1)*_FIXED["coverage"])
+243 |     return (residuals[rank-1] if residuals and rank <= len(residuals) else None,
+244 |             residuals, len(eligible), sum(row["offline_labels"][key] is not None for row in eligible))
+    |                                                                                                     ^^
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:252:101
+    |
+250 |     blocks = isotonic_fit(scores, labels)
+251 |     geometry, geo_groups, geo_eligible, geo_labels = _bound(rows, "geometric_error_m")
+252 |     motion, motion_groups, motion_eligible, motion_labels = _bound(rows, "motion_residual_m_s", True)
+    |                                                                                                     ^
+253 |     coverage = {"geometry_group_count": len(geo_groups), "motion_group_count": len(motion_groups),
+254 |                 "geometry_eligible_rows": geo_eligible, "geometry_label_rows": geo_labels,
+    |
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:259:101
+    |
+257 |                 "motion_missing_label_rows": motion_eligible-motion_labels}
+258 |     calibrated = {"schema_version": "ced.risk-replay-calibration.v1", "scope": "SOFTWARE_ONLY",
+259 |         "model_hash": content_digest(model), "calibration_group_ids": sorted({row["group_id"] for row in rows}),
+    |                                                                                                     ^^^^^^^^^^^^
+260 |         "calibration_provenance": _provenance(rows), "isotonic_blocks": blocks,
+261 |         "observable_support": {key: [min(model["feature_ranges"][key][0], min(row["features"].values[key].value for row in rows)),
+    |
+
+E501 Line too long (130 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:261:101
+    |
+259 |         "model_hash": content_digest(model), "calibration_group_ids": sorted({row["group_id"] for row in rows}),
+260 |         "calibration_provenance": _provenance(rows), "isotonic_blocks": blocks,
+261 |         "observable_support": {key: [min(model["feature_ranges"][key][0], min(row["features"].values[key].value for row in rows)),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+262 |                                      max(model["feature_ranges"][key][1], max(row["features"].values[key].value for row in rows))]
+263 |                                for key in ("depth_median_m", "depth_dispersion_m", "calibration_residual_m")},
+    |
+
+E501 Line too long (130 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:262:101
+    |
+260 |         "calibration_provenance": _provenance(rows), "isotonic_blocks": blocks,
+261 |         "observable_support": {key: [min(model["feature_ranges"][key][0], min(row["features"].values[key].value for row in rows)),
+262 |                                      max(model["feature_ranges"][key][1], max(row["features"].values[key].value for row in rows))]
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+263 |                                for key in ("depth_median_m", "depth_dispersion_m", "calibration_residual_m")},
+264 |         "action_isotonic_blocks": {action: None for action in ACTIONS}, "coverage": _FIXED["coverage"],
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:263:101
+    |
+261 |         "observable_support": {key: [min(model["feature_ranges"][key][0], min(row["features"].values[key].value for row in rows)),
+262 |                                      max(model["feature_ranges"][key][1], max(row["features"].values[key].value for row in rows))]
+263 |                                for key in ("depth_median_m", "depth_dispersion_m", "calibration_residual_m")},
+    |                                                                                                     ^^^^^^^^^^
+264 |         "action_isotonic_blocks": {action: None for action in ACTIONS}, "coverage": _FIXED["coverage"],
+265 |         "geometry_scope": "MARKER_CENTER_TRANSLATION", "bound_scope": "AVAILABLE_LABEL_GROUP_DIAGNOSTICS",
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:264:101
+    |
+262 |                                      max(model["feature_ranges"][key][1], max(row["features"].values[key].value for row in rows))]
+263 |                                for key in ("depth_median_m", "depth_dispersion_m", "calibration_residual_m")},
+264 |         "action_isotonic_blocks": {action: None for action in ACTIONS}, "coverage": _FIXED["coverage"],
+    |                                                                                                     ^^^
+265 |         "geometry_scope": "MARKER_CENTER_TRANSLATION", "bound_scope": "AVAILABLE_LABEL_GROUP_DIAGNOSTICS",
+266 |         "marker_point_error_bound_m": geometry, "motion_residual_bound_m_s": motion,
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:265:101
+    |
+263 |                                for key in ("depth_median_m", "depth_dispersion_m", "calibration_residual_m")},
+264 |         "action_isotonic_blocks": {action: None for action in ACTIONS}, "coverage": _FIXED["coverage"],
+265 |         "geometry_scope": "MARKER_CENTER_TRANSLATION", "bound_scope": "AVAILABLE_LABEL_GROUP_DIAGNOSTICS",
+    |                                                                                                     ^^^^^^
+266 |         "marker_point_error_bound_m": geometry, "motion_residual_bound_m_s": motion,
+267 |         "geometry_group_residuals_m": geo_groups, "motion_group_residuals_m_s": motion_groups,
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:268:101
+    |
+266 |         "marker_point_error_bound_m": geometry, "motion_residual_bound_m_s": motion,
+267 |         "geometry_group_residuals_m": geo_groups, "motion_group_residuals_m_s": motion_groups,
+268 |         "reliability": [{"score": score, "failure": label, "calibrated": isotonic_predict(blocks, score)}
+    |                                                                                                     ^^^^^
+269 |                         for score,label in zip(scores,labels,strict=True)], "label_coverage": coverage}
+270 |     calibrated["content_hash"] = content_digest(calibrated)
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:269:101
+    |
+267 |         "geometry_group_residuals_m": geo_groups, "motion_group_residuals_m_s": motion_groups,
+268 |         "reliability": [{"score": score, "failure": label, "calibrated": isotonic_predict(blocks, score)}
+269 |                         for score,label in zip(scores,labels,strict=True)], "label_coverage": coverage}
+    |                                                                                                     ^^^
+270 |     calibrated["content_hash"] = content_digest(calibrated)
+271 |     return calibrated, coverage
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:289:101
+    |
+287 |         raw_probability = predict(model, feature)
+288 |         for condition,reason in (
+289 |             (values["invalid_depth_fraction"] > _FIXED["max_invalid_depth_fraction"], "invalid_depth_outside_guard"),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+290 |             (values["calibration_valid"] != 1, "calibration_guard_unavailable"),
+291 |             (values["motion_pair_valid"] != 1, "fresh_motion_pair_unavailable"),
+    |
+
+E501 Line too long (128 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:292:101
+    |
+290 | …     (values["calibration_valid"] != 1, "calibration_guard_unavailable"),
+291 | …     (values["motion_pair_valid"] != 1, "fresh_motion_pair_unavailable"),
+292 | …     (values["calibration_fingerprint"] not in model["calibration_fingerprints"], "calibration_fingerprint_outside_fit"),
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+293 | …     (values["frame_interval_s"] > _FIXED["max_frame_interval_s"], "frame_interval_outside_guard"),
+294 | …     (any(not low <= values[key] <= high for key,(low,high) in calibrated["observable_support"].items()), "observable_support_outsid…
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:293:101
+    |
+291 | …     (values["motion_pair_valid"] != 1, "fresh_motion_pair_unavailable"),
+292 | …     (values["calibration_fingerprint"] not in model["calibration_fingerprints"], "calibration_fingerprint_outside_fit"),
+293 | …     (values["frame_interval_s"] > _FIXED["max_frame_interval_s"], "frame_interval_outside_guard"),
+    |                                                                                               ^^^^^^
+294 | …     (any(not low <= values[key] <= high for key,(low,high) in calibrated["observable_support"].items()), "observable_support_outsid…
+295 | …     (calibrated["marker_point_error_bound_m"] is None, "marker_point_group_bound_unavailable"),
+    |
+
+E501 Line too long (159 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:294:101
+    |
+292 | …ibration_fingerprints"], "calibration_fingerprint_outside_fit"),
+293 | …rval_s"], "frame_interval_outside_guard"),
+294 | …h) in calibrated["observable_support"].items()), "observable_support_outside_fit_calibration"),
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+295 | …marker_point_group_bound_unavailable"),
+296 | …resh_motion_group_bound_unavailable"),
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:295:101
+    |
+293 | …     (values["frame_interval_s"] > _FIXED["max_frame_interval_s"], "frame_interval_outside_guard"),
+294 | …     (any(not low <= values[key] <= high for key,(low,high) in calibrated["observable_support"].items()), "observable_support_outsid…
+295 | …     (calibrated["marker_point_error_bound_m"] is None, "marker_point_group_bound_unavailable"),
+    |                                                                                               ^^^
+296 | …     (calibrated["motion_residual_bound_m_s"] is None, "fresh_motion_group_bound_unavailable"),
+297 | …     (not calibrated["isotonic_blocks"], "both_class_isotonic_unavailable"),
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:296:101
+    |
+294 | …         (any(not low <= values[key] <= high for key,(low,high) in calibrated["observable_support"].items()), "observable_support_ou…
+295 | …         (calibrated["marker_point_error_bound_m"] is None, "marker_point_group_bound_unavailable"),
+296 | …         (calibrated["motion_residual_bound_m_s"] is None, "fresh_motion_group_bound_unavailable"),
+    |                                                                                                   ^^
+297 | …         (not calibrated["isotonic_blocks"], "both_class_isotonic_unavailable"),
+298 | …     ):
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:315:101
+    |
+314 | def _brier(rows):
+315 |     if not rows or any(row["failure_probability"] is None or row["failure"] is None for row in rows):
+    |                                                                                                     ^
+316 |         return None
+317 |     return sum((row["failure_probability"]-row["failure"])**2 for row in rows)/len(rows)
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:329:101
+    |
+327 |     rows, observed_count = _rows(allocations, reconstructed_rows)
+328 |     splits = {name: [row for row in rows if row["split"] == name] for name in _SPLITS}
+329 |     counts = {"allocated_observations": len(allocations), "assigned_attempts": len({a.case_id for a in allocations}),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+330 |               "missing_observations": len(allocations)-observed_count,
+331 |               "task_labels": sum(row["offline_labels"]["failure"] is not None for row in rows),
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:333:101
+    |
+331 |               "task_labels": sum(row["offline_labels"]["failure"] is not None for row in rows),
+332 |               "feature_rows": sum(row["features"] is not None for row in rows),
+333 |               "failed_task_observations": sum(row["offline_labels"]["failure"] is True for row in rows)}
+    |                                                                                                     ^^^^
+334 |     split_counts = {name: {"allocated": len(items), "feature_rows": sum(row["features"] is not None for row in items),
+335 |                           "failure_labels": sum(row["offline_labels"]["failure"] is not None for row in items),
+    |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:334:101
+    |
+332 |               "feature_rows": sum(row["features"] is not None for row in rows),
+333 |               "failed_task_observations": sum(row["offline_labels"]["failure"] is True for row in rows)}
+334 |     split_counts = {name: {"allocated": len(items), "feature_rows": sum(row["features"] is not None for row in items),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+335 |                           "failure_labels": sum(row["offline_labels"]["failure"] is not None for row in items),
+336 |                           "missing_features": sum(row["features"] is None for row in items),
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:335:101
+    |
+333 |               "failed_task_observations": sum(row["offline_labels"]["failure"] is True for row in rows)}
+334 |     split_counts = {name: {"allocated": len(items), "feature_rows": sum(row["features"] is not None for row in items),
+335 |                           "failure_labels": sum(row["offline_labels"]["failure"] is not None for row in items),
+    |                                                                                                     ^^^^^^^^^^^
+336 |                           "missing_features": sum(row["features"] is None for row in items),
+337 |                           "missing_labels": sum(row["offline_labels"]["failure"] is None for row in items)}
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:337:101
+    |
+335 |                           "failure_labels": sum(row["offline_labels"]["failure"] is not None for row in items),
+336 |                           "missing_features": sum(row["features"] is None for row in items),
+337 |                           "missing_labels": sum(row["offline_labels"]["failure"] is None for row in items)}
+    |                                                                                                     ^^^^^^^
+338 |                     for name,items in splits.items()}
+339 |     results = []
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:350:101
+    |
+348 |                                 or not row["history_available"] for row in items):
+349 |                 reasons.append(f"complete_{name}_population_unavailable")
+350 |         if len(reasons) == 1 and {row["offline_labels"]["failure"] for row in splits["train"]} != {False,True}:
+    |                                                                                                     ^^^^^^^^^^^
+351 |             reasons.append("both_class_training_unavailable")
+352 |         if len(reasons) == 1:
+    |
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:364:101
+    |
+362 |         if score is None:
+363 |             reasons.append("complete_selection_predictions_unavailable")
+364 |         results.append({"parameters": candidate, "parameters_hash": content_digest(candidate), "status": status,
+    |                                                                                                     ^^^^^^^^^^^^
+365 |             "reasons": reasons, "model": model, "model_hash": content_digest(model) if model else None,
+366 |             "calibration": calibrated, "calibration_hash": calibrated["content_hash"] if calibrated else None,
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:365:101
+    |
+363 |             reasons.append("complete_selection_predictions_unavailable")
+364 |         results.append({"parameters": candidate, "parameters_hash": content_digest(candidate), "status": status,
+365 |             "reasons": reasons, "model": model, "model_hash": content_digest(model) if model else None,
+    |                                                                                                     ^^^
+366 |             "calibration": calibrated, "calibration_hash": calibrated["content_hash"] if calibrated else None,
+367 |             "coverage": coverage, "selection_results": selection, "test_results": test,
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:366:101
+    |
+364 |         results.append({"parameters": candidate, "parameters_hash": content_digest(candidate), "status": status,
+365 |             "reasons": reasons, "model": model, "model_hash": content_digest(model) if model else None,
+366 |             "calibration": calibrated, "calibration_hash": calibrated["content_hash"] if calibrated else None,
+    |                                                                                                     ^^^^^^^^^^
+367 |             "coverage": coverage, "selection_results": selection, "test_results": test,
+368 |             "selection_brier": score, "test_brier": _brier(test),
+    |
+
+E501 Line too long (126 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:374:101
+    |
+372 |                 "missing_selection_rows": len(splits["selection"])} for action in ACTIONS}})
+373 |     feasible = [candidate for candidate in results if candidate["selection_brier"] is not None]
+374 |     winner = min(feasible, key=lambda c:(c["selection_brier"], c["parameters_hash"]))["parameters_hash"] if feasible else None
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+375 |     status = "VALID" if winner else "UNAVAILABLE" if all(c["status"] == "UNAVAILABLE" for c in results) else "NO_FEASIBLE"
+376 |     selection_snapshot = {"schema_version": "ced.risk-replay-selection.v1", "scope": "SOFTWARE_ONLY",
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:375:101
+    |
+373 |     feasible = [candidate for candidate in results if candidate["selection_brier"] is not None]
+374 |     winner = min(feasible, key=lambda c:(c["selection_brier"], c["parameters_hash"]))["parameters_hash"] if feasible else None
+375 |     status = "VALID" if winner else "UNAVAILABLE" if all(c["status"] == "UNAVAILABLE" for c in results) else "NO_FEASIBLE"
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+376 |     selection_snapshot = {"schema_version": "ced.risk-replay-selection.v1", "scope": "SOFTWARE_ONLY",
+377 |         "selection_rule": _RULE, "population_rule": _POPULATION, "diagnostic_winner_hash": winner,
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:376:101
+    |
+374 |     winner = min(feasible, key=lambda c:(c["selection_brier"], c["parameters_hash"]))["parameters_hash"] if feasible else None
+375 |     status = "VALID" if winner else "UNAVAILABLE" if all(c["status"] == "UNAVAILABLE" for c in results) else "NO_FEASIBLE"
+376 |     selection_snapshot = {"schema_version": "ced.risk-replay-selection.v1", "scope": "SOFTWARE_ONLY",
+    |                                                                                                     ^
+377 |         "selection_rule": _RULE, "population_rule": _POPULATION, "diagnostic_winner_hash": winner,
+378 |         "selection_sample_ids": [row["sample_id"] for row in splits["selection"]],
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:379:101
+    |
+377 |         "selection_rule": _RULE, "population_rule": _POPULATION, "diagnostic_winner_hash": winner,
+378 |         "selection_sample_ids": [row["sample_id"] for row in splits["selection"]],
+379 |         "candidate_results": [{key:candidate[key] for key in ("parameters", "parameters_hash", "model_hash",
+    |                                                                                                     ^^^^^^^^
+380 |             "calibration_hash", "selection_results", "selection_brier", "status")} for candidate in results]}
+381 |     return _copied({"scope": "SOFTWARE_ONLY", "status": status, "counts": counts,
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:380:101
+    |
+378 |         "selection_sample_ids": [row["sample_id"] for row in splits["selection"]],
+379 |         "candidate_results": [{key:candidate[key] for key in ("parameters", "parameters_hash", "model_hash",
+380 |             "calibration_hash", "selection_results", "selection_brier", "status")} for candidate in results]}
+    |                                                                                                     ^^^^^^^^^
+381 |     return _copied({"scope": "SOFTWARE_ONLY", "status": status, "counts": counts,
+382 |         "split_counts": split_counts, "candidate_results": results, "diagnostic_winner_hash": winner,
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:382:101
+    |
+380 |             "calibration_hash", "selection_results", "selection_brier", "status")} for candidate in results]}
+381 |     return _copied({"scope": "SOFTWARE_ONLY", "status": status, "counts": counts,
+382 |         "split_counts": split_counts, "candidate_results": results, "diagnostic_winner_hash": winner,
+    |                                                                                                     ^
+383 |         "selection_snapshot": selection_snapshot,
+384 |         "component_usage_histories": {row["group_id"]: list(row["used_purposes"]) for row in rows if row["group_id"] is not None}})
+    |
+
+E501 Line too long (131 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:384:101
+    |
+382 |         "split_counts": split_counts, "candidate_results": results, "diagnostic_winner_hash": winner,
+383 |         "selection_snapshot": selection_snapshot,
+384 |         "component_usage_histories": {row["group_id"]: list(row["used_purposes"]) for row in rows if row["group_id"] is not None}})
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:444:101
+    |
+443 |     def __post_init__(self):
+444 |         for name in ("counts", "split_counts", "candidate_results", "original_file_hashes", "current_source_hashes"):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+445 |             object.__setattr__(self, name, _copied(getattr(self,name)))
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:471:101
+    |
+469 |     """Concrete copied registrations only; actual risk/selection remain UNKNOWN."""
+470 |     def __init__(self, registrations, supervision_registrations):
+471 |         if not isinstance(supervision_registrations, Mapping) or not isinstance(registrations, Mapping):
+    |                                                                                                     ^^^^
+472 |             raise TypeError("concrete registration mappings required, not passed auditors")
+473 |         self._registered = {}
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:481:101
+    |
+479 |             source = replace(source)
+480 |             sources = source.raw_registration.current_source_hashes
+481 |             if sources.get("src/cloud_edge_robot_arm/research/risk_supervision.py") != _SUPERVISION_SHA:
+    |                                                                                                     ^^^^
+482 |                 raise ValueError("corrected independently reviewed supervision fix1 required")
+483 |             if sources.get("src/cloud_edge_robot_arm/research/risk_sources.py") != _RAW_SHA:
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:507:101
+    |
+505 |         comparison: Status = "UNKNOWN"
+506 |         scope = "SOFTWARE_ONLY"
+507 |         source = self._supervision.get(registration.supervision_evidence_id) if registration else None
+    |                                                                                                     ^^
+508 |         if registration is None or source is None:
+509 |             reasons.append("evidence_id_not_registered" if registration is None else "supervision_evidence_id_not_registered")
+    |
+
+E501 Line too long (126 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:509:101
+    |
+507 |         source = self._supervision.get(registration.supervision_evidence_id) if registration else None
+508 |         if registration is None or source is None:
+509 |             reasons.append("evidence_id_not_registered" if registration is None else "supervision_evidence_id_not_registered")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+510 |         else:
+511 |             counts["assigned_attempts"] = len(source.raw_registration.cases)
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:512:101
+    |
+510 |         else:
+511 |             counts["assigned_attempts"] = len(source.raw_registration.cases)
+512 |             counts["allocated_observations"] = sum(case.expected_counts["frames"] for case in source.raw_registration.cases)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+513 |             counts["missing_observations"] = counts["allocated_observations"]
+514 |             try:
+    |
+
+E501 Line too long (123 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:518:101
+    |
+516 |                 supervised = concrete.audit("source")
+517 |                 counts.update(supervised.counts)
+518 |                 originals.update({f"supervision/{name}":digest for name,digest in supervised.original_file_hashes.items()})
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+519 |                 sources.update(supervised.current_source_hashes)
+520 |                 scope = supervised.source_scope
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:522:101
+    |
+520 |                 scope = supervised.source_scope
+521 |                 reasons.extend(supervised.reasons)
+522 |                 before = _inventory(registration.artifact_root, registration.original_file_hashes, complete=True)
+    |                                                                                                     ^^^^^^^^^^^^^
+523 |                 originals.update({f"replay/{name}":digest for name,digest in before.items()})
+524 |                 raw = source.raw_registration
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:525:101
+    |
+523 |                 originals.update({f"replay/{name}":digest for name,digest in before.items()})
+524 |                 raw = source.raw_registration
+525 |                 source_before = _inventory(raw.source_root, raw.current_source_hashes, complete=False)
+    |                                                                                                     ^^
+526 |                 config = _object(_json_object(_safe(registration.artifact_root,registration.config_path)),
+527 |                     {"schema_version", "inventory_version", "selection_rule", "population_rule", "candidates",
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:526:101
+    |
+524 |                 raw = source.raw_registration
+525 |                 source_before = _inventory(raw.source_root, raw.current_source_hashes, complete=False)
+526 |                 config = _object(_json_object(_safe(registration.artifact_root,registration.config_path)),
+    |                                                                                                     ^^^^^^
+527 |                     {"schema_version", "inventory_version", "selection_rule", "population_rule", "candidates",
+528 |                      "environment", "recipe_source_hashes", "supervision_registration_hash"}, "replay config")
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:527:101
+    |
+525 |                 source_before = _inventory(raw.source_root, raw.current_source_hashes, complete=False)
+526 |                 config = _object(_json_object(_safe(registration.artifact_root,registration.config_path)),
+527 |                     {"schema_version", "inventory_version", "selection_rule", "population_rule", "candidates",
+    |                                                                                                     ^^^^^^^^^^
+528 |                      "environment", "recipe_source_hashes", "supervision_registration_hash"}, "replay config")
+529 |                 if (config["schema_version"] != "ced.risk-replay-config.v1" or not _identity(config["inventory_version"])
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:528:101
+    |
+526 |                 config = _object(_json_object(_safe(registration.artifact_root,registration.config_path)),
+527 |                     {"schema_version", "inventory_version", "selection_rule", "population_rule", "candidates",
+528 |                      "environment", "recipe_source_hashes", "supervision_registration_hash"}, "replay config")
+    |                                                                                                     ^^^^^^^^^^
+529 |                 if (config["schema_version"] != "ced.risk-replay-config.v1" or not _identity(config["inventory_version"])
+530 |                     or config["selection_rule"] != _RULE or config["population_rule"] != _POPULATION
+    |
+
+E501 Line too long (121 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:529:101
+    |
+527 |                     {"schema_version", "inventory_version", "selection_rule", "population_rule", "candidates",
+528 |                      "environment", "recipe_source_hashes", "supervision_registration_hash"}, "replay config")
+529 |                 if (config["schema_version"] != "ced.risk-replay-config.v1" or not _identity(config["inventory_version"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+530 |                     or config["selection_rule"] != _RULE or config["population_rule"] != _POPULATION
+531 |                     or not _same(config["environment"], risk_replay_environment())
+    |
+
+E501 Line too long (147 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:532:101
+    |
+530 | …r config["population_rule"] != _POPULATION
+531 | …sk_replay_environment())
+532 | …hes"], {name:raw.current_source_hashes[name] for name in required_replay_source_paths()})
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+533 | …sh"] != supervision_registration_hash(source)):
+534 | …nment/recipe/source binding mismatch")
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:533:101
+    |
+531 | …         or not _same(config["environment"], risk_replay_environment())
+532 | …         or not _same(config["recipe_source_hashes"], {name:raw.current_source_hashes[name] for name in required_replay_source_paths…
+533 | …         or config["supervision_registration_hash"] != supervision_registration_hash(source)):
+    |                                                                                           ^^^^^
+534 | …         raise ValueError("frozen config/environment/recipe/source binding mismatch")
+535 | …     candidates = _candidates(config["candidates"])
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:536:101
+    |
+534 |                     raise ValueError("frozen config/environment/recipe/source binding mismatch")
+535 |                 candidates = _candidates(config["candidates"])
+536 |                 replay = replay_diagnostic_candidates(source.allocations, supervised.rows, candidates)
+    |                                                                                                     ^^
+537 |                 candidate_results = replay["candidate_results"]
+538 |                 split_counts = replay["split_counts"]
+    |
+
+E501 Line too long (197 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:541:101
+    |
+539 | …
+540 | …
+541 | …if key not in {"assigned_attempts","allocated_observations","missing_observations","task_labels","feature_rows"}})
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+542 | …ource_status == "INVALID":
+543 | …
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:542:101
+    |
+540 | …     diagnostic = replay["status"]
+541 | …     counts.update({key:value for key,value in replay["counts"].items() if key not in {"assigned_attempts","allocated_observations",…
+542 | …     if supervised.diagnostic_status == "INVALID" or supervised.actual_source_status == "INVALID":
+    |                                                                                           ^^^^^^^^^
+543 | …         status = "INVALID"
+544 | …         diagnostic = "INVALID"
+    |
+
+E501 Line too long (151 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:548:101
+    |
+546 | …istration, replay, reasons)
+547 | …
+548 | …ounts != supervised.counts or after.original_file_hashes != supervised.original_file_hashes
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+549 | …ised.current_source_hashes or after.diagnostic_status != supervised.diagnostic_status
+550 | …sed.actual_source_status
+    |
+
+E501 Line too long (145 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:549:101
+    |
+547 | …
+548 | …r.counts != supervised.counts or after.original_file_hashes != supervised.original_file_hashes
+549 | …ervised.current_source_hashes or after.diagnostic_status != supervised.diagnostic_status
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+550 | …rvised.actual_source_status
+551 | …oot, registration.original_file_hashes, complete=True) != before
+    |
+
+E501 Line too long (121 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:551:101
+    |
+549 | …     or after.current_source_hashes != supervised.current_source_hashes or after.diagnostic_status != supervised.diagnostic_status
+550 | …     or after.actual_source_status != supervised.actual_source_status
+551 | …     or _inventory(registration.artifact_root, registration.original_file_hashes, complete=True) != before
+    |                                                                                       ^^^^^^^^^^^^^^^^^^^^^
+552 | …     or _inventory(raw.source_root, raw.current_source_hashes, complete=False) != source_before):
+553 | …     raise ValueError("original or current validating source changed during replay")
+    |
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:552:101
+    |
+550 |                     or after.actual_source_status != supervised.actual_source_status
+551 |                     or _inventory(registration.artifact_root, registration.original_file_hashes, complete=True) != before
+552 |                     or _inventory(raw.source_root, raw.current_source_hashes, complete=False) != source_before):
+    |                                                                                                     ^^^^^^^^^^^^
+553 |                     raise ValueError("original or current validating source changed during replay")
+554 |                 reasons.extend(("actual_risk_selection_unavailable", "derived_sample_record_materializer_unavailable",
+    |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:554:101
+    |
+552 |                     or _inventory(raw.source_root, raw.current_source_hashes, complete=False) != source_before):
+553 |                     raise ValueError("original or current validating source changed during replay")
+554 |                 reasons.extend(("actual_risk_selection_unavailable", "derived_sample_record_materializer_unavailable",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+555 |                                 "actual_action_feedback_replay_unavailable"))
+556 |             except (ValueError, TypeError, KeyError, IndexError) as error:
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:564:101
+    |
+562 |             except OSError as error:
+563 |                 reasons.append(f"risk_replay_unavailable:{error}")
+564 |         return RiskArtifactAudit(status, status, diagnostic, comparison, tuple(dict.fromkeys(reasons)),
+    |                                                                                                     ^^^
+565 |             counts, split_counts, tuple(candidate_results), winner, originals, sources, scope)
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:571:101
+    |
+569 |     _object(model, {"means", "scales", "weights", "intercept", "schema_version", "scope", "target",
+570 |         "seed", "settings", "feature_schema", "regressors", "fit_group_ids", "fit_provenance",
+571 |         "calibration_fingerprints", "feature_ranges", "action_models", "source_accepted", "formal_use"}, "diagnostic model")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+572 |     if (model["schema_version"] != "ced.risk-replay-model.v1" or model["scope"] != "SOFTWARE_ONLY"
+573 |         or model["target"] != "ORIGINAL_EPISODE_TERMINAL_FAILURE" or model["source_accepted"] is not False
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:573:101
+    |
+571 |         "calibration_fingerprints", "feature_ranges", "action_models", "source_accepted", "formal_use"}, "diagnostic model")
+572 |     if (model["schema_version"] != "ced.risk-replay-model.v1" or model["scope"] != "SOFTWARE_ONLY"
+573 |         or model["target"] != "ORIGINAL_EPISODE_TERMINAL_FAILURE" or model["source_accepted"] is not False
+    |                                                                                                     ^^^^^^
+574 |         or model["formal_use"] != "FORBIDDEN" or not _same(model["feature_schema"], FEATURE_SOURCES)
+575 |         or model["regressors"] != list(REGRESSORS)
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:588:101
+    |
+586 |     ranges = _object(model["feature_ranges"], set(REGRESSORS), "fit feature ranges")
+587 |     for limits in ranges.values():
+588 |         if not isinstance(limits, list) or len(limits) != 2 or _number(limits[0]) > _number(limits[1]):
+    |                                                                                                     ^^^
+589 |             raise ValueError("finite ordered fit support required")
+590 |     if not isinstance(model["calibration_fingerprints"], list):
+    |
+
+E501 Line too long (150 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:597:101
+    |
+595 | …
+596 | …
+597 | …", "observation_id", "group_id", "scene_hash", "used_purposes_by_group"}, "fit provenance")
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:601:101
+    |
+600 | def _validate_original_calibration(calibration: Mapping[str, Any]) -> None:
+601 |     _object(calibration, {"schema_version", "scope", "model_hash", "calibration_group_ids", "calibration_provenance",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+602 |         "isotonic_blocks", "observable_support", "action_isotonic_blocks", "coverage", "geometry_scope",
+603 |         "bound_scope", "marker_point_error_bound_m", "motion_residual_bound_m_s", "geometry_group_residuals_m",
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:602:101
+    |
+600 | def _validate_original_calibration(calibration: Mapping[str, Any]) -> None:
+601 |     _object(calibration, {"schema_version", "scope", "model_hash", "calibration_group_ids", "calibration_provenance",
+602 |         "isotonic_blocks", "observable_support", "action_isotonic_blocks", "coverage", "geometry_scope",
+    |                                                                                                     ^^^^
+603 |         "bound_scope", "marker_point_error_bound_m", "motion_residual_bound_m_s", "geometry_group_residuals_m",
+604 |         "motion_group_residuals_m_s", "reliability", "label_coverage", "content_hash"}, "diagnostic calibration")
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:603:101
+    |
+601 |     _object(calibration, {"schema_version", "scope", "model_hash", "calibration_group_ids", "calibration_provenance",
+602 |         "isotonic_blocks", "observable_support", "action_isotonic_blocks", "coverage", "geometry_scope",
+603 |         "bound_scope", "marker_point_error_bound_m", "motion_residual_bound_m_s", "geometry_group_residuals_m",
+    |                                                                                                     ^^^^^^^^^^^
+604 |         "motion_group_residuals_m_s", "reliability", "label_coverage", "content_hash"}, "diagnostic calibration")
+605 |     if (calibration["schema_version"] != "ced.risk-replay-calibration.v1" or calibration["scope"] != "SOFTWARE_ONLY"
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:604:101
+    |
+602 |         "isotonic_blocks", "observable_support", "action_isotonic_blocks", "coverage", "geometry_scope",
+603 |         "bound_scope", "marker_point_error_bound_m", "motion_residual_bound_m_s", "geometry_group_residuals_m",
+604 |         "motion_group_residuals_m_s", "reliability", "label_coverage", "content_hash"}, "diagnostic calibration")
+    |                                                                                                     ^^^^^^^^^^^^^
+605 |     if (calibration["schema_version"] != "ced.risk-replay-calibration.v1" or calibration["scope"] != "SOFTWARE_ONLY"
+606 |         or calibration["geometry_scope"] != "MARKER_CENTER_TRANSLATION"
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:605:101
+    |
+603 |         "bound_scope", "marker_point_error_bound_m", "motion_residual_bound_m_s", "geometry_group_residuals_m",
+604 |         "motion_group_residuals_m_s", "reliability", "label_coverage", "content_hash"}, "diagnostic calibration")
+605 |     if (calibration["schema_version"] != "ced.risk-replay-calibration.v1" or calibration["scope"] != "SOFTWARE_ONLY"
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+606 |         or calibration["geometry_scope"] != "MARKER_CENTER_TRANSLATION"
+607 |         or calibration["bound_scope"] != "AVAILABLE_LABEL_GROUP_DIAGNOSTICS"
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:629:101
+    |
+627 |             raise ValueError("exact isotonic block shape required")
+628 |         low,high,probability=map(_number,block)
+629 |         if not 0 <= low <= high <= 1 or low <= last_high or not last_probability <= probability <= 1:
+    |                                                                                                     ^
+630 |             raise ValueError("ordered finite monotone isotonic blocks required")
+631 |         last_high,last_probability=high,probability
+    |
+
+E501 Line too long (156 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:632:101
+    |
+630 | … blocks required")
+631 | …
+632 | …_median_m", "depth_dispersion_m", "calibration_residual_m"}, "calibration observable support")
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+633 | …
+634 | …_number(limits[0]) > _number(limits[1]):
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:634:101
+    |
+632 |     support=_object(calibration["observable_support"], {"depth_median_m", "depth_dispersion_m", "calibration_residual_m"}, "calibrati…
+633 |     for limits in support.values():
+634 |         if not isinstance(limits,list) or len(limits) != 2 or _number(limits[0]) > _number(limits[1]):
+    |                                                                                                     ^^
+635 |             raise ValueError("finite ordered calibration support required")
+636 |     _object(calibration["calibration_provenance"], {"sample_id", "case_id", "observation_id", "group_id", "scene_hash", "used_purpose…
+    |
+
+E501 Line too long (172 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:636:101
+    |
+634 | …limits[0]) > _number(limits[1]):
+635 | …red")
+636 | …_id", "observation_id", "group_id", "scene_hash", "used_purposes_by_group"}, "calibration provenance")
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (127 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:639:101
+    |
+639 | def _compare_original_artifacts(registration: RiskReplayRegistration, replay: Mapping[str, Any], reasons: list[str]) -> Status:
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+640 |     """Compare diagnostic originals only; source authority is never produced."""
+641 |     before=_inventory(registration.artifact_root, registration.original_file_hashes, complete=True)
+    |
+
+E501 Line too long (128 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:648:101
+    |
+646 |         reasons.append("original_selection_results_unavailable")
+647 |     candidates=replay["candidate_results"]
+648 |     if registration.candidate_artifacts and set(registration.candidate_artifacts) != {c["parameters_hash"] for c in candidates}:
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+649 |         raise ValueError("original artifacts must retain every frozen candidate")
+650 |     comparable=True
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:672:101
+    |
+670 |         snapshot=_json_object(_safe(registration.artifact_root,registration.selection_results_path))
+671 |         if not _same(snapshot,replay["selection_snapshot"]):
+672 |             raise ValueError("original selection probabilities/population/winner differ from replay")
+    |                                                                                                     ^
+673 |     if _inventory(registration.artifact_root, registration.original_file_hashes, complete=True) != before:
+674 |         raise ValueError("original numeric artifacts changed during comparison")
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_replay.py:673:101
+    |
+671 |         if not _same(snapshot,replay["selection_snapshot"]):
+672 |             raise ValueError("original selection probabilities/population/winner differ from replay")
+673 |     if _inventory(registration.artifact_root, registration.original_file_hashes, complete=True) != before:
+    |                                                                                                     ^^^^^^
+674 |         raise ValueError("original numeric artifacts changed during comparison")
+675 |     return "VALID" if not missing and comparable else "UNKNOWN"
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/test_research_risk_replay.py:2:1
+   |
+ 1 |   """Finite numerical SOFTWARE_ONLY controls, never actual risk/selection authority."""
+ 2 | / from __future__ import annotations
+ 3 | |
+ 4 | | from dataclasses import replace
+ 5 | | import hashlib
+ 6 | | import importlib
+ 7 | | import json
+ 8 | | from pathlib import Path
+ 9 | |
+10 | | import pytest
+11 | |
+12 | | from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+13 | | from cloud_edge_robot_arm.research.risk_supervision import RiskObservationAllocation
+14 | | from tests.test_research_risk_supervision import registered_fixture
+15 | | from tests.test_research_risk_sources import ROOT, hashes, json_file
+   | |____________________________________________________________________^
+   |
+help: Organize imports
+
+E501 Line too long (107 > 100)
+  --> tests/test_research_risk_replay.py:87:101
+   |
+85 |     assert result.diagnostic_winner_hash is None
+86 |     assert result.counts["allocated_observations"] == 0
+87 |     assert not any(hasattr(result, name) for name in ("accepted", "execution_admitted", "method_accepted"))
+   |                                                                                                     ^^^^^^^
+   |
+
+E501 Line too long (103 > 100)
+   --> tests/test_research_risk_replay.py:108:101
+    |
+106 |         assert all(row["failure_probability"] == .5 for row in candidate["selection_results"])
+107 |         assert candidate["calibration"]["geometry_scope"] == "MARKER_CENTER_TRANSLATION"
+108 |         assert candidate["calibration"]["marker_point_error_bound_m"] == pytest.approx(.018, abs=1e-15)
+    |                                                                                                     ^^^
+109 |         assert candidate["calibration"]["motion_residual_bound_m_s"] == pytest.approx(.18, abs=1e-15)
+110 |         assert candidate["selection_results"][0]["motion_bound_m_s"] == pytest.approx(.23, abs=1e-15)
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_research_risk_replay.py:109:101
+    |
+107 |         assert candidate["calibration"]["geometry_scope"] == "MARKER_CENTER_TRANSLATION"
+108 |         assert candidate["calibration"]["marker_point_error_bound_m"] == pytest.approx(.018, abs=1e-15)
+109 |         assert candidate["calibration"]["motion_residual_bound_m_s"] == pytest.approx(.18, abs=1e-15)
+    |                                                                                                     ^
+110 |         assert candidate["selection_results"][0]["motion_bound_m_s"] == pytest.approx(.23, abs=1e-15)
+111 |         assert candidate["coverage"]["geometry_group_count"] == 9
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_research_risk_replay.py:110:101
+    |
+108 |         assert candidate["calibration"]["marker_point_error_bound_m"] == pytest.approx(.018, abs=1e-15)
+109 |         assert candidate["calibration"]["motion_residual_bound_m_s"] == pytest.approx(.18, abs=1e-15)
+110 |         assert candidate["selection_results"][0]["motion_bound_m_s"] == pytest.approx(.23, abs=1e-15)
+    |                                                                                                     ^
+111 |         assert candidate["coverage"]["geometry_group_count"] == 9
+112 |         assert candidate["coverage"]["motion_group_count"] == 9
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_research_risk_replay.py:135:101
+    |
+133 |             row["offline_labels"]["geometric_error_m"] = .1 if i == 0 else 0.
+134 |     result = replay(allocations, rows)
+135 |     assert all(c["calibration"]["marker_point_error_bound_m"] == .1 for c in result["candidate_results"])
+    |                                                                                                     ^^^^^
+    |
+
+E501 Line too long (118 > 100)
+   --> tests/test_research_risk_replay.py:160:101
+    |
+160 | @pytest.mark.parametrize("kind", ["missing_row", "missing_features", "missing_failure", "outside_support", "no_pair"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+161 | def test_missing_selection_cannot_choose_favorable_surviving_subset(kind):
+162 |     allocations, rows = numeric_fixture()
+    |
+
+E501 Line too long (134 > 100)
+   --> tests/test_research_risk_replay.py:198:101
+    |
+198 | @pytest.mark.parametrize("kind", ["component", "history", "feature_truth", "bool_feature", "huge_feature", "label_bool", "extra_row"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+199 | def test_invalid_source_or_online_boundary_cannot_feed_numeric_fit(kind):
+200 |     allocations, rows = numeric_fixture()
+    |
+
+E501 Line too long (115 > 100)
+   --> tests/test_research_risk_replay.py:219:101
+    |
+219 | @pytest.mark.parametrize("kind", ["duplicate", "incomplete", "authority_flag", "mutable_settings", "boolean_seed"])
+    |                                                                                                     ^^^^^^^^^^^^^^^
+220 | def test_candidates_require_complete_exact_frozen_recipe_objects(kind):
+221 |     candidates = [parameters()]
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_research_risk_replay.py:242:101
+    |
+240 |     for name in module.required_replay_source_paths():
+241 |         inventory[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+242 |     source = replace(source, raw_registration=replace(source.raw_registration, current_source_hashes=inventory))
+    |                                                                                                     ^^^^^^^^^^^^
+243 |     artifacts = tmp_path / "replay"
+244 |     artifacts.mkdir()
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/test_research_risk_replay.py:251:101
+    |
+249 |         "candidates": [parameters(7), parameters(11)],
+250 |         "environment": dict(module.risk_replay_environment()),
+251 |         "recipe_source_hashes": {name: inventory[name] for name in module.required_replay_source_paths()},
+    |                                                                                                     ^^^^^^
+252 |         "supervision_registration_hash": module.supervision_registration_hash(source),
+253 |     }
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_research_risk_replay.py:255:101
+    |
+253 |     }
+254 |     json_file(artifacts / "config.json", config)
+255 |     registration = module.RiskReplayRegistration(artifacts, hashes(artifacts), "config.json", "source")
+    |                                                                                                     ^^^
+256 |     return registration, source, artifacts, directory, measurements
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/test_research_risk_replay.py:279:5
+    |
+277 |     with pytest.raises(TypeError):
+278 |         module.RiskArtifactAuditor({"replay":registration}, {"source":{"status":"VALID"}})
+279 |     from cloud_edge_robot_arm.research.risk_supervision import RiskSupervisionAuditor, RiskSupervisionRegistration
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+280 |     with pytest.raises(TypeError):
+281 |         module.RiskArtifactAuditor({"replay":registration}, RiskSupervisionAuditor({"source":source}))
+    |
+help: Organize imports
+
+E501 Line too long (114 > 100)
+   --> tests/test_research_risk_replay.py:279:101
+    |
+277 |     with pytest.raises(TypeError):
+278 |         module.RiskArtifactAuditor({"replay":registration}, {"source":{"status":"VALID"}})
+279 |     from cloud_edge_robot_arm.research.risk_supervision import RiskSupervisionAuditor, RiskSupervisionRegistration
+    |                                                                                                     ^^^^^^^^^^^^^^
+280 |     with pytest.raises(TypeError):
+281 |         module.RiskArtifactAuditor({"replay":registration}, RiskSupervisionAuditor({"source":source}))
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_research_risk_replay.py:281:101
+    |
+279 |     from cloud_edge_robot_arm.research.risk_supervision import RiskSupervisionAuditor, RiskSupervisionRegistration
+280 |     with pytest.raises(TypeError):
+281 |         module.RiskArtifactAuditor({"replay":registration}, RiskSupervisionAuditor({"source":source}))
+    |                                                                                                     ^^
+282 |     class Forged(RiskSupervisionRegistration):
+283 |         pass
+    |
+
+E501 Line too long (144 > 100)
+   --> tests/test_research_risk_replay.py:319:101
+    |
+317 | …0"] == ("DEVELOPMENT_FEEDBACK", "TRAIN")
+318 | …al_use"] == "FORBIDDEN"
+319 | …provenance"]["used_purposes_by_group"]["train-g-0"] == ("DEVELOPMENT_FEEDBACK", "TRAIN")
+    |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_research_risk_replay.py:322:101
+    |
+322 | @pytest.mark.parametrize("kind", ["missing_train", "missing_calibration", "one_class_train", "unknown_history"])
+    |                                                                                                     ^^^^^^^^^^^^
+323 | def test_required_fit_populations_are_unavailable_instead_of_filtered(kind):
+324 |     allocations, rows = numeric_fixture()
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_research_risk_replay.py:328:101
+    |
+326 |         rows[0]["online_features"] = None
+327 |     elif kind == "missing_calibration":
+328 |         next(row for row in rows if row["split"] == "calibration")["offline_labels"]["failure"] = None
+    |                                                                                                     ^^
+329 |     elif kind == "one_class_train":
+330 |         for row in rows:
+    |
+
+E501 Line too long (108 > 100)
+   --> tests/test_research_risk_replay.py:338:101
+    |
+336 |     assert result["status"] == "UNAVAILABLE"
+337 |     assert result["counts"]["allocated_observations"] == 32
+338 |     assert all(c["model"] is None and len(c["selection_results"]) == 4 for c in result["candidate_results"])
+    |                                                                                                     ^^^^^^^^
+    |
+
+E501 Line too long (115 > 100)
+   --> tests/test_research_risk_replay.py:370:101
+    |
+368 |         cal_name=f"calibration-{candidate['calibration_hash']}.json"
+369 |         json_file(folder/cal_name, dict_plain(candidate["calibration"]))
+370 |         registrations[digest]=module.RiskReplayArtifactRegistration(f"{digest}/model.json", f"{digest}/{cal_name}")
+    |                                                                                                     ^^^^^^^^^^^^^^^
+371 |     json_file(tmp_path/"selection.json", dict_plain(result["selection_snapshot"]))
+372 |     json_file(tmp_path/"config.json", {"fixture_scope":"SOFTWARE_ONLY"})
+    |
+
+E501 Line too long (130 > 100)
+   --> tests/test_research_risk_replay.py:373:101
+    |
+371 |     json_file(tmp_path/"selection.json", dict_plain(result["selection_snapshot"]))
+372 |     json_file(tmp_path/"config.json", {"fixture_scope":"SOFTWARE_ONLY"})
+373 |     registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+374 |     return registered,result
+    |
+
+E501 Line too long (167 > 100)
+   --> tests/test_research_risk_replay.py:386:101
+    |
+386 | …"omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+387 | …(tmp_path, kind):
+388 | …
+    |
+
+E501 Line too long (108 > 100)
+   --> tests/test_research_risk_replay.py:416:101
+    |
+414 |         artifacts=dict(registered.candidate_artifacts)
+415 |         artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+416 |         registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+    |                                                                                                     ^^^^^^^^
+417 |     if kind != "wrong_filename":
+418 |         json_file(path, payload)
+    |
+
+Found 113 errors.
+[*] 3 fixable with the `--fix` option.

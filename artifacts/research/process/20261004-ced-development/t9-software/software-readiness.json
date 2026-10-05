@@ -1,0 +1,102 @@
+{
+  "status": "SOFTWARE_ONLY_READY",
+  "research_status": "NOT_RUN",
+  "enabled": false,
+  "scope": "Independent T9 software preparation; no real calibration, policy enablement, full suite, GPU, cloud, network or commits.",
+  "verification": {
+    "cpu_tests": "27 passed",
+    "ruff": "PASS",
+    "mypy": "PASS (6 owned source files; unrelated override-unused note)",
+    "real_capture_cli": "exit 2 INCOMPLETE: dedicated risk supervision is required"
+  },
+  "red_green": {
+    "initial_missing_implementation": "21 failures observed before implementation",
+    "forged_execution_and_rehashed_calibration": "2 failures before fixes; recorded red-source-guards.log",
+    "runtime_vocabulary": "2 failures before enum reuse",
+    "ood_depth": "1 failure before observable-support guard",
+    "final": "green-cpu-tests.log"
+  },
+  "public_interfaces": {
+    "FeatureValue": "value: float, source: IMAGE|DEPTH|CALIBRATION|PROPRIOCEPTION|ESTIMATOR",
+    "RiskFeatures": "values: Mapping[str, FeatureValue], observation_id: str",
+    "RiskEstimate": "failure_probability: float|None, failure_probability_by_action: Mapping[str,float|None], geometric_error_bound_m: float|None, motion_bound_m_s: float|None, status: VALID|UNKNOWN",
+    "RiskModelArtifact": "model_hash, model_path, calibration_path, fit_group_ids, calibration_group_ids, feature_schema",
+    "functions": [
+      "extract_risk_features(observation, previous, calibration_residuals)",
+      "fit_risk_model(train: Sequence[SampleRecord], seed: int)",
+      "calibrate_risk(model: RiskModelArtifact, calibration: Sequence[SampleRecord])",
+      "estimate_risk(model: RiskModelArtifact, features: RiskFeatures)"
+    ],
+    "action_keys": [
+      "CONTINUE",
+      "REOBSERVE",
+      "LOCAL_RECOVER",
+      "REQUEST_CLOUD",
+      "STOP"
+    ],
+    "artifact_storage": "fit writes hash-checked model.json in /tmp; calibration path pins its content digest; genuine CLI copies accepted artifacts to --output"
+  },
+  "required_real_sources": {
+    "dataset": "COMPLETE committed T6 SampleRecords with verified camera payloads; reports/split_audit.json and all four disjoint group/source/episode/content splits; payload-backed quality is rerun.",
+    "risk_supervision": {
+      "split": "train|calibration|selection|test",
+      "failure": "actual independent offline bool, never status/positive/confidence",
+      "calibration_residuals_m": "nonempty actual measured nonnegative residuals",
+      "geometric_error_m": "actual independent estimator-vs-truth absolute error, offline only",
+      "previous_sample_id": "actual earlier source frame in same group and same partition",
+      "motion_error_m_s": "actual nonnegative residual above measured motion proxy, only used with valid fresh timestamped pairs",
+      "action_outcomes": "optional action => {evidence_key: committed feedback payload key}; absent action remains None"
+    },
+    "executed_feedback": {
+      "executed": true,
+      "failure": "bool from independent evaluator",
+      "action": "shared DecisionAction value",
+      "sample_id": "source sample ID",
+      "observation_id": "bound frame ID",
+      "split": "same partition",
+      "trajectory_ref": "dataset-relative real TrajectoryFrame JSON",
+      "trajectory_hash": "SHA256 of raw trajectory payload",
+      "independent_result_ref": "dataset-relative raw independent result JSON",
+      "independent_result_sha256": "SHA256 of raw independent result payload"
+    },
+    "independent_action_result": "source=INDEPENDENT_EVALUATOR; action_id matches real action, action matches DecisionAction, next_observation_checksum matches actual later RGBDObservation, failure matches feedback; real action timestamps bracketed by the two fresh frames.",
+    "acceptance": {
+      "path": "reports/risk_acceptance.json",
+      "schema_version": "risk.acceptance.v1",
+      "source_status": "ACCEPTED",
+      "dataset_manifest_sha256": "raw manifest.json SHA256",
+      "split_manifest_sha256": "raw reports/split_audit.json SHA256",
+      "quality_report_sha256": "raw reports/quality.json SHA256",
+      "initial_protocol_hash": "content hash of separately loaded existing INITIAL protocol",
+      "independent_label_refs": "list of {path, sha256}; each risk.supervision.v1 raw source has evaluator_hash and records mapping"
+    },
+    "independent_label_record": "sample_id => {observation_id, risk_supervision, raw_evaluation_ref, raw_evaluation_sha256}; exact coverage and matching sample supervision required.",
+    "raw_risk_evaluation": "source=INDEPENDENT_EVALUATOR, observation_checksum, failure bool, geometric_error_m, motion_error_m_s, calibration_residuals_m; all match actual bound labels.",
+    "initial": "Provide --initial-protocol DIR; existing load_protocol validates protocol.json content hash and required source/pool/opportunity/recovery bindings; acceptance must match INITIAL content hash.",
+    "calibration_sample_sufficiency": "At coverage .9 finite conformal bound requires at least 9 independent labeled groups; geometry and motion are counted separately; both failure classes required in fit and probability calibration; calibrated CONTINUE needs real executed outcomes in train and calibration.",
+    "selection": "Default config selection_status remains NOT_RUN. Selection hyperparameters must be independently chosen/frozen before production use; CLI does not choose weights or thresholds from test."
+  },
+  "integration": [
+    "T10 can consume RiskEstimate error/motion bounds only with VALID; missing source acceptance, calibration, frame freshness, valid depth, matching calibration or supported depth/residual domain returns UNKNOWN and None.",
+    "T10 remains responsible for current observation age, expected duration, context/plan/mode identities and SafetyShield; extraction uses unchanged acquisition timestamps and never updates old crops.",
+    "T11/T12 must disable any physical action with None action probability; LOCAL_RECOVER remains unavailable until actual T13 executed feedback and independent calibration exist.",
+    "No runtime integration or real method enablement performed; unit fixtures marked accepted only inside tests do not represent research evidence."
+  ],
+  "limitations": [
+    "Software unit fixtures prove implementation behavior, never actual calibration quality or sufficient dataset evidence.",
+    "Image/depth consistency is a bounded scene-motion proxy; actual motion residual labels are mandatory to calibrate its errors.",
+    "Observable support guard covers depth median/dispersion, calibration residuals, acquisition interval and calibration identity; it does not claim universal OOD detection.",
+    "Calibration-set reliability plots are explicitly labeled as such and are not independent evaluation. Test evaluation remains NOT_RUN.",
+    "No genuine source acceptance or INITIAL protocol was present for this software handoff."
+  ],
+  "source_files": {
+    "src/cloud_edge_robot_arm/vision/risk/__init__.py": "ba475daddbcd8a7e8fb2c416ebb1cc0cfa979935258c5d4d58b4af13b62b17f4",
+    "src/cloud_edge_robot_arm/vision/risk/calibration.py": "e12971386d1e0252d960d41f600d6c37578a23047063f2433933dcf8fce4e8e6",
+    "src/cloud_edge_robot_arm/vision/risk/features.py": "a345c378ee62225570d8bc3090c6ffdd4f57166a7a4f02830b172eb9db2b52d8",
+    "src/cloud_edge_robot_arm/vision/risk/fit.py": "1be688311313f073de3bc2523c429906b0adf04e5c8a229ac5dbd2f99ee5d9d6",
+    "src/cloud_edge_robot_arm/vision/risk/models.py": "eae6d6d034cc62b2497742288cba2947ea3f5566e88d16cabdb0d748fd032b7f",
+    "scripts/calibrate_rgbd_risk.py": "733a9faf33f2d909cdfaac459ca6126b9ecd2388b904466ca88fb3a7276e9b37",
+    "configs/research/risk.yaml": "55cc999087a7d0625b15804ddbb686a7a3158abe731255d9cb5ccf4966a1ee43",
+    "tests/test_rgbd_risk_calibration.py": "268ab6491db567b6e93381a59b05318940b99356726740f0d0f4118334686aab"
+  }
+}

@@ -1,0 +1,744 @@
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/admission.py
+@@ -0,0 +1,317 @@
++"""Independently reconstruct registered INITIAL sources; never admit a method.
++
++Source integrity is one prerequisite. This module has no callback/receipt bypass,
++cache, policy enablement, current execution registration or physical submission.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import re
++import stat
++from collections.abc import Mapping
++from dataclasses import dataclass
++from pathlib import Path
++from types import MappingProxyType
++from typing import Literal, cast
++
++from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++from cloud_edge_robot_arm.research.freeze_evidence import initial_spec_from_evidence
++from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec, load_protocol
++from cloud_edge_robot_arm.vision.role_models import RoleModelBundle, RoleProviderSnapshot
++from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
++
++AdmissionScope = Literal["INITIAL_SOURCE", "METHOD"]
++AdmissionStatus = Literal["VALID", "INVALID", "UNKNOWN"]
++
++
++class _AuditFailure(Exception):
++    def __init__(
++        self,
++        status: AdmissionStatus,
++        reason: str,
++        observed_sources: Mapping[str, str] | None = None,
++    ) -> None:
++        self.status, self.reason = status, reason
++        self.observed_sources = dict(observed_sources) if observed_sources is not None else None
++        super().__init__(reason)
++
++
++def _snapshot(snapshot: RoleProviderSnapshot) -> RoleProviderSnapshot:
++    return RoleProviderSnapshot(
++        snapshot.role,
++        snapshot.provider_id,
++        snapshot.provider_location,
++        snapshot.model_id,
++        snapshot.revision,
++        snapshot.weight_digest,
++        snapshot.quantization,
++        snapshot.request_config_hash,
++        dict(snapshot.source_hashes),
++    )
++
++
++def _binding(binding: RoleRuntimeBinding) -> RoleRuntimeBinding:
++    cloud, edge = _snapshot(binding.bundle.cloud_snapshot), _snapshot(binding.edge_snapshot)
++    return RoleRuntimeBinding(
++        RoleModelBundle(
++            cloud,
++            binding.bundle.edge_provider_id,
++            binding.bundle.edge_provider_hash,
++            binding.bundle.device_pipeline_hash,
++        ),
++        edge,
++        dict(binding.device_source_hashes),
++        cast(Mapping[str, object], binding.evidence()["edge_policy"]),
++        root=Path(binding.root),
++    )
++
++
++@dataclass(frozen=True)
++class InitialSourceRegistration:
++    evidence_root: Path
++    protocol_path: Path
++    current_role_binding: RoleRuntimeBinding
++    current_source_hashes: Mapping[str, str]
++
++    def __post_init__(self) -> None:
++        if not isinstance(self.current_role_binding, RoleRuntimeBinding):
++            raise TypeError("current_role_binding must identify the actual registered roles")
++        sources = dict(self.current_source_hashes)
++        if not sources or any(
++            not isinstance(name, str)
++            or not isinstance(digest, str)
++            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
++            for name, digest in sources.items()
++        ):
++            raise ValueError("current source inventory requires named full SHA256 bindings")
++        object.__setattr__(self, "evidence_root", Path(self.evidence_root).absolute())
++        object.__setattr__(self, "protocol_path", Path(self.protocol_path).absolute())
++        object.__setattr__(self, "current_role_binding", _binding(self.current_role_binding))
++        object.__setattr__(self, "current_source_hashes", MappingProxyType(sources))
++
++
++@dataclass(frozen=True)
++class ResearchAdmissionResult:
++    requested_scope: AdmissionScope
++    verified_scope: Literal["INITIAL_SOURCE"] | None
++    status: AdmissionStatus
++    initial_source_status: AdmissionStatus
++    reasons: tuple[str, ...]
++    protocol_hash: str | None
++    role_bundle_hash: str | None
++    raw_file_hashes: Mapping[str, str]
++    current_source_hashes: Mapping[str, str]
++    inventory_hash: str | None
++    method_admitted: Literal[False] = False
++    execution_admitted: Literal[False] = False
++
++    def __post_init__(self) -> None:
++        if self.method_admitted is not False or self.execution_admitted is not False:
++            raise ValueError("INITIAL source audit never admits a method or execution")
++        object.__setattr__(self, "reasons", tuple(self.reasons))
++        object.__setattr__(self, "raw_file_hashes", MappingProxyType(dict(self.raw_file_hashes)))
++        object.__setattr__(
++            self, "current_source_hashes", MappingProxyType(dict(self.current_source_hashes))
++        )
++
++
++def _checked(path: Path, *, root: Path | None = None) -> Path:
++    if any(part.is_symlink() for part in (path, *path.parents)):
++        raise _AuditFailure("INVALID", "registered_path_symlink")
++    if root is not None and not path.resolve().is_relative_to(root.resolve()):
++        raise _AuditFailure("INVALID", "registered_path_escape")
++    return path
++
++
++def _file_hash(path: Path, *, root: Path | None = None) -> str:
++    _checked(path, root=root)
++    if not stat.S_ISREG(path.stat().st_mode):
++        raise _AuditFailure("INVALID", "registered_path_not_regular")
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def _inventory(registration: InitialSourceRegistration) -> dict[str, str]:
++    root = _checked(registration.evidence_root)
++    if not root.is_dir():
++        raise _AuditFailure("UNKNOWN", "registered_evidence_missing")
++    protocol = _checked(registration.protocol_path)
++    if not protocol.is_file():
++        raise _AuditFailure("UNKNOWN", "registered_protocol_missing")
++    if protocol.name != "protocol.json":
++        raise _AuditFailure("INVALID", "registered_protocol_path_not_exact")
++    files = {}
++    for path in sorted(root.rglob("*")):
++        _checked(path, root=root)
++        if path.is_dir():
++            continue
++        files["evidence:" + path.relative_to(root).as_posix()] = _file_hash(path, root=root)
++    files["protocol:protocol.json"] = _file_hash(protocol)
++    return files
++
++
++def _sources(registration: InitialSourceRegistration) -> dict[str, str]:
++    binding = registration.current_role_binding
++    source_root = _checked(binding.root)
++    expected = dict(registration.current_source_hashes)
++    for sources in (
++        binding.bundle.cloud_snapshot.source_hashes,
++        binding.edge_snapshot.source_hashes,
++        binding.device_source_hashes,
++    ):
++        for name, digest in sources.items():
++            if name in expected and expected[name] != digest:
++                raise _AuditFailure("INVALID", "current_role_source_binding_mismatch")
++            expected[name] = digest
++    actual = {}
++    drifted = False
++    for name, digest in expected.items():
++        relative = Path(name)
++        if relative.is_absolute() or ".." in relative.parts:
++            raise _AuditFailure("INVALID", "current_source_path_escape")
++        try:
++            observed = _file_hash(source_root / relative, root=source_root)
++        except FileNotFoundError as exc:
++            raise _AuditFailure("UNKNOWN", "current_source_missing") from exc
++        actual[name] = observed
++        if observed != digest:
++            drifted = True
++    if drifted:
++        raise _AuditFailure("INVALID", "current_source_drift", actual)
++    return actual
++
++
++def _assert_initial(
++    frozen: FrozenProtocol,
++    derived: ProtocolSpec,
++    current_role_bundle_hash: str,
++) -> None:
++    """Pure comparison is not source acceptance; the auditor must reconstruct first."""
++    if (
++        frozen.stage != "INITIAL"
++        or frozen.spec.schema_version != "ced.research.v2"
++        or frozen.spec.selected_n is not None
++    ):
++        raise _AuditFailure("INVALID", "requires_v2_initial_protocol")
++    if frozen.spec.model_dump(mode="json") != derived.model_dump(mode="json"):
++        raise _AuditFailure("INVALID", "initial_derived_spec_mismatch")
++    if (
++        derived.role_bundle_hash != current_role_bundle_hash
++        or derived.model_snapshot_hash != current_role_bundle_hash
++    ):
++        raise _AuditFailure("INVALID", "current_role_bundle_mismatch")
++
++
++class InitialSourceAdmissionAuditor:
++    """Owner allowlist plus independent original reconstruction, with no cache."""
++
++    def __init__(self, registrations: Mapping[str, InitialSourceRegistration]) -> None:
++        copied = {}
++        for name, registration in registrations.items():
++            if (
++                not isinstance(name, str)
++                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name) is None
++            ):
++                raise ValueError("registration IDs must be opaque names, not paths")
++            if not isinstance(registration, InitialSourceRegistration):
++                raise TypeError("registration must be InitialSourceRegistration")
++            copied[name] = InitialSourceRegistration(
++                registration.evidence_root,
++                registration.protocol_path,
++                registration.current_role_binding,
++                registration.current_source_hashes,
++            )
++        self._registrations = MappingProxyType(copied)
++
++    def audit(
++        self,
++        evidence_id: str,
++        *,
++        scope: AdmissionScope = "INITIAL_SOURCE",
++    ) -> ResearchAdmissionResult:
++        if scope not in {"INITIAL_SOURCE", "METHOD"}:
++            raise ValueError("unsupported admission scope")
++        registration = self._registrations.get(evidence_id)
++        files: dict[str, str] = {}
++        sources: dict[str, str] = {}
++        protocol_hash = role_hash = None
++        status: AdmissionStatus = "UNKNOWN"
++        reasons: list[str] = []
++        if registration is None:
++            reasons.append("evidence_id_not_registered")
++        else:
++            role_hash = registration.current_role_binding.bundle.digest()
++            try:
++                files = _inventory(registration)
++                sources = _sources(registration)
++                try:
++                    frozen = load_protocol(registration.protocol_path.parent)
++                except (ValueError, TypeError, KeyError, AttributeError) as exc:
++                    raise _AuditFailure("INVALID", "initial_protocol_invalid") from exc
++                protocol_hash = frozen.content_hash
++                if (
++                    frozen.stage != "INITIAL"
++                    or frozen.spec.schema_version != "ced.research.v2"
++                    or frozen.spec.selected_n is not None
++                ):
++                    raise _AuditFailure("INVALID", "requires_v2_initial_protocol")
++                manifest_path = registration.evidence_root / "source-hashes.json"
++                try:
++                    archived_sources = json.loads(manifest_path.read_bytes())
++                except ValueError as exc:
++                    raise _AuditFailure("INVALID", "initial_source_inventory_invalid") from exc
++                if archived_sources != dict(registration.current_source_hashes):
++                    raise _AuditFailure("INVALID", "initial_source_inventory_mismatch")
++                for required in ("summary.json", "resource-plan.json"):
++                    if not (registration.evidence_root / required).is_file():
++                        raise _AuditFailure("UNKNOWN", "initial_source_missing")
++                try:
++                    derived = initial_spec_from_evidence(registration.evidence_root)
++                except FileNotFoundError as exc:
++                    raise _AuditFailure("UNKNOWN", "initial_source_missing") from exc
++                except (ValueError, TypeError, KeyError, IndexError, AttributeError) as exc:
++                    raise _AuditFailure("INVALID", "initial_source_invalid") from exc
++                _assert_initial(frozen, derived, role_hash)
++                status = "VALID"
++                reasons.append("initial_source_reconstructed")
++            except _AuditFailure as exc:
++                status, reasons = exc.status, [exc.reason]
++                if exc.observed_sources is not None:
++                    sources = exc.observed_sources
++            except FileNotFoundError:
++                status, reasons = "UNKNOWN", ["initial_source_missing"]
++            except OSError:
++                status, reasons = "UNKNOWN", ["initial_source_unreadable"]
++            if files:
++                try:
++                    if _inventory(registration) != files or _sources(registration) != sources:
++                        status, reasons = "INVALID", ["evidence_changed_during_audit"]
++                except _AuditFailure as exc:
++                    status, reasons = exc.status, [exc.reason]
++                    if exc.observed_sources is not None:
++                        sources = exc.observed_sources
++                except OSError:
++                    status, reasons = "INVALID", ["evidence_changed_during_audit"]
++        initial_status = status
++        if scope == "METHOD":
++            status = "UNKNOWN"
++            reasons.extend(
++                (
++                    "method_risk_source_verifier_unavailable",
++                    "method_weight_selection_verifier_unavailable",
++                    "execution_owner_registration_unavailable",
++                )
++            )
++        return ResearchAdmissionResult(
++            scope,
++            "INITIAL_SOURCE" if initial_status == "VALID" else None,
++            status,
++            initial_status,
++            tuple(reasons),
++            protocol_hash,
++            role_hash,
++            files,
++            sources,
++            content_digest(files) if files else None,
++        )
+--- /dev/null
++++ b/tests/test_research_admission.py
+@@ -0,0 +1,421 @@
++"""Software boundary tests; these fixtures are not actual INITIAL acceptance evidence."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from dataclasses import FrozenInstanceError, replace
++from pathlib import Path
++
++import pytest
++
++from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
++from cloud_edge_robot_arm.research import admission
++from cloud_edge_robot_arm.research.admission import (
++    InitialSourceAdmissionAuditor,
++    InitialSourceRegistration,
++)
++from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec
++from cloud_edge_robot_arm.vision.role_models import (
++    RoleModelBundle,
++    RoleProviderSnapshot,
++    configuration_hash,
++)
++from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
++
++
++def _write(path: Path, value: object) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(canonical_json(value) + "\n")
++
++
++def _registration(tmp_path: Path) -> InitialSourceRegistration:
++    """Minimal source-bound software fixture, deliberately missing original raw runs."""
++    repo = tmp_path / "repo"
++    edge_names = [
++        "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
++        *[
++            f"src/cloud_edge_robot_arm/edge/evidence/{name}.py"
++            for name in ("models", "validator", "conditions")
++        ],
++    ]
++    device_names = ["src/cloud_edge_robot_arm/vision/action_evidence.py"]
++    cloud_names = ["src/cloud_edge_robot_arm/vision/planner.py"]
++    sources = {}
++    for name in edge_names + device_names + cloud_names:
++        path = repo / name
++        path.parent.mkdir(parents=True, exist_ok=True)
++        path.write_text("# explicitly software-only fixture\n")
++        sources[name] = hashlib.sha256(path.read_bytes()).hexdigest()
++    policy = {"status": "NOT_ACCEPTED", "dispatch": False}
++    cloud = RoleProviderSnapshot(
++        "CLOUD",
++        "fixture-cloud",
++        "LOCAL_HOST",
++        "qwen3.8-max",
++        None,
++        None,
++        None,
++        configuration_hash({"fixture": "SOFTWARE_ONLY"}),
++        {name: sources[name] for name in cloud_names},
++    )
++    edge = RoleProviderSnapshot(
++        "EDGE",
++        "fixture-rules",
++        "LOCAL_HOST",
++        None,
++        None,
++        None,
++        None,
++        configuration_hash(policy),
++        {name: sources[name] for name in edge_names},
++    )
++    device = {name: sources[name] for name in device_names}
++    binding = RoleRuntimeBinding(
++        RoleModelBundle(cloud, edge.provider_id, edge.digest(), configuration_hash(device)),
++        edge,
++        device,
++        policy,
++        root=repo,
++    )
++    evidence = tmp_path / "evidence"
++    evidence.mkdir()
++    _write(evidence / "source-hashes.json", sources)
++    for name in sources:
++        archived = evidence / "source" / name
++        archived.parent.mkdir(parents=True, exist_ok=True)
++        archived.write_bytes((repo / name).read_bytes())
++    spec = ProtocolSpec(
++        schema_version="ced.research.v2",
++        tcap_s=120,
++        pool_hashes={"foundation": "1" * 64},
++        model_snapshot_hash=binding.bundle.digest(),
++        opportunity_hash="2" * 64,
++        recovery_fault_manifest_hash="3" * 64,
++        role_bundle_hash=binding.bundle.digest(),
++        selection_manifest_hash="4" * 64,
++        selected_b0_period_s=1,
++        budget_selection_rule_hash="5" * 64,
++        resource_plan_hash="6" * 64,
++    )
++    frozen = FrozenProtocol(
++        spec=spec,
++        stage="INITIAL",
++        content_hash=content_digest({"spec": spec.model_dump(mode="json"), "stage": "INITIAL"}),
++    )
++    protocol = tmp_path / "protocol" / "protocol.json"
++    _write(protocol, frozen.model_dump(mode="json"))
++    return InitialSourceRegistration(evidence, protocol, binding, sources)
++
++
++def _auditor(registration: InitialSourceRegistration) -> InitialSourceAdmissionAuditor:
++    return InitialSourceAdmissionAuditor({"registered-initial": registration})
++
++
++def test_unknown_registered_id_is_unknown_without_path_lookup(tmp_path: Path) -> None:
++    result = _auditor(_registration(tmp_path)).audit("../../unregistered")
++    assert result.status == "UNKNOWN"
++    assert "evidence_id_not_registered" in result.reasons
++    assert result.verified_scope is None
++    assert result.method_admitted is False
++    assert result.execution_admitted is False
++
++
++def test_unsupported_scope_is_rejected(tmp_path: Path) -> None:
++    with pytest.raises(ValueError, match="scope"):
++        _auditor(_registration(tmp_path)).audit("registered-initial", scope="EXECUTION")  # type: ignore[arg-type]
++
++
++def test_missing_original_summary_never_accepts_protocol_hash(tmp_path: Path) -> None:
++    result = _auditor(_registration(tmp_path)).audit("registered-initial")
++    assert result.status == "UNKNOWN"
++    assert "initial_source_missing" in result.reasons
++    assert result.protocol_hash is not None
++    assert result.inventory_hash is not None
++    assert "evidence:source-hashes.json" in result.raw_file_hashes
++    assert result.method_admitted is False
++
++
++def test_missing_registered_evidence_root_is_unknown(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    registration.evidence_root.rename(tmp_path / "removed")
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "UNKNOWN"
++    assert "registered_evidence_missing" in result.reasons
++
++
++def test_missing_exact_protocol_file_is_unknown(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    registration.protocol_path.unlink()
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "UNKNOWN"
++    assert "registered_protocol_missing" in result.reasons
++
++
++@pytest.mark.parametrize("location", ["root", "raw-file", "raw-directory", "protocol"])
++def test_symlinks_cannot_replace_registered_evidence(tmp_path: Path, location: str) -> None:
++    registration = _registration(tmp_path)
++    external = tmp_path / "external"
++    external.mkdir()
++    (external / "secret.json").write_text("{}")
++    if location == "root":
++        registration.evidence_root.rename(external / "original")
++        registration.evidence_root.symlink_to(external / "original", target_is_directory=True)
++    elif location == "raw-file":
++        (registration.evidence_root / "raw.json").symlink_to(external / "secret.json")
++    elif location == "raw-directory":
++        (registration.evidence_root / "raw").symlink_to(external, target_is_directory=True)
++    else:
++        payload = registration.protocol_path.read_bytes()
++        registration.protocol_path.unlink()
++        (external / "protocol.json").write_bytes(payload)
++        registration.protocol_path.symlink_to(external / "protocol.json")
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "registered_path_symlink" in result.reasons
++    assert result.verified_scope is None
++
++
++@pytest.mark.parametrize("payload", ["null", "{", '{"status":"VALID"}'])
++def test_malformed_protocol_claims_are_invalid(tmp_path: Path, payload: str) -> None:
++    registration = _registration(tmp_path)
++    registration.protocol_path.write_text(payload)
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "initial_protocol_invalid" in result.reasons
++
++
++def test_changed_protocol_content_under_original_hash_is_invalid(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    payload = json.loads(registration.protocol_path.read_text())
++    payload["spec"]["tcap_s"] = 130
++    _write(registration.protocol_path, payload)
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "initial_protocol_invalid" in result.reasons
++
++
++@pytest.mark.parametrize("stage", ["FINAL", "v1"])
++def test_rehashed_non_v2_initial_protocol_is_not_admitted(tmp_path: Path, stage: str) -> None:
++    registration = _registration(tmp_path)
++    payload = json.loads(registration.protocol_path.read_text())
++    if stage == "FINAL":
++        payload["stage"] = "FINAL"
++    else:
++        payload["spec"]["schema_version"] = "rgbd.research.v1"
++        for name in (
++            "role_bundle_hash",
++            "selection_manifest_hash",
++            "selected_b0_period_s",
++            "budget_selection_rule_hash",
++            "resource_plan_hash",
++        ):
++            payload["spec"].pop(name)
++    payload["content_hash"] = content_digest({"spec": payload["spec"], "stage": payload["stage"]})
++    _write(registration.protocol_path, payload)
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "requires_v2_initial_protocol" in result.reasons
++
++
++def test_method_scope_preserves_missing_actual_prerequisites(tmp_path: Path) -> None:
++    result = _auditor(_registration(tmp_path)).audit("registered-initial", scope="METHOD")
++    assert result.status == "UNKNOWN"
++    assert result.initial_source_status == "UNKNOWN"
++    assert {
++        "method_risk_source_verifier_unavailable",
++        "method_weight_selection_verifier_unavailable",
++        "execution_owner_registration_unavailable",
++        "initial_source_missing",
++    } <= set(result.reasons)
++    assert result.method_admitted is False
++    assert result.execution_admitted is False
++
++
++def test_registered_source_and_returned_inventory_are_isolated(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    input_sources = dict(registration.current_source_hashes)
++    copied = InitialSourceRegistration(
++        registration.evidence_root,
++        registration.protocol_path,
++        registration.current_role_binding,
++        input_sources,
++    )
++    registrations = {"registered-initial": copied}
++    auditor = InitialSourceAdmissionAuditor(registrations)
++    input_sources.clear()
++    registrations.clear()
++    first = auditor.audit("registered-initial")
++    assert first.status == "UNKNOWN"
++    assert first.current_source_hashes
++    with pytest.raises(TypeError):
++        first.raw_file_hashes["fake"] = "0" * 64  # type: ignore[index]
++    with pytest.raises(FrozenInstanceError):
++        first.status = "VALID"  # type: ignore[misc]
++    second = auditor.audit("registered-initial")
++    assert second.raw_file_hashes == first.raw_file_hashes
++
++
++def test_opaque_valid_callback_cannot_be_registered(tmp_path: Path) -> None:
++    with pytest.raises(TypeError):
++        InitialSourceAdmissionAuditor(
++            {"registered-initial": _registration(tmp_path)},
++            verifier=lambda _: {"accepted": True, "status": "VALID"},  # type: ignore[call-arg]
++        )
++
++
++def test_rehashed_summary_claim_cannot_replace_missing_actual_runs(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    summary = {
++        "schema_version": "ced.pilot-stage.v1",
++        "protocol_version": "ced.research.v2",
++        "stage": "foundation",
++        "scope": "UNVERIFIED",
++        "execution_mode": "REAL_RUNTIME",
++        "status": "VALID",
++        "accepted": True,
++        "success": 120,
++        "freeze_ready": True,
++    }
++    summary["content_hash"] = content_digest(summary)
++    _write(registration.evidence_root / "summary.json", summary)
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status != "VALID"
++    assert result.verified_scope is None
++    assert result.method_admitted is False
++    assert result.execution_admitted is False
++
++
++@pytest.mark.parametrize("flag", ["method_admitted", "execution_admitted"])
++def test_a_result_cannot_represent_method_or_execution_admission(tmp_path: Path, flag: str) -> None:
++    result = _auditor(_registration(tmp_path)).audit("registered-initial")
++    with pytest.raises(ValueError, match="never admits"):
++        replace(result, **{flag: True})
++
++
++def test_each_audit_observes_current_source_drift(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    auditor = _auditor(registration)
++    first = auditor.audit("registered-initial")
++    source = next(iter(registration.current_source_hashes))
++    (registration.current_role_binding.root / source).write_text("# changed current source\n")
++    second = auditor.audit("registered-initial")
++    assert first.status == "UNKNOWN"
++    assert second.status == "INVALID"
++    assert "current_source_drift" in second.reasons
++    assert first.raw_file_hashes == second.raw_file_hashes
++    assert (
++        second.current_source_hashes[source]
++        == hashlib.sha256(
++            (registration.current_role_binding.root / source).read_bytes()
++        ).hexdigest()
++    )
++
++
++def test_audit_rejects_relative_current_source_escape(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    escaped = InitialSourceRegistration(
++        registration.evidence_root,
++        registration.protocol_path,
++        registration.current_role_binding,
++        {**registration.current_source_hashes, "../outside.py": "0" * 64},
++    )
++    result = _auditor(escaped).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "current_source_path_escape" in result.reasons
++
++
++def test_raw_inventory_change_during_protocol_read_rejects(
++    tmp_path: Path,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    registration = _registration(tmp_path)
++    original_load = admission.load_protocol
++
++    def changed_read(directory: Path) -> FrozenProtocol:
++        frozen = original_load(directory)
++        _write(registration.evidence_root / "added-failure.json", {"status": "FAILED"})
++        return frozen
++
++    monkeypatch.setattr(admission, "load_protocol", changed_read)
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "evidence_changed_during_audit" in result.reasons
++    assert result.verified_scope is None
++
++
++def test_unconsumed_raw_files_are_retained_in_the_inventory(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    _write(registration.evidence_root / "original-failed-record.json", {"status": "FAILED"})
++    result = _auditor(registration).audit("registered-initial")
++    assert "evidence:original-failed-record.json" in result.raw_file_hashes
++    assert (
++        result.raw_file_hashes["evidence:original-failed-record.json"]
++        == hashlib.sha256(
++            (registration.evidence_root / "original-failed-record.json").read_bytes()
++        ).hexdigest()
++    )
++
++
++def test_software_spec_comparison_checks_every_field_without_granting_admission(
++    tmp_path: Path,
++) -> None:
++    registration = _registration(tmp_path)
++    frozen = FrozenProtocol.model_validate_json(registration.protocol_path.read_bytes())
++    # This pure comparison does not reconstruct original sources or grant acceptance.
++    admission._assert_initial(
++        frozen,
++        frozen.spec,
++        registration.current_role_binding.bundle.digest(),
++    )
++    with pytest.raises(admission._AuditFailure, match="initial_derived_spec_mismatch"):
++        admission._assert_initial(
++            frozen,
++            frozen.spec.model_copy(update={"statistics_seed": 7}),
++            registration.current_role_binding.bundle.digest(),
++        )
++    with pytest.raises(admission._AuditFailure, match="current_role_bundle_mismatch"):
++        admission._assert_initial(frozen, frozen.spec, "0" * 64)
++    actual = _auditor(registration).audit("registered-initial")
++    assert actual.status == "UNKNOWN"
++    assert actual.verified_scope is None
++
++
++def test_metadata_without_actual_raw_resource_receipt_is_rejected(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    _write(
++        registration.evidence_root / "summary.json",
++        {
++            "protocol_version": "ced.research.v2",
++            "execution_mode": "REAL_RUNTIME",
++            "scope": "UNVERIFIED",
++            "accepted": True,
++        },
++    )
++    _write(registration.evidence_root / "resource-plan.json", {"accepted": True})
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status != "VALID"
++    assert result.verified_scope is None
++    assert result.initial_source_status != "VALID"
++
++
++@pytest.mark.parametrize("payload", [None, [], {"../escape.py": "0" * 64}])
++def test_rehashed_source_inventory_cannot_replace_registered_identity(
++    tmp_path: Path,
++    payload: object,
++) -> None:
++    registration = _registration(tmp_path)
++    _write(registration.evidence_root / "source-hashes.json", payload)
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "initial_source_inventory_mismatch" in result.reasons
++
++
++def test_protocol_parent_symlink_is_rejected(tmp_path: Path) -> None:
++    registration = _registration(tmp_path)
++    directory = registration.protocol_path.parent
++    directory.rename(tmp_path / "other-protocol")
++    directory.symlink_to(tmp_path / "other-protocol", target_is_directory=True)
++    result = _auditor(registration).audit("registered-initial")
++    assert result.status == "INVALID"
++    assert "registered_path_symlink" in result.reasons

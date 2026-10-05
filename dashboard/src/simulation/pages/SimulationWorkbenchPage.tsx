@@ -34,6 +34,7 @@ import type { ExperimentDraft } from "../domain/ExperimentDraft";
 // 仿真工作台只构造高层实验草案，提交后由后端 allowlist runner 和队列执行。
 type FormValues = {
   inputMode: "RGBD" | "LEGACY_PIPELINE";
+  executionScope: "CAPTURE_ONLY" | "VISUAL_PLANNING" | "VISION_CLOSED_LOOP";
   instruction: string;
   backend: "MOCK" | "MUJOCO" | "ISAAC_SIM" | "MOVEIT_DRY_RUN";
   scenario: string;
@@ -67,6 +68,7 @@ export function SimulationWorkbenchPage() {
 
   const initialValues: FormValues = {
     inputMode: "RGBD",
+    executionScope: "VISUAL_PLANNING",
     instruction: "将红色方块放到绿色区域",
     backend: "MUJOCO",
     scenario: scenarioItems[0]?.scenario_id ?? "S01_NORMAL_STATIC",
@@ -89,6 +91,7 @@ export function SimulationWorkbenchPage() {
     try {
       const draft: ExperimentDraft = ExperimentConfigBuilder.create()
         .inputMode(normalized.inputMode)
+        .executionScope(normalized.executionScope)
         .instruction(normalized.instruction)
         .backend(normalized.backend)
         .scenario(normalized.scenario)
@@ -123,7 +126,7 @@ export function SimulationWorkbenchPage() {
       <Alert
         type="info"
         showIcon
-        title="默认采集相机 RGB 与对齐深度，交给视觉模型规划。目前验证观测与规划合同，不执行抓取；Mock 和历史故障测试需选择 LEGACY_PIPELINE。"
+        title="默认使用 RGB-D 视觉规划。可选择仅采集、视觉规划或 MuJoCo 物理闭环；规划结果与物理任务结果分别记录。"
       />
       {error && <Alert type="error" showIcon title={error} />}
 
@@ -140,6 +143,13 @@ export function SimulationWorkbenchPage() {
             </Form.Item>
             <Form.Item label="任务指令" name="instruction" rules={[{ required: true }]}>
               <Input.TextArea rows={2} />
+            </Form.Item>
+            <Form.Item label="视觉能力" name="executionScope" rules={[{ required: true }]}>
+              <Select options={[
+                { value: "CAPTURE_ONLY", label: "仅采集（不需要模型）" },
+                { value: "VISUAL_PLANNING", label: "视觉规划（默认）" },
+                { value: "VISION_CLOSED_LOOP", label: "MuJoCo 物理闭环" },
+              ]} />
             </Form.Item>
             <Form.Item
               label="Backend"

@@ -1,0 +1,30 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_bare_local_trace_cannot_claim_no_model_path_from_arbitrary_source ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-750/test_bare_local_trace_cannot_c0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x75da07ea8320>
+
+    def test_bare_local_trace_cannot_claim_no_model_path_from_arbitrary_source(tmp_path, monkeypatch):
+        import json
+    
+        root, _ = phase_fixture(tmp_path, monkeypatch)
+        record = json.loads((root / "phase.json").read_text())
+        record.update(phase="source_verification", local_execution_proof={
+            "schema_version": "ced.local-cost-proof.v1", "events_path": "local.json"})
+        events = [{"event": "START", "run_id": "fixture"},
+                  {"event": "LOCAL_OPERATION", "run_id": "fixture", "phase": "source_verification",
+                   "source_path": "collector.py", "source_sha256": record["source_hashes"]["collector.py"],
+                   "operation": "LOCAL_SOURCE_PROCESSING"},
+                  {"event": "FINISH", "run_id": "fixture"}]
+        (root / "local.json").write_text(json.dumps(events))
+        (root / "phase.json").write_text(json.dumps(record))
+        (root / "requests.json").write_text("[]")
+        (root / "wire.json").write_text("[]")
+>       with pytest.raises(ValueError, match="local|source|clock"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+/home/ningyd/文档/ChatGPT/BIGsmall/tests/test_research_resource_plan.py:265: Failed
+=========================== short test summary info ============================
+FAILED tests/test_research_resource_plan.py::test_bare_local_trace_cannot_claim_no_model_path_from_arbitrary_source
+1 failed, 23 deselected in 0.27s

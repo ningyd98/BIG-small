@@ -1,0 +1,124 @@
+--- a/configs/research/ced_marker_registration_v1.yaml
++++ b/configs/research/ced_marker_registration_v1.yaml
+@@ -61,7 +61,7 @@
+   - - -0.035
+     - -0.035
+ registration_source_hashes:
+-  src/cloud_edge_robot_arm/vision/marker_association.py: 15ff4c2f7c970f3fb781fdc80dcd1b9fee40ab2b3c648951d177261759f64725
++  src/cloud_edge_robot_arm/vision/marker_association.py: 8276a383ebc507d676ece6333aa7c9b7181424f22cfcddb8b7f9c66e4ca31e0c
+   src/cloud_edge_robot_arm/vision/pose_markers.py: 68f9e6e0675a4b6ccdead896bd767c685fd53357591ab1fdf4d71d124c72264f
+   src/cloud_edge_robot_arm/vision/observations.py: 1114e6b2de4107ae516f12f8972fcb3b6f71eae7ae5a45bf93adfeb4aa673bb8
+   src/cloud_edge_robot_arm/vision/online_intent.py: d38cf2c6fb578aa646b3dbc2d2865d952e56c4142d8951951edd82adb82dfaf0
+--- a/src/cloud_edge_robot_arm/vision/marker_association.py
++++ b/src/cloud_edge_robot_arm/vision/marker_association.py
+@@ -59,6 +59,16 @@
+     return (
+         isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+     )
++
++
++def _has_symlink(path: Path) -> bool:
++    # Inspect lexical ancestors before resolve() can erase their source identity.
++    absolute = path.absolute()
++    return any(parent.is_symlink() for parent in (absolute, *absolute.parents))
++
++
++def _regular_file_under_root(path: Path, root: Path) -> bool:
++    return not _has_symlink(path) and path.is_file() and path.resolve().is_relative_to(root)
+ 
+ 
+ @dataclass(frozen=True)
+@@ -195,18 +205,20 @@
+         )
+ 
+     def sources_valid(self) -> bool:
++        if _has_symlink(self.root) or not self.root.is_dir():
++            return False
+         root = self.root.resolve()
+         asset_matched = False
+         for name, expected in self.registration_source_hashes.items():
+             relative = Path(name)
+             path = root / relative
+-            if relative.is_absolute() or ".." in relative.parts or not path.is_file():
++            if (
++                relative.is_absolute()
++                or ".." in relative.parts
++                or not _regular_file_under_root(path, root)
++            ):
+                 return False
+-            if (
+-                not path.resolve().is_relative_to(root)
+-                or any(p.is_symlink() for p in (path, *path.parents) if p.is_relative_to(root))
+-                or hashlib.sha256(path.read_bytes()).hexdigest() != expected
+-            ):
++            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                 return False
+             if relative.suffix == ".xml" and expected == self.pose_marker.marked_asset_sha256:
+                 asset_matched = True
+@@ -219,9 +231,11 @@
+     expected_registry_sha256: str,
+     root: Path,
+ ) -> MarkerObjectRegistration:
++    if _has_symlink(root) or not root.is_dir():
++        raise ValueError("registration source root unavailable")
+     if (
+         not _sha(expected_registry_sha256)
+-        or path.is_symlink()
++        or not _regular_file_under_root(path, root.resolve())
+         or (hashlib.sha256(path.read_bytes()).hexdigest() != expected_registry_sha256)
+     ):
+         raise ValueError("registry bytes differ from expected frozen registry")
+--- a/tests/test_marker_association.py
++++ b/tests/test_marker_association.py
+@@ -187,6 +187,51 @@
+     (tmp_path / "src/cloud_edge_robot_arm/vision/online_intent.py").write_text("changed")
+     result = module.replay_marker_target_development(observation, altered, context)
+     assert result.status == "INVALID" and "registration_source_changed" in result.reasons
++
++
++@pytest.mark.parametrize("root_link", ["root", "ancestor"])
++def test_symlink_source_root_or_ancestor_cannot_supply_a_diagnostic_candidate(tmp_path, root_link):
++    module, observation, registration, context = inputs()
++    link = tmp_path / "source-link"
++    if root_link == "root":
++        link.symlink_to(ROOT, target_is_directory=True)
++        altered_root = link
++    else:
++        link.symlink_to(ROOT.parent, target_is_directory=True)
++        altered_root = link / ROOT.name
++    assert altered_root.resolve() == ROOT  # qualified identical source bytes
++    changed = replace(registration, root=altered_root)
++    assert changed.sources_valid() is False
++    result = module.replay_marker_target_development(observation, changed, context)
++    assert result.status == "INVALID" and "registration_source_changed" in result.reasons
++    with pytest.raises(ValueError, match="source"):
++        module.load_marker_registration(
++            CONFIG,
++            expected_registry_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest(),
++            root=altered_root,
++        )
++
++
++@pytest.mark.parametrize("path_kind", ["parent_link", "file_link", "outside_root"])
++def test_registry_path_must_be_regular_under_root_without_symlink_ancestors(tmp_path, path_kind):
++    module, _, _, _ = inputs()
++    if path_kind == "parent_link":
++        parent = tmp_path / "registry-parent-link"
++        parent.symlink_to(CONFIG.parent, target_is_directory=True)
++        altered = parent / CONFIG.name
++    elif path_kind == "file_link":
++        altered = tmp_path / "registry-link.yaml"
++        altered.symlink_to(CONFIG)
++    else:
++        altered = tmp_path / "identical-but-unregistered.yaml"
++        altered.write_bytes(CONFIG.read_bytes())
++    assert altered.read_bytes() == CONFIG.read_bytes()  # byte hash alone cannot authorize path
++    with pytest.raises(ValueError, match="registry"):
++        module.load_marker_registration(
++            altered,
++            expected_registry_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest(),
++            root=ROOT,
++        )
+ 
+ 
+ def test_depth_hole_invalid_mask_and_camera_change_cannot_reuse_identity():

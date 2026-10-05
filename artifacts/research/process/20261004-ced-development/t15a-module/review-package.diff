@@ -1,0 +1,1961 @@
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/assignments.py
+@@ -0,0 +1,470 @@
++"""研究分配与记录契约：完整固定池、配对随机顺序和可核验轨迹引用。"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++import random
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, field, fields, is_dataclass
++from datetime import datetime
++from enum import Enum
++from pathlib import Path
++from types import MappingProxyType
++from typing import Any, cast
++
++from pydantic import BaseModel
++
++from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec, canonical_json, content_digest
++from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
++from cloud_edge_robot_arm.research.models import EvidenceKind, RunProvenance
++from cloud_edge_robot_arm.research.network import NetworkSchedule
++from cloud_edge_robot_arm.research.protocol import NETWORKS, STRATA, FrozenProtocol
++from cloud_edge_robot_arm.research.provenance import audit_provenance
++from cloud_edge_robot_arm.vision.evaluation import VisualEpisodeOutcome
++
++
++def _hash(value: str) -> bool:
++    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
++
++
++def _json(value: Any) -> Any:
++    if isinstance(value, BaseModel):
++        return value.model_dump(mode="json")
++    if isinstance(value, datetime):
++        return value.isoformat()
++    if isinstance(value, Enum):
++        return value.value
++    if is_dataclass(value) and not isinstance(value, type):
++        return {item.name: _json(getattr(value, item.name)) for item in fields(value)}
++    if isinstance(value, Mapping):
++        return {str(key): _json(item) for key, item in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [_json(item) for item in value]
++    return value
++
++
++def _freeze(value: Any) -> Any:
++    if isinstance(value, Mapping):
++        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
++    if isinstance(value, (list, tuple)):
++        return tuple(_freeze(item) for item in value)
++    return value
++
++
++@dataclass(frozen=True)
++class ArtifactReference:
++    """引用实际产物字节及其格式版本，核验失败时拒绝作为来源。"""
++
++    schema_version: str
++    content_hash: str
++    path: str
++
++    def __post_init__(self) -> None:
++        if not self.schema_version.strip() or not self.path.strip() or not _hash(self.content_hash):
++            raise ValueError("artifact schema/path or SHA256 content hash missing")
++
++    def verify(self, root: Path | None = None) -> Path:
++        """读取文件并核对原始字节散列；不根据摘要假定产物存在。"""
++        path = Path(self.path)
++        if root is not None:
++            path = path if path.is_absolute() else root / path
++            if not path.resolve().is_relative_to(root.resolve()):
++                raise ValueError("artifact reference escapes its evidence root")
++        if not path.is_file():
++            raise ValueError("artifact source is missing")
++        if hashlib.sha256(path.read_bytes()).hexdigest() != self.content_hash:
++            raise ValueError("artifact content hash mismatch")
++        return path
++
++
++def make_verification_record(
++    record: Mapping[str, Any],
++    source_refs: Sequence[ArtifactReference],
++) -> dict[str, Any]:
++    """封装原始在线判定与来源引用，不补写 PASS 或独立物理结论。"""
++    if not source_refs:
++        raise ValueError("verification source references required")
++    payload = {
++        "schema_version": "ced.verification-record.v1",
++        "record": _json(record),
++        "source_refs": [_json(ref) for ref in source_refs],
++    }
++    return {**payload, "content_hash": content_digest(payload)}
++
++
++def _verification(value: Mapping[str, Any], *, attest_sources: bool) -> Mapping[str, Any]:
++    if "schema_version" not in value:
++        if attest_sources:
++            raise ValueError("verification source attestation requires the versioned envelope")
++        return cast(Mapping[str, Any], _freeze(value))  # Legacy diagnostic only; never accepted.
++    if value.get("schema_version") != "ced.verification-record.v1" or set(value) != {
++        "schema_version",
++        "record",
++        "source_refs",
++        "content_hash",
++    }:
++        raise ValueError("verification envelope schema invalid")
++    if not isinstance(value["record"], Mapping) or not isinstance(
++        value["source_refs"], (list, tuple)
++    ):
++        raise ValueError("verification exact record/source references missing")
++    if not value["source_refs"]:
++        raise ValueError("verification source references missing")
++    payload = {key: _json(item) for key, item in value.items() if key != "content_hash"}
++    if content_digest(payload) != value["content_hash"]:
++        raise ValueError("verification content hash mismatch")
++    for raw in value["source_refs"]:
++        if not isinstance(raw, Mapping):
++            raise ValueError("verification source reference malformed")
++        ref = ArtifactReference(**raw)
++        if attest_sources:
++            ref.verify()
++    return cast(Mapping[str, Any], _freeze(value))
++
++
++@dataclass(frozen=True)
++class EpisodeAssignment:
++    """将一次方法运行绑定到完整场景、物理种子与网络日程。"""
++
++    assignment_id: str
++    group_id: str
++    stratum_id: str
++    method_id: str
++    physics_seed: int
++    network_schedule_id: str
++    order_index: int
++    scene_payload_json: str = field(default="", kw_only=True)
++    perturbation_json: str = field(default="", kw_only=True)
++    network_schedule_json: str = field(default="", kw_only=True)
++    pool_hash: str = field(default="", kw_only=True)
++    protocol_hash: str = field(default="", kw_only=True)
++
++    def __post_init__(self) -> None:
++        if not all((self.assignment_id, self.group_id, self.method_id, self.network_schedule_id)):
++            raise ValueError("assignment identity missing")
++        if self.stratum_id not in STRATA:
++            raise ValueError("assignment stratum outside fixed design")
++        if any(
++            type(value) is not int or value < 0 for value in (self.physics_seed, self.order_index)
++        ):
++            raise ValueError("assignment seed/order invalid")
++        # Unbound seven-field legacy metadata is representable, never formally runnable.
++        if any((self.scene_payload_json, self.network_schedule_json, self.perturbation_json)):
++            if not all(
++                (
++                    self.scene_payload_json,
++                    self.network_schedule_json,
++                    self.perturbation_json,
++                    _hash(self.pool_hash),
++                    _hash(self.protocol_hash),
++                )
++            ):
++                raise ValueError("assignment scene/source binding incomplete")
++            scene = SceneSpec.model_validate_json(self.scene_payload_json)
++            if scene.group_id != self.group_id or scene.seed != self.physics_seed:
++                raise ValueError("assignment scene group or physics seed mismatch")
++            schedule = NetworkSchedule.model_validate_json(self.network_schedule_json)
++            if schedule.schedule_id != self.network_schedule_id:
++                raise ValueError("assignment network schedule mismatch")
++            schedule_payload = schedule.model_dump(mode="json", exclude={"schedule_id"})
++            if content_digest(schedule_payload) != self.network_schedule_id:
++                raise ValueError("assignment network schedule content hash mismatch")
++            canonical_json(json.loads(self.perturbation_json))
++
++    @property
++    def content_hash(self) -> str:
++        """绑定完整分配，供断点恢复和记录身份检查使用。"""
++        return content_digest(_json(self))
++
++
++@dataclass(frozen=True)
++class EpisodeRecord:
++    """保留每次分配及所有失败；原始来源未核验时不接受任务成功。"""
++
++    assignment: EpisodeAssignment
++    outcome: VisualEpisodeOutcome
++    provenance: RunProvenance
++    costs: CostSnapshot
++    duration_penalized_s: float
++    infrastructure_incident_id: str | None
++    decision_trace_refs: Sequence[ArtifactReference]
++    verification_records: Sequence[Mapping[str, Any]]
++    recovery_trace_refs: Sequence[ArtifactReference]
++    provider_versions: Mapping[str, str]
++    run_status: str = field(default="COMPLETED", kw_only=True)
++    source_verified: bool = field(default=False, kw_only=True)
++    schema_version: str = field(default="ced.episode-record.v1", kw_only=True)
++    frozen_tcap_s: int | None = field(default=None, kw_only=True)
++
++    def __post_init__(self) -> None:
++        if self.schema_version != "ced.episode-record.v1":
++            raise ValueError("unsupported episode record schema version")
++        if self.run_status not in {"COMPLETED", "BLOCKED", "TIMEOUT", "STOP", "FALLBACK", "FAILED"}:
++            raise ValueError("unsupported episode terminal status")
++        if self.provenance.run_id != self.assignment.assignment_id or (
++            self.provenance.scene_group_id != self.assignment.group_id
++        ):
++            raise ValueError("episode provenance does not match assignment")
++        if self.provenance.cohort != "NEW_RESEARCH":
++            raise ValueError("historical records cannot occupy a new research assignment")
++        if self.outcome.status not in {"SUCCESS", "FAILED", "INCOMPLETE", "SAFETY_VIOLATION"}:
++            raise ValueError("unsupported physical outcome status")
++        if self.outcome.safety_assessment not in {"SCOPED_NO_VIOLATION", "PARTIAL", "VIOLATION"}:
++            raise ValueError("unsupported physical safety assessment")
++        if self.outcome.success and (
++            self.run_status != "COMPLETED"
++            or self.outcome.status != "SUCCESS"
++            or self.outcome.online_reported_complete is not True
++            or self.outcome.physical_success is not True
++            or self.outcome.safety_violation
++            or self.outcome.failure_reason is not None
++            or self.outcome.terminal_reason is not None
++        ):
++            raise ValueError("episode completion status contradicts online/physical outcome")
++        if self.outcome.status == "SUCCESS" and not self.outcome.success:
++            raise ValueError("SUCCESS outcome cannot omit task success")
++        formal_bound = bool(self.assignment.protocol_hash)
++        if formal_bound and self.provenance.split_role != "formal":
++            raise ValueError("formal bound assignment cannot change provenance phase")
++        if formal_bound and self.frozen_tcap_s is None:
++            raise ValueError("formal records require the frozen Tcap deadline")
++        if self.frozen_tcap_s is not None:
++            if type(self.frozen_tcap_s) is not int or not (
++                120 <= self.frozen_tcap_s <= 600 and self.frozen_tcap_s % 10 == 0
++            ):
++                raise ValueError("record frozen Tcap deadline invalid")
++            # No independent physics validator is integrated in this module.
++            # A success declaration or source metadata therefore cannot shorten
++            # the conservative formal penalty; original elapsed time is retained.
++            if not self.accepted_task_success and self.duration_penalized_s != self.frozen_tcap_s:
++                raise ValueError("unaccepted episode must retain exactly its frozen Tcap penalty")
++        numbers = (
++            self.duration_penalized_s,
++            self.outcome.elapsed_s,
++            self.outcome.measured_lift_m,
++            self.outcome.hold_s,
++            self.outcome.placed_stable_s,
++        )
++        if any(not math.isfinite(value) or value < 0 for value in numbers):
++            raise ValueError("episode durations/measurements must be finite nonnegative")
++        for name, value in self.costs.model_dump().items():
++            if isinstance(value, (int, float)) and (not math.isfinite(value) or value < 0):
++                raise ValueError(f"episode cost {name} must be finite nonnegative")
++        for name in ("decision_trace_refs", "recovery_trace_refs"):
++            values = tuple(getattr(self, name))
++            if any(not isinstance(value, ArtifactReference) for value in values):
++                raise ValueError("trace references require schema and content hashes")
++            object.__setattr__(self, name, values)
++        object.__setattr__(
++            self,
++            "verification_records",
++            tuple(
++                _verification(value, attest_sources=self.source_verified)
++                for value in self.verification_records
++            ),
++        )
++        if any(not key or not value for key, value in self.provider_versions.items()):
++            raise ValueError("provider versions cannot be blank")
++        object.__setattr__(self, "provider_versions", _freeze(self.provider_versions))
++        if self.source_verified:
++            for ref in (*self.decision_trace_refs, *self.recovery_trace_refs):
++                ref.verify()
++
++    @property
++    def accepted_task_success(self) -> bool:
++        """真实来源重算尚未整合，声明式元数据不能验收物理成功。"""
++        return False
++
++    @property
++    def structurally_complete_success(self) -> bool:
++        """只表示记录结构齐全，独立物理重算之前不能用作接受成功。"""
++        return bool(
++            self.source_verified
++            and self.run_status == "COMPLETED"
++            and self.outcome.success
++            and self.outcome.physical_success
++            and self.outcome.online_reported_complete
++            and self.decision_trace_refs
++            and self.verification_records
++            and self.provider_versions
++            and self.provenance.evidence_kind == EvidenceKind.PHYSICS
++            and audit_provenance([self.provenance]).physical_success_count == 1
++        )
++
++    @property
++    def content_hash(self) -> str:
++        """计算完整记录散列，保留原始失败及基础设施重跑关联。"""
++        return content_digest(_json(self))
++
++    def to_payload(self, *, protocol: FrozenProtocol | None = None) -> dict[str, Any]:
++        """输出可归档的 JSON 结构及完整记录散列。"""
++        if protocol is not None:
++            validate_episode_record(self, protocol)
++        elif self.assignment.protocol_hash:
++            raise ValueError("persisting a formal record requires its frozen protocol")
++        return {**_json(self), "content_hash": self.content_hash}
++
++
++def validate_formal_protocol(protocol: FrozenProtocol) -> None:
++    """检查 FINAL 元数据和不可变内容；此检查不替代真实来源验收。"""
++    protocol.require_formal()
++    payload = {"spec": protocol.spec.model_dump(mode="json"), "stage": protocol.stage}
++    if content_digest(payload) != protocol.content_hash:
++        raise ValueError("formal protocol content hash mismatch")
++    hashes = (
++        protocol.spec.initial_protocol_hash,
++        protocol.spec.model_snapshot_hash,
++        protocol.spec.opportunity_hash,
++        protocol.spec.recovery_fault_manifest_hash,
++    )
++    if any(not isinstance(value, str) or not _hash(value) for value in hashes):
++        raise ValueError("formal protocol lacks evidence source hashes")
++    if protocol.spec.tcap_s is None or not protocol.spec.method_hashes:
++        raise ValueError("formal protocol lacks frozen method or timeout")
++    if any(not _hash(value) for value in protocol.spec.method_hashes.values()):
++        raise ValueError("frozen method hash invalid")
++
++
++def build_assignments(
++    protocol: FrozenProtocol,
++    methods: Sequence[str],
++    *,
++    scene_pool: Sequence[Mapping[str, Any]] | None = None,
++) -> list[EpisodeAssignment]:
++    """从完整散列绑定池按层取前 N，再随机固定每个场景的方法顺序。"""
++    validate_formal_protocol(protocol)
++    if not methods or len(set(methods)) != len(methods):
++        raise ValueError("methods missing or duplicate")
++    if any(method not in protocol.spec.method_hashes for method in methods):
++        raise ValueError("requested method is not frozen")
++    if scene_pool is None:
++        raise ValueError("hash-bound full formal scene pool is required")
++    pool_hash = content_digest(list(scene_pool))
++    if pool_hash != protocol.spec.pool_hashes.get("formal"):
++        raise ValueError("formal pool content hash mismatch")
++    if len(scene_pool) != 2400:
++        raise ValueError("formal source pool must contain all 2400 candidates")
++    seen_groups: set[str] = set()
++    seen_ids: set[str] = set()
++    seen_scenes: set[str] = set()
++    layers: dict[str, list[tuple[Mapping[str, Any], SceneSpec]]] = {s: [] for s in STRATA}
++    for row in scene_pool:
++        scene = SceneSpec.model_validate(row["scene"])
++        canonical_scene = SceneSpec.from_parameters(
++            scene.scene_parameters, scene.asset_family_hash, scene.seed
++        )
++        if canonical_scene.group_id != scene.group_id or row.get("scene_hash") != scene.scene_hash:
++            raise ValueError("formal scene identity/hash mismatch")
++        row_id = str(row.get("assignment_id", ""))
++        if (
++            not row_id
++            or scene.group_id in seen_groups
++            or row_id in seen_ids
++            or (scene.scene_hash in seen_scenes)
++        ):
++            raise ValueError("formal pool duplicate scene/group/assignment")
++        seen_groups.add(scene.group_id)
++        seen_ids.add(row_id)
++        seen_scenes.add(scene.scene_hash)
++        stratum = row.get("stratum_id")
++        if stratum not in layers:
++            raise ValueError("formal pool stratum outside fixed design")
++        if not isinstance(row.get("perturbation"), dict):
++            raise ValueError("formal scene perturbation binding missing")
++        layers[stratum].append((row, scene))
++    if any(len(rows) != 200 for rows in layers.values()):
++        raise ValueError("formal source pool must balance 200 groups in each stratum")
++    assert protocol.spec.selected_n is not None
++    count = protocol.spec.selected_n // 12
++    selected = {row["assignment_id"] for rows in layers.values() for row, _ in rows[:count]}
++    result: list[EpisodeAssignment] = []
++    for row in scene_pool:
++        if row["assignment_id"] not in selected:
++            continue
++        scene = SceneSpec.model_validate(row["scene"])
++        stratum = str(row["stratum_id"])
++        network_index = int(stratum.split("_RTT")[1])
++        rtt, loss = next((rtt, loss) for rtt, loss in NETWORKS if rtt == network_index)
++        seed = int(
++            content_digest(
++                {"group": scene.group_id, "protocol": protocol.content_hash, "purpose": "network"}
++            )[:16],
++            16,
++        )
++        schedule_payload = {
++            "rtt_ms": float(rtt),
++            "jitter_fraction": 0.2,
++            "loss_rate": loss,
++            "bandwidth_mbit_s": 10.0,
++            "outages": (),
++            "seed": seed,
++        }
++        schedule_id = content_digest(schedule_payload)
++        schedule = NetworkSchedule(schedule_id=schedule_id, rtt_ms=rtt, loss_rate=loss, seed=seed)
++        order = sorted(methods)
++        random.Random(f"{protocol.content_hash}:{scene.group_id}:method-order").shuffle(order)
++        for method in order:
++            result.append(
++                EpisodeAssignment(
++                    assignment_id=f"{row['assignment_id']}::{method}",
++                    group_id=scene.group_id,
++                    stratum_id=stratum,
++                    method_id=method,
++                    physics_seed=scene.seed,
++                    network_schedule_id=schedule_id,
++                    order_index=len(result),
++                    scene_payload_json=canonical_json(scene.model_dump(mode="json")),
++                    perturbation_json=canonical_json(row["perturbation"]),
++                    network_schedule_json=canonical_json(schedule.model_dump(mode="json")),
++                    pool_hash=pool_hash,
++                    protocol_hash=protocol.content_hash,
++                )
++            )
++    return result
++
++
++def validate_episode_record(record: EpisodeRecord, protocol: FrozenProtocol) -> None:
++    """将记录的格式、场景身份和惩罚截止绑定到真实冻结协议内容。"""
++    validate_formal_protocol(protocol)
++    assignment = record.assignment
++    if (
++        assignment.protocol_hash != protocol.content_hash
++        or (assignment.pool_hash != protocol.spec.pool_hashes.get("formal"))
++        or not assignment.scene_payload_json
++        or assignment.method_id not in protocol.spec.method_hashes
++    ):
++        raise ValueError("formal record assignment/source binding differs from frozen protocol")
++    if record.provenance.split_role != "formal" or record.frozen_tcap_s != protocol.spec.tcap_s:
++        raise ValueError("formal record Tcap deadline differs from frozen protocol")
++    if not record.accepted_task_success and record.duration_penalized_s != protocol.spec.tcap_s:
++        raise ValueError("unaccepted formal outcome must use the frozen Tcap penalty")
++
++
++def episode_record_from_payload(
++    payload: Mapping[str, Any],
++    *,
++    protocol: FrozenProtocol | None = None,
++) -> EpisodeRecord:
++    """加载断点记录并重算完整散列，拒绝损坏或手改的失败惩罚。"""
++    values = dict(payload)
++    if values.get("schema_version") != "ced.episode-record.v1":
++        raise ValueError("unsupported or missing persisted episode schema version")
++    expected_hash = values.pop("content_hash", None)
++    if not isinstance(expected_hash, str) or content_digest(values) != expected_hash:
++        raise ValueError("episode record content hash mismatch")
++    values["assignment"] = EpisodeAssignment(**values["assignment"])
++    values["outcome"] = VisualEpisodeOutcome(**values["outcome"])
++    values["provenance"] = RunProvenance.model_validate(values["provenance"])
++    values["costs"] = CostSnapshot.model_validate(values["costs"])
++    for name in ("decision_trace_refs", "recovery_trace_refs"):
++        values[name] = tuple(ArtifactReference(**value) for value in values[name])
++    record = EpisodeRecord(**values)
++    if not isinstance(expected_hash, str) or record.content_hash != expected_hash:
++        raise ValueError("episode record content hash mismatch")
++    if protocol is not None:
++        validate_episode_record(record, protocol)
++    elif record.assignment.protocol_hash or record.provenance.split_role == "formal":
++        raise ValueError("loading a formal record requires its frozen protocol")
++    return record
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/runner.py
+@@ -0,0 +1,222 @@
++"""研究运行与回放边界；当前未集成真实方法时明确保留 BLOCKED 记录。"""
++
++from __future__ import annotations
++
++import json
++import math
++from collections.abc import Sequence
++from dataclasses import dataclass, replace
++from typing import Literal, Protocol, cast
++
++from cloud_edge_robot_arm.edge.evidence.opportunities import (
++    GateReplayRecord,
++    Opportunity,
++    replay_opportunities,
++)
++from cloud_edge_robot_arm.research.assignments import (
++    ArtifactReference,
++    EpisodeAssignment,
++    EpisodeRecord,
++    validate_formal_protocol,
++)
++from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
++from cloud_edge_robot_arm.research.models import (
++    EvidenceKind,
++    RunProvenance,
++    StageEvidence,
++    StageStatus,
++)
++from cloud_edge_robot_arm.research.protocol import FrozenProtocol
++from cloud_edge_robot_arm.vision.evaluation import VisualEpisodeOutcome
++
++
++class SoftwareEpisodeAdapter(Protocol):
++    """仅用于显式 MOCK 软件夹具，不能作为正式方法适配器。"""
++
++    evidence_kind: EvidenceKind
++
++    def run(self, assignment: EpisodeAssignment, protocol: FrozenProtocol) -> EpisodeRecord:
++        """返回软件运行记录，不得伪装真实物理来源。"""
++        ...
++
++
++def _blocked(assignment: EpisodeAssignment, protocol: FrozenProtocol, reason: str) -> EpisodeRecord:
++    provenance = RunProvenance(
++        run_id=assignment.assignment_id,
++        source_tree_hash="",
++        scene_group_id=assignment.group_id,
++        split_role="formal",
++        physics_steps=0,
++        evidence_kind=EvidenceKind.SOFTWARE,
++        blocked_reason=reason,
++        stages=[
++            StageEvidence(stage=name, status=StageStatus.NOT_EXECUTED, reason=reason)
++            for name in ("PERCEPTION", "INFERENCE", "ACTION")
++        ],
++    )
++    return EpisodeRecord(
++        assignment,
++        VisualEpisodeOutcome(
++            False, "INCOMPLETE", False, reason, 0.0, 0.0, 0.0, 0.0, terminal_reason=reason
++        ),
++        provenance,
++        CostSnapshot(),
++        float(protocol.spec.tcap_s or 600),
++        None,
++        (),
++        (),
++        (),
++        {},
++        run_status="BLOCKED",
++        frozen_tcap_s=protocol.spec.tcap_s or 600,
++    )
++
++
++def run_assignment(
++    assignment: EpisodeAssignment,
++    protocol: FrozenProtocol,
++    *,
++    software_adapter: SoftwareEpisodeAdapter | None = None,
++) -> EpisodeRecord:
++    """记录一次分配；拒绝旧协议/未冻结方法，未接真实运行器时不执行。"""
++    try:
++        validate_formal_protocol(protocol)
++        if assignment.method_id not in protocol.spec.method_hashes:
++            raise ValueError("assignment method is not frozen")
++        if (
++            assignment.protocol_hash != protocol.content_hash
++            or (assignment.pool_hash != protocol.spec.pool_hashes.get("formal"))
++            or not assignment.scene_payload_json
++        ):
++            raise ValueError("assignment protocol/pool/scene source hash mismatch")
++    except ValueError as error:
++        return _blocked(assignment, protocol, str(error))
++    if software_adapter is None:
++        return _blocked(assignment, protocol, "actual research runtime adapter is not integrated")
++    if software_adapter.evidence_kind != EvidenceKind.MOCK:
++        raise ValueError("injected software adapter must be explicitly MOCK")
++    result = software_adapter.run(assignment, protocol)
++    if result.assignment != assignment or result.provenance.evidence_kind != EvidenceKind.MOCK:
++        raise ValueError("software adapter returned wrong assignment or non-MOCK evidence")
++    # A software fixture may simulate a completion branch but cannot contribute
++    # a physical success or a shorter formal failure penalty.
++    provenance = result.provenance.model_copy(update={"task_success": False})
++    result = replace(
++        result,
++        outcome=replace(
++            result.outcome,
++            success=False,
++            physical_success=False,
++            status="FAILED" if result.outcome.success else result.outcome.status,
++            failure_reason="SOFTWARE_ONLY_OUTCOME"
++            if result.outcome.success
++            else result.outcome.failure_reason,
++        ),
++        provenance=provenance,
++        source_verified=False,
++        duration_penalized_s=float(protocol.spec.tcap_s or 600),
++        frozen_tcap_s=protocol.spec.tcap_s or 600,
++    )
++    return result
++
++
++def penalized_recovery_duration(record: EpisodeRecord, *, elapsed_s: float) -> float:
++    """失败、未完成和未验收恢复统一使用预注册 60 秒惩罚。"""
++    if not math.isfinite(elapsed_s) or elapsed_s < 0:
++        raise ValueError("recovery duration must be finite nonnegative")
++    return min(elapsed_s, 60.0) if record.accepted_task_success else 60.0
++
++
++@dataclass(frozen=True)
++class RerunAuthorization:
++    """保留所有原记录散列，仅授权受同一基础设施损坏影响的完整配对。"""
++
++    infrastructure_incident_id: str
++    group_id: str
++    method_ids: tuple[str, ...]
++    original_record_hashes: tuple[str, ...]
++    incident_ref: ArtifactReference
++
++
++def authorize_paired_rerun(
++    originals: Sequence[EpisodeRecord],
++    incident: ArtifactReference | None,
++    *,
++    expected_method_ids: Sequence[str] | None = None,
++) -> RerunAuthorization:
++    """核对可读取的事故资料和全部原记录，任务失败不是重跑理由。"""
++    if incident is None:
++        raise ValueError("documented infrastructure incident is required")
++    if not originals:
++        raise ValueError("incident must retain original paired records")
++    document = json.loads(incident.verify().read_text())
++    if incident.schema_version != "incident.v1" or document.get("category") not in {
++        "RENDERER_CRASH",
++        "BACKEND_PROCESS_CRASH",
++        "CORRUPTED_CAPTURE_STORAGE",
++    }:
++        raise ValueError("only documented infrastructure damage permits paired rerun")
++    groups = {row.assignment.group_id for row in originals}
++    methods = {row.assignment.method_id for row in originals}
++    hashes = {row.content_hash for row in originals}
++    if len(groups) != 1 or len(methods) != len(originals) or len(methods) < 2:
++        raise ValueError("incident originals must be one complete unique method pair")
++    if (
++        expected_method_ids is None
++        or methods != set(expected_method_ids)
++        or (len(set(expected_method_ids)) != len(expected_method_ids))
++    ):
++        raise ValueError("incident must retain the complete frozen assignment method set")
++    contexts = {
++        (
++            row.assignment.physics_seed,
++            row.assignment.network_schedule_json,
++            row.assignment.scene_payload_json,
++            row.assignment.perturbation_json,
++            row.assignment.pool_hash,
++            row.assignment.protocol_hash,
++        )
++        for row in originals
++    }
++    if len(contexts) != 1:
++        raise ValueError("incident originals must have identical paired scene/seed/network")
++    if (
++        set(document.get("affected_methods", ())) != methods
++        or (set(document.get("original_record_hashes", ())) != hashes)
++        or document.get("group_id") not in groups
++    ):
++        raise ValueError("incident does not bind all original paired records")
++    if (
++        not document.get("incident_id")
++        or not document.get("diagnostic")
++        or (not document.get("source_hashes"))
++    ):
++        raise ValueError("incident identity/diagnostic/source evidence missing")
++    return RerunAuthorization(
++        document["incident_id"],
++        next(iter(groups)),
++        tuple(sorted(methods)),
++        tuple(sorted(hashes)),
++        incident,
++    )
++
++
++def run_gate_replay(opportunities: Sequence[Opportunity], method_id: str) -> list[GateReplayRecord]:
++    """保持全机会顺序，按各自冻结时刻回放；独立标签不输入门控。"""
++    if method_id not in {"JOINT", "B3"}:
++        raise ValueError("unsupported fixed gate replay method")
++    if not opportunities or (
++        len({value.opportunity_id for value in opportunities}) != len(opportunities)
++    ):
++        raise ValueError("fixed opportunities missing or duplicate")
++    records = []
++    for opportunity in opportunities:
++        records.extend(
++            replay_opportunities(
++                [opportunity],
++                cast(Literal["JOINT", "B3"], method_id),
++                opportunity.replay_at,
++                opportunity.replay_calibration_version,
++            )
++        )
++    return records
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/ablations.py
+@@ -0,0 +1,22 @@
++"""冻结三个核心消融，只关闭目标组件，保留感知和安全设置。"""
++
++from collections.abc import Mapping
++from typing import Any
++
++ABLATION_COMPONENTS = {
++    "NO_UNCERTAINTY": "uncertainty_gate",
++    "NO_TIME_VALIDITY": "completion_age_gate",
++    "NO_LOCAL_REPAIR": "local_repair",
++}
++
++
++def apply_ablation(base: Mapping[str, Any], method_id: str) -> dict[str, Any]:
++    """复制共同设置并关闭唯一注册组件，不静默修改其他参数。"""
++    if method_id not in ABLATION_COMPONENTS:
++        raise ValueError("unregistered research ablation")
++    component = ABLATION_COMPONENTS[method_id]
++    if base.get(component) is not True or base.get("safety_shield") is not True:
++        raise ValueError("ablation requires the enabled common component and SafetyShield")
++    result = dict(base)
++    result[component] = False
++    return result
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/research/power.py
+@@ -0,0 +1,147 @@
++"""预注册配对非劣功效设计；不使用先导效应方向选择样本量。"""
++
++from __future__ import annotations
++
++import math
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, field
++from statistics import NormalDist
++from typing import Any
++
++FORMAL_NS = (600, 1200, 1800, 2400)
++FAMILY_SIZE = 5
++PILOT_N = 120
++
++
++@dataclass(frozen=True)
++class PowerDecision:
++    """条件代入功效和散列绑定先导之外的统计不确定性分别报告。"""
++
++    selected_n: int | None
++    power_by_n: Mapping[int, Mapping[str, float]]
++    reason: str
++    discordance_rate: Mapping[str, float] = field(default_factory=dict)
++    discordance_upper_bound: Mapping[str, float] = field(default_factory=dict)
++    family_alpha: float = 0.01
++    assumed_effect: float = 0.0
++    estimate_kind: str = "CONDITIONAL_PLUGIN_ZERO_EFFECT"
++    source_accepted: bool = False
++
++
++def _discordance(values: Sequence[tuple[bool, bool]]) -> tuple[int, float]:
++    if len(values) != PILOT_N:
++        raise ValueError("power pilot requires exactly 120 paired outcomes")
++    if any(len(row) != 2 or any(type(value) is not bool for value in row) for row in values):
++        raise ValueError("power pilot must contain complete boolean pairs")
++    count = sum(left != right for left, right in values)
++    return count, count / PILOT_N
++
++
++def _discordance_upper(count: int, *, alpha: float = 0.05) -> float:
++    # Exact one-sided Clopper-Pearson bound: P_p(X <= observed) = alpha.
++    # This is uncertainty reporting only, never an unregistered design rule.
++    if count == PILOT_N:
++        return 1.0
++    lo, hi = count / PILOT_N, 1.0
++    for _ in range(80):
++        probability = (lo + hi) / 2
++        cdf = sum(
++            math.comb(PILOT_N, k) * probability**k * (1 - probability) ** (PILOT_N - k)
++            for k in range(count + 1)
++        )
++        if cdf > alpha:
++            lo = probability
++        else:
++            hi = probability
++    return (lo + hi) / 2
++
++
++def _conditional_power(n: int, q: float, margin: float, family_alpha: float) -> float:
++    if q == 0:
++        # At the NI null boundary, a nonzero mean difference of margin requires
++        # at least margin discordance. All-concordant probability is maximized
++        # by q=margin: (1-margin)**N. Under the explicitly assumed q=0,
++        # zero-effect alternative all pairs agree, so conditional power is 0/1.
++        return float((1 - margin) ** n <= family_alpha)
++    critical = NormalDist().inv_cdf(1 - family_alpha)
++    return NormalDist().cdf(margin * math.sqrt(n / q) - critical)
++
++
++def choose_formal_n(
++    paired_success: Sequence[tuple[bool, bool]],
++    paired_safety: Sequence[tuple[bool, bool]],
++    alpha: float = 0.05,
++    target_power: float = 0.8,
++) -> PowerDecision:
++    """只从固定 N 候选选择两项条件功效均达标的最小样本量。"""
++    if alpha != 0.05 or target_power != 0.8:
++        raise ValueError("alpha and target power are fixed by the approved protocol")
++    success_count, success_q = _discordance(paired_success)
++    safety_count, safety_q = _discordance(paired_safety)
++    family_alpha = alpha / FAMILY_SIZE
++    powers = {
++        n: {
++            "success": _conditional_power(n, success_q, 0.03, family_alpha),
++            "safety": _conditional_power(n, safety_q, 0.01, family_alpha),
++        }
++        for n in FORMAL_NS
++    }
++    selected = next(
++        (
++            n
++            for n, values in powers.items()
++            if all(value >= target_power for value in values.values())
++        ),
++        None,
++    )
++    return PowerDecision(
++        selected,
++        powers,
++        "smallest allowed N meeting both conditional design powers"
++        if selected
++        else "INSUFFICIENT_EVIDENCE: conditional design power requires N above 2400",
++        {"success": success_q, "safety": safety_q},
++        {"success": _discordance_upper(success_count), "safety": _discordance_upper(safety_count)},
++        family_alpha=family_alpha,
++    )
++
++
++def choose_formal_n_from_pilot(
++    rows: Sequence[Mapping[str, Any]],
++    *,
++    excluded_groups: set[str],
++    method_hashes: Mapping[str, str],
++) -> PowerDecision:
++    """核对先导组与方法身份后计算条件功效；不凭摘要验收物理来源。"""
++    if len(rows) != PILOT_N:
++        raise ValueError("power pilot requires exactly 120 source groups")
++    groups = [row.get("group_id") for row in rows]
++    if any(not isinstance(value, str) or not value for value in groups) or (
++        len(set(groups)) != PILOT_N or set(groups) & excluded_groups
++    ):
++        raise ValueError("power pilot source group isolation failed")
++    if set(method_hashes) != {"B0", "JOINT"}:
++        raise ValueError("power pilot must bind the B0 and JOINT frozen method pair")
++    success, safety = [], []
++    for row in rows:
++        if row.get("split_role") != "power":
++            raise ValueError("power pilot cannot use foundation, selection or formal groups")
++        if row.get("method_hashes") != dict(method_hashes):
++            raise ValueError("power pilot method versions changed")
++        sources = row.get("source_hashes")
++        if (
++            not isinstance(sources, list)
++            or not sources
++            or any(
++                not isinstance(value, str)
++                or len(value) != 64
++                or any(char not in "0123456789abcdef" for char in value)
++                for value in sources
++            )
++        ):
++            raise ValueError("power pilot source hashes missing")
++        success.append(tuple(row.get("success", ())))
++        safety.append(tuple(row.get("safety", ())))
++    # Full source acceptance is a separate verifier/integration prerequisite.
++    # Merely having boolean outcomes and source hashes cannot publish FINAL.
++    return choose_formal_n(success, safety)  # type: ignore[arg-type]
+--- /dev/null
++++ b/scripts/run_rgbd_research.py
+@@ -0,0 +1,120 @@
++"""正式研究入口与断点记录；真实运行方法未接入时保留全部 BLOCKED。"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import sys
++from dataclasses import asdict
++from pathlib import Path
++from typing import Any
++
++import yaml
++
++if __package__ in {None, ""}:
++    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
++
++from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
++from cloud_edge_robot_arm.research.assignments import build_assignments, episode_record_from_payload
++from cloud_edge_robot_arm.research.protocol import load_protocol
++from cloud_edge_robot_arm.research.runner import run_assignment
++
++
++def main(argv: list[str] | None = None) -> int:
++    """验证固定分配并保存原始记录；缺正式前置时返回非零状态。"""
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--config", type=Path, default=Path("configs/research/formal.yaml"))
++    parser.add_argument("--protocol", type=Path, required=True)
++    parser.add_argument("--pools", type=Path)
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--resume", action="store_true")
++    args = parser.parse_args(argv)
++    args.output.mkdir(parents=True, exist_ok=True)
++    report_path = args.output / "report.json"
++    if report_path.exists() and not args.resume:
++        raise ValueError("existing research output is preserved; use explicit --resume")
++    summary: dict[str, Any] = {
++        "schema_version": "ced.research-run.v1",
++        "status": "NOT_RUN",
++        "assigned_denominator": 0,
++        "executed_assignments": 0,
++        "physical_success": 0,
++        "real_runtime_integrated": False,
++        "reasons": [],
++    }
++    try:
++        protocol = load_protocol(args.protocol)
++        protocol.require_formal()
++        settings = yaml.safe_load(args.config.read_text())
++        if not isinstance(settings, dict) or set(settings) != {"schema_version", "methods"}:
++            raise ValueError("formal config cannot override protocol thresholds, pools or N")
++        if settings["schema_version"] != "ced.formal.v1" or (
++            not isinstance(settings["methods"], list)
++        ):
++            raise ValueError("unsupported formal config schema")
++        if args.pools is None:
++            raise ValueError("full frozen scene pools artifact is required via --pools")
++        pools = json.loads(args.pools.read_text())
++        rows = pools.get("formal") if isinstance(pools, dict) else None
++        if not isinstance(rows, list):
++            raise ValueError("formal pool source missing")
++        assignments = build_assignments(protocol, settings["methods"], scene_pool=rows)
++        manifest = {
++            "schema_version": "ced.assignments.v1",
++            "protocol_hash": protocol.content_hash,
++            "assignments": [asdict(value) for value in assignments],
++        }
++        manifest["content_hash"] = content_digest(manifest)
++        manifest_path = args.output / "assignments.json"
++        if manifest_path.exists():
++            if not args.resume or json.loads(manifest_path.read_text()) != manifest:
++                raise ValueError("resume assignments differ from frozen manifest")
++        else:
++            manifest_path.write_text(canonical_json(manifest) + "\n")
++        record_path = args.output / "records.jsonl"
++        completed = {}
++        if record_path.exists():
++            if not args.resume:
++                raise ValueError("existing original records require explicit resume")
++            for line in record_path.read_text().splitlines():
++                record = episode_record_from_payload(json.loads(line), protocol=protocol)
++                key = record.assignment.assignment_id
++                if key in completed:
++                    raise ValueError("duplicate original run record")
++                completed[key] = record
++        expected = {value.assignment_id: value for value in assignments}
++        if any(
++            key not in expected or record.assignment != expected[key]
++            for key, record in completed.items()
++        ):
++            raise ValueError("resume record identity differs from frozen assignments")
++        with record_path.open("a") as stream:
++            for assignment in assignments:
++                if assignment.assignment_id in completed:
++                    continue
++                record = run_assignment(assignment, protocol)
++                stream.write(canonical_json(record.to_payload(protocol=protocol)) + "\n")
++                stream.flush()
++                os.fsync(stream.fileno())
++                completed[assignment.assignment_id] = record
++        summary.update(
++            status="BLOCKED",
++            assigned_denominator=len(assignments),
++            recorded_assignments=len(completed),
++            protocol_hash=protocol.content_hash,
++            blocked_assignments=sum(
++                record.run_status == "BLOCKED" for record in completed.values()
++            ),
++            reasons=["actual research runtime and accepted source verification are not integrated"],
++        )
++    except (OSError, ValueError, KeyError, TypeError) as error:
++        summary["reasons"] = [str(error)]
++    # A resume recomputes only the summary, preserving all original assignments/records.
++    report_path.write_text(canonical_json(summary) + "\n")
++    print(canonical_json(summary))
++    return 3
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- /dev/null
++++ b/scripts/run_rgbd_gate_replay.py
+@@ -0,0 +1,107 @@
++"""固定机会离线回放入口；正式来源未集成时只允许显式软件夹具。"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++from dataclasses import asdict
++from datetime import datetime
++from pathlib import Path
++from typing import Any
++
++if __package__ in {None, ""}:
++    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
++
++from cloud_edge_robot_arm.contracts import RobotState
++from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
++from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec, OnlineEvidenceSnapshot
++from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract, VisualEvidence
++from cloud_edge_robot_arm.edge.evidence.opportunities import Opportunity, summarize_gate_replay
++from cloud_edge_robot_arm.research.protocol import load_protocol
++from cloud_edge_robot_arm.research.runner import run_gate_replay
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++
++def _opportunity(payload: dict[str, Any]) -> Opportunity:
++    values = dict(payload)
++    observation = RGBDObservation.model_validate(values["observation"])
++    action = dict(values["action_contract"])
++    evidence = dict(action.pop("evidence"))
++    evidence["captured_at"] = datetime.fromisoformat(evidence["captured_at"])
++    action["evidence"] = VisualEvidence(**evidence)
++    for name in ("preconditions", "postconditions"):
++        action[name] = [ConditionSpec(**condition) for condition in action[name]]
++    values["action_contract"] = ActionEvidenceContract(**action)
++    values["observation"] = observation
++    values["replay_at"] = datetime.fromisoformat(values["replay_at"])
++    if values.get("online_evidence") is not None:
++        online = dict(values["online_evidence"])
++        online["observation"] = RGBDObservation.model_validate(online["observation"])
++        online["robot_state"] = RobotState.model_validate(online["robot_state"])
++        values["online_evidence"] = OnlineEvidenceSnapshot(**online)
++    return Opportunity(**values)
++
++
++def main(argv: list[str] | None = None) -> int:
++    """保存所有固定机会判定；显式软件回放不计正式 G3 或物理成功。"""
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--protocol", type=Path)
++    parser.add_argument("--opportunities", type=Path, required=True)
++    parser.add_argument("--method", choices=("JOINT", "B3"), required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--software-fixture", action="store_true")
++    args = parser.parse_args(argv)
++    args.output.mkdir(parents=True, exist_ok=True)
++    if (args.output / "report.json").exists():
++        raise ValueError("existing gate replay evidence is preserved")
++    summary: dict[str, Any] = {
++        "schema_version": "ced.gate-replay.v1",
++        "status": "NOT_RUN",
++        "replayed_opportunities": 0,
++        "method_id": args.method,
++        "formal_source_accepted": False,
++        "physical_success": 0,
++    }
++    exit_code = 3
++    try:
++        if not args.software_fixture:
++            if args.protocol is None:
++                raise ValueError("formal gate replay requires a FINAL protocol")
++            load_protocol(args.protocol).require_formal()
++            raise ValueError("formal G3 source acceptance verifier is not integrated")
++        payload = json.loads(args.opportunities.read_text())
++        if payload.get("schema_version") != "ced.opportunity-set.v1":
++            raise ValueError("unsupported fixed opportunity artifact schema")
++        raw = payload["opportunities"]
++        if payload.get("content_hash") != content_digest(raw):
++            raise ValueError("fixed opportunity artifact hash mismatch")
++        values = [_opportunity(value) for value in raw]
++        records = run_gate_replay(values, args.method)
++        (args.output / "gate-records.json").write_text(
++            canonical_json(
++                {
++                    "schema_version": "ced.gate-records.v1",
++                    "evidence_kind": "MOCK",
++                    "source_hash": payload["content_hash"],
++                    "records": [asdict(row) for row in records],
++                }
++            )
++            + "\n"
++        )
++        summary.update(
++            status="SOFTWARE_ONLY",
++            replayed_opportunities=len(records),
++            evidence_kind="MOCK",
++            metrics=summarize_gate_replay(values, records),
++        )
++        exit_code = 0
++    except (OSError, ValueError, KeyError, TypeError) as error:
++        summary["reasons"] = [str(error)]
++    (args.output / "report.json").write_text(canonical_json(summary) + "\n")
++    print(canonical_json(summary))
++    return exit_code
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- /dev/null
++++ b/configs/research/pilot_power.yaml
+@@ -0,0 +1,15 @@
++# 功效先导设计元数据；实际来源验收和完整运行仍是独立前置。
++schema_version: ced.power-design.v1
++groups: 120
++split_role: power
++methods: [B0, JOINT]
++formal_ns: [600, 1200, 1800, 2400]
++alpha: 0.05
++hypothesis_family_size: 5
++target_power: 0.8
++success_margin: 0.03
++safety_margin: 0.01
++assumed_effect: 0.0
++discordance_rule: observed_only
++zero_discordance_rule: exact_all_concordant_null_boundary
++source_accepted: false
+--- /dev/null
++++ b/configs/research/formal.yaml
+@@ -0,0 +1,3 @@
++# 正式入口只选择已冻结方法；禁止覆盖 N、阈值、场景或预算。
++schema_version: ced.formal.v1
++methods: [JOINT, B0, B1, B2, NO_UNCERTAINTY, NO_TIME_VALIDITY, NO_LOCAL_REPAIR]
+--- /dev/null
++++ b/configs/research/ablations.yaml
+@@ -0,0 +1,8 @@
++# 三项消融仅关闭目标组件，端侧基础感知与 SafetyShield 始终保留。
++schema_version: ced.ablations.v1
++components:
++  NO_UNCERTAINTY: uncertainty_gate
++  NO_TIME_VALIDITY: completion_age_gate
++  NO_LOCAL_REPAIR: local_repair
++common_safety_shield: true
++source_accepted: false
+--- /dev/null
++++ b/tests/test_research_assignments.py
+@@ -0,0 +1,167 @@
++"""研究分配反例：配对场景、完整池散列和每层分母不可漂移。"""
++
++from collections import Counter, defaultdict
++from dataclasses import replace
++from importlib import import_module, util
++
++import pytest
++
++from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec, content_digest
++from cloud_edge_robot_arm.research.protocol import STRATA, FrozenProtocol, ProtocolSpec
++
++
++def api():
++    name = "cloud_edge_robot_arm.research.assignments"
++    assert util.find_spec(name) is not None, "missing production research assignments"
++    return import_module(name)
++
++
++@pytest.fixture(scope="module")
++def scene_pool():
++    # Explicit SOFTWARE scenes exercise bookkeeping, never physical acceptance.
++    rows = []
++    for index in range(2400):
++        scene = SceneSpec.from_parameters({"software_fixture": index}, "fixture-assets", index)
++        rows.append(
++            {
++                "assignment_id": f"formal-{index + 1:04d}",
++                "stratum_id": STRATA[index % 12],
++                "scene": scene.model_dump(mode="json"),
++                "scene_hash": scene.scene_hash,
++                "perturbation": {"noise_m": 0.0},
++            }
++        )
++    return rows
++
++
++def frozen(pool, n=600, stage="FINAL"):
++    spec = ProtocolSpec(
++        selected_n=n if stage == "FINAL" else None,
++        tcap_s=120,
++        pool_hashes={"formal": content_digest(pool)},
++        model_snapshot_hash="a" * 64,
++        method_hashes={key: content_digest(key) for key in ("JOINT", "B0", "B1", "B2")},
++        initial_protocol_hash="b" * 64 if stage == "FINAL" else None,
++        opportunity_hash="c" * 64,
++        recovery_fault_manifest_hash="d" * 64,
++    )
++    payload = {"spec": spec.model_dump(mode="json"), "stage": stage}
++    return FrozenProtocol(spec=spec, stage=stage, content_hash=content_digest(payload))
++
++
++def test_paired_assignments_share_scene_seed_schedule(scene_pool):
++    module = api()
++    rows = module.build_assignments(
++        frozen(scene_pool), ("JOINT", "B0", "B1", "B2"), scene_pool=scene_pool
++    )
++    groups = defaultdict(list)
++    for row in rows:
++        groups[row.group_id].append(row)
++    assert len(groups) == 600
++    assert all(len(values) == 4 for values in groups.values())
++    for values in groups.values():
++        assert (
++            len(
++                {
++                    (
++                        r.physics_seed,
++                        r.network_schedule_id,
++                        r.scene_payload_json,
++                        r.perturbation_json,
++                        r.network_schedule_json,
++                    )
++                    for r in values
++                }
++            )
++            == 1
++        )
++    assert sorted(row.order_index for row in rows) == list(range(2400))
++    assert [r.assignment_id for r in rows] == [
++        r.assignment_id
++        for r in module.build_assignments(
++            frozen(scene_pool), ("JOINT", "B0", "B1", "B2"), scene_pool=scene_pool
++        )
++    ]
++
++
++@pytest.mark.parametrize("n,per_layer", [(600, 50), (1200, 100), (1800, 150), (2400, 200)])
++def test_all_methods_have_balanced_n(scene_pool, n, per_layer):
++    rows = api().build_assignments(frozen(scene_pool, n), ("JOINT", "B0"), scene_pool=scene_pool)
++    assert len(rows) == n * 2
++    assert set(Counter((r.method_id, r.stratum_id) for r in rows).values()) == {per_layer}
++    chosen = {row.group_id for row in rows}
++    assert scene_pool[0]["scene"]["group_id"] in chosen
++    if n < 2400:
++        assert scene_pool[n]["scene"]["group_id"] not in chosen
++
++
++def test_pool_omission_or_drift_cannot_create_assignments(scene_pool):
++    module = api()
++    with pytest.raises(ValueError, match="pool"):
++        module.build_assignments(frozen(scene_pool), ("JOINT",))
++    changed = [dict(row) for row in scene_pool]
++    changed[0] = {**changed[0], "perturbation": {"noise_m": 0.005}}
++    with pytest.raises(ValueError, match="hash"):
++        module.build_assignments(frozen(scene_pool), ("JOINT",), scene_pool=changed)
++
++
++def test_duplicate_or_incomplete_pool_is_rejected_before_subselection(scene_pool):
++    module = api()
++    duplicate = list(scene_pool)
++    duplicate[-1] = duplicate[0]
++    for bad in (scene_pool[:600], duplicate):
++        with pytest.raises(ValueError, match="2400|duplicate|balance"):
++            module.build_assignments(frozen(bad), ("JOINT",), scene_pool=bad)
++
++
++def test_initial_or_unfrozen_method_cannot_create_formal_assignments(scene_pool):
++    module = api()
++    with pytest.raises(ValueError, match="FINAL"):
++        module.build_assignments(
++            frozen(scene_pool, stage="INITIAL"), ("JOINT",), scene_pool=scene_pool
++        )
++    with pytest.raises(ValueError, match="method"):
++        module.build_assignments(frozen(scene_pool), ("UNKNOWN_METHOD",), scene_pool=scene_pool)
++    with pytest.raises(ValueError, match="duplicate"):
++        module.build_assignments(frozen(scene_pool), ("JOINT", "JOINT"), scene_pool=scene_pool)
++
++
++def test_assignment_scene_mutation_is_rejected(scene_pool):
++    module = api()
++    row = module.build_assignments(frozen(scene_pool), ("JOINT",), scene_pool=scene_pool)[0]
++    with pytest.raises(ValueError, match="scene|group"):
++        replace(row, group_id="wrong-group")
++    with pytest.raises(ValueError, match="seed"):
++        replace(row, physics_seed=row.physics_seed + 1)
++
++
++def test_network_schedule_content_cannot_change_under_same_id(scene_pool):
++    import json
++
++    row = api().build_assignments(frozen(scene_pool), ("JOINT",), scene_pool=scene_pool)[0]
++    schedule = json.loads(row.network_schedule_json)
++    schedule["seed"] += 1
++    with pytest.raises(ValueError, match="network.*hash"):
++        replace(row, network_schedule_json=json.dumps(schedule))
++
++
++def test_ablation_changes_only_registered_component():
++    module = import_module("cloud_edge_robot_arm.research.ablations")
++    base = {
++        "uncertainty_gate": True,
++        "completion_age_gate": True,
++        "local_repair": True,
++        "safety_shield": True,
++        "provider_hash": "x",
++    }
++    for method, changed in (
++        ("NO_UNCERTAINTY", "uncertainty_gate"),
++        ("NO_TIME_VALIDITY", "completion_age_gate"),
++        ("NO_LOCAL_REPAIR", "local_repair"),
++    ):
++        result = module.apply_ablation(base, method)
++        assert {key for key in base if base[key] != result[key]} == {changed}
++        assert result[changed] is False
++    assert all(base[key] for key in ("uncertainty_gate", "completion_age_gate", "local_repair"))
++    with pytest.raises(ValueError):
++        module.apply_ablation(base, "disable_safety")
+--- /dev/null
++++ b/tests/test_research_runner.py
+@@ -0,0 +1,559 @@
++"""研究运行器保留全分母；显式软件适配不能伪装物理任务。"""
++
++from dataclasses import replace
++from importlib import import_module, util
++
++import pytest
++
++from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
++from cloud_edge_robot_arm.research.models import EvidenceKind, RunProvenance
++from cloud_edge_robot_arm.vision.evaluation import VisualEpisodeOutcome
++from tests.test_research_assignments import api as assignment_api
++from tests.test_research_assignments import frozen
++from tests.test_research_assignments import scene_pool as _scene_pool
++
++scene_pool = _scene_pool
++
++
++def api():
++    name = "cloud_edge_robot_arm.research.runner"
++    assert util.find_spec(name) is not None, "missing production research runner"
++    return import_module(name)
++
++
++def assignment(pool):
++    return assignment_api().build_assignments(frozen(pool), ("JOINT",), scene_pool=pool)[0]
++
++
++def outcome(success=False, reason="BLOCKED", elapsed=1.0):
++    return VisualEpisodeOutcome(
++        success,
++        "SUCCESS" if success else "FAILED",
++        False,
++        None if success else reason,
++        0.05 if success else 0,
++        0,
++        0,
++        elapsed,
++        physical_success=success,
++        online_reported_complete=success,
++    )
++
++
++def record(row, status="BLOCKED", success=False, elapsed=1.0):
++    module = assignment_api()
++    provenance = RunProvenance(
++        run_id=row.assignment_id,
++        source_tree_hash="a" * 64,
++        scene_group_id=row.group_id,
++        split_role="formal",
++        physics_steps=0,
++        evidence_kind=EvidenceKind.MOCK,
++        blocked_reason=None if success else status,
++    )
++    return module.EpisodeRecord(
++        row,
++        outcome(success, status, elapsed),
++        provenance,
++        CostSnapshot(),
++        120.0,
++        None,
++        (),
++        (),
++        (),
++        {},
++        run_status=status,
++        frozen_tcap_s=120,
++    )
++
++
++@pytest.mark.parametrize("terminal", ["BLOCKED", "TIMEOUT", "STOP", "FALLBACK", "FAILED"])
++def test_blocked_timeout_stop_keep_assigned_denominator(scene_pool, terminal):
++    row = assignment(scene_pool)
++
++    class SoftwareAdapter:
++        evidence_kind = EvidenceKind.MOCK
++
++        def run(self, assignment, protocol):
++            return record(assignment, terminal, elapsed=0.01)
++
++    result = api().run_assignment(row, frozen(scene_pool), software_adapter=SoftwareAdapter())
++    assert result.assignment == row
++    assert result.duration_penalized_s == 120.0
++    assert not result.outcome.success
++    assert result.provenance.evidence_kind == EvidenceKind.MOCK
++
++
++def test_formal_runner_requires_final_protocol_hash(scene_pool):
++    row = assignment(scene_pool)
++    module = api()
++    initial = module.run_assignment(row, frozen(scene_pool, stage="INITIAL"))
++    assert initial.run_status == "BLOCKED"
++    assert "FINAL" in initial.provenance.blocked_reason
++    forged = frozen(scene_pool).model_copy(update={"content_hash": "f" * 64})
++    result = module.run_assignment(row, forged)
++    assert result.run_status == "BLOCKED"
++    assert "hash" in result.provenance.blocked_reason
++
++
++def test_valid_metadata_without_actual_adapter_is_blocked(scene_pool):
++    result = api().run_assignment(assignment(scene_pool), frozen(scene_pool))
++    assert result.run_status == "BLOCKED"
++    assert result.outcome.executed_actions == 0
++    assert result.costs.model_requests == 0
++    assert not result.outcome.success
++    assert result.provenance.physics_steps == 0
++    assert "runtime" in result.provenance.blocked_reason
++
++
++def test_software_adapter_cannot_promote_mock_success(scene_pool):
++    row = assignment(scene_pool)
++
++    class SoftwareAdapter:
++        evidence_kind = EvidenceKind.MOCK
++
++        def run(self, assignment, protocol):
++            return record(assignment, "COMPLETED", success=True, elapsed=0.1)
++
++    result = api().run_assignment(row, frozen(scene_pool), software_adapter=SoftwareAdapter())
++    assert result.provenance.evidence_kind == EvidenceKind.MOCK
++    assert result.source_verified is False
++    assert result.accepted_task_success is False
++
++
++def test_declared_physics_metadata_cannot_accept_success_without_raw_validator(
++    scene_pool, tmp_path
++):
++    import hashlib
++
++    from cloud_edge_robot_arm.research.models import StageEvidence, StageStatus
++
++    row = assignment(scene_pool)
++    trace = tmp_path / "declared.json"
++    trace.write_text('{"declared":"physical success"}')
++    ref = assignment_api().ArtifactReference(
++        "trace.v1", hashlib.sha256(trace.read_bytes()).hexdigest(), str(trace)
++    )
++    declared = RunProvenance(
++        run_id=row.assignment_id,
++        source_tree_hash="a" * 64,
++        scene_group_id=row.group_id,
++        split_role="formal",
++        model_snapshot_hash="b" * 64,
++        observation_hashes=["c" * 64],
++        physics_steps=100,
++        evidence_kind=EvidenceKind.PHYSICS,
++        task_success=True,
++        stages=[
++            StageEvidence(stage=key, status=StageStatus.REAL, source_hashes=["d" * 64])
++            for key in ("PERCEPTION", "INFERENCE", "ACTION")
++        ],
++    )
++    from dataclasses import asdict
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++    verification = {
++        "schema_version": "ced.verification-record.v1",
++        "record": {"status": "PASS"},
++        "source_refs": [asdict(ref)],
++    }
++    verification["content_hash"] = content_digest(verification)
++    result = assignment_api().EpisodeRecord(
++        row,
++        outcome(True),
++        declared,
++        CostSnapshot(),
++        120.0,
++        None,
++        (ref,),
++        (verification,),
++        (),
++        {"cloud": "v1"},
++        source_verified=True,
++        frozen_tcap_s=120,
++    )
++    assert result.accepted_task_success is False
++    assert result.structurally_complete_success is True
++
++
++def test_attested_verification_requires_source_bound_envelope(scene_pool):
++    original = record(assignment(scene_pool), "STOP")
++    with pytest.raises(ValueError, match="verification"):
++        replace(original, verification_records=({"status": "PASS"},), source_verified=True)
++
++
++def test_verification_content_hash_rejects_changed_verdict(scene_pool, tmp_path):
++    import hashlib
++    from dataclasses import asdict
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++    original = record(assignment(scene_pool), "STOP")
++    raw = tmp_path / "verdict.json"
++    raw.write_text('{"status":"PASS"}')
++    ref = assignment_api().ArtifactReference(
++        "online-verdict.v1", hashlib.sha256(raw.read_bytes()).hexdigest(), str(raw)
++    )
++    envelope = {
++        "schema_version": "ced.verification-record.v1",
++        "record": {"status": "PASS"},
++        "source_refs": [asdict(ref)],
++    }
++    envelope["content_hash"] = content_digest(envelope)
++    bound = replace(original, verification_records=(envelope,), source_verified=True)
++    assert bound.verification_records[0]["record"] == {"status": "PASS"}
++    envelope["record"] = {"status": "FAIL"}
++    with pytest.raises(ValueError, match="verification.*hash"):
++        replace(original, verification_records=(envelope,))
++
++
++def test_recovery_failure_penalty_is_fixed_sixty_seconds(scene_pool):
++    row = assignment(scene_pool)
++    value = record(row, "FAILED")
++    assert api().penalized_recovery_duration(value, elapsed_s=0.1) == 60.0
++    with pytest.raises(ValueError, match="finite"):
++        api().penalized_recovery_duration(value, elapsed_s=float("nan"))
++
++
++def test_only_documented_infrastructure_damage_allows_paired_rerun(scene_pool, tmp_path):
++    module = api()
++    rows = assignment_api().build_assignments(
++        frozen(scene_pool), ("JOINT", "B0"), scene_pool=scene_pool
++    )
++    group = rows[0].group_id
++    originals = [record(row, "FAILED") for row in rows if row.group_id == group]
++    with pytest.raises(ValueError, match="incident"):
++        module.authorize_paired_rerun(originals, None)
++    import json
++
++    note = tmp_path / "incident.json"
++    note.write_text(
++        json.dumps(
++            {
++                "incident_id": "infra-1",
++                "category": "RENDERER_CRASH",
++                "group_id": group,
++                "original_record_hashes": [r.content_hash for r in originals],
++                "affected_methods": [r.assignment.method_id for r in originals],
++                "diagnostic": "renderer process exited before valid capture",
++                "source_hashes": ["a" * 64],
++            }
++        )
++    )
++    import hashlib
++
++    ref = assignment_api().ArtifactReference(
++        "incident.v1", hashlib.sha256(note.read_bytes()).hexdigest(), str(note)
++    )
++    authorized = module.authorize_paired_rerun(originals, ref, expected_method_ids=("JOINT", "B0"))
++    assert set(authorized.original_record_hashes) == {r.content_hash for r in originals}
++    assert set(authorized.method_ids) == {"JOINT", "B0"}
++    assert all(r.run_status == "FAILED" for r in originals)
++    note.write_text(note.read_text().replace("RENDERER_CRASH", "TASK_FAILED"))
++    with pytest.raises(ValueError, match="hash"):
++        module.authorize_paired_rerun(originals, ref)
++    ref = replace(ref, content_hash=hashlib.sha256(note.read_bytes()).hexdigest())
++    with pytest.raises(ValueError, match="infrastructure"):
++        module.authorize_paired_rerun(originals, ref)
++
++
++def test_infrastructure_rerun_cannot_omit_part_of_frozen_method_pair(scene_pool, tmp_path):
++    import hashlib
++    import json
++
++    module = api()
++    rows = assignment_api().build_assignments(
++        frozen(scene_pool), ("JOINT", "B0", "B1"), scene_pool=scene_pool
++    )
++    group = rows[0].group_id
++    originals = [record(row, "FAILED") for row in rows if row.group_id == group][:2]
++    note = tmp_path / "partial-incident.json"
++    note.write_text(
++        json.dumps(
++            {
++                "incident_id": "infra-partial",
++                "category": "RENDERER_CRASH",
++                "group_id": group,
++                "original_record_hashes": [r.content_hash for r in originals],
++                "affected_methods": [r.assignment.method_id for r in originals],
++                "diagnostic": "crash",
++                "source_hashes": ["a" * 64],
++            }
++        )
++    )
++    ref = assignment_api().ArtifactReference(
++        "incident.v1", hashlib.sha256(note.read_bytes()).hexdigest(), str(note)
++    )
++    with pytest.raises(ValueError, match="complete"):
++        module.authorize_paired_rerun(originals, ref, expected_method_ids=("JOINT", "B0", "B1"))
++
++
++def test_trace_reference_verifies_hash_and_missing_content(tmp_path):
++    module = assignment_api()
++    with pytest.raises(ValueError, match="hash"):
++        module.ArtifactReference("trace.v1", "not-sha", "trace.json")
++    ref = module.ArtifactReference("trace.v1", "a" * 64, str(tmp_path / "missing.json"))
++    with pytest.raises(ValueError, match="missing"):
++        ref.verify()
++
++
++def test_gate_replay_preserves_identical_candidate_snapshot():
++    from tests.test_fixed_opportunity_replay import opportunities
++
++    values = opportunities()
++    records = api().run_gate_replay(values, "JOINT")
++    assert [r.opportunity_id for r in records] == ["opp-safe", "opp-unsafe", "opp-unknown"]
++    assert [r.verdict.status for r in records] == ["VALID", "INVALID", "UNKNOWN"]
++    b3 = api().run_gate_replay(values, "B3")
++    assert [r.opportunity_hash for r in records] == [r.opportunity_hash for r in b3]
++    changed_labels = [replace(v, oracle_label="INVALID") for v in values]
++    assert [r.verdict for r in api().run_gate_replay(changed_labels, "JOINT")] == [
++        r.verdict for r in records
++    ]
++
++
++def test_gate_replay_keeps_per_opportunity_frozen_clock():
++    from datetime import timedelta
++
++    from tests.test_fixed_opportunity_replay import opportunities
++
++    values = opportunities()
++    values[1] = replace(values[1], replay_at=values[1].replay_at + timedelta(seconds=10))
++    records = api().run_gate_replay(values, "B3")
++    assert len(records) == 3
++    assert records[1].verdict.status == "INVALID"
++
++
++def test_cli_missing_final_writes_not_run_without_model_or_physics(tmp_path):
++    import json
++    import subprocess
++    import sys
++
++    result = subprocess.run(
++        [
++            sys.executable,
++            "scripts/run_rgbd_research.py",
++            "--protocol",
++            str(tmp_path / "absent"),
++            "--output",
++            str(tmp_path / "out"),
++        ],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert result.returncode == 3
++    report = json.loads((tmp_path / "out" / "report.json").read_text())
++    assert report["status"] == "NOT_RUN"
++    assert report["executed_assignments"] == report["physical_success"] == 0
++
++
++def test_record_roundtrip_detects_content_tampering(scene_pool):
++    module = assignment_api()
++    original = record(assignment(scene_pool), "STOP")
++    payload = original.to_payload(protocol=frozen(scene_pool))
++    restored = module.episode_record_from_payload(payload, protocol=frozen(scene_pool))
++    assert restored.content_hash == original.content_hash
++    payload["duration_penalized_s"] = 0.01
++    with pytest.raises(ValueError, match="hash"):
++        module.episode_record_from_payload(payload, protocol=frozen(scene_pool))
++
++
++def test_unknown_episode_record_schema_is_rejected_even_after_rehash(scene_pool):
++    original = record(assignment(scene_pool), "BLOCKED")
++    with pytest.raises(ValueError, match="schema"):
++        replace(original, schema_version="unknown.record.v9")
++
++
++def test_formal_deadline_is_required_and_cannot_shorten_blocked_penalty(scene_pool):
++    original = record(assignment(scene_pool), "BLOCKED")
++    with pytest.raises(ValueError, match="Tcap|deadline"):
++        replace(original, duration_penalized_s=0.001, frozen_tcap_s=120)
++    with pytest.raises(ValueError, match="Tcap|deadline"):
++        replace(original, frozen_tcap_s=None)
++
++
++def test_rehashed_deadline_metadata_must_match_frozen_protocol(scene_pool):
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++    original = record(assignment(scene_pool), "BLOCKED")
++    payload = original.to_payload(protocol=frozen(scene_pool))
++    payload.pop("content_hash")
++    payload["frozen_tcap_s"] = payload["duration_penalized_s"] = 600
++    payload["content_hash"] = content_digest(payload)
++    with pytest.raises(ValueError, match="Tcap|deadline"):
++        assignment_api().episode_record_from_payload(payload, protocol=frozen(scene_pool))
++
++
++def test_formal_assignment_cannot_be_demoted_by_provenance_phase(scene_pool):
++    original = record(assignment(scene_pool), "BLOCKED")
++    with pytest.raises(ValueError, match="formal|phase"):
++        replace(
++            original,
++            provenance=original.provenance.model_copy(update={"split_role": "selection"}),
++            duration_penalized_s=0.001,
++            frozen_tcap_s=None,
++        )
++
++
++def test_supplied_protocol_validates_even_rehashed_nonformal_provenance(scene_pool):
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++    original = record(assignment(scene_pool), "BLOCKED")
++    payload = original.to_payload(protocol=frozen(scene_pool))
++    payload.pop("content_hash")
++    payload["provenance"]["split_role"] = "selection"
++    payload["duration_penalized_s"] = 0.001
++    payload["frozen_tcap_s"] = None
++    payload["content_hash"] = content_digest(payload)
++    with pytest.raises(ValueError, match="formal|phase"):
++        assignment_api().episode_record_from_payload(payload, protocol=frozen(scene_pool))
++
++
++def test_gate_cli_requires_explicit_software_fixture_without_accepted_final(tmp_path):
++    import json
++    import subprocess
++    import sys
++
++    result = subprocess.run(
++        [
++            sys.executable,
++            "scripts/run_rgbd_gate_replay.py",
++            "--protocol",
++            str(tmp_path / "absent"),
++            "--opportunities",
++            str(tmp_path / "absent.json"),
++            "--method",
++            "JOINT",
++            "--output",
++            str(tmp_path / "out"),
++        ],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert result.returncode == 3
++    report = json.loads((tmp_path / "out" / "report.json").read_text())
++    assert report["status"] == "NOT_RUN"
++    assert report["replayed_opportunities"] == 0
++
++
++def test_gate_cli_software_fixture_replays_all_with_explicit_mock_label(tmp_path):
++    import json
++    import subprocess
++    import sys
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++    from cloud_edge_robot_arm.research.assignments import _json
++    from tests.test_fixed_opportunity_replay import opportunities
++
++    rows = [_json(value) for value in opportunities()]
++    path = tmp_path / "opportunities.json"
++    path.write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.opportunity-set.v1",
++                "opportunities": rows,
++                "content_hash": content_digest(rows),
++            }
++        )
++    )
++    result = subprocess.run(
++        [
++            sys.executable,
++            "scripts/run_rgbd_gate_replay.py",
++            "--opportunities",
++            str(path),
++            "--method",
++            "JOINT",
++            "--output",
++            str(tmp_path / "out"),
++            "--software-fixture",
++        ],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert result.returncode == 0, result.stdout + result.stderr
++    report = json.loads((tmp_path / "out" / "report.json").read_text())
++    assert report["status"] == "SOFTWARE_ONLY"
++    assert report["evidence_kind"] == "MOCK"
++    assert report["replayed_opportunities"] == 3
++    assert report["formal_source_accepted"] is False
++
++
++@pytest.mark.parametrize(
++    "tamper", ["hash", "rehashed_penalty", "rehashed_schema", "rehashed_deadline", "rehashed_phase"]
++)
++def test_resume_preserves_all_original_blocked_records_and_detects_drift(
++    scene_pool, tmp_path, tamper
++):
++    import json
++    import subprocess
++    import sys
++
++    protocol_dir = tmp_path / "protocol"
++    protocol_dir.mkdir()
++    (protocol_dir / "protocol.json").write_text(frozen(scene_pool).model_dump_json())
++    pools_path = tmp_path / "pools.json"
++    pools_path.write_text(json.dumps({"formal": scene_pool}))
++    config = tmp_path / "formal.yaml"
++    config.write_text("schema_version: ced.formal.v1\nmethods: [JOINT]\n")
++    command = [
++        sys.executable,
++        "scripts/run_rgbd_research.py",
++        "--config",
++        str(config),
++        "--protocol",
++        str(protocol_dir),
++        "--pools",
++        str(pools_path),
++        "--output",
++        str(tmp_path / "out"),
++    ]
++    first = subprocess.run(command, capture_output=True, text=True, check=False)
++    assert first.returncode == 3, first.stdout + first.stderr
++    records_path = tmp_path / "out" / "records.jsonl"
++    original = records_path.read_bytes()
++    report = json.loads((tmp_path / "out" / "report.json").read_text())
++    assert report["assigned_denominator"] == report["blocked_assignments"] == 600
++    assert report["executed_assignments"] == report["physical_success"] == 0
++    second = subprocess.run(command + ["--resume"], capture_output=True, text=True, check=False)
++    assert second.returncode == 3
++    assert records_path.read_bytes() == original
++    payload = json.loads(records_path.read_text().splitlines()[0])
++    if tamper == "rehashed_schema":
++        payload["schema_version"] = "unknown.record.v9"
++    elif tamper == "rehashed_deadline":
++        payload["frozen_tcap_s"] = payload["duration_penalized_s"] = 600
++    elif tamper == "rehashed_phase":
++        payload["provenance"]["split_role"] = "selection"
++        payload["frozen_tcap_s"] = None
++        payload["duration_penalized_s"] = 0.001
++    else:
++        payload["duration_penalized_s"] = 0.001
++    if tamper != "hash":
++        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++        payload.pop("content_hash")
++        payload["content_hash"] = content_digest(payload)
++    records_path.write_text(
++        json.dumps(payload) + "\n" + "\n".join(records_path.read_text().splitlines()[1:]) + "\n"
++    )
++    corrupt = records_path.read_bytes()
++    third = subprocess.run(command + ["--resume"], capture_output=True, text=True, check=False)
++    assert third.returncode == 3
++    assert records_path.read_bytes() == corrupt
++    report = json.loads((tmp_path / "out" / "report.json").read_text())
++    assert report["status"] == "NOT_RUN"
++    want = (
++        "hash"
++        if tamper == "hash"
++        else "schema"
++        if tamper == "rehashed_schema"
++        else "formal"
++        if tamper == "rehashed_phase"
++        else "Tcap"
++    )
++    assert want in report["reasons"][0]
+--- /dev/null
++++ b/tests/test_research_power.py
+@@ -0,0 +1,85 @@
++"""功效设计只估配对不一致率；不根据正式显著性追加样本。"""
++
++from importlib import import_module, util
++
++import pytest
++
++
++def api():
++    name = "cloud_edge_robot_arm.research.power"
++    assert util.find_spec(name) is not None, "missing production research power"
++    return import_module(name)
++
++
++def test_power_selects_smallest_allowed_n():
++    result = api().choose_formal_n(
++        [(True, False)] * 3 + [(True, True)] * 117, [(True, False)] + [(False, False)] * 119
++    )
++    assert result.selected_n == 1200
++    assert result.power_by_n[600]["safety"] < 0.8
++    assert result.power_by_n[1200]["success"] >= 0.8
++    assert result.power_by_n[1200]["safety"] >= 0.8
++    # .01 * sqrt(600/(1/120)) - z_.99 = .356934 -> Phi = .639429.
++    assert result.power_by_n[600]["safety"] == pytest.approx(0.63942928, abs=0.000001)
++
++
++def test_zero_disagreement_uses_exact_boundary_not_invented_variance():
++    result = api().choose_formal_n([(True, True)] * 120, [(False, False)] * 120)
++    assert result.selected_n == 600
++    assert result.power_by_n[600]["safety"] == 1.0
++    assert result.discordance_upper_bound["safety"] > 0
++
++
++def test_power_above_2400_is_insufficient():
++    discordant = [(True, False)] * 24 + [(False, False)] * 96
++    result = api().choose_formal_n(discordant, discordant)
++    assert result.selected_n is None
++    assert "2400" in result.reason
++
++
++def test_power_uses_only_disagreement_not_favorable_pilot_effect():
++    first = [(True, False)] * 6 + [(False, False)] * 114
++    flipped = [(False, True)] * 6 + [(True, True)] * 114
++    assert api().choose_formal_n(first, first) == api().choose_formal_n(flipped, flipped)
++
++
++@pytest.mark.parametrize(
++    "pairs", [[], [(False, False)] * 119, [(False, False)] * 121, [(0, 1)] * 120, [(False,)] * 120]
++)
++def test_power_requires_complete_boolean_120_pair_pilot(pairs):
++    with pytest.raises(ValueError, match="120|boolean|pair"):
++        api().choose_formal_n(pairs, [(False, False)] * 120)
++
++
++@pytest.mark.parametrize("kwargs", [{"alpha": 0.1}, {"target_power": 0.7}, {"alpha": float("nan")}])
++def test_power_design_cannot_change_alpha_or_target_after_pilot(kwargs):
++    with pytest.raises(ValueError, match="fixed"):
++        api().choose_formal_n([(False, False)] * 120, [(False, False)] * 120, **kwargs)
++
++
++def test_power_provenance_wrapper_rejects_reused_or_formal_groups():
++    rows = [
++        {
++            "group_id": f"power-{i}",
++            "split_role": "power",
++            "success": [True, True],
++            "safety": [False, False],
++            "method_hashes": {"B0": "a" * 64, "JOINT": "b" * 64},
++            "source_hashes": ["c" * 64],
++        }
++        for i in range(120)
++    ]
++    module = api()
++    decision = module.choose_formal_n_from_pilot(
++        rows, excluded_groups={"old-group"}, method_hashes={"B0": "a" * 64, "JOINT": "b" * 64}
++    )
++    assert decision.selected_n == 600
++    with pytest.raises(ValueError, match="isolation"):
++        module.choose_formal_n_from_pilot(
++            rows, excluded_groups={"power-1"}, method_hashes={"B0": "a" * 64, "JOINT": "b" * 64}
++        )
++    rows[0]["split_role"] = "formal"
++    with pytest.raises(ValueError, match="power"):
++        module.choose_formal_n_from_pilot(
++            rows, excluded_groups=set(), method_hashes={"B0": "a" * 64, "JOINT": "b" * 64}
++        )

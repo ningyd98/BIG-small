@@ -1,0 +1,138 @@
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py
+@@ -7,7 +7,9 @@
+ import math
+ from dataclasses import dataclass
+ from datetime import UTC, datetime
+-from typing import TYPE_CHECKING, Any, ClassVar
++from typing import TYPE_CHECKING, Any, ClassVar, TypeVar, get_args, get_origin
++
++from pydantic import BaseModel
+ 
+ from cloud_edge_robot_arm.contracts.models import (
+     ActiveTaskContractRecord,
+@@ -68,6 +70,29 @@
+             _finite(item)
+     elif isinstance(value, float) and not math.isfinite(value):
+         raise ValueError("nonfinite durable source payload")
++
++
++_Model = TypeVar("_Model", bound=BaseModel)
++
++
++def serialized_model(payload: Any, model: type[_Model]) -> _Model:
++    """Reject raw schema/type differences before a decoded model can hide them."""
++    if not isinstance(payload, dict) or set(payload) != set(model.model_fields):
++        raise ValueError("complete registered durable model schema required")
++    for name, field in model.model_fields.items():
++        if field.annotation is int:
++            counter(payload[name])
++        elif get_origin(field.annotation) is dict and get_args(field.annotation)[1:] == (int,):
++            if not isinstance(payload[name], dict):
++                raise ValueError("registered integer source map required")
++            for item in payload[name].values():
++                counter(item)
++    _finite(payload)
++    encoded = canonical(payload)
++    result = model.model_validate_json(encoded)
++    if canonical(result.model_dump(mode="json")) != encoded:
++        raise ValueError("serialized durable model types or values changed")
++    return result
+ 
+ 
+ def requirement_from_payload(payload: dict[str, Any]) -> OriginalActionRequirements:
+@@ -333,11 +358,9 @@
+         from cloud_edge_robot_arm.vision.owner_registration import VisualOwnerIdentity
+ 
+         identity = VisualOwnerIdentity(**values["identity"])
+-        checkpoint = strict_checkpoint(
+-            ExecutionCheckpoint.model_validate_json(canonical(values["checkpoint"]))
+-        )
++        checkpoint = strict_checkpoint(serialized_model(values["checkpoint"], ExecutionCheckpoint))
+         pool = VerificationBudgetRecord.from_payload(values["verification_budget"])
+-        retry = strict_retry(RecoveryBudget.model_validate_json(canonical(values["retry_budget"])))
++        retry = strict_retry(serialized_model(values["retry_budget"], RecoveryBudget))
+         if (
+             (checkpoint.task_id, checkpoint.plan_id, checkpoint.robot_id)
+             != (identity.task_id, identity.plan_id, identity.robot_id)
+@@ -395,9 +418,7 @@
+ 
+     @property
+     def checkpoint(self) -> ExecutionCheckpoint:
+-        return ExecutionCheckpoint.model_validate_json(
+-            canonical(json.loads(self._payload_json)["checkpoint"])
+-        )
++        return serialized_model(json.loads(self._payload_json)["checkpoint"], ExecutionCheckpoint)
+ 
+     @property
+     def verification_budget(self) -> VerificationBudgetRecord:
+@@ -409,9 +430,7 @@
+ 
+     @property
+     def retry_budget(self) -> RecoveryBudget:
+-        return RecoveryBudget.model_validate_json(
+-            canonical(json.loads(self._payload_json)["retry_budget"])
+-        )
++        return serialized_model(json.loads(self._payload_json)["retry_budget"], RecoveryBudget)
+ 
+     @property
+     def owner_revision(self) -> int:
+--- a/tests/test_visual_owner_repository.py
++++ b/tests/test_visual_owner_repository.py
+@@ -694,3 +694,56 @@
+     assert (
+         repo.get_visual_owner_publication(original.identity.task_id).digest() == refreshed.digest()
+     )
++
++
++@pytest.mark.parametrize(
++    "branch,key,value",
++    [
++        ("checkpoint", "plan_version", True),
++        ("checkpoint", "command_seq", 1.0),
++        ("checkpoint", "unregistered_policy", "ignored"),
++        ("retry_budget", "retry_count_used", False),
++        ("retry_budget", "unregistered_policy", "ignored"),
++    ],
++)
++@pytest.mark.parametrize("boundary_kind", ["constructor", "stored_getter"])
++def test_serialized_nested_source_cannot_coerce_or_hide_fields(
++    prepared, branch, key, value, boundary_kind
++):
++    repo, original, _, _, _ = prepared
++    record = initialize(prepared)
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == record.digest()
++    module = importlib.import_module(
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
++    )
++    payload = record.to_payload()
++    payload[branch][key] = value
++    payload.pop("publication_hash")
++    payload["publication_hash"] = module.digest(payload)
++    if boundary_kind == "constructor":
++        with pytest.raises((ValueError, TypeError)):
++            module.VisualOwnerPublicationRecord.from_payload(payload)
++    else:
++        if isinstance(repo, InMemoryEventAutonomyRepository):
++            repo._visual_publications[(original.identity.task_id, 1)] = module.canonical(payload)
++        else:
++            repo._conn.execute(
++                "UPDATE visual_owner_publications SET payload_json=?,publication_hash=? "
++                "WHERE task_id=? AND owner_revision=1",
++                (module.canonical(payload), payload["publication_hash"], original.identity.task_id),
++            )
++            repo._conn.commit()
++        with pytest.raises((ValueError, TypeError)):
++            repo.get_visual_owner_publication(original.identity.task_id)
++
++
++def test_registered_freeform_checkpoint_boolean_roundtrips_without_coercion(prepared):
++    repo, original, checkpoint, state, retry = prepared
++    checkpoint = checkpoint.model_copy(
++        update={"safety_state": {"diagnostic": {"guard_closed": True}}, "checkpoint_hash": ""},
++        deep=True,
++    )
++    checkpoint = checkpoint.model_copy(update={"checkpoint_hash": checkpoint_digest(checkpoint)})
++    record = repo.initialize_visual_owner_if_absent(original, checkpoint, state, retry)
++    assert record.to_payload()["checkpoint"]["safety_state"]["diagnostic"]["guard_closed"] is True
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == record.digest()

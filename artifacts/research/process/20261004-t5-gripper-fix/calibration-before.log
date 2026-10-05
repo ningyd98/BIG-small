@@ -1,0 +1,87 @@
+F.FF                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_repaired_gripper_planner_records_its_own_calibration ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7180a14aee10>
+
+    def test_repaired_gripper_planner_records_its_own_calibration(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _decision(monkeypatch, "red cube")
+        planner = resolve_visual_planner(
+>           _snapshot(image_size=(64, 64), grasp_profile="mujoco_upright_box_v2")
+        )
+
+tests/test_rgbd_gripper_calibration.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rgbd_normalized_protocol.py:40: in _snapshot
+    return ModelConfigSnapshot(**{**values, **changes})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:13: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ModelConfigSnapshot(provider='ollama', model='qwen3.5:4b', endpoint='http://127.0.0.1:11434', weight_digest='', quanti...'num_ctx': 4096, 'num_predict': 128}, timeout_s=60.0, coordinate_system='pixel', grasp_profile='mujoco_upright_box_v2')
+
+    def __post_init__(self) -> None:
+        if self.coordinate_system not in {"pixel", "normalized_1000"}:
+            raise ValueError("invalid coordinate system")
+        if not isinstance(self.grasp_profile, str) or self.grasp_profile not in {
+            "unconfigured", "mujoco_upright_box_v1",
+        }:
+>           raise ValueError("invalid grasp profile")
+E           ValueError: invalid grasp profile
+
+src/cloud_edge_robot_arm/vision/model_resolver.py:42: ValueError
+_ test_visual_episode_requires_the_selected_calibration_asset[mujoco_upright_box_v2] _
+
+profile = 'mujoco_upright_box_v2'
+
+    @pytest.mark.parametrize("profile", ["mujoco_upright_box_v1", "mujoco_upright_box_v2"])
+    def test_visual_episode_requires_the_selected_calibration_asset(profile: str) -> None:
+>       planner = resolve_visual_planner(_snapshot(grasp_profile=profile))
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_rgbd_gripper_calibration.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_rgbd_normalized_protocol.py:40: in _snapshot
+    return ModelConfigSnapshot(**{**values, **changes})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:13: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ModelConfigSnapshot(provider='ollama', model='qwen3.5:4b', endpoint='http://127.0.0.1:11434', weight_digest='', quanti...'num_ctx': 4096, 'num_predict': 128}, timeout_s=60.0, coordinate_system='pixel', grasp_profile='mujoco_upright_box_v2')
+
+    def __post_init__(self) -> None:
+        if self.coordinate_system not in {"pixel", "normalized_1000"}:
+            raise ValueError("invalid coordinate system")
+        if not isinstance(self.grasp_profile, str) or self.grasp_profile not in {
+            "unconfigured", "mujoco_upright_box_v1",
+        }:
+>           raise ValueError("invalid grasp profile")
+E           ValueError: invalid grasp profile
+
+src/cloud_edge_robot_arm/vision/model_resolver.py:42: ValueError
+__________ test_model_freeze_binds_profile_evidence_and_source_asset ___________
+
+    def test_model_freeze_binds_profile_evidence_and_source_asset() -> None:
+        from scripts.probe_rgbd_model import can_freeze
+    
+        report = _passing_report()
+        asset = hashlib.sha256(Path("assets/robots/franka_panda/scene.xml").read_bytes()).hexdigest()
+        report["snapshot"]["grasp_profile"] = "mujoco_upright_box_v2"
+        for attempt in report["attempts"]:
+            attempt["observation_evidence"].update(
+                grasp_profile="mujoco_upright_box_v2", grasp_calibration_asset_sha256=asset,
+            )
+>       assert can_freeze(report)
+E       AssertionError: assert False
+E        +  where False = <function can_freeze at 0x7180a14b1760>({'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+
+tests/test_rgbd_gripper_calibration.py:63: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_gripper_calibration.py::test_repaired_gripper_planner_records_its_own_calibration
+FAILED tests/test_rgbd_gripper_calibration.py::test_visual_episode_requires_the_selected_calibration_asset[mujoco_upright_box_v2]
+FAILED tests/test_rgbd_gripper_calibration.py::test_model_freeze_binds_profile_evidence_and_source_asset
+3 failed, 1 passed in 0.50s

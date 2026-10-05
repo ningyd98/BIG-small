@@ -1,0 +1,54 @@
+.......................F.                                                [100%]
+=================================== FAILURES ===================================
+_____ test_default_formal_metrics_fail_closed_without_raw_physics_verifier _____
+
+    def test_default_formal_metrics_fail_closed_without_raw_physics_verifier():
+        from cloud_edge_robot_arm.research.models import EvidenceKind
+>       rows=[replace(row,provenance=row.provenance.model_copy(update={"evidence_kind":EvidenceKind.PHYSICS,
+                "task_success":True,"physics_steps":100}),
+                outcome=replace(row.outcome,success=True,status="SUCCESS",failure_reason=None,
+                                physical_success=True,online_reported_complete=True))
+              for row in records(2)]
+
+tests/test_research_acceptance.py:109: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:17: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = EpisodeRecord(assignment=EpisodeAssignment(assignment_id='g0::B0', group_id='g0', stratum_id='STATIC_RTT0', method_id=...ppingproxy({}), run_status='FAILED', source_verified=False, schema_version='ced.episode-record.v1', frozen_tcap_s=None)
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "ced.episode-record.v1":
+            raise ValueError("unsupported episode record schema version")
+        if self.run_status not in {"COMPLETED", "BLOCKED", "TIMEOUT", "STOP", "FALLBACK", "FAILED"}:
+            raise ValueError("unsupported episode terminal status")
+        if self.provenance.run_id != self.assignment.assignment_id or (
+            self.provenance.scene_group_id != self.assignment.group_id
+        ):
+            raise ValueError("episode provenance does not match assignment")
+        if self.provenance.cohort != "NEW_RESEARCH":
+            raise ValueError("historical records cannot occupy a new research assignment")
+        if self.outcome.status not in {"SUCCESS", "FAILED", "INCOMPLETE", "SAFETY_VIOLATION"}:
+            raise ValueError("unsupported physical outcome status")
+        if self.outcome.safety_assessment not in {"SCOPED_NO_VIOLATION", "PARTIAL", "VIOLATION"}:
+            raise ValueError("unsupported physical safety assessment")
+        if self.outcome.success and (
+            self.run_status != "COMPLETED"
+            or self.outcome.status != "SUCCESS"
+            or self.outcome.online_reported_complete is not True
+            or self.outcome.physical_success is not True
+            or self.outcome.safety_violation
+            or self.outcome.failure_reason is not None
+            or self.outcome.terminal_reason is not None
+        ):
+>           raise ValueError("episode completion status contradicts online/physical outcome")
+E           ValueError: episode completion status contradicts online/physical outcome
+
+src/cloud_edge_robot_arm/research/assignments.py:225: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_research_acceptance.py::test_default_formal_metrics_fail_closed_without_raw_physics_verifier
+1 failed, 24 passed in 0.73s

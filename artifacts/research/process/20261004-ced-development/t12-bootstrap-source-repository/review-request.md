@@ -1,0 +1,5 @@
+# Independent review request
+
+Final source freeze779 SHA82cdae35752e95c1596527687ea4b03fd77ff0d64fa07e6066df953dedf12e49; owned protocol/memory/sqlite plus NEW repository test. Review only this incremental scope and immutable root pure/worker dependencies; historical ordinary route scope/archive remains unchanged. All owned files quiet.
+
+Reproduce frozen-overlay-setup.json commands in its preserved temporary overlay or construct a fresh copy from source/. Check all source hashes and ASTs independently. CPU552 pass/6 backend-only skips; Ruff/format/coldmypy/import0. No actual source authentication/native/model/control/physics acceptance. Use genuine source producers/counterexamples, not public VALID callbacks. Focus pending lost-response/restart no-replay, job/run OR episode no-promotion bypass, complete spent/best-history/deadline inheritance, strict row/index/hash, atomic adoption rollback/2connection races, historical promotion after ordinary debit, missing/partial-row refusal and legacy no-bootstrap compatibility. No moving worker/runtime sources or live overlay required.

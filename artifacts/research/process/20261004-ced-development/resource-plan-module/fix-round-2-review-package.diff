@@ -1,0 +1,103 @@
+--- fix1/src/cloud_edge_robot_arm/research/resource_plan.py
++++ fix2/src/cloud_edge_robot_arm/research/resource_plan.py
+@@ -384,11 +384,21 @@
+         if not isinstance(entry, dict):
+             raise ValueError("actual wire index rows must be objects")
+         request = _path(root, entry["request_path"]).read_bytes()
+-        response = (
+-            _path(root, entry["response_path"]).read_bytes() if entry.get("response_path") else b""
+-        )
++        response_path = entry.get("response_path")
++        if response_path:
++            if entry.get("response_present", True) is not True:
++                raise ValueError("response presence contradicts its original payload")
++            response = _path(root, response_path).read_bytes()
++            if hashlib.sha256(response).hexdigest() != entry.get("response_sha256"):
++                raise ValueError("original response wire hash differs, including empty payloads")
++        else:
++            if entry.get("response_present") is not False or (
++                entry.get("response_sha256") is not None
++            ):
++                raise ValueError("absent response requires explicit absence and no payload hash")
++            response = b""
+         if hashlib.sha256(request).hexdigest() != entry["request_sha256"] or (
+-            response and hashlib.sha256(response).hexdigest() != entry["response_sha256"]
++            response_path is None and entry.get("serialized_received_bytes", 0) != 0
+         ):
+             raise ValueError("original request/response wire hash differs")
+         actual_lengths.append((len(request), len(response)))
+@@ -398,6 +408,8 @@
+                 raise ValueError("actual request IDs do not join each original wire attempt")
+             seen.add(identity)
+             row = by_id[identity]
++            if not response_path and row.status == "SUCCESS":
++                raise ValueError("successful request cannot have an absent original response")
+             if (row.serialized_sent_bytes, row.serialized_received_bytes) != actual_lengths[-1]:
+                 raise ValueError("actual original wire lengths differ from request costs")
+     if sorted(actual_lengths) != sorted(
+@@ -584,14 +596,13 @@
+     root: Path, row: Mapping[str, Any], *, expected_provider_version: str
+ ) -> dict[str, Any]:
+     case = _path(root, "cases/" + row["assignment_id"])
+-    # Strict stage audit already binds this collector's request/wire originals.
+-    # Its observer predates request IDs; verify the complete byte-pair multiset,
+-    # retaining all billed IDs rather than inventing per-attempt wire identities.
++    # Strict stage audit and the collector bind every original attempt ID and role.
++    # The resource reader independently repeats the exact per-attempt wire join.
+     costs = _read_request_costs(
+         case,
+         "costs.json",
+         "wire-index.json",
+-        require_request_ids=False,
++        require_request_ids=True,
+         expected_provider_version=expected_provider_version,
+     )
+     return {
+--- fix1/tests/test_research_resource_plan.py
++++ fix2/tests/test_research_resource_plan.py
+@@ -217,6 +217,45 @@
+         api()._read_request_costs(
+             tmp_path, "requests.json", "wire.json", expected_provider_version="b" * 64
+         )
++
++
++@pytest.mark.parametrize("damage", ["empty_stale_hash", "absent_stale_hash", "absent_unmarked"])
++def test_zero_byte_or_absent_response_never_skips_original_sha(tmp_path, damage):
++    import json
++
++    rows, wire = request_fixture(tmp_path)
++    rows[1]["serialized_received_bytes"] = 0
++    if damage == "empty_stale_hash":
++        (tmp_path / wire[1]["response_path"]).write_bytes(b"")
++    else:
++        wire[1]["response_path"] = None
++        if damage == "absent_stale_hash":
++            wire[1]["response_present"] = False
++        else:
++            wire[1]["response_sha256"] = None
++    (tmp_path / "requests.json").write_text(json.dumps(rows))
++    (tmp_path / "wire.json").write_text(json.dumps(wire))
++    with pytest.raises(ValueError, match="response|wire"):
++        api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++
++
++@pytest.mark.parametrize("present", [True, False])
++def test_empty_response_and_no_response_have_distinct_valid_sources(tmp_path, present):
++    import hashlib
++    import json
++
++    rows, wire = request_fixture(tmp_path)
++    rows[1]["serialized_received_bytes"] = 0
++    wire[1]["response_present"] = present
++    if present:
++        (tmp_path / wire[1]["response_path"]).write_bytes(b"")
++        wire[1]["response_sha256"] = hashlib.sha256(b"").hexdigest()
++    else:
++        wire[1].update(response_path=None, response_sha256=None)
++    (tmp_path / "requests.json").write_text(json.dumps(rows))
++    (tmp_path / "wire.json").write_text(json.dumps(wire))
++    result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++    assert result["original_attempts"] == 4 and result["requests_by_role"]["SUPERVISOR"] == 1
+ 
+ 
+ def test_whole_tree_measures_raw_archives_and_rejects_symlinks(tmp_path):

@@ -1,0 +1,85 @@
+..........................................FFF                            [100%]
+=================================== FAILURES ===================================
+_ test_review_actual_dispatch_results_and_ranges_are_not_optional_markers[action_result_id] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-489/test_review_actual_dispatch_re0')
+change = 'action_result_id'
+
+    @pytest.mark.parametrize("change", ["action_result_id", "command_range", "gain_scope"])
+    def test_review_actual_dispatch_results_and_ranges_are_not_optional_markers(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        if change == "gain_scope":
+            provenance = json.loads((source / "actuator-provenance.json").read_text())
+            provenance["steps"][600]["actuator_gains"] = [2.] * 7
+            write_json(source / "actuator-provenance.json", provenance)
+        else:
+            actions = json.loads((source / "teacher-actions.json").read_text())
+            if change == "action_result_id":
+                actions[0]["result"]["action_id"] = "unrelated-return"
+            else:
+                actions[0]["command_seq_end"] += 1
+            write_json(source / "teacher-actions.json", actions)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:941: AssertionError
+_ test_review_actual_dispatch_results_and_ranges_are_not_optional_markers[command_range] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-489/test_review_actual_dispatch_re1')
+change = 'command_range'
+
+    @pytest.mark.parametrize("change", ["action_result_id", "command_range", "gain_scope"])
+    def test_review_actual_dispatch_results_and_ranges_are_not_optional_markers(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        if change == "gain_scope":
+            provenance = json.loads((source / "actuator-provenance.json").read_text())
+            provenance["steps"][600]["actuator_gains"] = [2.] * 7
+            write_json(source / "actuator-provenance.json", provenance)
+        else:
+            actions = json.loads((source / "teacher-actions.json").read_text())
+            if change == "action_result_id":
+                actions[0]["result"]["action_id"] = "unrelated-return"
+            else:
+                actions[0]["command_seq_end"] += 1
+            write_json(source / "teacher-actions.json", actions)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:941: AssertionError
+_ test_review_actual_dispatch_results_and_ranges_are_not_optional_markers[gain_scope] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-489/test_review_actual_dispatch_re2')
+change = 'gain_scope'
+
+    @pytest.mark.parametrize("change", ["action_result_id", "command_range", "gain_scope"])
+    def test_review_actual_dispatch_results_and_ranges_are_not_optional_markers(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        if change == "gain_scope":
+            provenance = json.loads((source / "actuator-provenance.json").read_text())
+            provenance["steps"][600]["actuator_gains"] = [2.] * 7
+            write_json(source / "actuator-provenance.json", provenance)
+        else:
+            actions = json.loads((source / "teacher-actions.json").read_text())
+            if change == "action_result_id":
+                actions[0]["result"]["action_id"] = "unrelated-return"
+            else:
+                actions[0]["command_seq_end"] += 1
+            write_json(source / "teacher-actions.json", actions)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:941: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_review_actual_dispatch_results_and_ranges_are_not_optional_markers[action_result_id]
+FAILED tests/test_protocol_evidence_generation.py::test_review_actual_dispatch_results_and_ranges_are_not_optional_markers[command_range]
+FAILED tests/test_protocol_evidence_generation.py::test_review_actual_dispatch_results_and_ranges_are_not_optional_markers[gain_scope]
+3 failed, 42 passed in 18.20s

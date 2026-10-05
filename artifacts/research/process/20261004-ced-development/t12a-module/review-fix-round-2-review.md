@@ -1,0 +1,9 @@
+# T12a second corrected-source independent re-review
+
+Verdict: **PASS for the reviewed SOFTWARE_ONLY boundary**. Both original quota/idempotency findings and the late contract/audit return finding are closed. This does not accept actual INITIAL/selection/provider/hardware research; ordinary actual admission remains NOT_ADMITTED, software traces remain expired, and durable execution/budget transactions are not claimed.
+
+All16 second-release frozen copies and live files match review-fixed-source-hashes.json (review-fix-round-2-independent-hashes.json). The original late contract callback now produces STOP after the original absolute deadline with capture quota unchanged at2. A late successful audit acknowledgement raises a closed-boundary error before returning any ordinary action, committing any quota, installing event cache or exposing last_trace (review-fix-round-2-counterexamples.log). The owner also added normal/exception contract and CONTINUE/fallback audit coverage. The original provider quota/deadline/observable-state mutation and repeated failed audit probes remain covered by the corrected tests.
+
+Independent scoped command (decision_judgment, joint_visual_policy, research_cost_ledger, visual_evidence_contract, rgbd_risk_calibration) reports **120 passed in 1.03s**, exit0; scoped Ruff and mypy3 pass (review-fix-round-2-independent-{scoped,ruff,mypy}.log). Checks use the live files after confirming their exact released SHA equality. No production source was edited by the reviewer, and no full suite/model/GPU/network/physical experiment was performed.
+
+Synchronous callbacks can still block if they never return; the code now correctly checks fresh timezone-aware, non-reversed time after return/acknowledgement. A trace possibly persisted before an audit deadline rejection remains immediately expired software audit data and cannot create ordinary physical permission. No additional P1/P2 remains in this reviewed source scope.

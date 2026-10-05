@@ -1,0 +1,54 @@
+..................................s..........FF.                         [100%]
+=================================== FAILURES ===================================
+_ test_all_reobservations_are_spent_before_effect_and_restart_never_refills[memory] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x70c7f8d1b4d0>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_all_reobservations_are_spent_before_effect_and_restart_never_refills(store):
+        repo,data=store
+        initial=repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        record,observation=advance_capture(repo,data,initial)
+        record=complete_unusable_plan(repo,data,record,observation)
+        for number in range(2):
+            record,observation=advance_capture(repo,data,record,kind='RESERVE_REOBSERVATION',
+                identifier=f'software-reobservation-{number}')
+            record=complete_unusable_plan(repo,data,record,observation)
+        stopped=repo.transition_visual_bootstrap_if_current(request=request_for(data,record,'RESERVE_REOBSERVATION'))
+        assert stopped.record.pending_claim_id is None
+        assert stopped.record.verification_state.remaining_reobservations==0
+>       assert stopped.record.terminal_reason=='reobservation_budget_exhausted'
+E       AssertionError: assert 'reobservation_exhausted' == 'reobservatio...get_exhausted'
+E         
+E         - reobservation_budget_exhausted
+E         ?               -------
+E         + reobservation_exhausted
+
+tests/test_visual_bootstrap_repository.py:519: AssertionError
+_ test_all_reobservations_are_spent_before_effect_and_restart_never_refills[sqlite] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x70c7f8d44da0>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_all_reobservations_are_spent_before_effect_and_restart_never_refills(store):
+        repo,data=store
+        initial=repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        record,observation=advance_capture(repo,data,initial)
+        record=complete_unusable_plan(repo,data,record,observation)
+        for number in range(2):
+            record,observation=advance_capture(repo,data,record,kind='RESERVE_REOBSERVATION',
+                identifier=f'software-reobservation-{number}')
+            record=complete_unusable_plan(repo,data,record,observation)
+        stopped=repo.transition_visual_bootstrap_if_current(request=request_for(data,record,'RESERVE_REOBSERVATION'))
+        assert stopped.record.pending_claim_id is None
+        assert stopped.record.verification_state.remaining_reobservations==0
+>       assert stopped.record.terminal_reason=='reobservation_budget_exhausted'
+E       AssertionError: assert 'reobservation_exhausted' == 'reobservatio...get_exhausted'
+E         
+E         - reobservation_budget_exhausted
+E         ?               -------
+E         + reobservation_exhausted
+
+tests/test_visual_bootstrap_repository.py:519: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_bootstrap_repository.py::test_all_reobservations_are_spent_before_effect_and_restart_never_refills[memory]
+FAILED tests/test_visual_bootstrap_repository.py::test_all_reobservations_are_spent_before_effect_and_restart_never_refills[sqlite]
+2 failed, 45 passed, 1 skipped in 8.11s

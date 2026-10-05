@@ -1,0 +1,275 @@
+--- a/src/cloud_edge_robot_arm/research/resource_plan.py
++++ b/src/cloud_edge_robot_arm/research/resource_plan.py
+@@ -384,11 +384,21 @@
+         if not isinstance(entry, dict):
+             raise ValueError("actual wire index rows must be objects")
+         request = _path(root, entry["request_path"]).read_bytes()
+-        response = (
+-            _path(root, entry["response_path"]).read_bytes() if entry.get("response_path") else b""
+-        )
++        response_path = entry.get("response_path")
++        if response_path:
++            if entry.get("response_present", True) is not True:
++                raise ValueError("response presence contradicts its original payload")
++            response = _path(root, response_path).read_bytes()
++            if hashlib.sha256(response).hexdigest() != entry.get("response_sha256"):
++                raise ValueError("original response wire hash differs, including empty payloads")
++        else:
++            if entry.get("response_present") is not False or (
++                entry.get("response_sha256") is not None
++            ):
++                raise ValueError("absent response requires explicit absence and no payload hash")
++            response = b""
+         if hashlib.sha256(request).hexdigest() != entry["request_sha256"] or (
+-            response and hashlib.sha256(response).hexdigest() != entry["response_sha256"]
++            response_path is None and entry.get("serialized_received_bytes", 0) != 0
+         ):
+             raise ValueError("original request/response wire hash differs")
+         actual_lengths.append((len(request), len(response)))
+@@ -398,6 +408,8 @@
+                 raise ValueError("actual request IDs do not join each original wire attempt")
+             seen.add(identity)
+             row = by_id[identity]
++            if not response_path and row.status == "SUCCESS":
++                raise ValueError("successful request cannot have an absent original response")
+             if (row.serialized_sent_bytes, row.serialized_received_bytes) != actual_lengths[-1]:
+                 raise ValueError("actual original wire lengths differ from request costs")
+     if sorted(actual_lengths) != sorted(
+@@ -406,6 +418,24 @@
+         raise ValueError("actual serialized wire bytes differ from full settled request ledger")
+     fees = [row.monetary_cost for row in sent]
+     proven = bool(sent) or zero_request_proven
++    declared_money = (
++        None
++        if not proven or any(f is None for f in fees)
++        else sum(fee for fee in fees if fee is not None)
++    )
++    remote = any(row.provider_location == "REMOTE_SERVICE" for row in sent)
++    # The transport emits no independently measured remote charge. Original
++    # ledger numbers remain diagnostics; editing them cannot certify billing.
++    verified_money = None if remote else declared_money
++    billing_status = (
++        "REMOTE_BILLING_UNAVAILABLE"
++        if remote
++        else "UNKNOWN"
++        if declared_money is None
++        else "NO_MODEL_REQUESTS_PROVEN"
++        if not sent
++        else "LOCAL_LEDGER_ONLY"
++    )
+     return {
+         "model_requests": len(sent) if proven else None,
+         "cloud_model_requests": sum(r.provider_location == "REMOTE_SERVICE" for r in sent)
+@@ -416,7 +446,12 @@
+         else None,
+         "requests_by_role": dict(Counter(r.model_role for r in sent)),
+         "application_bytes": sum(a + b for a, b in actual_lengths),
+-        "monetary_cost": None if not proven or any(f is None for f in fees) else sum(fees),
++        "monetary_cost": verified_money,
++        "declared_monetary_cost": declared_money,
++        "declared_monetary_costs_by_request": {
++            row.request_id: row.monetary_cost for row in requests
++        },
++        "billing_status": billing_status,
+         "original_attempts": len(requests),
+         "source_bound_wire_attempts": len(sent),
+     }
+@@ -584,14 +619,13 @@
+     root: Path, row: Mapping[str, Any], *, expected_provider_version: str
+ ) -> dict[str, Any]:
+     case = _path(root, "cases/" + row["assignment_id"])
+-    # Strict stage audit already binds this collector's request/wire originals.
+-    # Its observer predates request IDs; verify the complete byte-pair multiset,
+-    # retaining all billed IDs rather than inventing per-attempt wire identities.
++    # Strict stage audit and the collector bind every original attempt ID and role.
++    # The resource reader independently repeats the exact per-attempt wire join.
+     costs = _read_request_costs(
+         case,
+         "costs.json",
+         "wire-index.json",
+-        require_request_ids=False,
++        require_request_ids=True,
+         expected_provider_version=expected_provider_version,
+     )
+     return {
+@@ -601,6 +635,7 @@
+         "application_bytes": costs["application_bytes"],
+         "monetary_cost": costs["monetary_cost"],
+         "requests_by_role": costs["requests_by_role"],
++        "request_costs": costs,
+     }
+ 
+ 
+@@ -709,6 +744,31 @@
+         successful_originals=len(successful),
+         auxiliary_details=auxiliary_details,
+         auxiliary_errors=auxiliary_errors,
++        billing_diagnostics={
++            "scope": "DECLARED_LEDGER_ONLY",
++            "independently_verified_remote_billing": False,
++            **{
++                stage: [
++                    {
++                        "assignment_id": original["assignment_id"],
++                        "declared_monetary_cost": measured.get("request_costs", {}).get(
++                            "declared_monetary_cost"
++                        ),
++                        "declared_monetary_costs_by_request": measured.get("request_costs", {}).get(
++                            "declared_monetary_costs_by_request", {}
++                        ),
++                        "billing_status": measured.get("request_costs", {}).get(
++                            "billing_status", "NOT_RECORDED"
++                        ),
++                    }
++                    for original, measured in zip(originals, costs, strict=True)
++                ]
++                for stage, originals, costs in (
++                    ("foundation", audit["cases"], foundation_costs),
++                    ("selection", selection["cases"], selection_costs),
++                )
++            },
++        },
+         sunk_requests_by_role=dict(
+             Counter(
+                 role
+--- a/tests/test_research_resource_plan.py
++++ b/tests/test_research_resource_plan.py
+@@ -176,7 +176,8 @@
+     assert result["application_bytes"] == sum(
+         row["serialized_sent_bytes"] + row["serialized_received_bytes"] for row in rows
+     )
+-    assert result["monetary_cost"] == 2.0
++    assert result["monetary_cost"] is None
++    assert result["declared_monetary_cost"] == 2.0
+ 
+ 
+ @pytest.mark.parametrize("damage", ["wire", "identity", "missing", "inflight"])
+@@ -217,6 +218,128 @@
+         api()._read_request_costs(
+             tmp_path, "requests.json", "wire.json", expected_provider_version="b" * 64
+         )
++
++
++@pytest.mark.parametrize("declared_fee", [0.0, 0.5, 10000.0])
++def test_remote_declared_ledger_fee_is_not_independent_billing(tmp_path, declared_fee):
++    import json
++
++    rows, _ = request_fixture(tmp_path)
++    for row in rows:
++        row["monetary_cost"] = declared_fee
++    (tmp_path / "requests.json").write_text(json.dumps(rows))
++    result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++    assert result["monetary_cost"] is None
++    assert result["billing_status"] == "REMOTE_BILLING_UNAVAILABLE"
++    assert result["declared_monetary_cost"] == declared_fee * 4
++    assert result["declared_monetary_costs_by_request"] == {
++        row["request_id"]: declared_fee for row in rows
++    }
++    assert result["cloud_model_requests"] == 4 and result["original_attempts"] == 4
++
++
++def test_public_compiler_cannot_admit_edited_remote_fees(tmp_path, monkeypatch):
++    # The physical auditor and auxiliary costs are SOFTWARE_ONLY stubs. The
++    # public compiler and every case's original ledger/wire reader remain real.
++    import json
++    import shutil
++
++    from cloud_edge_robot_arm.research import freeze_evidence
++
++    base = {
++        "available": True,
++        "errors": [],
++        "pools": {"foundation": [{"scene": {"group_id": "SOFTWARE_ONLY"}}]},
++        "role_bundle_hash": "b" * 64,
++        "cloud_model_snapshot_hash": "a" * 64,
++        "selected_period_s": 2.0,
++        "evidence_hash": "c" * 64,
++    }
++    original = tmp_path / "SOFTWARE_ONLY-ledger-template"
++    original.mkdir()
++    request_fixture(original)
++    audits = {}
++    for stage, count in (("foundation", 120), ("selection", 480)):
++        stage_root = tmp_path if stage == "foundation" else tmp_path / "selection-evidence"
++        rows = []
++        for index in range(count):
++            assignment = f"{stage}-{index:04d}"
++            case = stage_root / "cases" / assignment
++            shutil.copytree(original, case)
++            (case / "requests.json").rename(case / "costs.json")
++            (case / "wire.json").rename(case / "wire-index.json")
++            rows.append(
++                {
++                    "assignment_id": assignment,
++                    "scope": "REAL_RUNTIME",
++                    "success": stage == "foundation" and index == 0,
++                    "wall_duration_s": 100.0,
++                }
++            )
++        audits[stage] = {**base, "cases": rows}
++    monkeypatch.setattr(freeze_evidence, "audit_ced_pilot_stage", lambda root, stage: audits[stage])
++    monkeypatch.setattr(
++        api(),
++        "_read_resource_phase",
++        lambda *args, **kwargs: {**amount(), "coverage": {"group_ids": ["SOFTWARE_ONLY-aux"]}},
++    )
++    (tmp_path / "protocol-evidence").mkdir()
++    (tmp_path / "protocol-evidence/opportunities.json").write_text(
++        json.dumps([{"seed": {"opportunity_id": "SOFTWARE_ONLY-opportunity"}}])
++    )
++    auxiliary = tmp_path / "resource-evidence"
++    for phase in api().AUXILIARY_PHASES:
++        (auxiliary / phase).mkdir(parents=True)
++    plan = api().compile_resource_plan(
++        tmp_path, declared_ceilings=ceilings(), auxiliary_cost_evidence=auxiliary
++    )
++    assert plan["available"] is False and plan["budget_status"] == "INCOMPLETE"
++    assert plan["totals"]["worst"]["monetary_cost"] is None
++    assert plan["original_denominators"] == {"selection": 480, "foundation": 120}
++    assert plan["actual_research_status"] == "NOT_RUN" and plan["physical_acceptance"] is False
++    diagnostics = plan["billing_diagnostics"]
++    assert len(diagnostics["foundation"]) == 120 and len(diagnostics["selection"]) == 480
++    assert diagnostics["foundation"][0]["declared_monetary_cost"] == 2.0
++    assert diagnostics["foundation"][0]["billing_status"] == "REMOTE_BILLING_UNAVAILABLE"
++
++
++@pytest.mark.parametrize("damage", ["empty_stale_hash", "absent_stale_hash", "absent_unmarked"])
++def test_zero_byte_or_absent_response_never_skips_original_sha(tmp_path, damage):
++    import json
++
++    rows, wire = request_fixture(tmp_path)
++    rows[1]["serialized_received_bytes"] = 0
++    if damage == "empty_stale_hash":
++        (tmp_path / wire[1]["response_path"]).write_bytes(b"")
++    else:
++        wire[1]["response_path"] = None
++        if damage == "absent_stale_hash":
++            wire[1]["response_present"] = False
++        else:
++            wire[1]["response_sha256"] = None
++    (tmp_path / "requests.json").write_text(json.dumps(rows))
++    (tmp_path / "wire.json").write_text(json.dumps(wire))
++    with pytest.raises(ValueError, match="response|wire"):
++        api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++
++
++@pytest.mark.parametrize("present", [True, False])
++def test_empty_response_and_no_response_have_distinct_valid_sources(tmp_path, present):
++    import hashlib
++    import json
++
++    rows, wire = request_fixture(tmp_path)
++    rows[1]["serialized_received_bytes"] = 0
++    wire[1]["response_present"] = present
++    if present:
++        (tmp_path / wire[1]["response_path"]).write_bytes(b"")
++        wire[1]["response_sha256"] = hashlib.sha256(b"").hexdigest()
++    else:
++        wire[1].update(response_path=None, response_sha256=None)
++    (tmp_path / "requests.json").write_text(json.dumps(rows))
++    (tmp_path / "wire.json").write_text(json.dumps(wire))
++    result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++    assert result["original_attempts"] == 4 and result["requests_by_role"]["SUPERVISOR"] == 1
+ 
+ 
+ def test_whole_tree_measures_raw_archives_and_rejects_symlinks(tmp_path):

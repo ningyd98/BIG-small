@@ -1,0 +1,33 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_formal_assignment_cannot_be_demoted_by_provenance_phase _________
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_formal_assignment_cannot_be_demoted_by_provenance_phase(scene_pool):
+        original = record(assignment(scene_pool), "BLOCKED")
+>       with pytest.raises(ValueError, match="formal|phase"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_runner.py:391: Failed
+_____ test_supplied_protocol_validates_even_rehashed_nonformal_provenance ______
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_supplied_protocol_validates_even_rehashed_nonformal_provenance(scene_pool):
+        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+        original=record(assignment(scene_pool),"BLOCKED")
+        payload=original.to_payload(protocol=frozen(scene_pool))
+        payload.pop("content_hash")
+        payload["provenance"]["split_role"]="selection"
+        payload["duration_penalized_s"]=.001
+        payload["frozen_tcap_s"]=None
+        payload["content_hash"]=content_digest(payload)
+>       with pytest.raises(ValueError,match="formal|phase"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_runner.py:405: Failed
+=========================== short test summary info ============================
+FAILED tests/test_research_runner.py::test_formal_assignment_cannot_be_demoted_by_provenance_phase
+FAILED tests/test_research_runner.py::test_supplied_protocol_validates_even_rehashed_nonformal_provenance
+2 failed, 28 deselected in 0.57s

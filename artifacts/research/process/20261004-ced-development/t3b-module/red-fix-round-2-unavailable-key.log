@@ -1,0 +1,33 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_secret_store_failure_name_is_opaque_before_key_can_be_read ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-503/test_secret_store_failure_name0')
+
+    def test_secret_store_failure_name_is_opaque_before_key_can_be_read(tmp_path):
+        from pathlib import Path
+        from scripts.probe_rgbd_roles import run_probe
+        from cloud_edge_robot_arm.model_control.service import ModelControlService
+        from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+        secret = "credential-marker"
+        failure = type(secret, (RuntimeError,), {})
+        class FailedSecretStore:
+            def has_secret(self, _):
+                raise failure(secret)
+        service = ModelControlService(repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+                                      secret_store=FailedSecretStore())
+        output = tmp_path / "blocked-secret-store"
+        report = run_probe(Path("configs/research/ced_roles.yaml"), output, service=service,
+                           profile_id="unavailable-profile", execute=True, allow_paid=True)
+        assert report["status"] == "BLOCKED"
+>       assert secret not in json.dumps(report, ensure_ascii=False)
+E       assert 'credential-marker' not in '{"schema_ve...9623+00:00"}'
+E         
+E         'credential-marker' is contained here:
+E           reason": "credential-marker", "unexecuted_attempt_count": 4, "finished_at": "2026-10-04T08:03:50.929623+00:00"}
+E         ?           +++++++++++++++++
+
+tests/test_rgbd_role_models.py:1038: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_secret_store_failure_name_is_opaque_before_key_can_be_read
+1 failed, 66 deselected in 0.27s

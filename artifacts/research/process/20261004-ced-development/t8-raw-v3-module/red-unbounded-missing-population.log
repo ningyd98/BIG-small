@@ -1,0 +1,38 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_large_declared_missing_tail_does_not_allocate_or_iterate_the_missing_population _
+
+    def test_large_declared_missing_tail_does_not_allocate_or_iterate_the_missing_population():
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+        script = """
+    import json,os,resource
+    from dataclasses import replace
+    from tests.test_raw_episode_v3 import fixture,state,api
+    envelope,records=fixture()
+    current=int(open('/proc/self/statm').read().split()[0])*os.sysconf('SC_PAGE_SIZE')
+    resource.setrlimit(resource.RLIMIT_AS,(current+128*1024*1024,current+128*1024*1024))
+    view=api().validate_raw_episode_v3(replace(envelope,terminal_state_payload=state(2**63-1)),records)
+    assert view.status=='INCOMPLETE',view.reasons
+    assert view.counts['physics_expected']==2**63-1
+    print('bounded missing denominator retained')
+    """
+        result = subprocess.run([sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1],
+                                env={**os.environ, "PYTHONPATH": "src:."}, text=True, capture_output=True, timeout=10)
+>       assert result.returncode == 0, result.stderr
+E       AssertionError: Traceback (most recent call last):
+E           File "<string>", line 8, in <module>
+E           File "/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/research/raw_episode_v3.py", line 767, in validate_raw_episode_v3
+E             if set(raw) != set(range(1, terminal + 1)):
+E                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E         MemoryError
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python', '-c', "\nimport json,os,resource\nfrom dat...de_v3\n    if set(raw) != set(range(1, terminal + 1)):\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nMemoryError\n').returncode
+
+tests/test_raw_episode_v3.py:419: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_large_declared_missing_tail_does_not_allocate_or_iterate_the_missing_population
+1 failed, 37 deselected in 1.07s

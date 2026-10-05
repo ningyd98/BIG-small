@@ -1,0 +1,185 @@
+--- before/src/cloud_edge_robot_arm/vision/runtime_binding.py
++++ after/src/cloud_edge_robot_arm/vision/runtime_binding.py
+@@ -9,7 +9,7 @@
+ import hashlib
+ import json
+ from collections.abc import Mapping
+-from dataclasses import dataclass, field
++from dataclasses import asdict, dataclass, field
+ from pathlib import Path
+ from types import MappingProxyType
+ from typing import TYPE_CHECKING, cast
+@@ -22,6 +22,7 @@
+ )
+ 
+ if TYPE_CHECKING:
++    from cloud_edge_robot_arm.vision.evaluation import ExecutionPolicy
+     from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+ 
+ 
+@@ -56,6 +57,10 @@
+             or self.edge_snapshot.digest() != self.bundle.edge_provider_hash
+         ):
+             raise ValueError("edge role binding differs from its bundle")
++        if "src/cloud_edge_robot_arm/edge/recovery/verification_router.py" not in (
++            self.edge_snapshot.source_hashes
++        ):
++            raise ValueError("edge binding requires the actual verification router source")
+         sources = dict(self.device_source_hashes)
+         if not sources or configuration_hash(sources) != self.bundle.device_pipeline_hash:
+             raise ValueError("device source binding differs from its bundle")
+@@ -66,6 +71,18 @@
+         object.__setattr__(self, "device_source_hashes", MappingProxyType(sources))
+         object.__setattr__(self, "edge_policy", _freeze(policy))
+         object.__setattr__(self, "root", Path(self.root))
++
++    def validate_execution_policy(self, policy: ExecutionPolicy) -> None:
++        expected = _plain(self.edge_policy.get("verification_budget"))
++        if expected != asdict(policy.verification_budget):
++            raise ValueError("actual verification budget differs from frozen edge policy")
++        capabilities = self.edge_policy.get("capabilities")
++        if self.edge_policy.get("runtime_router") != "verification_router.v1" or (
++            not isinstance(capabilities, tuple)
++            or len(capabilities) != 3
++            or set(capabilities) != {"CONTINUE", "REOBSERVE", "STOP"}
++        ):
++            raise ValueError("actual verification router/capabilities differ from edge policy")
+ 
+     def _validate_sources(self, sources: Mapping[str, str]) -> None:
+         root = self.root.resolve()
+--- before/src/cloud_edge_robot_arm/vision/online_intent.py
++++ after/src/cloud_edge_robot_arm/vision/online_intent.py
+@@ -30,7 +30,10 @@
+         return False
+     lower, upper = _HUE_DEGREES[color]
+     degrees = hue * 360
+-    return lower <= degrees <= upper if lower < upper else degrees >= lower or degrees <= upper
++    # A scoped two-degree boundary band is unavailable to either neighboring
++    # identity. This is a visibility classification guard, not a pose error bound.
++    return lower + 2 < degrees < upper - 2 if lower < upper else (
++        degrees > lower + 2 or degrees < upper - 2)
+ 
+ 
+ def validate_grounded_colors(
+--- before/src/cloud_edge_robot_arm/vision/execution.py
++++ after/src/cloud_edge_robot_arm/vision/execution.py
+@@ -618,6 +618,7 @@
+     def validate_role_boundary(self) -> None:
+         if self.policy.role_binding is not None:
+             try:
++                self.policy.role_binding.validate_execution_policy(self.policy)
+                 self.policy.role_binding.validate(self.planner)
+             except (ValueError, OSError) as error:
+                 raise _EpisodeStopped("ROLE_BINDING_CHANGED") from error
+@@ -671,7 +672,8 @@
+                 facts,
+                 1,
+                 1,
+-                self.policy.model_snapshot_hash,
++                self.policy.role_binding.bundle.digest()
++                if self.policy.role_binding else self.policy.model_snapshot_hash,
+             )
+             verdicts = evaluate_conditions(conditions, snapshot)
+             action = self.route(verdicts, kind, {**(extra or {}), "visual_facts": facts})
+--- before/src/cloud_edge_robot_arm/vision/evaluation.py
++++ after/src/cloud_edge_robot_arm/vision/evaluation.py
+@@ -54,6 +54,8 @@
+             raise ValueError("unknown device pipeline")
+         if (self.device_pipeline == "OPENCV") != (self.role_binding is not None):
+             raise ValueError("OpenCV runs require explicit cloud/edge/device role binding")
++        if self.role_binding is not None:
++            self.role_binding.validate_execution_policy(self)
+         if self.supervision_period_s is not None and (
+             not math.isfinite(self.supervision_period_s) or self.supervision_period_s <= 0
+         ):
+--- before/configs/research/ced_roles.yaml
++++ after/configs/research/ced_roles.yaml
+@@ -14,11 +14,19 @@
+   model_id: null
+   source_paths:
+     - src/cloud_edge_robot_arm/vision/role_models.py
++    - src/cloud_edge_robot_arm/edge/recovery/verification_router.py
+   policy:
+     dispatch: false
+     local_recover_enabled: false
+     score_source: rules
+     status: NOT_ACCEPTED
++    runtime_router: verification_router.v1
++    capabilities: [CONTINUE, REOBSERVE, STOP]
++    verification_budget:
++      max_reobservations: 2
++      max_retries: 0
++      max_no_progress: 3
++      deadline_s: 120.0
+ # These hashes bind software/calibration; they do not prove device acceptance.
+ device:
+   source_paths:
+--- before/tests/test_ced_runtime_binding.py
++++ after/tests/test_ced_runtime_binding.py
+@@ -2,7 +2,8 @@
+ 
+ import hashlib
+ import importlib
+-from dataclasses import replace
++from dataclasses import asdict, replace
++from pathlib import Path
+ from types import SimpleNamespace
+ 
+ import pytest
+@@ -39,9 +40,20 @@
+     cloud = RoleProviderSnapshot("CLOUD", "max", "REMOTE_SERVICE", planner.model_name,
+         None, None, None, configuration_hash(cloud_request_settings(planner)),
+         {"cloud.py": sources["cloud.py"]})
+-    edge_policy = {"provider": "rules", "local_recover_enabled": False}
++    edge_policy = {"provider": "rules", "local_recover_enabled": False,
++        "verification_budget": asdict(ExecutionPolicy("legacy", model_snapshot_hash="a" * 64)
++                                      .verification_budget),
++        "runtime_router": "verification_router.v1",
++        "capabilities": ["CONTINUE", "REOBSERVE", "STOP"]}
++    router = "src/cloud_edge_robot_arm/edge/recovery/verification_router.py"
++    original = Path(__file__).resolve().parents[1] / router
++    copied = tmp_path / router
++    copied.parent.mkdir(parents=True, exist_ok=True)
++    copied.write_bytes(original.read_bytes())
++    edge_sources = {"edge.py": sources["edge.py"],
++                    router: hashlib.sha256(copied.read_bytes()).hexdigest()}
+     edge = RoleProviderSnapshot("EDGE", "rules", "LOCAL_HOST", None, None, None, None,
+-        configuration_hash(edge_policy), {"edge.py": sources["edge.py"]})
++        configuration_hash(edge_policy), edge_sources)
+     device = {"device.py": sources["device.py"]}
+     bundle = RoleModelBundle(cloud, edge.provider_id, edge.digest(), configuration_hash(device))
+     planner.role_snapshot = cloud
+@@ -220,3 +232,21 @@
+ '''
+     completed = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+     assert completed.returncode == 0, completed.stderr
++
++
++def test_identical_role_bundle_cannot_change_consumed_verification_limits(tmp_path):
++    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
++
++    _, binding = role_binding(tmp_path)
++    with pytest.raises(ValueError, match="budget"):
++        ExecutionPolicy("Move the red block to the green region.", model_snapshot_hash="a" * 64,
++            device_pipeline="OPENCV", role_binding=binding,
++            verification_budget=VerificationBudget(100, 0, 100, 120))
++
++
++def test_binding_cannot_omit_the_actual_verification_router_source(tmp_path):
++    _, binding = role_binding(tmp_path)
++    edge = replace(binding.edge_snapshot, source_hashes={"edge.py": "a" * 64})
++    bundle = replace(binding.bundle, edge_provider_hash=edge.digest())
++    with pytest.raises(ValueError, match="router source"):
++        replace(binding, bundle=bundle, edge_snapshot=edge)
+--- before/tests/test_online_visual_intent.py
++++ after/tests/test_online_visual_intent.py
+@@ -42,3 +42,9 @@
+ def test_red_target_green_destination_cannot_be_swapped():
+     with pytest.raises(ValueError, match="destination"):
+         validate("Move the red block to the green region.", region=(.9, .05, .05))
++
++
++@pytest.mark.parametrize("color", ["green", "cyan"])
++def test_hue_boundary_is_ambiguous_and_unavailable_for_both_identities(color):
++    with pytest.raises(ValueError, match="requested target"):
++        validate(f"Move the {color} block to the green region.", target=(0., 50/85, 35/85))

@@ -1,0 +1,63 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_atomic_activation_binds_expected_active_to_frozen_previous_version[memory] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7b98d0538c50>
+
+    def test_atomic_activation_binds_expected_active_to_frozen_previous_version(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        original = replan_repo.get_active_contract("task")
+        def regress_active_for_counterexample():
+            # Diagnostic repository writer simulates a mismatching active row.
+            replan_repo.save_active_contract(original.contract.model_copy(update={"plan_version": 0}),
+                                             plan_id="plan", robot_id="robot")
+        gateway = MockStagedGateway(after_stage=regress_active_for_counterexample)
+        service = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW)
+        result = service.apply(request=request, response=response)
+        assert result.record.status == "EDGE_ACCEPTED"
+        activated = service._updated(result.record, status="ACTIVATED")
+        changed = replan_repo.advance_active_contract_if_current(
+            task_id="task", expected_plan_version=0, expected_command_seq=1,
+            new_contract=result.contract, plan_id="plan", robot_id="robot", based_on_plan_version=1,
+            replan_record=activated, activation_guard=service._submit_verdict,
+        )
+>       assert changed is None
+E       AssertionError: assert ActiveTaskContractRecord(task_id='task', plan_id='plan', robot_id='robot', plan_version=2, command_seq=2, scene_versio...uperseded_at=None, correlation_id='', contract_hash='2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4') is None
+
+tests/test_replan_activation.py:681: AssertionError
+_ test_atomic_activation_binds_expected_active_to_frozen_previous_version[sqlite] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7b98cc731790>
+
+    def test_atomic_activation_binds_expected_active_to_frozen_previous_version(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        original = replan_repo.get_active_contract("task")
+        def regress_active_for_counterexample():
+            # Diagnostic repository writer simulates a mismatching active row.
+            replan_repo.save_active_contract(original.contract.model_copy(update={"plan_version": 0}),
+                                             plan_id="plan", robot_id="robot")
+        gateway = MockStagedGateway(after_stage=regress_active_for_counterexample)
+        service = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW)
+        result = service.apply(request=request, response=response)
+        assert result.record.status == "EDGE_ACCEPTED"
+        activated = service._updated(result.record, status="ACTIVATED")
+        changed = replan_repo.advance_active_contract_if_current(
+            task_id="task", expected_plan_version=0, expected_command_seq=1,
+            new_contract=result.contract, plan_id="plan", robot_id="robot", based_on_plan_version=1,
+            replan_record=activated, activation_guard=service._submit_verdict,
+        )
+>       assert changed is None
+E       AssertionError: assert ActiveTaskContractRecord(task_id='task', plan_id='plan', robot_id='robot', plan_version=2, command_seq=2, scene_versio...uperseded_at=None, correlation_id='', contract_hash='2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4') is None
+
+tests/test_replan_activation.py:681: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_atomic_activation_binds_expected_active_to_frozen_previous_version[memory]
+FAILED tests/test_replan_activation.py::test_atomic_activation_binds_expected_active_to_frozen_previous_version[sqlite]
+2 failed, 45 deselected in 0.73s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k frozen_previous
+Observed exit code: 1

@@ -1,0 +1,22 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_clean_source_and_online_derivative_share_one_capture_and_replay_actual_transform _
+
+    def test_clean_source_and_online_derivative_share_one_capture_and_replay_actual_transform():
+        envelope, records = derived_fixture()
+        view = api().validate_raw_episode_v3(envelope, records)
+        assert view.status == "COMPLETE", view.reasons
+        assert view.counts["recorded_acquisition_records"] == 3
+        assert view.counts["distinct_acquisition_intervals"] == 2 and view.counts["derived_online_inputs"] == 1
+        envelope, bad = derived_fixture(corrupt_online=True)
+        view = api().validate_raw_episode_v3(envelope, bad)
+>       assert view.status == "INVALID" and "derived_online_transform_bytes_mismatch" in view.reasons
+E       AssertionError: assert ('COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE)
+
+tests/test_raw_episode_v3.py:502: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_clean_source_and_online_derivative_share_one_capture_and_replay_actual_transform
+1 failed, 44 deselected in 1.47s

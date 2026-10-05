@@ -1,0 +1,295 @@
+{
+  "task": "T8a independent offline protocol evidence producer and verifier",
+  "date": "2026-10-04",
+  "owned_files": [
+    "src/cloud_edge_robot_arm/research/protocol_evidence.py",
+    "scripts/prepare_rgbd_protocol_evidence.py",
+    "configs/research/recovery_faults.yaml",
+    "tests/test_protocol_evidence_generation.py"
+  ],
+  "status": "SOFTWARE_IMPLEMENTED_PHYSICAL_EVIDENCE_INCOMPLETE",
+  "actual_physical_proofs_produced": 0,
+  "test_fixtures_are_research_evidence": false,
+  "checks": {
+    "initial_red": "11 expected missing-feature failures in red.log",
+    "hardening_red": "NaN raw joint velocity passed incorrectly before fix; red-hardening.log",
+    "source_identity_red": "foreign initial geometry passed incorrectly before fix; red-source-identity.log",
+    "targeted_green": "18 passed",
+    "related_regression": "38 passed in green-related.log",
+    "ruff": "clean in ruff.log",
+    "mypy": "no issues in two source files; upstream unused-module override note only",
+    "full_suite": "Root agent owns whole-project verification; no duplicate full suite run in delegated module"
+  },
+  "interfaces": {
+    "prepare_protocol_evidence(pools, output)": "Archives raw sources into fresh immutable output and calls independent verifier; no runtime experiments",
+    "verify_protocol_evidence(directory)": "Returns status COMPLETE/INCOMPLETE/INVALID, valid only COMPLETE, integrity_valid separately; counts remain denominator200",
+    "load_protocol_opportunities(directory, consumer_role)": "Only offline_evaluation role may read formal labels; development/online raises PermissionError"
+  },
+  "pools_input_schema": {
+    "pool_lists": "Normal assignment dictionaries including assignment_id, scene:SceneSpec, scene_hash; pairwise physical-group isolation enforced",
+    "_evidence": {
+      "history_roots": "All previous dataset/run metadata roots to recursively inspect .json/.jsonl",
+      "excluded_groups": "Complete set including every group found in history roots",
+      "opportunity_sources": "formal assignment ID -> raw bundle directory",
+      "recovery_sources": "recovery assignment ID -> ordered attempt directories (up to5)"
+    }
+  },
+  "opportunity_bundle": {
+    "files": [
+      "capture.json",
+      "rgb.png",
+      "depth.npy",
+      "instances.npy"
+    ],
+    "capture_fields": [
+      "group_id",
+      "scene_hash",
+      "episode_id",
+      "frame_id",
+      "object_instance_id",
+      "captured_at_s",
+      "submitted_at_s",
+      "tcp_position_m",
+      "action_spec"
+    ],
+    "action_spec": {
+      "action_type": "MOVE_TCP",
+      "target_position_m": "[x,y,z] in metres",
+      "radius_m": "finite (0,.1]"
+    },
+    "evaluation": "Raw RGB-D/instance dimensions and pixel validity; min4 object pixels, at least .5 valid metric depth, raw identity; straight TCP swept sphere against scene distractor AABBs and workspace, age<=.25s. VALID/INVALID/UNKNOWN remain distinct."
+  },
+  "recovery_bundle": {
+    "files": [
+      "attempt.json",
+      "physical-observations.json",
+      "fault-events.json",
+      "teacher-actions.json",
+      "commands.json"
+    ],
+    "attempt_fields": [
+      "group_id",
+      "scene_hash",
+      "episode_id",
+      "recovery_start_step"
+    ],
+    "physical_observations": "Full PhysicsStepObservation dataclass fields on reset and every physics step; finite geometry/joint/range arrays required",
+    "fault_events": "Exact backend TARGET_MOTION_STARTED and TARGET_MOTION_FINISHED records, timestamps aligned to raw physical steps",
+    "teacher_actions": "[{source:GROUND_TRUTH_TEACHER,action_type,start_step,end_step}]",
+    "commands": "Unmodified backend.command_records",
+    "rules": "TARGET_MOTION .02m/s for1s, direction +1,-1 by pool ordinal; actual signed displacement>=.005m; post-fault teacher actions/actuator commands; <=60s recovery; independent lift/hold/place success and scoped physical safety"
+  },
+  "outputs": [
+    "evidence-pools.json",
+    "excluded-groups.json",
+    "evidence-rules.json",
+    "source-registry.json",
+    "history/*.json",
+    "opportunities.json",
+    "recovery-faults.json",
+    "generation-attempts.json",
+    "missing-opportunities.json",
+    "raw/<assignment>/opportunity/*",
+    "raw/<assignment>/attempt-N/*",
+    "protocol-evidence.json"
+  ],
+  "physical_execution_hooks": [
+    "Apply isolated registered SceneSpec through existing capture.apply_scene",
+    "Capture raw current_physics_observation on reset and every step; combine with T5 teacher observer rather than nesting observers",
+    "Inject PhysicalFault(TARGET_MOTION) using fixed parameters, retain backend.fault_records, wait until recorded finish",
+    "Run independent T5 GROUND_TRUTH_TEACHER after defect; retain action boundaries and backend.command_records",
+    "Provide captured raw opportunity images/depth/instance map and immutable candidate action before comparison methods run",
+    "Call prepare CLI --pools pools-with-evidence.json --output fresh-dir; exit3 means INCOMPLETE/INVALID, exit0 only all formal captures and200 proofs pass"
+  ],
+  "gaps_and_scoped_limits": [
+    "No actual200-group recoverability proofs or formal RGB-D captures were generated by this task; software fixture successes cannot count.",
+    "Caller/root must enumerate every previous-use metadata root. The verifier proves completeness inside declared roots and rejects missing exclusions, but cannot infer historical storage outside those roots.",
+    "Formal label access is enforced in this API/CLI through explicit consumer roles; filesystem reads by arbitrary external code require orchestration isolation. This is not an OS access-control system.",
+    "Opportunity geometry is scoped to straight MOVE_TCP swept paths with fixed scene distractors; it does not certify full manipulator kinematics or dynamic distractor state.",
+    "Only TARGET_MOTION currently has raw effect and backend start/end semantics. Other fault classes require independent physical effect contracts before acceptance.",
+    "Serialized source bytes are hash-bound and independently recalculated, but measurement authenticity ultimately comes from the trusted physical collector/source snapshot, not cryptographic hardware attestation.",
+    "Full source-role hash integration and whole-project tests belong to root-owned freezer/selection work."
+  ],
+  "self_review": [
+    "Rejected false recoverability from ordinary success without injected defect.",
+    "Raw label tamper detected even when proof booleans are changed together.",
+    "Source geometry and episode/scene identity checked separately from summaries.",
+    "Failed/excluded/incomplete attempts retained with immutable payload hashes and bounded attempts.",
+    "NaN velocity loophole in downstream evaluator preempted by raw array validation.",
+    "Physical safety and recovery duration independently reevaluated; labels never transferred to online providers by this module."
+  ],
+  "fix_round_1": {
+    "status": "READY_FOR_INDEPENDENT_RE_REVIEW_PHYSICAL_FORMAL_EVIDENCE_INCOMPLETE",
+    "supersedes": "The initial opportunity/recovery schema, geometry scope, interface details and verification counts above describe the reviewed baseline. This fix_round_1 section and the current module docstring describe the replacement acceptance contract.",
+    "review_findings_addressed": {
+      "P1_fixed_topology": "Only explicit ced.research.v2 with exact selection120/foundation120/power120/formal2400/recovery200/ood300 and every canonical ordinal/stratum, registered perturbation level/cycle, scene/group/full assignment hash and fixed candidate can COMPLETE. Legacy rgbd.research.v1 is diagnostic INCOMPLETE; partial inputs remain INCOMPLETE.",
+      "P1_pixels_context_geometry": "Exact calibrated 320x240 optical-z little-endian float32 image/depth bytes, assigned camera, three render passes/state hashes, original geom-ID semantic map, oriented physical object projection and raw context are bound to the assignment and candidate. VALID/INVALID require one exact bounded MOVE_TCP and its complete measured arm action, command/actuator joins and all33 collision pairs. Unsupported or unverifiable context is UNKNOWN/INCOMPLETE. A verified applicable action with observed sensor invalidity remains honest UNKNOWN.",
+      "P1_reset_complete_trace": "rgbd.raw-episode.v2 independently binds reset0/time0 and terminal snapshot hashes/steps/times. Every raw step must be present, finite, episode-consistent and full-scope; early safety observations cannot be trimmed.",
+      "P1_teacher_execution_provenance": "Actual full ActionResult, nine ordered T5 action intervals, episode/source/action IDs and contiguous half-open backend command sequence ranges join unmodified original dispatch records/targets to every pre-step applied controller output. Actual q/bias/gains/ranges/ctrl and fingers reconstruct reference control semantics; forgeable markers, unrelated commands and missing step rows cannot prove recovery.",
+      "P2_attempt_integrity": "Every audit assignment and ordinal validated, attempts consecutive unique1..k (or no-source0), mandatory raw/hash fields checked, all supplied failed/proven/incomplete attempts independently reconstructed; selected fault must be first PROVEN ordinal.",
+      "P2_finite_fault_timestamps": "All JSON nonstandard NaN/Infinity numbers rejected; finite typed fault times/steps align raw observations; early finger-contact termination requires recorded raw contact basis.",
+      "P2_destination_safety": "Exclusive fresh output directory required, existing/symlink destinations rejected before writes; dot/escaping IDs rejected, exclusive contained nonsymlink raw/control writes and reads.",
+      "P2_payload_coverage": "Payload manifest must cover exact complete archived file inventory and all mandatory control files, with strict digest syntax and manifest flags/version. Full pool-lock and candidate schedule are hash-bound; external source/frozen-role binding remains root integration."
+    },
+    "checks": {
+      "red_logs": [
+        "fix-round-1-red.log",
+        "fix-round-1-red-adapter.log",
+        "fix-round-1-red-dispatch.log",
+        "fix-round-1-red-terminal-hold.log",
+        "fix-round-1-red-missing-source.log",
+        "fix-round-1-red-perturbations.log",
+        "fix-round-1-red-unknown-snapshot.log"
+      ],
+      "latest_scoped_green": {
+        "result": "69 passed in19.41s",
+        "owned_module_tests": 49,
+        "related_existing_tests": 20,
+        "log": "fix-round-1-green-related-final.log"
+      },
+      "ruff": {
+        "result": "All checks passed",
+        "log": "fix-round-1-ruff.log"
+      },
+      "mypy": {
+        "result": "Success: no issues found in2 source files; existing global unused-module override note only",
+        "log": "fix-round-1-mypy.log"
+      },
+      "full_suite": "Not run; no additional broad tests after parent finalization request.",
+      "experiments_by_this_agent": "No physical capture, GPU, renderer, model, network or cloud execution; no commits."
+    },
+    "interfaces": {
+      "prepare_protocol_evidence(pools, output)": "Archives declared raw sources into exclusive fresh output and independently verifies; no simulation.",
+      "verify_protocol_evidence(directory)": "Reconstructs source-bound snapshots and attempts; COMPLETE only exactv2 topology/full applicable formal snapshots/200 first successful safe recovery proofs, otherwise INCOMPLETE or INVALID.",
+      "write_recovery_source": "Passive adapter only: keyword row, observations, action_events, backend_commands, actuator_steps, fault_events, recovery_start_step, output. Detaches full existing observer rows, original actual ActionResult/dispatch data and finite fault records into six raw files; returns header without running experiments.",
+      "load_protocol_opportunities": "Only explicit offline_evaluation consumer_role permitted; CLI rejects development role before reads/writes."
+    },
+    "raw_schema": {
+      "opportunity_files": [
+        "capture.json",
+        "rgb.png",
+        "depth.npy",
+        "instances.npy",
+        "observation.json",
+        "context.json",
+        "physical-observations.json",
+        "candidate-actions.json",
+        "commands.json",
+        "actuator-provenance.json"
+      ],
+      "candidate": {
+        "candidate_id": "candidate-<assignment_id>",
+        "action_type": "MOVE_TCP",
+        "object_id": "object",
+        "target_position_m": "[assigned targetx,targety,.16]",
+        "radius_m": 0.02,
+        "timeout_s": 8
+      },
+      "recovery_files": [
+        "attempt.json",
+        "physical-observations.json",
+        "fault-events.json",
+        "teacher-actions.json",
+        "commands.json",
+        "actuator-provenance.json"
+      ],
+      "raw_header_schema": "rgbd.raw-episode.v2",
+      "raw_header_bindings": [
+        "assignment_hash",
+        "group_id",
+        "scene_hash",
+        "episode_id",
+        "reset_step0",
+        "reset_sim_time_s0",
+        "terminal_step",
+        "terminal_sim_time_s",
+        "physics_dt_s",
+        "reset_observation_hash",
+        "terminal_observation_hash",
+        "recovery_start_step"
+      ],
+      "teacher_sequence": [
+        "MOVE_ABOVE",
+        "APPROACH",
+        "GRASP",
+        "LIFT",
+        "OBSERVE",
+        "MOVE_TO_REGION",
+        "PLACE",
+        "RELEASE",
+        "OBSERVE"
+      ],
+      "action_events": "actual ActionResult plus episode_id/start_step/end_step/command_seq_start/end (one-based half-open); detached as emitted by current T5 hook",
+      "command_records": "Original actual backend command_seq,episode_id,physics_step,sim_time_s,type,accepted,requested and appliedclipped joint positions or target_open; adapter adds action/command IDs without altering original records.",
+      "actuator_schema": "rgbd.actuator-provenance.v1",
+      "actuator_rows": "Every step1..terminal includes episode/physics_step/action/active command IDs, applied arm/finger targets, measured pre_joint_positions_rad/pre_gravity_bias_nm/control_rad, actual gains and ranges. physics_step means next completed step; sim_time_s is explicitly PRE-step timestamp matching preceding physical observation.",
+      "controller_parameters": "Frozen actual gains/ranges, initial joint/finger targets and actuator_delay_steps0. Only the current zero-delay reference controller can be independently reconstructed.",
+      "fault": "Actual TARGET_MOTION .02m/s for1s direction alternates by recovery ordinal; start/finish raw events, signed measured displacement>=.005m, teacher starts after defect finishes, recovery<=60s, independent lift/hold/place and SCOPED_NO_VIOLATION."
+    },
+    "physical_execution_hooks": [
+      "Root owns real serial collector. Attach current backend physical observer at reset and every existing step, fault records and observe_actuator_steps before mj_step; capture immutable gains/ranges and original command records.",
+      "Current T5 physical_observer supplies entry/every step; action_observer supplies actual results/boundaries/sequence ranges. Avoid duplicate same-step teacher entry snapshot when joining pre-fault collector.",
+      "Feed detached observations/action_events/backend_commands/actuator_steps/fault_events to write_recovery_source, then declare returned raw bundle in _evidence.recovery_sources and call prepare/verify.",
+      "Opportunity collector additionally serializes existing calibrated RGBDObservation, true render/camera hashes/instance map and exactly the fixed bounded recorded MOVE_TCP contract plus complete command/control trace."
+    ],
+    "physical_evidence_accounting": {
+      "formal_recovery_proofs_produced_by_this_agent": 0,
+      "formal_200_pool_complete": false,
+      "test_fixtures_are_research_evidence": false,
+      "root_reported_actual_development_capture": {
+        "owner": "root",
+        "raw_steps": 5368,
+        "actuator_rows": 5367,
+        "teacher_actions": 9,
+        "physical_outcome": "SUCCESS SCOPED_NO_VIOLATION",
+        "public_prepare_verify": "errors[]/recovery_proven1/statusINCOMPLETE/g4false",
+        "artifact": "../t8-real-raw-development/attempt-1 and verified-development",
+        "group_use": "Development only; must be excluded from formal pools. This was not executed by this agent."
+      }
+    },
+    "remaining_scoped_limits": [
+      "Fixed2400 calibrated applicable formal snapshots and200 actual safe injected teacher proofs are still required; no software fixture supplies them.",
+      "Root must bind source-role hashes and frozen external protocol root. Self hashes attest bytes, not sensor/actuator authenticity.",
+      "Caller must enumerate all prior-used history roots; verifier can prove exclusions only inside declared roots.",
+      "Role restriction is API/CLI, not filesystem ACL; root orchestration must isolate formal labels from development consumers.",
+      "Only full reference all33 collision scope, bounded MOVE_TCP candidate, zero-delay controller and TARGET_MOTION currently supported; other physical contracts fail closed until explicit support."
+    ],
+    "artifacts": [
+      "fix-round-1-baseline/",
+      "fix-round-1.diff",
+      "fix-round-1-source-hashes.json"
+    ]
+  },
+  "fix_round_2": {
+    "status": "READY_FOR_SCOPED_INDEPENDENT_RE_REVIEW",
+    "review": "fix-round-1-review.md remaining P2 omitted reset-command prefix",
+    "cause": "The prior verifier derived the first expected command sequence from the first supplied record, so source and action-range offsets could hide an omitted prefix.",
+    "fix": "Supported reset-terminal execution must have backend dispatch history beginning at1. Action ranges start at1, remain contiguous one-based half-open ranges and must account for the exact entire sequence range(1, final action command_seq_end), which is last actual command_seq+1. Empty history cannot establish supported T5 recovery or bounded MOVE_TCP execution. Pre-action dispatches remain unsupported until their complete prefix has an explicit validated contract; all supplied dispatches must join actual action/controller scope.",
+    "red": {
+      "result": "2 failed,1 passed,49 deselected",
+      "log": "fix-round-2-red.log",
+      "cases": [
+        "Every actual backend command_seq and both action range endpoints consistently offset+1; falsely PROVEN before fix.",
+        "First of two identical same-step actual dispatches omitted and first action start adjusted to2, leaving retained controls and rest of whole raw trace unchanged; full history was independently accepted before omission, omitted history falsely PROVEN before fix.",
+        "Empty command history cannot produce teacher proof (already rejected)."
+      ]
+    },
+    "green": {
+      "result": "52 module tests passed",
+      "log": "fix-round-2-green.log",
+      "scope": "Only tests/test_protocol_evidence_generation.py, no related or full suite."
+    },
+    "static_checks": {
+      "ruff": "All checks passed; fix-round-2-ruff.log",
+      "mypy": "Success: no issues found in2source files, only existing global unused-module override note; fix-round-2-mypy.log"
+    },
+    "source_contract": "Raw backend command_seq remains original unmodified1-based per-episode counter. No collector renumbering is accepted. Existing physical/reset/terminal/actuator trace and pre-step timestamp semantics are unchanged.",
+    "physical_evidence": "No GPU/network/render/physical execution, dependencies or commits in this fix. Previously recorded development raw source and historical audit scope remain unchanged until a new software-tag audit by root. No new actual recovery proof or formal200-pool claim.",
+    "artifacts": [
+      "fix-round-2-baseline/",
+      "fix-round-2.diff",
+      "fix-round-2-source-hashes.json"
+    ],
+    "remaining_limits": "Actual formal snapshots,200 physical recovery proofs, external frozen source/role hash binding, complete declared history and filesystem consumer isolation remain root-owned integration requirements, as recorded in fix_round_1."
+  }
+}

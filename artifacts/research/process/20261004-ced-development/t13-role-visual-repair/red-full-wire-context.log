@@ -1,0 +1,22 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_wire_context_contains_exact_current_state_and_full_frozen_condition_specs _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-781/test_wire_context_contains_exa0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x75738c1ce360>
+
+    def test_wire_context_contains_exact_current_state_and_full_frozen_condition_specs(tmp_path, monkeypatch):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        result = adapter.replan(request)
+        assert result.outcome == 'REPLANNED'
+        body = json.loads(wire.requests[0])
+        envelope = json.loads(body['messages'][1]['content'][0]['text']
+            .split('\nROLE_REPAIR_CONTEXT=')[1].split('\n')[0])
+>       current = envelope['current_context']
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'current_context'
+
+tests/test_role_visual_repair.py:655: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_wire_context_contains_exact_current_state_and_full_frozen_condition_specs
+1 failed, 50 deselected in 0.54s

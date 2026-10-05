@@ -1,0 +1,31 @@
+F.......................                                                 [100%]
+=================================== FAILURES ===================================
+_ test_outboard_tag_is_rigidly_attached_outside_cube_without_changing_original_geometry _
+
+    def test_outboard_tag_is_rigidly_attached_outside_cube_without_changing_original_geometry():
+        before, centered = BASE.read_bytes(), OLD.read_bytes()
+        generated = api().build_outboard_pose_marker_xml(before)
+        assert generated == api().build_outboard_pose_marker_xml(before)
+        tree = ET.fromstring(generated)
+        original = {node.get("name"): node for node in ET.fromstring(before).iter() if node.get("name")}
+        modified = {node.get("name"): node for node in tree.iter() if node.get("name")}
+        for name, node in original.items():
+            assert modified[name].attrib == node.attrib
+        body = tree.find("./worldbody/body[@name='object']")
+        assert body is not None
+        additions = [node for node in body.findall("geom") if node.get("name") not in original]
+        assert len(additions) == 37
+        quiet = next(node for node in additions if node.get("name") == "pose_marker_outboard_v3_quiet")
+>       assert [float(v) for v in quiet.get("pos").split()] == pytest.approx([0.1, 0, 0.03505])
+E       assert [0.1, 0.0, 0.03502] == approx([0.1 ±...05 ± 3.5e-08])
+E         
+E         comparison failed. Mismatched elements: 1 / 3:
+E         Max absolute difference: 2.9999999999995308e-05
+E         Max relative difference: 0.0008566533409478956
+E         Index | Obtained | Expected         
+E         2     | 0.03502  | 0.03505 ± 3.5e-08
+
+tests/test_pose_marker_visibility.py:37: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_pose_marker_visibility.py::test_outboard_tag_is_rigidly_attached_outside_cube_without_changing_original_geometry
+1 failed, 23 passed in 0.72s

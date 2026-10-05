@@ -1,0 +1,19 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+___ test_symlinked_role_source_root_cannot_become_current_by_resolving_alias ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-919/test_symlinked_role_source_roo0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ef07a23c6b0>
+
+    def test_symlinked_role_source_root_cannot_become_current_by_resolving_alias(tmp_path, monkeypatch):
+        provider, wire, planner, binding, _, _ = setup(tmp_path, monkeypatch)
+        alias = tmp_path.parent / (tmp_path.name + "-source-alias")
+        alias.symlink_to(tmp_path, target_is_directory=True)
+        provider.binding = replace(binding, root=alias, edge_policy=binding.evidence()["edge_policy"])
+>       with pytest.raises(api().RoleConditionalPlanningUnavailable): provider.plan()
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.cloud.replanning.role_conditional_planning.RoleConditionalPlanningUnavailable'>
+
+tests/test_role_conditional_planning.py:433: Failed
+=========================== short test summary info ============================
+FAILED tests/test_role_conditional_planning.py::test_symlinked_role_source_root_cannot_become_current_by_resolving_alias
+1 failed, 1 passed, 43 deselected in 0.58s

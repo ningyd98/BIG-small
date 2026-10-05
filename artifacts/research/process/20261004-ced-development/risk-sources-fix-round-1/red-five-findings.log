@@ -1,0 +1,351 @@
+FFFFF.F...F.F                                                            [100%]
+=================================== FAILURES ===================================
+_ test_full_software_action_source_rejects_independent_consistency_counterexamples[overwritten_hold] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_full_software_action_sour0')
+mutation = 'overwritten_hold'
+
+    @pytest.mark.parametrize("mutation", ["overwritten_hold", "asset_gain", "fixed_geometry"])
+    def test_full_software_action_source_rejects_independent_consistency_counterexamples(
+        tmp_path: Path, mutation: str
+    ) -> None:
+        case, directory = motion_software_case(tmp_path)
+        if mutation == "overwritten_hold":
+            path = directory / "commands.json"
+            commands = json.loads(path.read_bytes())
+            index = next(
+                i for i, command in enumerate(commands[:-1])
+                if command["type"] == "hold_current_joints"
+                and commands[i + 1]["physics_step"] == command["physics_step"]
+            )
+            commands[index]["target_positions_rad"][0] += 0.01
+            commands[index]["applied_target_positions_rad"][0] += 0.01
+            json_file(path, commands)
+            reason = "hold"
+        elif mutation == "asset_gain":
+            path = directory / "raw-actuators.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["actuator_gains"][1] = 40.0
+            rows[5]["control_rad"][1] = (
+                rows[5]["pre_joint_positions_rad"][1] + rows[5]["pre_gravity_bias_nm"][1] / 40
+            )
+            rewrite_jsonl(path, rows)
+            reason = "asset"
+        else:
+            from dataclasses import asdict
+    
+            from cloud_edge_robot_arm.research.protocol_evidence import _observation
+            from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
+                sample_physical_observation,
+            )
+    
+            path = directory / "raw-physics.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["object_half_extent_m"][0] = 0.0001
+            rewrite_jsonl(path, rows)
+            samples = json.loads((directory / "physical-samples.json").read_bytes())
+            samples[5] = asdict(sample_physical_observation(
+                _observation(rows[5]), CompletionCriteria("object", "target_region")
+            ))
+            json_file(directory / "physical-samples.json", samples)
+            reason = "geometry"
+        result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+>       assert result.status == "INVALID", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_sources.py:632: AssertionError
+_ test_full_software_action_source_rejects_independent_consistency_counterexamples[asset_gain] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_full_software_action_sour1')
+mutation = 'asset_gain'
+
+    @pytest.mark.parametrize("mutation", ["overwritten_hold", "asset_gain", "fixed_geometry"])
+    def test_full_software_action_source_rejects_independent_consistency_counterexamples(
+        tmp_path: Path, mutation: str
+    ) -> None:
+        case, directory = motion_software_case(tmp_path)
+        if mutation == "overwritten_hold":
+            path = directory / "commands.json"
+            commands = json.loads(path.read_bytes())
+            index = next(
+                i for i, command in enumerate(commands[:-1])
+                if command["type"] == "hold_current_joints"
+                and commands[i + 1]["physics_step"] == command["physics_step"]
+            )
+            commands[index]["target_positions_rad"][0] += 0.01
+            commands[index]["applied_target_positions_rad"][0] += 0.01
+            json_file(path, commands)
+            reason = "hold"
+        elif mutation == "asset_gain":
+            path = directory / "raw-actuators.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["actuator_gains"][1] = 40.0
+            rows[5]["control_rad"][1] = (
+                rows[5]["pre_joint_positions_rad"][1] + rows[5]["pre_gravity_bias_nm"][1] / 40
+            )
+            rewrite_jsonl(path, rows)
+            reason = "asset"
+        else:
+            from dataclasses import asdict
+    
+            from cloud_edge_robot_arm.research.protocol_evidence import _observation
+            from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
+                sample_physical_observation,
+            )
+    
+            path = directory / "raw-physics.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["object_half_extent_m"][0] = 0.0001
+            rewrite_jsonl(path, rows)
+            samples = json.loads((directory / "physical-samples.json").read_bytes())
+            samples[5] = asdict(sample_physical_observation(
+                _observation(rows[5]), CompletionCriteria("object", "target_region")
+            ))
+            json_file(directory / "physical-samples.json", samples)
+            reason = "geometry"
+        result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+>       assert result.status == "INVALID", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_sources.py:632: AssertionError
+_ test_full_software_action_source_rejects_independent_consistency_counterexamples[fixed_geometry] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_full_software_action_sour2')
+mutation = 'fixed_geometry'
+
+    @pytest.mark.parametrize("mutation", ["overwritten_hold", "asset_gain", "fixed_geometry"])
+    def test_full_software_action_source_rejects_independent_consistency_counterexamples(
+        tmp_path: Path, mutation: str
+    ) -> None:
+        case, directory = motion_software_case(tmp_path)
+        if mutation == "overwritten_hold":
+            path = directory / "commands.json"
+            commands = json.loads(path.read_bytes())
+            index = next(
+                i for i, command in enumerate(commands[:-1])
+                if command["type"] == "hold_current_joints"
+                and commands[i + 1]["physics_step"] == command["physics_step"]
+            )
+            commands[index]["target_positions_rad"][0] += 0.01
+            commands[index]["applied_target_positions_rad"][0] += 0.01
+            json_file(path, commands)
+            reason = "hold"
+        elif mutation == "asset_gain":
+            path = directory / "raw-actuators.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["actuator_gains"][1] = 40.0
+            rows[5]["control_rad"][1] = (
+                rows[5]["pre_joint_positions_rad"][1] + rows[5]["pre_gravity_bias_nm"][1] / 40
+            )
+            rewrite_jsonl(path, rows)
+            reason = "asset"
+        else:
+            from dataclasses import asdict
+    
+            from cloud_edge_robot_arm.research.protocol_evidence import _observation
+            from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
+                sample_physical_observation,
+            )
+    
+            path = directory / "raw-physics.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["object_half_extent_m"][0] = 0.0001
+            rewrite_jsonl(path, rows)
+            samples = json.loads((directory / "physical-samples.json").read_bytes())
+            samples[5] = asdict(sample_physical_observation(
+                _observation(rows[5]), CompletionCriteria("object", "target_region")
+            ))
+            json_file(directory / "physical-samples.json", samples)
+            reason = "geometry"
+        result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+>       assert result.status == "INVALID", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_sources.py:632: AssertionError
+_________ test_full_software_commands_cannot_delete_every_typed_action _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_full_software_commands_ca0')
+
+    def test_full_software_commands_cannot_delete_every_typed_action(tmp_path: Path) -> None:
+        case, directory = motion_software_case(tmp_path)
+        (directory / "raw-actions.jsonl").write_text("")
+        json_file(directory / "actions.json", [])
+        case = replace(case, original_file_hashes=hashes(directory),
+                       expected_counts={**dict(case.expected_counts), "actions": 0})
+        result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+>       assert result.status == "UNKNOWN", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + VALID
+
+tests/test_research_risk_sources.py:646: AssertionError
+____________ test_strict_actuator_schema_and_numeric_types[unknown] ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_strict_actuator_schema_an0')
+mutation = 'unknown'
+
+    @pytest.mark.parametrize("mutation", [
+        "unknown", "bias_bool", "q_bool", "gain_bool", "range_bool", "output_bool",
+        "target_bool", "finger_bool",
+    ])
+    def test_strict_actuator_schema_and_numeric_types(tmp_path: Path, mutation: str) -> None:
+        case, directory = fixture_case(tmp_path)
+        path = directory / "raw-actuators.jsonl"
+        rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+        if mutation == "unknown":
+            rows[5]["unrecognized_authority"] = True
+        else:
+            key = {
+                "bias_bool": "pre_gravity_bias_nm", "q_bool": "pre_joint_positions_rad",
+                "gain_bool": "actuator_gains", "range_bool": "actuator_ctrl_ranges",
+                "output_bool": "control_rad", "target_bool": "applied_joint_targets_rad",
+                "finger_bool": "finger_control_targets_m",
+            }[mutation]
+            if mutation == "range_bool":
+                rows[5][key][0][0] = False
+            else:
+                rows[5][key][1] = False
+        rewrite_jsonl(path, rows)
+        result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+>       assert result.status == "INVALID", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_sources.py:677: AssertionError
+____________ test_strict_actuator_schema_and_numeric_types[q_bool] _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_strict_actuator_schema_an2')
+mutation = 'q_bool'
+
+    @pytest.mark.parametrize("mutation", [
+        "unknown", "bias_bool", "q_bool", "gain_bool", "range_bool", "output_bool",
+        "target_bool", "finger_bool",
+    ])
+    def test_strict_actuator_schema_and_numeric_types(tmp_path: Path, mutation: str) -> None:
+        case, directory = fixture_case(tmp_path)
+        path = directory / "raw-actuators.jsonl"
+        rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+        if mutation == "unknown":
+            rows[5]["unrecognized_authority"] = True
+        else:
+            key = {
+                "bias_bool": "pre_gravity_bias_nm", "q_bool": "pre_joint_positions_rad",
+                "gain_bool": "actuator_gains", "range_bool": "actuator_ctrl_ranges",
+                "output_bool": "control_rad", "target_bool": "applied_joint_targets_rad",
+                "finger_bool": "finger_control_targets_m",
+            }[mutation]
+            if mutation == "range_bool":
+                rows[5][key][0][0] = False
+            else:
+                rows[5][key][1] = False
+        rewrite_jsonl(path, rows)
+        result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+>       assert result.status == "INVALID", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_sources.py:677: AssertionError
+__________ test_strict_actuator_schema_and_numeric_types[target_bool] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_strict_actuator_schema_an6')
+mutation = 'target_bool'
+
+    @pytest.mark.parametrize("mutation", [
+        "unknown", "bias_bool", "q_bool", "gain_bool", "range_bool", "output_bool",
+        "target_bool", "finger_bool",
+    ])
+    def test_strict_actuator_schema_and_numeric_types(tmp_path: Path, mutation: str) -> None:
+        case, directory = fixture_case(tmp_path)
+        path = directory / "raw-actuators.jsonl"
+        rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+        if mutation == "unknown":
+            rows[5]["unrecognized_authority"] = True
+        else:
+            key = {
+                "bias_bool": "pre_gravity_bias_nm", "q_bool": "pre_joint_positions_rad",
+                "gain_bool": "actuator_gains", "range_bool": "actuator_ctrl_ranges",
+                "output_bool": "control_rad", "target_bool": "applied_joint_targets_rad",
+                "finger_bool": "finger_control_targets_m",
+            }[mutation]
+            if mutation == "range_bool":
+                rows[5][key][0][0] = False
+            else:
+                rows[5][key][1] = False
+        rewrite_jsonl(path, rows)
+        result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+>       assert result.status == "INVALID", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_sources.py:677: AssertionError
+_____________ test_missing_registered_controller_asset_is_unknown ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-856/test_missing_registered_contro0')
+
+    def test_missing_registered_controller_asset_is_unknown(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+        inventory = sources()
+        del inventory["assets/robots/franka_panda/scene_pose_marker_color_v2.xml"]
+        registration = RiskSourceRegistration(
+            tmp_path, ROOT, inventory, (case,), CompletionCriteria("object", "target_region")
+        )
+        result = RiskSourceAuditor({"fixture": registration}).audit("fixture", scope="RAW_EXECUTION")
+>       assert result.status == "UNKNOWN", result.reasons
+E       AssertionError: ()
+E       assert 'VALID' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + VALID
+
+tests/test_research_risk_sources.py:688: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_full_software_action_source_rejects_independent_consistency_counterexamples[overwritten_hold]
+FAILED tests/test_research_risk_sources.py::test_full_software_action_source_rejects_independent_consistency_counterexamples[asset_gain]
+FAILED tests/test_research_risk_sources.py::test_full_software_action_source_rejects_independent_consistency_counterexamples[fixed_geometry]
+FAILED tests/test_research_risk_sources.py::test_full_software_commands_cannot_delete_every_typed_action
+FAILED tests/test_research_risk_sources.py::test_strict_actuator_schema_and_numeric_types[unknown]
+FAILED tests/test_research_risk_sources.py::test_strict_actuator_schema_and_numeric_types[q_bool]
+FAILED tests/test_research_risk_sources.py::test_strict_actuator_schema_and_numeric_types[target_bool]
+FAILED tests/test_research_risk_sources.py::test_missing_registered_controller_asset_is_unknown
+8 failed, 5 passed, 35 deselected in 16.27s

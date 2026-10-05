@@ -1,0 +1,82 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_________ test_judge_cannot_replenish_authoritative_reobservation_pool _________
+
+    def test_judge_cannot_replenish_authoritative_reobservation_pool():
+        module = import_module("cloud_edge_robot_arm.auto_mode.judgment")
+        class BudgetReplenishingJudge:
+            def choose(self, context, candidates, estimates):
+                context.verification_budget.remaining_reobservations = 2
+                return module.JudgmentResult(None, {}, None, None, "ABSTAIN", "budget-mutator", 0.)
+        ctx = prepared_context()
+        ctx.verification_budget.remaining_reobservations = 0
+        chosen = policy(judge=BudgetReplenishingJudge())
+>       assert chosen.decide(ctx) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...: 'REOBSERVE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + REOBSERVE
+
+tests/test_joint_visual_policy.py:381: AssertionError
+___________ test_judge_cannot_extend_authoritative_absolute_deadline ___________
+
+    def test_judge_cannot_extend_authoritative_absolute_deadline():
+        module = import_module("cloud_edge_robot_arm.auto_mode.judgment")
+        class DeadlineExtendingJudge:
+            def choose(self, context, candidates, estimates):
+                context.verification_budget.deadline_at = NOW + timedelta(seconds=600)
+                return module.JudgmentResult(None, {}, None, None, "ABSTAIN", "deadline-mutator", 0.)
+        times = iter((NOW, NOW + timedelta(seconds=61)))
+        ctx = prepared_context()
+        chosen = policy(judge=DeadlineExtendingJudge(), clock=lambda: next(times))
+>       assert chosen.decide(ctx) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...: 'REOBSERVE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + REOBSERVE
+
+tests/test_joint_visual_policy.py:394: AssertionError
+____________ test_contract_provider_cannot_replenish_shared_budget _____________
+
+    def test_contract_provider_cannot_replenish_shared_budget():
+        ctx = prepared_context()
+        ctx.verification_budget.remaining_reobservations = 0
+        chosen = policy()
+        def mutator(provider_context):
+            provider_context.verification_budget.remaining_reobservations = 2
+            return {}
+        chosen.contract_provider = mutator
+>       assert chosen.decide(ctx) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...: 'REOBSERVE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + REOBSERVE
+
+tests/test_joint_visual_policy.py:407: AssertionError
+__________ test_audit_failure_retries_never_charge_before_publication __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-628/test_audit_failure_retries_nev0')
+
+    def test_audit_failure_retries_never_charge_before_publication(tmp_path):
+        module = import_module("cloud_edge_robot_arm.auto_mode.joint_policy")
+        chosen = policy()
+        chosen.contract_provider = None
+        def broken_sink(trace):
+            raise RuntimeError("audit publication failed")
+        chosen.trace_sink = broken_sink
+        ctx = prepared_context()
+        for _ in range(2):
+            with pytest.raises(RuntimeError, match="audit publication failed"):
+                chosen.decide(ctx)
+>           assert ctx.verification_budget.remaining_reobservations == 2
+E           AssertionError: assert 1 == 2
+E            +  where 1 = VerificationBudgetState(remaining_reobservations=1, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...max_retries=2, max_no_progress=2, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0).remaining_reobservations
+E            +    where VerificationBudgetState(remaining_reobservations=1, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...max_retries=2, max_no_progress=2, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0) = DecisionContext(task_id='task', episode_id='episode', mode=<ControlMode.PERIODIC_CLOUD_SUPERVISION: 'PERIODIC_CLOUD_SU...ss=2, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0), legacy_rule_evidence=None).verification_budget
+
+tests/test_joint_visual_policy.py:422: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_joint_visual_policy.py::test_judge_cannot_replenish_authoritative_reobservation_pool
+FAILED tests/test_joint_visual_policy.py::test_judge_cannot_extend_authoritative_absolute_deadline
+FAILED tests/test_joint_visual_policy.py::test_contract_provider_cannot_replenish_shared_budget
+FAILED tests/test_joint_visual_policy.py::test_audit_failure_retries_never_charge_before_publication
+4 failed, 24 deselected in 0.33s

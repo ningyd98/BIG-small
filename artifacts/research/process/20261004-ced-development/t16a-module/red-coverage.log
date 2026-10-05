@@ -1,0 +1,118 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____ test_final_analysis_rejects_rehashed_incomplete_coverage[omit_failed] _____
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-583/test_final_analysis_rejects_re0')
+tamper = 'omit_failed'
+
+    @pytest.mark.parametrize("tamper", ["omit_failed", "omit_pool"])
+    def test_final_analysis_rejects_rehashed_incomplete_coverage(scene_pool, tmp_path, tamper):
+        import json
+        from dataclasses import asdict
+    
+        from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
+        from cloud_edge_robot_arm.research.assignments import build_assignments
+        from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec
+        from cloud_edge_robot_arm.research.runner import run_assignment
+    
+        methods = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY",
+                   "NO_TIME_VALIDITY", "NO_LOCAL_REPAIR")
+        spec = ProtocolSpec(
+            selected_n=600, tcap_s=120, pool_hashes={"formal": content_digest(scene_pool)},
+            model_snapshot_hash="a" * 64,
+            method_hashes={key: content_digest(key) for key in methods},
+            initial_protocol_hash="b" * 64, opportunity_hash="c" * 64,
+            recovery_fault_manifest_hash="d" * 64,
+        )
+        frozen = FrozenProtocol(spec=spec, stage="FINAL", content_hash=content_digest(
+            {"spec": spec.model_dump(mode="json"), "stage": "FINAL"}))
+        protocol = tmp_path / "protocol"
+        protocol.mkdir()
+        (protocol / "protocol.json").write_text(frozen.model_dump_json())
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        assignments = build_assignments(frozen, methods, scene_pool=scene_pool)
+        # A producer can recompute a valid manifest hash after deleting failed episodes.
+        # The fixed N and actual pool, rather than this self-declared subset, govern coverage.
+        selected = assignments[:2] if tamper == "omit_failed" else assignments
+        manifest = {"schema_version": "ced.assignments.v1",
+                    "protocol_hash": frozen.content_hash,
+                    "assignments": [asdict(row) for row in selected]}
+        manifest["content_hash"] = content_digest(manifest)
+        (runs / "assignments.json").write_text(canonical_json(manifest))
+        if tamper != "omit_pool":
+            (runs / "pools.json").write_text(canonical_json({"formal": scene_pool}))
+        # Missing pool must reject before record decoding, so this case needs no large file.
+        (runs / "records.jsonl").write_text("\n".join(
+            canonical_json(run_assignment(row, frozen).to_payload(protocol=frozen))
+            for row in selected[:2]) + "\n")
+        original = (runs / "records.jsonl").read_bytes()
+        result = api("acceptance").analyze_research_runs(
+            runs, protocol, tmp_path / "out", software_only=True)
+>       assert result["status"] == "NOT_RUN"
+E       AssertionError: assert 'SOFTWARE_ONLY' == 'NOT_RUN'
+E         
+E         - NOT_RUN
+E         + SOFTWARE_ONLY
+
+tests/test_research_acceptance.py:289: AssertionError
+_____ test_final_analysis_rejects_rehashed_incomplete_coverage[omit_pool] ______
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-583/test_final_analysis_rejects_re1')
+tamper = 'omit_pool'
+
+    @pytest.mark.parametrize("tamper", ["omit_failed", "omit_pool"])
+    def test_final_analysis_rejects_rehashed_incomplete_coverage(scene_pool, tmp_path, tamper):
+        import json
+        from dataclasses import asdict
+    
+        from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
+        from cloud_edge_robot_arm.research.assignments import build_assignments
+        from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec
+        from cloud_edge_robot_arm.research.runner import run_assignment
+    
+        methods = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY",
+                   "NO_TIME_VALIDITY", "NO_LOCAL_REPAIR")
+        spec = ProtocolSpec(
+            selected_n=600, tcap_s=120, pool_hashes={"formal": content_digest(scene_pool)},
+            model_snapshot_hash="a" * 64,
+            method_hashes={key: content_digest(key) for key in methods},
+            initial_protocol_hash="b" * 64, opportunity_hash="c" * 64,
+            recovery_fault_manifest_hash="d" * 64,
+        )
+        frozen = FrozenProtocol(spec=spec, stage="FINAL", content_hash=content_digest(
+            {"spec": spec.model_dump(mode="json"), "stage": "FINAL"}))
+        protocol = tmp_path / "protocol"
+        protocol.mkdir()
+        (protocol / "protocol.json").write_text(frozen.model_dump_json())
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        assignments = build_assignments(frozen, methods, scene_pool=scene_pool)
+        # A producer can recompute a valid manifest hash after deleting failed episodes.
+        # The fixed N and actual pool, rather than this self-declared subset, govern coverage.
+        selected = assignments[:2] if tamper == "omit_failed" else assignments
+        manifest = {"schema_version": "ced.assignments.v1",
+                    "protocol_hash": frozen.content_hash,
+                    "assignments": [asdict(row) for row in selected]}
+        manifest["content_hash"] = content_digest(manifest)
+        (runs / "assignments.json").write_text(canonical_json(manifest))
+        if tamper != "omit_pool":
+            (runs / "pools.json").write_text(canonical_json({"formal": scene_pool}))
+        # Missing pool must reject before record decoding, so this case needs no large file.
+        (runs / "records.jsonl").write_text("\n".join(
+            canonical_json(run_assignment(row, frozen).to_payload(protocol=frozen))
+            for row in selected[:2]) + "\n")
+        original = (runs / "records.jsonl").read_bytes()
+        result = api("acceptance").analyze_research_runs(
+            runs, protocol, tmp_path / "out", software_only=True)
+        assert result["status"] == "NOT_RUN"
+>       assert "coverage" in result["reasons"][0]
+E       AssertionError: assert 'coverage' in 'analysis requires every preassigned episode, including missing/blocked failures'
+
+tests/test_research_acceptance.py:290: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_acceptance.py::test_final_analysis_rejects_rehashed_incomplete_coverage[omit_failed]
+FAILED tests/test_research_acceptance.py::test_final_analysis_rejects_rehashed_incomplete_coverage[omit_pool]
+2 failed, 20 deselected in 2.68s

@@ -1,0 +1,290 @@
+COMMAND: /home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python -m pytest -q tests/test_replan_activation.py tests/test_verified_recovery_lifecycle.py
+FFFFFFFF.                                                                [100%]
+=================================== FAILURES ===================================
+_ test_atomic_budget_initialize_preserves_original_limits_counts_deadline[False] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-573/test_atomic_budget_initialize_0')
+sqlite = False
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_atomic_budget_initialize_preserves_original_limits_counts_deadline(tmp_path, sqlite):
+        repo = SQLiteEventAutonomyRepository(tmp_path / "event.sqlite") if sqlite else (
+            InMemoryEventAutonomyRepository())
+>       original = repo.initialize_retry_budget_if_absent(spent_budget())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+tests/test_replan_activation.py:30: AttributeError
+_ test_atomic_budget_initialize_preserves_original_limits_counts_deadline[True] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-573/test_atomic_budget_initialize_1')
+sqlite = True
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_atomic_budget_initialize_preserves_original_limits_counts_deadline(tmp_path, sqlite):
+        repo = SQLiteEventAutonomyRepository(tmp_path / "event.sqlite") if sqlite else (
+            InMemoryEventAutonomyRepository())
+>       original = repo.initialize_retry_budget_if_absent(spent_budget())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+tests/test_replan_activation.py:30: AttributeError
+_______ test_atomic_budget_initialize_returns_an_independent_copy[False] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-573/test_atomic_budget_initialize_2')
+sqlite = False
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_atomic_budget_initialize_returns_an_independent_copy(tmp_path, sqlite):
+        repo = SQLiteEventAutonomyRepository(tmp_path / "event.sqlite") if sqlite else (
+            InMemoryEventAutonomyRepository())
+        proposed = spent_budget()
+>       saved = repo.initialize_retry_budget_if_absent(proposed)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+tests/test_replan_activation.py:56: AttributeError
+_______ test_atomic_budget_initialize_returns_an_independent_copy[True] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-573/test_atomic_budget_initialize_3')
+sqlite = True
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_atomic_budget_initialize_returns_an_independent_copy(tmp_path, sqlite):
+        repo = SQLiteEventAutonomyRepository(tmp_path / "event.sqlite") if sqlite else (
+            InMemoryEventAutonomyRepository())
+        proposed = spent_budget()
+>       saved = repo.initialize_retry_budget_if_absent(proposed)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+tests/test_replan_activation.py:56: AttributeError
+____________ test_two_sqlite_initializers_create_one_frozen_budget _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-573/test_two_sqlite_initializers_c0')
+
+    def test_two_sqlite_initializers_create_one_frozen_budget(tmp_path):
+        path = tmp_path / "event.sqlite"
+        first = SQLiteEventAutonomyRepository(path)
+        second = SQLiteEventAutonomyRepository(path)
+        barrier = Barrier(2)
+    
+        def initialize(repo, proposal):
+            barrier.wait(timeout=5)
+            return repo.initialize_retry_budget_if_absent(proposal)
+    
+        original = spent_budget()
+        competing = original.model_copy(update={"budget_id": "competing", "remaining_retries": 0})
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            a = pool.submit(initialize, first, original)
+            b = pool.submit(initialize, second, competing)
+>           results = [a.result(timeout=10), b.result(timeout=10)]
+                       ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_replan_activation.py:81: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+/usr/lib/python3.12/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x74420e0fe570>
+proposal = RecoveryBudget(budget_id='original', task_id='task', per_step_retry_limit=3, per_skill_retry_limit=5, task_total_retry... 4, 0, 0, tzinfo=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=datetime.timezone.utc))
+
+    def initialize(repo, proposal):
+        barrier.wait(timeout=5)
+>       return repo.initialize_retry_budget_if_absent(proposal)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+tests/test_replan_activation.py:74: AttributeError
+__ test_restart_initialize_preserves_spent_retry_and_absolute_deadline[False] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-573/test_restart_initialize_preser0')
+sqlite = False
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_restart_initialize_preserves_spent_retry_and_absolute_deadline(tmp_path, sqlite):
+        repo = SQLiteEventAutonomyRepository(tmp_path / "event.sqlite") if sqlite else (
+            InMemoryEventAutonomyRepository())
+        contract = _make_contract(command_ttl_ms=30_000)
+        service = RetryBudgetService(repository=repo)
+>       service.initialize(contract.task_id, contract)
+
+tests/test_verified_recovery_lifecycle.py:19: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.edge.recovery.retry_budget.RetryBudgetService object at 0x74420e13cbc0>
+task_id = 'task-test-001'
+contract = TaskContract(task_id='task-test-001', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 6, 13, 12, 0, t..., completion_criteria=['object_in_bin_a'], supervision_period_ms=None, command_ttl_ms=30000, previous_command_seq=None)
+
+    def initialize(self, task_id: str, contract: TaskContract) -> RecoveryBudget:
+        """Create a task pool once; a restart must retain spent quotas and deadline."""
+        if task_id != contract.task_id:
+            raise ValueError("retry budget task differs from its contract")
+        contract = TaskContract.model_validate(contract.model_dump())
+        self._contracts[task_id] = contract.model_copy(deep=True)
+        step_limits = [s.retry_limit for s in contract.steps]
+        per_skill = contract.failure_policy.local_retry_limit
+        task_total = min(per_skill, self._safety_max)
+        effective = task_total
+        now = datetime.now(UTC)
+        deadline = None
+        if contract.command_ttl_ms is not None:
+            deadline = now + timedelta(milliseconds=contract.command_ttl_ms)
+        budget = RecoveryBudget(
+            budget_id=f"budget-{task_id}",
+            task_id=task_id,
+            per_step_retry_limit=max(step_limits) if step_limits else 0,
+            per_skill_retry_limit=per_skill,
+            task_total_retry_limit=task_total,
+            retry_count_used=0,
+            task_retry_count=0,
+            step_retry_counts={},
+            skill_retry_counts={},
+            event_retry_counts={},
+            retry_cooldown_ms=500,
+            retry_deadline=deadline,
+            retry_backoff_policy="exponential",
+            effective_retry_limit=effective,
+            remaining_retries=effective,
+            scene_version=contract.scene_version,
+            created_at=now,
+            updated_at=now,
+        )
+>       return self._repo.initialize_retry_budget_if_absent(budget)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+src/cloud_edge_robot_arm/edge/recovery/retry_budget.py:75: AttributeError
+__ test_restart_initialize_preserves_spent_retry_and_absolute_deadline[True] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-573/test_restart_initialize_preser1')
+sqlite = True
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_restart_initialize_preserves_spent_retry_and_absolute_deadline(tmp_path, sqlite):
+        repo = SQLiteEventAutonomyRepository(tmp_path / "event.sqlite") if sqlite else (
+            InMemoryEventAutonomyRepository())
+        contract = _make_contract(command_ttl_ms=30_000)
+        service = RetryBudgetService(repository=repo)
+>       service.initialize(contract.task_id, contract)
+
+tests/test_verified_recovery_lifecycle.py:19: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.edge.recovery.retry_budget.RetryBudgetService object at 0x74420e13cf20>
+task_id = 'task-test-001'
+contract = TaskContract(task_id='task-test-001', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 6, 13, 12, 0, t..., completion_criteria=['object_in_bin_a'], supervision_period_ms=None, command_ttl_ms=30000, previous_command_seq=None)
+
+    def initialize(self, task_id: str, contract: TaskContract) -> RecoveryBudget:
+        """Create a task pool once; a restart must retain spent quotas and deadline."""
+        if task_id != contract.task_id:
+            raise ValueError("retry budget task differs from its contract")
+        contract = TaskContract.model_validate(contract.model_dump())
+        self._contracts[task_id] = contract.model_copy(deep=True)
+        step_limits = [s.retry_limit for s in contract.steps]
+        per_skill = contract.failure_policy.local_retry_limit
+        task_total = min(per_skill, self._safety_max)
+        effective = task_total
+        now = datetime.now(UTC)
+        deadline = None
+        if contract.command_ttl_ms is not None:
+            deadline = now + timedelta(milliseconds=contract.command_ttl_ms)
+        budget = RecoveryBudget(
+            budget_id=f"budget-{task_id}",
+            task_id=task_id,
+            per_step_retry_limit=max(step_limits) if step_limits else 0,
+            per_skill_retry_limit=per_skill,
+            task_total_retry_limit=task_total,
+            retry_count_used=0,
+            task_retry_count=0,
+            step_retry_counts={},
+            skill_retry_counts={},
+            event_retry_counts={},
+            retry_cooldown_ms=500,
+            retry_deadline=deadline,
+            retry_backoff_policy="exponential",
+            effective_retry_limit=effective,
+            remaining_retries=effective,
+            scene_version=contract.scene_version,
+            created_at=now,
+            updated_at=now,
+        )
+>       return self._repo.initialize_retry_budget_if_absent(budget)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+src/cloud_edge_robot_arm/edge/recovery/retry_budget.py:75: AttributeError
+______________ test_initialize_cannot_extend_an_expired_deadline _______________
+
+    def test_initialize_cannot_extend_an_expired_deadline():
+        repo = InMemoryEventAutonomyRepository()
+        contract = _make_contract(command_ttl_ms=30_000)
+        service = RetryBudgetService(repository=repo)
+>       saved = service.initialize(contract.task_id, contract)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_verified_recovery_lifecycle.py:41: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.edge.recovery.retry_budget.RetryBudgetService object at 0x74420e13ecc0>
+task_id = 'task-test-001'
+contract = TaskContract(task_id='task-test-001', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 6, 13, 12, 0, t..., completion_criteria=['object_in_bin_a'], supervision_period_ms=None, command_ttl_ms=30000, previous_command_seq=None)
+
+    def initialize(self, task_id: str, contract: TaskContract) -> RecoveryBudget:
+        """Create a task pool once; a restart must retain spent quotas and deadline."""
+        if task_id != contract.task_id:
+            raise ValueError("retry budget task differs from its contract")
+        contract = TaskContract.model_validate(contract.model_dump())
+        self._contracts[task_id] = contract.model_copy(deep=True)
+        step_limits = [s.retry_limit for s in contract.steps]
+        per_skill = contract.failure_policy.local_retry_limit
+        task_total = min(per_skill, self._safety_max)
+        effective = task_total
+        now = datetime.now(UTC)
+        deadline = None
+        if contract.command_ttl_ms is not None:
+            deadline = now + timedelta(milliseconds=contract.command_ttl_ms)
+        budget = RecoveryBudget(
+            budget_id=f"budget-{task_id}",
+            task_id=task_id,
+            per_step_retry_limit=max(step_limits) if step_limits else 0,
+            per_skill_retry_limit=per_skill,
+            task_total_retry_limit=task_total,
+            retry_count_used=0,
+            task_retry_count=0,
+            step_retry_counts={},
+            skill_retry_counts={},
+            event_retry_counts={},
+            retry_cooldown_ms=500,
+            retry_deadline=deadline,
+            retry_backoff_policy="exponential",
+            effective_retry_limit=effective,
+            remaining_retries=effective,
+            scene_version=contract.scene_version,
+            created_at=now,
+            updated_at=now,
+        )
+>       return self._repo.initialize_retry_budget_if_absent(budget)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_retry_budget_if_absent'
+
+src/cloud_edge_robot_arm/edge/recovery/retry_budget.py:75: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_atomic_budget_initialize_preserves_original_limits_counts_deadline[False]
+FAILED tests/test_replan_activation.py::test_atomic_budget_initialize_preserves_original_limits_counts_deadline[True]
+FAILED tests/test_replan_activation.py::test_atomic_budget_initialize_returns_an_independent_copy[False]
+FAILED tests/test_replan_activation.py::test_atomic_budget_initialize_returns_an_independent_copy[True]
+FAILED tests/test_replan_activation.py::test_two_sqlite_initializers_create_one_frozen_budget
+FAILED tests/test_verified_recovery_lifecycle.py::test_restart_initialize_preserves_spent_retry_and_absolute_deadline[False]
+FAILED tests/test_verified_recovery_lifecycle.py::test_restart_initialize_preserves_spent_retry_and_absolute_deadline[True]
+FAILED tests/test_verified_recovery_lifecycle.py::test_initialize_cannot_extend_an_expired_deadline
+8 failed, 1 passed in 1.02s
+
+EXIT_CODE=1

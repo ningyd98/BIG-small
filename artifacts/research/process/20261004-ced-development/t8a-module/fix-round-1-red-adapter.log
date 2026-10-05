@@ -1,0 +1,42 @@
+.........................................F                               [100%]
+=================================== FAILURES ===================================
+___ test_passive_adapter_preserves_raw_backend_hook_values_without_executing ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-482/test_passive_adapter_preserves0')
+
+    def test_passive_adapter_preserves_raw_backend_hook_values_without_executing(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        actions = json.loads((source / "teacher-actions.json").read_text())
+        commands = json.loads((source / "commands.json").read_text())
+        provenance = json.loads((source / "actuator-provenance.json").read_text())
+        backend_commands = []
+        events = []
+        for action in actions:
+            first = len(backend_commands) + 1
+            for command in commands:
+                if command["action_id"] == action["action_id"]:
+                    raw = {**command["backend_record"], "episode_id": command["episode_id"],
+                           "physics_step": command["physics_step"], "command_seq": len(backend_commands)+1}
+                    if command["type"] == "joint_target":
+                        raw["target_positions_rad"] = command["target_positions_rad"]
+                        raw["applied_target_positions_rad"] = command["target_positions_rad"]
+                    else:
+                        raw["target_open"] = command["target_open"]
+                    backend_commands.append(raw)
+            events.append({"episode_id": action["episode_id"], "start_step": action["start_step"],
+                "end_step": action["end_step"], "command_seq_start": first,
+                "command_seq_end": len(backend_commands)+1,
+                "result": {"action_id": action["action_id"], "action_type": action["action_type"],
+                           "success": True, "details": {"physics_steps": action["end_step"]-action["start_step"]}}})
+        adapter = getattr(api(), "write_recovery_source", None)
+>       assert adapter is not None, "passive root-hook adapter is missing"
+E       AssertionError: passive root-hook adapter is missing
+E       assert None is not None
+
+tests/test_protocol_evidence_generation.py:858: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_passive_adapter_preserves_raw_backend_hook_values_without_executing
+1 failed, 41 passed in 13.02s

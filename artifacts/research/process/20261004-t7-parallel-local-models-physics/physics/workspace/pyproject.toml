@@ -1,0 +1,102 @@
+# 项目配置说明：定义 Python 包、测试、ruff 和 mypy 规则，所有命令默认面向软件/仿真验证。
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "BIG-small"
+version = "0.1.0"
+description = "BIG-small: a cloud-edge collaborative control system for a small robot arm."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110,<0.137",
+    "pydantic>=2.6",
+    "starlette>=0.36,<1.0",
+    "pyyaml>=6.0",
+    "uvicorn[standard]>=0.29",
+    "pillow>=10,<13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx==0.28.1",
+    "httpcore==1.0.9",
+    "mypy>=1.18",
+    "pytest>=8.3",
+    "ruff>=0.14",
+]
+sim = [
+    "mujoco>=3.3.7,<4",
+]
+sim-mujoco = [
+    "mujoco>=3.3.7,<4",
+    "numpy>=1.26",
+]
+sim-analysis = [
+    "pandas>=2.2",
+]
+sim-observability = [
+    "rerun-sdk>=0.35,<1",
+]
+rgbd-data = [
+    "numpy>=1.26",
+    "backports.zstd>=1.0,<2",
+    "h5py>=3.10,<4",
+    "huggingface_hub>=1.0,<2",
+    "httpx==0.28.1",
+    "httpcore==1.0.9",
+    "py7zr>=1.0,<2",
+    "matplotlib>=3.8,<4",
+]
+ros-bridge = [
+    "numpy>=1.26",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+markers = [
+    "isaac: requires Isaac Sim and NVIDIA/Vulkan capable host",
+    "isaac_runtime: requires real Isaac Sim 6.0 runtime",
+    "real_robot_runtime: requires physical robot hardware and operator approval",
+    "ros2: requires ROS 2 Jazzy and MoveIt 2",
+    "benchmark: long-running benchmark suites",
+    "real_rgbd_dataset: explicit BIGSMALL_RGBD_INTEGRATION_ROOT; never downloads in CI",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["cloud_edge_robot_arm"]
+exclude = [
+    "^cache/",
+    "^ros2_ws/(build|install|log)/",
+    "^scripts/phase9/(headless_panda_moveit\\.launch|run_moveit_safety_evidence|run_ros2_runtime_evidence)\\.py$",
+]
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_return_any = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "ament_index_python.*",
+    "mujoco",
+    "rclpy.*",
+    "yaml",
+]
+ignore_missing_imports = true

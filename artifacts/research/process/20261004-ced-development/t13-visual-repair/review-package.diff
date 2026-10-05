@@ -1,0 +1,120 @@
+--- before/src/cloud_edge_robot_arm/cloud/replanning/visual_repair.py
++++ after/src/cloud_edge_robot_arm/cloud/replanning/visual_repair.py
+@@ -11,7 +11,7 @@
+ import json
+ from collections.abc import Callable, Mapping, Sequence
+ from copy import deepcopy
+-from dataclasses import dataclass
++from dataclasses import dataclass, replace
+ from datetime import UTC, datetime
+ from types import MappingProxyType
+ from typing import Any
+@@ -61,11 +61,11 @@
+     def __post_init__(self) -> None:
+         object.__setattr__(self, "active_contract", self.active_contract.model_copy(deep=True))
+         object.__setattr__(self, "checkpoint", self.checkpoint.model_copy(deep=True))
+-        object.__setattr__(self, "dependencies", tuple(self.dependencies))
++        object.__setattr__(self, "dependencies", tuple(replace(step) for step in self.dependencies))
+         object.__setattr__(self, "invalid_evidence_ids", frozenset(self.invalid_evidence_ids))
+         online = self.online_evidence
+         object.__setattr__(self, "online_evidence", OnlineEvidenceSnapshot(
+-            online.observation, online.robot_state.model_copy(deep=True),
++            online.observation.model_copy(deep=True), online.robot_state.model_copy(deep=True),
+             _copy_data(online.visual_facts), online.plan_version, online.command_seq,
+             online.context_hash,
+         ))
+@@ -209,11 +209,12 @@
+ 
+     def unavailable(
+         reason: str, outcome: str = "MORE_OBSERVATION_REQUIRED",
++        *, now: datetime | None = None,
+     ) -> LocalReplanningResponse:
+         return LocalReplanningResponse(
+             request_id=request.request_id, outcome=outcome, reason=reason,
+             new_plan_version=request.current_plan_version,
+-            new_command_seq=request.current_command_seq, created_at=acquired_clock(),
++            new_command_seq=request.current_command_seq, created_at=now or acquired_clock(),
+             planner_name="visual-repair-unavailable", correlation_id=request.correlation_id,
+         )
+ 
+@@ -223,7 +224,7 @@
+         current = _copy(context)
+         if not _inputs_valid(request, window, observation, current, acquired_clock()):
+             return unavailable("current_visual_repair_proof_unavailable")
+-        selected_window = window
++        selected_window = replace(window)
+         if full_remaining:
+             pending = tuple(step.step_id for step in current.dependencies if not step.completed)
+             selected_window = RepairWindow(
+@@ -232,12 +233,16 @@
+                 window.expected_plan_version, window.expected_command_seq,
+             )
+         provider_request, provider_context = request.model_copy(deep=True), _copy(current)
+-        before = _hash((provider_request, provider_context, selected_window, observation))
++        provider_observation = observation.model_copy(deep=True)
++        before = _hash((provider_request, provider_context, selected_window, provider_observation))
+         try:
+-            proposal = provider(provider_request, selected_window, observation, provider_context)
++            proposal = provider(
++                provider_request, selected_window, provider_observation, provider_context,
++            )
+         except Exception:
+             return unavailable("actual_provider_failed", "PLANNER_FAILED")
+-        if before != _hash((provider_request, provider_context, selected_window, observation)):
++        after = _hash((provider_request, provider_context, selected_window, provider_observation))
++        if before != after:
+             return unavailable("provider_mutated_bound_inputs", "PLANNER_FAILED")
+         if not _inputs_valid(request, window, observation, current, acquired_clock()):
+             return unavailable("evidence_expired_after_provider")
+@@ -257,10 +262,13 @@
+             ):
+                 return unavailable("provider_removed_preconditions", "PLANNER_FAILED")
+             pending_steps.append((replacement or step).model_copy(deep=True))
++        published_at = acquired_clock()
++        if not _inputs_valid(request, window, observation, current, published_at):
++            return unavailable("evidence_expired_at_publication", now=published_at)
+         response = LocalReplanningResponse(
+             request_id=request.request_id, outcome="REPLANNED", new_steps=pending_steps,
+             new_plan_version=request.current_plan_version + 1,
+-            new_command_seq=request.current_command_seq + 1, created_at=acquired_clock(),
++            new_command_seq=request.current_command_seq + 1, created_at=published_at,
+             planner_name="visual-repair-b4" if full_remaining else "visual-repair-local",
+             reason="source_bound_candidate_requires_submit_revalidation",
+             correlation_id=request.correlation_id,
+--- before/tests/test_visual_repair_builder.py
++++ after/tests/test_visual_repair_builder.py
+@@ -210,3 +210,34 @@
+     result = build((request, context, window, observation))
+     assert result.outcome == "REPLANNED"
+     assert native["target_visible"]["target_id"] == "obj-1"
++
++
++@pytest.mark.parametrize("changed", ["observation", "window", "dependency"])
++def test_rejected_provider_mutation_cannot_change_caller_frozen_objects(changed):
++    request, context, window, observation = fixture()
++    original = (observation.model_dump(), window.first_affected_step_id,
++                context.dependencies[0].physical_effect_id,
++                context.online_evidence.observation.model_dump())
++    def bad(request, window, observation, context):
++        result = provider(request, window, observation, context)
++        if changed == "observation":
++            object.__setattr__(observation, "calibration_version", "tampered")
++        elif changed == "window":
++            object.__setattr__(window, "first_affected_step_id", "tampered")
++        else:
++            object.__setattr__(context.dependencies[0], "physical_effect_id", "tampered")
++        return result
++    result = api().build_visual_repair(request, window, observation, context=context,
++                                      provider=bad, clock=lambda: NOW + timedelta(seconds=.2))
++    assert result.outcome == "PLANNER_FAILED" and not result.new_steps
++    assert (observation.model_dump(), window.first_affected_step_id,
++            context.dependencies[0].physical_effect_id,
++            context.online_evidence.observation.model_dump()) == original
++
++
++def test_candidate_publication_rechecks_the_final_clock_sample():
++    request, context, window, observation = fixture()
++    clock = iter(NOW + timedelta(seconds=value) for value in (.2, .3, 7, 7))
++    result = api().build_visual_repair(request, window, observation, context=context,
++                                      provider=provider, clock=lambda: next(clock))
++    assert result.outcome != "REPLANNED" and result.new_steps == []

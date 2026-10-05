@@ -1,0 +1,304 @@
+--- baseline/src/cloud_edge_robot_arm/vision/marker_association.py
++++ src/cloud_edge_robot_arm/vision/marker_association.py
+@@ -340,6 +340,7 @@
+     support_masks: Mapping[str, bytes] = field(default_factory=dict)
+     region_hypotheses: Mapping[str, bytes] = field(default_factory=dict)
+     coverage: Mapping[str, object] = field(default_factory=dict)
++    boundary_support: Mapping[str, object] = field(default_factory=dict)
+     admission_status: Literal["NOT_ADMITTED"] = field(default="NOT_ADMITTED", init=False)
+     whole_target_identity_status: Literal["UNKNOWN"] = field(default="UNKNOWN", init=False)
+     extent_complete: Literal[False] = field(default=False, init=False)
+@@ -360,6 +361,7 @@
+             MappingProxyType({name: bytes(value) for name, value in self.support_masks.items()}),
+         )
+         object.__setattr__(self, "coverage", _freeze(_plain(self.coverage)))
++        object.__setattr__(self, "boundary_support", _freeze(_plain(self.boundary_support)))
+         object.__setattr__(
+             self,
+             "region_hypotheses",
+@@ -454,6 +456,15 @@
+         return result(
+             "UNKNOWN", "requested_color_ring_missing_ambiguous_or_broken", pose_estimate=pose
+         )
++    outer = contours[0]
++    left, top, width, height = cv2.boundingRect(outer)
++    if (
++        left == 0
++        or top == 0
++        or left + width == observation.width
++        or top + height == observation.height
++    ):
++        return result("UNKNOWN", "color_outer_boundary_clipped", pose_estimate=pose)
+     corners = np.asarray(pose.ordered_corners_px, dtype=np.float32)
+     # A single central observed hole is a topology candidate only. Layout projection
+     # below is kept as a hypothesis; no red mask or object silhouette is filled.
+@@ -525,6 +536,66 @@
+     coverage["observed_neutral_quiet_pixels"] = int(
+         np.frombuffer(masks["observed_neutral_quiet"], dtype=np.uint8).sum()
+     )
++    # Select measured exterior support from the actual color contour, not the
++    # homography's face region. No interior color/quiet/tag hole is filled.
++    boundary = np.zeros(rgb.shape[:2], dtype=np.uint8)
++    cv2.drawContours(boundary, contours, 0, 1, thickness=1)
++    boundary &= raw_color
++    neighborhood = np.zeros_like(boundary)
++    ny, nx = np.nonzero((cv2.dilate(boundary, np.ones((3, 3), np.uint8)) > 0) & (raw_color == 0))
++    for y, x in zip(ny, nx, strict=True):
++        if cv2.pointPolygonTest(outer, (float(x), float(y)), False) < 0:
++            neighborhood[y, x] = 1
++    if (
++        not boundary.any()
++        or not neighborhood.any()
++        or np.any(((boundary | neighborhood) > 0) & (valid == 0))
++    ):
++        return result("UNKNOWN", "outer_boundary_depth_unavailable", pose_estimate=pose)
++
++    def samples(mask: np.ndarray) -> dict[str, object]:
++        sy, sx = np.nonzero(mask)
++        measured_depth = depth[sy, sx]
++        camera = np.column_stack(
++            ((sx - cx) * measured_depth / fx, (sy - cy) * measured_depth / fy, measured_depth)
++        )
++        measured_world = camera @ transform[:3, :3].T + transform[:3, 3]
++        signed_residual = (measured_world - np.asarray(pose.marker_center_world_m)) @ normal
++        return {
++            "pixels": np.column_stack((sx, sy)).tolist(),
++            "rgb": rgb[sy, sx].tolist(),
++            "depth_m": measured_depth.tolist(),
++            "points_world_m": measured_world.tolist(),
++            "marker_plane_signed_residual_m": signed_residual.tolist(),
++            "observed_world_aabb_min_m": measured_world.min(axis=0).tolist(),
++            "observed_world_aabb_max_m": measured_world.max(axis=0).tolist(),
++            "mask_sha256": hashlib.sha256(mask.tobytes()).hexdigest(),
++        }
++
++    masks["observed_color_outer_boundary"] = boundary.tobytes()
++    masks["observed_outer_boundary_neighbor_depth"] = neighborhood.tobytes()
++    boundary_support = {
++        "source": "observed_requested_color_outer_contour_and_exterior_neighbors",
++        "depth_convention": observation.depth_convention,
++        "pixel_coordinates": "integer_uv_centers",
++        "metric_coordinates": "uncalibrated_rgbd_world_estimates",
++        "calibrated_error_bound_m": None,
++        "measured_color_contour_is_body_extent": False,
++        "outer_boundary": samples(boundary),
++        "outer_neighborhood": samples(neighborhood),
++    }
++    # Strict raw depth ordering is exposed for later calibration. Antialias and
++    # coplanar samples are retained, not discarded using an invented tolerance.
++    # Even positive separation is not a calibrated complete-body certificate.
++    rim_depth_max = float(depth[raw_color > 0].max())
++    neighbor_gap = depth[neighborhood > 0].astype(float) - rim_depth_max
++    coverage["observed_color_contour_bbox_px"] = [left, top, width, height]
++    coverage["observed_outer_boundary_pixels"] = int(boundary.sum())
++    coverage["observed_outer_neighborhood_pixels"] = int(neighborhood.sum())
++    coverage["outer_boundary_depth_support_status"] = "OBSERVED_ALL_VALID"
++    coverage["outer_boundary_depth_separation_status"] = "UNKNOWN_UNCALIBRATED"
++    coverage["outer_neighbor_strictly_farther_than_rim_pixels"] = int((neighbor_gap > 0).sum())
++    coverage["outer_neighbor_depth_minus_rim_max_m"] = neighbor_gap.tolist()
+     return result(
+         "OBSERVED_CANDIDATE",
+         "registered_tag_and_color_ring_diagnostic_only",
+@@ -532,6 +603,7 @@
+         support_masks=masks,
+         region_hypotheses=hypotheses,
+         coverage=coverage,
++        boundary_support=boundary_support,
+     )
+ 
+ 
+--- /dev/null
++++ tests/test_marker_extent_integration.py
+@@ -0,0 +1,181 @@
++"""SOFTWARE_ONLY measured-boundary integration; no native extent admission.
++
++Existing saved RGBD is replayed at its original capture time. Edited bytes are
++qualified counterexamples, not newly captured or physically accepted evidence.
++"""
++
++from __future__ import annotations
++
++import base64
++import hashlib
++import io
++from pathlib import Path
++
++import numpy as np
++import pytest
++from PIL import Image
++
++from cloud_edge_robot_arm.contracts.models import TaskTarget
++from cloud_edge_robot_arm.vision.marker_association import (
++    load_marker_registration,
++    marker_frame_context,
++    replay_marker_target_development,
++)
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.pose_markers import detect_pose_marker
++
++ROOT = Path(__file__).resolve().parents[1]
++CONFIG = ROOT / "configs/research/ced_marker_registration_v1.yaml"
++PROCESS = ROOT / "artifacts/research/process/20261004-ced-development"
++STATIC = PROCESS / "t7b-pose-marker-color/actual-capture-640/frame/observation-full.json"
++INITIAL = (
++    PROCESS
++    / "t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/observation-full.json"
++)
++
++
++def replay(observation):
++    registration = load_marker_registration(
++        CONFIG, expected_registry_sha256=hashlib.sha256(CONFIG.read_bytes()).hexdigest(), root=ROOT
++    )
++    context = marker_frame_context(
++        observation,
++        registration,
++        task_id="software-only-boundary-replay",
++        task_target=TaskTarget(
++            object_id="object", object_class="cube", target_region_id="target_region"
++        ),
++        instruction="pick the red cube and place it in the green target region",
++        context_hash="1" * 64,
++        role_bundle_hash="2" * 64,
++        active_asset_sha256=registration.pose_marker.marked_asset_sha256,
++        plan_version=1,
++        command_seq=1,
++    )
++    return replay_marker_target_development(observation, registration, context), registration
++
++
++def depth_changed(observation, value, pixel=(344, 230)):
++    depths = np.frombuffer(base64.b64decode(observation.depth_float32_base64), dtype="<f4").copy()
++    # This actual exterior neighbor is outside the registered face hypothesis.
++    x, y = pixel
++    depths[y * observation.width + x] = value
++    return RGBDObservation.model_validate(
++        {
++            **observation.model_dump(),
++            "depth_float32_base64": base64.b64encode(depths.tobytes()).decode(),
++            "valid_mask_base64": None,
++            "checksum_sha256": "",
++        }
++    )
++
++
++@pytest.mark.parametrize("pixel", [(344, 230), (372, 235)])
++def test_missing_exterior_neighbor_depth_blocks_candidate_even_outside_projected_face(pixel):
++    # Break caught: checking only projected layout depth ignores the real boundary neighborhood.
++    observation = RGBDObservation.model_validate_json(STATIC.read_text())
++    original, registration = replay(observation)
++    face = np.frombuffer(original.region_hypotheses["face_region"], np.uint8).reshape(480, 640)
++    x, y = pixel
++    assert face[y, x] == 0 and original.status == "OBSERVED_CANDIDATE"
++    changed = depth_changed(observation, 0.0, pixel)
++    assert detect_pose_marker(changed, registration.pose_marker).status == "OBSERVED"
++    result, _ = replay(changed)
++    assert result.status == "UNKNOWN"
++    assert "outer_boundary_depth_unavailable" in result.reasons
++    assert result.admission_status == "NOT_ADMITTED" and result.extent_complete is False
++
++
++@pytest.mark.parametrize("path", [STATIC, INITIAL])
++def test_raw_outer_contour_and_neighbor_samples_are_separate_from_region_hypotheses(path):
++    # Break caught: projected/fill pixels replace measured support, or RGBD samples are omitted.
++    observation = RGBDObservation.model_validate_json(path.read_text())
++    result, _ = replay(observation)
++    support = getattr(result, "boundary_support", None)
++    assert support is not None, "measured outer-boundary RGBD samples are missing"
++    assert result.status == "OBSERVED_CANDIDATE"
++    shape = (observation.height, observation.width)
++    raw = np.frombuffer(result.support_masks["requested_color"], np.uint8).reshape(shape)
++    boundary = np.frombuffer(result.support_masks["observed_color_outer_boundary"], np.uint8)
++    neighbor = np.frombuffer(
++        result.support_masks["observed_outer_boundary_neighbor_depth"], np.uint8
++    )
++    assert np.all(raw.ravel()[boundary > 0] == 1)
++    assert np.all(raw.ravel()[neighbor > 0] == 0)
++    assert boundary[230 * observation.width + 345] == 1
++    assert neighbor[230 * observation.width + 344] == 1
++    expected_counts = (102, 110) if path == STATIC else (105, 114)
++    assert (int(boundary.sum()), int(neighbor.sum())) == expected_counts
++    for name, mask in (("outer_boundary", boundary), ("outer_neighborhood", neighbor)):
++        samples = support[name]
++        pixels = samples["pixels"]
++        assert len(pixels) == int(mask.sum()) == len(samples["depth_m"])
++        assert len(pixels) == len(samples["rgb"]) == len(samples["points_world_m"])
++        assert len(pixels) == len(samples["marker_plane_signed_residual_m"])
++        rgb = np.asarray(Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))))
++        depths = np.asarray(observation.depth_values()).reshape(shape)
++        for index, (x, y) in enumerate(pixels):
++            assert mask[y * observation.width + x] == 1
++            assert samples["depth_m"][index] == pytest.approx(float(depths[y, x]), abs=1e-7)
++            assert samples["rgb"][index] == tuple(int(v) for v in rgb[y, x])
++    assert support["depth_convention"] == "optical_z_m"
++    assert support["calibrated_error_bound_m"] is None
++    assert result.coverage["outer_boundary_verified"] is False
++    assert result.coverage["outer_boundary_depth_separation_status"] == "UNKNOWN_UNCALIBRATED"
++    assert result.whole_target_identity_status == "UNKNOWN" and result.extent_complete is False
++    assert result.geometric_error_bound_m is None and result.motion_bound_m_s is None
++    with pytest.raises(TypeError):
++        support["outer_boundary"]["depth_m"][0] = 0
++
++
++def test_finite_positive_exterior_foreground_is_reported_without_claiming_complete_extent():
++    # Break caught: geometry is inferred solely from tag/layout while ignoring real exterior depth.
++    observation = RGBDObservation.model_validate_json(STATIC.read_text())
++    baseline, registration = replay(observation)
++    changed = depth_changed(observation, 0.5)
++    assert detect_pose_marker(changed, registration.pose_marker).status == "OBSERVED"
++    result, _ = replay(changed)
++    support = getattr(result, "boundary_support", None)
++    assert support is not None, "exterior foreground measurement is missing"
++    samples = support["outer_neighborhood"]
++    index = samples["pixels"].index((344, 230))
++    assert samples["depth_m"][index] == 0.5
++    assert result.coverage["outer_neighbor_strictly_farther_than_rim_pixels"] == (
++        baseline.coverage["outer_neighbor_strictly_farther_than_rim_pixels"] - 1
++    )
++    assert result.coverage["outer_boundary_depth_separation_status"] == "UNKNOWN_UNCALIBRATED"
++    assert result.admission_status == "NOT_ADMITTED" and result.extent_complete is False
++
++
++def test_color_outer_boundary_clipping_cannot_be_explained_by_an_unclipped_tag_layout():
++    # Break caught: an unclipped small tag/layout hides a color component extending off image.
++    observation = RGBDObservation.model_validate_json(STATIC.read_text())
++    _, registration = replay(observation)
++    rgb = np.asarray(Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64)))).copy()
++    rgb[230:232, :346] = [255, 0, 0]  # joins the visible red rim to the image edge
++    png = io.BytesIO()
++    Image.fromarray(rgb).save(png, format="PNG")
++    changed = RGBDObservation.model_validate(
++        {
++            **observation.model_dump(),
++            "rgb_png_base64": base64.b64encode(png.getvalue()).decode(),
++            "checksum_sha256": "",
++        }
++    )
++    assert detect_pose_marker(changed, registration.pose_marker).status == "OBSERVED"
++    result, _ = replay(changed)
++    assert result.status == "UNKNOWN"
++    assert "color_outer_boundary_clipped" in result.reasons
++
++
++def test_actual_occluded_motion_boundaries_never_reuse_static_marker_extent():
++    # Break caught: stale marker/boundary support persists after the top tag is occluded.
++    frames = PROCESS / "t7b-pose-marker-motion-development/attempt-1/frames"
++    paths = sorted(frames.glob("AFTER_*/observation-full.json"))
++    assert len(paths) == 9
++    for path in paths:
++        result, _ = replay(RGBDObservation.model_validate_json(path.read_text()))
++        assert result.pose_estimate.status == "UNKNOWN"
++        assert result.status == "UNKNOWN" and result.extent_complete is False
++        assert result.admission_status == "NOT_ADMITTED"
++        assert getattr(result, "boundary_support", {}) == {}
+--- baseline/configs/research/ced_marker_registration_v1.yaml
++++ configs/research/ced_marker_registration_v1.yaml
+@@ -61,7 +61,7 @@
+   - - -0.035
+     - -0.035
+ registration_source_hashes:
+-  src/cloud_edge_robot_arm/vision/marker_association.py: 8276a383ebc507d676ece6333aa7c9b7181424f22cfcddb8b7f9c66e4ca31e0c
++  src/cloud_edge_robot_arm/vision/marker_association.py: 984e409db8c227a967b41bb169e17630efaedc57df8805f81dafcf47adb9709d
+   src/cloud_edge_robot_arm/vision/pose_markers.py: 68f9e6e0675a4b6ccdead896bd767c685fd53357591ab1fdf4d71d124c72264f
+   src/cloud_edge_robot_arm/vision/observations.py: 1114e6b2de4107ae516f12f8972fcb3b6f71eae7ae5a45bf93adfeb4aa673bb8
+   src/cloud_edge_robot_arm/vision/online_intent.py: d38cf2c6fb578aa646b3dbc2d2865d952e56c4142d8951951edd82adb82dfaf0

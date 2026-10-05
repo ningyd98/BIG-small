@@ -1,0 +1,1805 @@
+.F..........FFFFFFFFFFFFFFFFFFFFFF                                       [100%]
+=================================== FAILURES ===================================
+____ test_complete_recorded_graph_and_unknown_utc_uncertainty_are_separate _____
+
+    def test_complete_recorded_graph_and_unknown_utc_uncertainty_are_separate():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_ test_public_records_clone_subclass_mutable_payload_and_detach_serialization __
+
+    def test_public_records_clone_subclass_mutable_payload_and_detach_serialization():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:164: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_ test_strict_json_roundtrip_rejects_duplicate_unknown_nonfinite_and_bool_step _
+
+    def test_strict_json_roundtrip_rejects_duplicate_unknown_nonfinite_and_bool_step():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:183: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_______ test_missing_record_keeps_complete_original_allocations[physics] _______
+
+field = 'physics'
+
+    @pytest.mark.parametrize("field", ["physics", "commands", "actions", "frames"])
+    def test_missing_record_keeps_complete_original_allocations(field):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+______ test_missing_record_keeps_complete_original_allocations[commands] _______
+
+field = 'commands'
+
+    @pytest.mark.parametrize("field", ["physics", "commands", "actions", "frames"])
+    def test_missing_record_keeps_complete_original_allocations(field):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_______ test_missing_record_keeps_complete_original_allocations[actions] _______
+
+field = 'actions'
+
+    @pytest.mark.parametrize("field", ["physics", "commands", "actions", "frames"])
+    def test_missing_record_keeps_complete_original_allocations(field):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_______ test_missing_record_keeps_complete_original_allocations[frames] ________
+
+field = 'frames'
+
+    @pytest.mark.parametrize("field", ["physics", "commands", "actions", "frames"])
+    def test_missing_record_keeps_complete_original_allocations(field):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+__________ test_contradictory_record_graph_is_invalid[duplicate-step] __________
+
+kind = 'duplicate-step'
+
+    @pytest.mark.parametrize("kind", ["duplicate-step", "wrong-control", "wrong-hash", "foreign-epoch", "wrong-command-range", "frame-checksum"])
+    def test_contradictory_record_graph_is_invalid(kind):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+__________ test_contradictory_record_graph_is_invalid[wrong-control] ___________
+
+kind = 'wrong-control'
+
+    @pytest.mark.parametrize("kind", ["duplicate-step", "wrong-control", "wrong-hash", "foreign-epoch", "wrong-command-range", "frame-checksum"])
+    def test_contradictory_record_graph_is_invalid(kind):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+____________ test_contradictory_record_graph_is_invalid[wrong-hash] ____________
+
+kind = 'wrong-hash'
+
+    @pytest.mark.parametrize("kind", ["duplicate-step", "wrong-control", "wrong-hash", "foreign-epoch", "wrong-command-range", "frame-checksum"])
+    def test_contradictory_record_graph_is_invalid(kind):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+__________ test_contradictory_record_graph_is_invalid[foreign-epoch] ___________
+
+kind = 'foreign-epoch'
+
+    @pytest.mark.parametrize("kind", ["duplicate-step", "wrong-control", "wrong-hash", "foreign-epoch", "wrong-command-range", "frame-checksum"])
+    def test_contradictory_record_graph_is_invalid(kind):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_______ test_contradictory_record_graph_is_invalid[wrong-command-range] ________
+
+kind = 'wrong-command-range'
+
+    @pytest.mark.parametrize("kind", ["duplicate-step", "wrong-control", "wrong-hash", "foreign-epoch", "wrong-command-range", "frame-checksum"])
+    def test_contradictory_record_graph_is_invalid(kind):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+__________ test_contradictory_record_graph_is_invalid[frame-checksum] __________
+
+kind = 'frame-checksum'
+
+    @pytest.mark.parametrize("kind", ["duplicate-step", "wrong-control", "wrong-hash", "foreign-epoch", "wrong-command-range", "frame-checksum"])
+    def test_contradictory_record_graph_is_invalid(kind):
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_______ test_partial_exception_and_missing_acquisition_remain_auditable ________
+
+    def test_partial_exception_and_missing_acquisition_remain_auditable():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:229: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_____ test_clocks_cannot_change_domain_or_fabricate_whole_episode_mapping ______
+
+    def test_clocks_cannot_change_domain_or_fabricate_whole_episode_mapping():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:240: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_ test_camera_hash_domain_is_distinct_and_recomputed_from_original_full_arrays _
+
+    def test_camera_hash_domain_is_distinct_and_recomputed_from_original_full_arrays():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_ test_command_effect_and_initial_controller_targets_are_replayed_not_assumed __
+
+    def test_command_effect_and_initial_controller_targets_are_replayed_not_assumed():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:261: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_________ test_missing_effect_step_and_delay_mismatch_remain_distinct __________
+
+    def test_missing_effect_step_and_delay_mismatch_remain_distinct():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:268: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_____________ test_action_before_frame_cannot_outlive_original_ttl _____________
+
+    def test_action_before_frame_cannot_outlive_original_ttl():
+>       envelope, records = fixture(late_action=True)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_raw_episode_v3.py:276: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_ test_stable_original_grounding_clones_and_json_roundtrips_then_rejects_policy_drift _
+
+    def test_stable_original_grounding_clones_and_json_roundtrips_then_rejects_policy_drift():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_ test_online_trace_without_grounding_is_missing_evidence_without_actual_flag __
+
+    def test_online_trace_without_grounding_is_missing_evidence_without_actual_flag():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:301: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+_____ test_frame_and_descriptor_source_identity_cannot_drift_from_envelope _____
+
+    def test_frame_and_descriptor_source_identity_cannot_drift_from_envelope():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:312: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+__ test_submitted_json_cannot_replace_scope_or_schema_with_acceptance_receipt __
+
+    def test_submitted_json_cannot_replace_scope_or_schema_with_acceptance_receipt():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:319: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+        action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None)
+        base_observation = values()["online"].observation.model_dump(mode="json")
+        frames = []
+        for name, index, ns in (("before", 120, 100_000_000), ("after", 121, 221_000_000 + shift)):
+            interval(f"acq-{name}", "ACQUISITION", index, index, ns, ns + 1_000_000)
+            payload = {**base_observation, "frame_id": name, "observation_id": name,
+                       "captured_at": (NOW + timedelta(microseconds=ns // 1000)).isoformat(),
+                       "sim_time_s": index / 240, "checksum_sha256": ""}
+            observation = RGBDObservation.model_validate(payload)
+            files = {f"frames/{name}/{key}": hashlib.sha256(base64.b64decode(getattr(observation, attr))).hexdigest()
+                     for key, attr in (("rgb.png", "rgb_png_base64"), ("depth.f32", "depth_float32_base64"),
+                                       ("mask.u8", "valid_mask_base64"))}
+            camera_state = dict(sim_time_s=index / 240, qpos=[0] * 7 + [0.039] * 2 + [0.2, 0.1, 0.04, 1, 0, 0, 0],
+                                qvel=[0] * 15, act=[], ctrl=[0] * 7 + [0.039] * 2)
+            binary = struct.pack("<d", camera_state["sim_time_s"])
+            for key in ("qpos", "qvel", "act", "ctrl"):
+                binary += struct.pack("<I", len(camera_state[key])) + struct.pack(f"<{len(camera_state[key])}d", *camera_state[key])
+            camera_hash = hashlib.sha256(binary).hexdigest()
+>           frames.append(m.FrameAcquisitionV3(next_seq(), identity, name, f"acq-{name}",
+                                              observation.model_dump(mode="json"), camera_state, hash_payload(state(index)), (camera_hash,) * 3,
+                                              files, "ONLINE", None, None, {}))
+E           TypeError: FrameAcquisitionV3.__init__() takes 12 positional arguments but 14 were given
+
+tests/test_raw_episode_v3.py:119: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_complete_recorded_graph_and_unknown_utc_uncertainty_are_separate
+FAILED tests/test_raw_episode_v3.py::test_public_records_clone_subclass_mutable_payload_and_detach_serialization
+FAILED tests/test_raw_episode_v3.py::test_strict_json_roundtrip_rejects_duplicate_unknown_nonfinite_and_bool_step
+FAILED tests/test_raw_episode_v3.py::test_missing_record_keeps_complete_original_allocations[physics]
+FAILED tests/test_raw_episode_v3.py::test_missing_record_keeps_complete_original_allocations[commands]
+FAILED tests/test_raw_episode_v3.py::test_missing_record_keeps_complete_original_allocations[actions]
+FAILED tests/test_raw_episode_v3.py::test_missing_record_keeps_complete_original_allocations[frames]
+FAILED tests/test_raw_episode_v3.py::test_contradictory_record_graph_is_invalid[duplicate-step]
+FAILED tests/test_raw_episode_v3.py::test_contradictory_record_graph_is_invalid[wrong-control]
+FAILED tests/test_raw_episode_v3.py::test_contradictory_record_graph_is_invalid[wrong-hash]
+FAILED tests/test_raw_episode_v3.py::test_contradictory_record_graph_is_invalid[foreign-epoch]
+FAILED tests/test_raw_episode_v3.py::test_contradictory_record_graph_is_invalid[wrong-command-range]
+FAILED tests/test_raw_episode_v3.py::test_contradictory_record_graph_is_invalid[frame-checksum]
+FAILED tests/test_raw_episode_v3.py::test_partial_exception_and_missing_acquisition_remain_auditable
+FAILED tests/test_raw_episode_v3.py::test_clocks_cannot_change_domain_or_fabricate_whole_episode_mapping
+FAILED tests/test_raw_episode_v3.py::test_camera_hash_domain_is_distinct_and_recomputed_from_original_full_arrays
+FAILED tests/test_raw_episode_v3.py::test_command_effect_and_initial_controller_targets_are_replayed_not_assumed
+FAILED tests/test_raw_episode_v3.py::test_missing_effect_step_and_delay_mismatch_remain_distinct
+FAILED tests/test_raw_episode_v3.py::test_action_before_frame_cannot_outlive_original_ttl
+FAILED tests/test_raw_episode_v3.py::test_stable_original_grounding_clones_and_json_roundtrips_then_rejects_policy_drift
+FAILED tests/test_raw_episode_v3.py::test_online_trace_without_grounding_is_missing_evidence_without_actual_flag
+FAILED tests/test_raw_episode_v3.py::test_frame_and_descriptor_source_identity_cannot_drift_from_envelope
+FAILED tests/test_raw_episode_v3.py::test_submitted_json_cannot_replace_scope_or_schema_with_acceptance_receipt
+23 failed, 11 passed in 5.79s

@@ -1,0 +1,316 @@
+--- a/src/cloud_edge_robot_arm/edge/evidence/conditions.py
++++ b/src/cloud_edge_robot_arm/edge/evidence/conditions.py
+@@ -91,10 +91,22 @@
+ def evaluate_conditions(
+     conditions: Sequence[ConditionSpec],
+     evidence: OnlineEvidenceSnapshot,
++    *,
++    now: datetime | None = None,
+ ) -> list[ConditionVerdict]:
+     """Evaluate without reading a simulator, evaluator, model or implicit truth store."""
+-    now = datetime.now(UTC)
+-    return [_evaluate(condition, evidence, now) for condition in conditions]
++    acquired_now = now if now is not None else datetime.now(UTC)
++    if acquired_now.tzinfo is None or acquired_now.utcoffset() is None:
++        return [
++            ConditionVerdict(
++                ConditionStatus.UNKNOWN,
++                condition.name,
++                evidence.observation.observation_id,
++                reasons=("evaluation_timestamp_naive",),
++            )
++            for condition in conditions
++        ]
++    return [_evaluate(condition, evidence, acquired_now) for condition in conditions]
+ 
+ 
+ def _evaluate(
+--- a/src/cloud_edge_robot_arm/edge/evidence/models.py
++++ b/src/cloud_edge_robot_arm/edge/evidence/models.py
+@@ -73,6 +73,11 @@
+     reasons: tuple[str, ...]
+     bound_at_completion_m: float | None = None
+ 
++    def __post_init__(self) -> None:
++        if self.status not in {"VALID", "INVALID", "UNKNOWN"}:
++            raise ValueError("unsupported evidence verdict status")
++        object.__setattr__(self, "reasons", tuple(self.reasons))
++
+ 
+ @dataclass(frozen=True)
+ class DecisionEnvelope:
+--- a/src/cloud_edge_robot_arm/edge/evidence/opportunities.py
++++ b/src/cloud_edge_robot_arm/edge/evidence/opportunities.py
+@@ -5,13 +5,21 @@
+ import hashlib
+ import json
+ from collections.abc import Mapping, Sequence
+-from dataclasses import dataclass, fields, is_dataclass
++from dataclasses import dataclass, field, fields, is_dataclass, replace
+ from datetime import datetime
+ from enum import Enum
++from types import MappingProxyType
+ from typing import Any, Literal
+ 
++from pydantic import ConfigDict
++
++from cloud_edge_robot_arm.contracts import Pose, RobotState
+ from cloud_edge_robot_arm.edge.evidence.conditions import OnlineEvidenceSnapshot
+-from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract, EvidenceVerdict
++from cloud_edge_robot_arm.edge.evidence.models import (
++    ActionEvidenceContract,
++    EvidenceVerdict,
++    _freeze,
++)
+ from cloud_edge_robot_arm.edge.evidence.validator import validate_b3, validate_evidence
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
+ 
+@@ -30,6 +38,27 @@
+     return value
+ 
+ 
++class _FrozenPose(Pose):
++    model_config = ConfigDict(frozen=True)
++
++
++class _FrozenRobotState(RobotState):
++    model_config = ConfigDict(frozen=True)
++
++
++def _snapshot_payload(value: OnlineEvidenceSnapshot | None) -> Any:
++    if value is None:
++        return None
++    return {
++        "observation_checksum": value.observation.checksum_sha256,
++        "robot_state": value.robot_state.model_dump(mode="json"),
++        "visual_facts": _canonical(value.visual_facts),
++        "plan_version": value.plan_version,
++        "command_seq": value.command_seq,
++        "context_hash": value.context_hash,
++    }
++
++
+ @dataclass(frozen=True)
+ class Opportunity:
+     """保持原始候选、来源组、快照和独立标签的不可变离线机会。"""
+@@ -39,6 +68,9 @@
+     observation: RGBDObservation
+     action_contract: ActionEvidenceContract
+     oracle_label: Literal["VALID", "INVALID", "UNKNOWN"]
++    replay_at: datetime = field(kw_only=True)
++    replay_calibration_version: str = field(kw_only=True)
++    online_evidence: OnlineEvidenceSnapshot | None = field(default=None, kw_only=True)
+ 
+     def __post_init__(self) -> None:
+         evidence = self.action_contract.evidence
+@@ -52,6 +84,36 @@
+             or evidence.calibration_version != self.observation.calibration_version
+         ):
+             raise ValueError("action evidence snapshot binding mismatch")
++        if self.replay_at.tzinfo is None or self.replay_at.utcoffset() is None:
++            raise ValueError("fixed replay clock must be timezone aware")
++        if not self.replay_calibration_version:
++            raise ValueError("fixed replay calibration configuration missing")
++        if self.online_evidence is not None:
++            online = self.online_evidence
++            if (
++                online.observation.checksum_sha256 != self.observation.checksum_sha256
++                or online.context_hash != self.action_contract.context_hash
++                or online.plan_version != self.action_contract.plan_version
++                or online.command_seq != self.action_contract.command_seq
++            ):
++                raise ValueError("fixed online evidence snapshot binding mismatch")
++            state = _FrozenRobotState.model_validate(online.robot_state.model_dump())
++            state = state.model_copy(
++                update={
++                    "tcp_pose": _FrozenPose.model_validate(online.robot_state.tcp_pose.model_dump())
++                }
++            )
++            object.__setattr__(
++                self,
++                "online_evidence",
++                replace(
++                    online,
++                    robot_state=state,
++                    visual_facts=MappingProxyType(
++                        {key: _freeze(value) for key, value in online.visual_facts.items()}
++                    ),
++                ),
++            )
+ 
+     @property
+     def content_hash(self) -> str:
+@@ -62,6 +124,9 @@
+             "observation_checksum": self.observation.checksum_sha256,
+             "action_contract": _canonical(self.action_contract),
+             "oracle_label": self.oracle_label,
++            "replay_at": self.replay_at.isoformat(),
++            "replay_calibration_version": self.replay_calibration_version,
++            "online_evidence": _snapshot_payload(self.online_evidence),
+         }
+         return hashlib.sha256(
+             json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+@@ -76,6 +141,12 @@
+     method_id: str
+     verdict: EvidenceVerdict
+     opportunity_hash: str
++
++    def __post_init__(self) -> None:
++        if self.method_id not in {"JOINT", "B3"}:
++            raise ValueError("unsupported gate replay method")
++        if not self.opportunity_id or not self.opportunity_hash:
++            raise ValueError("gate replay identity missing")
+ 
+ 
+ def _unique(values: Sequence[Opportunity]) -> dict[str, Opportunity]:
+@@ -92,15 +163,17 @@
+     method_id: Literal["JOINT", "B3"],
+     now: datetime,
+     calibration_version: str,
+-    *,
+-    online_evidence_by_id: Mapping[str, OnlineEvidenceSnapshot] | None = None,
+ ) -> list[GateReplayRecord]:
+     """对全部固定机会回放，不按政策选择或独立标签过滤分母。"""
+     _unique(values)
+     if method_id not in {"JOINT", "B3"}:
+         raise ValueError("unsupported gate replay method")
+     validator = validate_b3 if method_id == "B3" else validate_evidence
+-    online = online_evidence_by_id or {}
++    if any(
++        value.replay_at != now or value.replay_calibration_version != calibration_version
++        for value in values
++    ):
++        raise ValueError("replay clock or configuration differs from fixed inputs")
+     return [
+         GateReplayRecord(
+             value.opportunity_id,
+@@ -110,7 +183,7 @@
+                 now,
+                 value.action_contract.context_hash,
+                 calibration_version,
+-                online_evidence=online.get(value.opportunity_id),
++                online_evidence=value.online_evidence,
+             ),
+             value.content_hash,
+         )
+--- a/src/cloud_edge_robot_arm/edge/evidence/validator.py
++++ b/src/cloud_edge_robot_arm/edge/evidence/validator.py
+@@ -96,7 +96,8 @@
+         # Recompute exact target/tolerances through the canonical evaluator.
+         # A caller-supplied PASS for another target cannot authorize this action.
+         statuses = [
+-            value.status for value in evaluate_conditions(contract.preconditions, online_evidence)
++            value.status
++            for value in evaluate_conditions(contract.preconditions, online_evidence, now=now)
+         ]
+     if ConditionStatus.FAIL in statuses:
+         return EvidenceVerdict("INVALID", ("precondition_failed",)), None
+--- a/tests/test_fixed_opportunity_replay.py
++++ b/tests/test_fixed_opportunity_replay.py
+@@ -1,6 +1,7 @@
+ """Fixed offline opportunities preserve every label and policy-independent denominator."""
+ 
+ from dataclasses import replace
++from datetime import timedelta
+ from importlib import import_module
+ 
+ import pytest
+@@ -15,13 +16,23 @@
+ def opportunities():
+     observation = online_evidence().observation
+     return [
+-        api().Opportunity("opp-safe", "episode-a", observation, contract(), "VALID"),
++        api().Opportunity(
++            "opp-safe",
++            "episode-a",
++            observation,
++            contract(),
++            "VALID",
++            replay_at=NOW,
++            replay_calibration_version="cal-1",
++        ),
+         api().Opportunity(
+             "opp-unsafe",
+             "episode-b",
+             observation,
+             replace(contract(), expected_duration_s=0.4),
+             "INVALID",
++            replay_at=NOW,
++            replay_calibration_version="cal-1",
+         ),
+         api().Opportunity(
+             "opp-unknown",
+@@ -29,6 +40,8 @@
+             observation,
+             replace(contract(), evidence=replace(contract().evidence, motion_bound_m_s=None)),
+             "UNKNOWN",
++            replay_at=NOW,
++            replay_calibration_version="cal-1",
+         ),
+     ]
+ 
+@@ -96,3 +109,45 @@
+     )
+     assert [value.verdict for value in first] == [value.verdict for value in second]
+     assert len(seen) == 6
++
++
++def test_replay_binds_robot_facts_clock_and_calibration():
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    online = online_evidence()
++    value = api().Opportunity(
++        "frozen",
++        "episode",
++        online.observation,
++        contract(
++            preconditions=(ConditionSpec("gripper_open", sensor_requirements=("robot_state",)),)
++        ),
++        "VALID",
++        replay_at=NOW,
++        replay_calibration_version="cal-1",
++        online_evidence=online,
++    )
++    initial_hash = value.content_hash
++    records = api().replay_opportunities([value], "B3", NOW, "cal-1")
++    online.robot_state.gripper_open = False
++    online.visual_facts["target_visible"]["value"] = False
++    assert value.content_hash == initial_hash
++    assert api().replay_opportunities([value], "B3", NOW, "cal-1")[0].verdict == records[0].verdict
++    with pytest.raises(ValueError, match="clock|configuration"):
++        api().replay_opportunities([value], "B3", NOW + timedelta(seconds=1), "cal-1")
++    with pytest.raises(ValueError, match="clock|configuration"):
++        api().replay_opportunities([value], "B3", NOW, "new-cal")
++    changed = replace(value, replay_at=NOW + timedelta(seconds=1))
++    with pytest.raises(ValueError, match="changed"):
++        api().summarize_gate_replay([changed], records)
++
++
++def test_invalid_verdict_or_method_cannot_silently_count_as_zero():
++    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++
++    with pytest.raises(ValueError, match="status"):
++        EvidenceVerdict("junk", ())
++    values = opportunities()
++    record = api().replay_opportunities(values, "B3", NOW, "cal-1")[0]
++    with pytest.raises(ValueError, match="method"):
++        replace(record, method_id="junk")
+--- a/tests/test_visual_evidence_contract.py
++++ b/tests/test_visual_evidence_contract.py
+@@ -295,3 +295,16 @@
+ )
+ def test_invalid_contract_metadata_cannot_authorize(field, value):
+     assert verdict(replace(contract(), **{field: value})).status != "VALID"
++
++
++@pytest.mark.parametrize("method", ["validate_evidence", "validate_b3"])
++def test_preconditions_use_supplied_commit_clock(method):
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    _, validator = api()
++    value = contract(preconditions=(ConditionSpec("target_visible", "object", {"max_age_s": 0.5}),))
++    value = replace(value, evidence=replace(value.evidence, motion_bound_m_s=0))
++    result = getattr(validator, method)(
++        value, NOW + timedelta(seconds=1), "context-1", "cal-1", online_evidence=online_evidence()
++    )
++    assert result.status == "UNKNOWN"

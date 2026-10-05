@@ -1,0 +1,45 @@
+.....................F.................................................. [ 93%]
+.....                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_saved_native_resolution_profiles_measure_detectability_without_truth_input _
+
+    def test_saved_native_resolution_profiles_measure_detectability_without_truth_input():
+        import json
+    
+        root = BASE.parents[3] / "artifacts/research/process/20261004-ced-development/t7b-pose-markers"
+        asset = BASE.with_name("scene_pose_marker_v1.xml")
+        registered = api().PoseMarkerRegistration(
+            7, 0.0525, hashlib.sha256(asset.read_bytes()).hexdigest()
+        )
+        observations = []
+        estimates = []
+        for directory in ("actual-capture-1", "actual-capture-640"):
+>           data = json.loads((root / directory / "frame/observation-full.json").read_text())
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_pose_marker_evidence.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/pathlib.py:1029: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/pose-marker-color-independent-waza3u7b/artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/observation-full.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pose-marker-color-independent-waza3u7b/artifacts/research/process/20261004-ced-development/t7b-pose-markers/actual-capture-1/frame/observation-full.json'
+
+/usr/lib/python3.12/pathlib.py:1015: FileNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_pose_marker_evidence.py::test_saved_native_resolution_profiles_measure_detectability_without_truth_input
+1 failed, 76 passed, 2 deselected in 0.82s

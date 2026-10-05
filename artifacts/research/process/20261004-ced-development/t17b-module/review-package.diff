@@ -1,0 +1,1371 @@
+--- baseline/src/cloud_edge_robot_arm/cloud/api/research_results.py
++++ final/src/cloud_edge_robot_arm/cloud/api/research_results.py
+@@ -0,0 +1,378 @@
++"""Read-only source-bound research diagnostics; no experiment or shell entry point."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import re
++from collections import Counter
++from collections.abc import Mapping
++from dataclasses import asdict
++from pathlib import Path
++from typing import Any, Literal
++
++from fastapi import APIRouter, HTTPException, Request
++from fastapi.responses import JSONResponse
++from pydantic import BaseModel, ConfigDict, Field
++
++from cloud_edge_robot_arm.dashboard.security import enforce_dashboard_access
++from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
++from cloud_edge_robot_arm.research.acceptance import CORE_METHODS, GOAL_IDS, evaluate_goals
++from cloud_edge_robot_arm.research.assignments import (
++    EpisodeAssignment,
++    build_assignments,
++    episode_record_from_payload,
++    validate_formal_protocol,
++)
++from cloud_edge_robot_arm.research.metrics import compute_research_metrics
++from cloud_edge_robot_arm.research.protocol import load_protocol
++
++router = APIRouter(prefix="/api/v1/research", tags=["research-results"])
++_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,95}")
++
++
++class ResearchRunRegistration(BaseModel):
++    """Server-owned paths relative to one configured artifact root, never request data."""
++
++    model_config = ConfigDict(extra="forbid", frozen=True)
++    runs_path: str
++    protocol_path: str
++    analysis_path: str
++
++
++class ResearchGoalView(BaseModel):
++    goal_id: str
++    diagnostic_status: str
++    actual_status: Literal["NOT_RUN"] = "NOT_RUN"
++    evidence_scope: str
++    estimate: Any = None
++    reasons: list[str] = Field(default_factory=list)
++
++
++class ResearchStageView(BaseModel):
++    stage: str
++    declared_status_counts: dict[str, int]
++    source_validation_status: Literal["NOT_RUN"] = "NOT_RUN"
++    accepted_count: Literal[0] = 0
++
++
++class ResearchTimelineView(BaseModel):
++    status: Literal["NOT_RECORDED"] = "NOT_RECORDED"
++    candidate_count: int | None = None
++    accepted_count: int | None = None
++    started_count: int | None = None
++    independent_physical_success: Literal[0] = 0
++    rule_scores: dict[str, float] | None = None
++    candidate_probabilities: dict[str, float] | None = None
++
++
++class ResearchFailureView(BaseModel):
++    assignment_id: str
++    group_id: str
++    method_id: str
++    status: str
++    reason: str | None
++
++
++class ResearchMethodView(BaseModel):
++    method_id: str
++    assigned_denominator: int
++    cloud_requests_total: int
++    model_requests_by_role: dict[str, int]
++    application_bytes_total: int
++    penalized_duration_p95_s: float | None
++    unknown_episode_rate: float | None
++    unknown_condition_rate: float | None
++    fallback_episode_rate: float | None
++    fallback_decision_rate: float | None
++    no_progress_rate: float | None
++    terminal_status_counts: dict[str, int]
++    provider_versions: list[dict[str, Any]] = Field(default_factory=list)
++    metric_scope: Literal["DECLARED_SOURCE_BOUND_DIAGNOSTIC"] = "DECLARED_SOURCE_BOUND_DIAGNOSTIC"
++
++
++class ResearchRunView(BaseModel):
++    run_id: str
++    status: Literal["SOFTWARE_ONLY", "NOT_RUN"] = "NOT_RUN"
++    scope: Literal["SOFTWARE_ONLY", "UNVERIFIED"] = "UNVERIFIED"
++    actual_research_status: Literal["NOT_RUN"] = "NOT_RUN"
++    formal_accepted: Literal[False] = False
++    physical_success: Literal[0] = 0
++    protocol_hash: str | None = None
++    selected_n: int | None = None
++    assigned_denominator: int | None = None
++    paired_group_denominator: int | None = None
++    coverage_status: str = "INCOMPLETE"
++    strata_counts_by_method: dict[str, dict[str, int]] = Field(default_factory=dict)
++    terminal_status_counts: dict[str, int] = Field(default_factory=dict)
++    methods: list[ResearchMethodView] = Field(default_factory=list)
++    goals: list[ResearchGoalView] = Field(default_factory=list)
++    effects: dict[str, Any] = Field(default_factory=dict)
++    primary_family: dict[str, Any] = Field(default_factory=dict)
++    stages: list[ResearchStageView] = Field(default_factory=list)
++    timeline: ResearchTimelineView = Field(default_factory=ResearchTimelineView)
++    failures: list[ResearchFailureView] = Field(default_factory=list)
++    source_missing: list[str] = Field(default_factory=list)
++    reasons: list[str] = Field(default_factory=list)
++
++
++class ResearchRunList(BaseModel):
++    runs: list[ResearchRunView]
++    actual_research_status: Literal["NOT_RUN"] = "NOT_RUN"
++    reasons: list[str] = Field(default_factory=list)
++
++
++def _authorize(request: Request) -> None:
++    enforce_dashboard_access(request)
++    if request.query_params:
++        raise HTTPException(422, "research_query_parameters_not_supported")
++
++
++def _registry(request: Request) -> Mapping[str, ResearchRunRegistration]:
++    registry = getattr(request.app.state, "research_runs_registry", {})
++    if not isinstance(registry, Mapping):
++        raise HTTPException(409, "research_registry_invalid")
++    return registry
++
++
++def _resolve(root: Path, relative: str) -> Path:
++    path = Path(relative)
++    if not relative or path.is_absolute() or ".." in path.parts or path == Path("."):
++        raise ValueError("research path must be server-owned and relative")
++    if root.absolute() != root.resolve():
++        raise ValueError("research artifact root cannot follow symlinks")
++    target = root / path
++    cursor = root
++    for part in path.parts:
++        cursor = cursor / part
++        if cursor.is_symlink():
++            raise ValueError("research artifact symlinks are forbidden")
++    if not target.resolve().is_relative_to(root.resolve()):
++        raise ValueError("research artifact escapes configured root")
++    return target
++
++
++def _missing(run_id: str, missing: list[str]) -> ResearchRunView:
++    return ResearchRunView(
++        run_id=run_id,
++        source_missing=missing,
++        reasons=["required research artifacts are not available; no actual research acceptance"],
++        goals=[
++            ResearchGoalView(
++                goal_id=goal,
++                diagnostic_status="NOT_RUN",
++                evidence_scope="UNVERIFIED",
++                reasons=["required source missing"],
++            )
++            for goal in GOAL_IDS
++        ],
++    )
++
++
++def _load_view(request: Request, run_id: str) -> ResearchRunView:
++    registry = _registry(request)
++    if _RUN_ID.fullmatch(run_id) is None or run_id not in registry:
++        raise HTTPException(404, "research_run_not_found")
++    try:
++        registered = registry[run_id]
++        config = (
++            registered
++            if isinstance(registered, ResearchRunRegistration)
++            else ResearchRunRegistration.model_validate(registered)
++        )
++        configured_root = getattr(request.app.state, "research_artifact_root", None)
++        if configured_root is None:
++            return _missing(run_id, ["configured_artifact_root"])
++        root = Path(configured_root).absolute()
++        paths = {
++            "protocol": _resolve(root, config.protocol_path + "/protocol.json"),
++            "assignments": _resolve(root, config.runs_path + "/assignments.json"),
++            "records": _resolve(root, config.runs_path + "/records.jsonl"),
++            "pools": _resolve(root, config.runs_path + "/pools.json"),
++            "report": _resolve(root, config.analysis_path + "/report.json"),
++            "metrics": _resolve(root, config.analysis_path + "/metrics.json"),
++            "goals": _resolve(root, config.analysis_path + "/goal_verdicts.json"),
++        }
++        missing = [name for name, path in paths.items() if not path.is_file()]
++        if missing:
++            return _missing(run_id, missing)
++        source_bytes = {name: path.read_bytes() for name, path in paths.items()}
++        fingerprints = {name: hashlib.sha256(raw).hexdigest() for name, raw in source_bytes.items()}
++        cache = getattr(request.app.state, "research_results_cache", {})
++        fingerprint = content_digest({"paths": config.model_dump(), "hashes": fingerprints})
++        cached = cache.get(run_id)
++        if isinstance(cached, tuple) and len(cached) == 2 and cached[0] == fingerprint:
++            cached_view = cached[1]
++            if isinstance(cached_view, ResearchRunView):
++                return cached_view.model_copy(deep=True)
++        frozen = load_protocol(paths["protocol"].parent)
++        validate_formal_protocol(frozen)
++        report = json.loads(source_bytes["report"])
++        metrics = json.loads(source_bytes["metrics"])
++        goals = json.loads(source_bytes["goals"])
++        if (
++            not isinstance(report, Mapping)
++            or not isinstance(metrics, Mapping)
++            or (not isinstance(goals, list) or not isinstance(report.get("source_hashes"), Mapping))
++        ):
++            raise ValueError("research report/metrics/goals/source hashes have invalid shapes")
++        if report.get("schema_version") != "ced.research-analysis.v1" or (
++            metrics.get("schema_version") != "ced.research-metrics.v1"
++            or report.get("formal_accepted") is not False
++            or report.get("physical_success") != 0
++        ):
++            raise ValueError("unsupported research report or unverified acceptance declaration")
++        if any(
++            report.get("source_hashes", {}).get(name) != fingerprints[name]
++            for name in ("protocol", "assignments", "records", "pools")
++        ):
++            raise ValueError("research report input source hash mismatch")
++        software_only = report.get("scope") == "SOFTWARE_ONLY"
++        if report.get("scope") not in {"SOFTWARE_ONLY", "UNVERIFIED"}:
++            raise ValueError("research report scope unsupported")
++        manifest = json.loads(source_bytes["assignments"])
++        if not isinstance(manifest, dict) or (
++            not isinstance(manifest.get("assignments"), list)
++            or any(not isinstance(raw, Mapping) for raw in manifest["assignments"])
++        ):
++            raise ValueError("research assignment manifest must contain an array of objects")
++        expected_hash = manifest.pop("content_hash", None)
++        if manifest.get("schema_version") != "ced.assignments.v1" or (
++            expected_hash != content_digest(manifest)
++            or manifest.get("protocol_hash") != frozen.content_hash
++        ):
++            raise ValueError("research assignment hash/protocol mismatch")
++        assignments = [EpisodeAssignment(**raw) for raw in manifest["assignments"]]
++        pools = json.loads(source_bytes["pools"])
++        if not isinstance(pools, Mapping) or (
++            not isinstance(pools.get("formal"), list)
++            or any(not isinstance(raw, Mapping) for raw in pools["formal"])
++        ):
++            raise ValueError("research formal pool must contain an array of scene objects")
++        rebuilt = build_assignments(frozen, CORE_METHODS, scene_pool=pools["formal"])
++        if assignments != rebuilt:
++            raise ValueError("research coverage differs from all frozen methods/scenes/strata")
++        raw_rows = [json.loads(line) for line in source_bytes["records"].splitlines()]
++        if any(not isinstance(raw, Mapping) or (
++            not isinstance(raw.get("assignment"), Mapping)
++        ) for raw in raw_rows):
++            raise ValueError("research record lines must contain assignment objects")
++        rows = [episode_record_from_payload(raw, protocol=frozen) for raw in raw_rows]
++        actual = {row.assignment.assignment_id: row for row in rows}
++        if (
++            len(actual) != len(rows)
++            or set(actual) != {row.assignment_id for row in rebuilt}
++            or any(actual[row.assignment_id].assignment != row for row in rebuilt)
++        ):
++            raise ValueError("research source must retain every blocked/failed original assignment")
++        recomputed = {
++            **compute_research_metrics(rows, (), (), software_only=software_only),
++            "coverage_status": "COMPLETE",
++            "coverage_assignment_denominator": len(rebuilt),
++            "coverage_group_denominator": frozen.spec.selected_n,
++            "coverage_methods": list(CORE_METHODS),
++        }
++        recomputed_goals = [
++            asdict(value)
++            for value in evaluate_goals(recomputed, frozen, software_only=software_only)
++        ]
++        if canonical_json(metrics) != canonical_json(recomputed) or (
++            canonical_json(goals) != canonical_json(recomputed_goals)
++            or report.get("goal_verdicts") != goals
++            or report.get("status") != ("SOFTWARE_ONLY" if software_only else "NOT_RUN")
++        ):
++            raise ValueError("research summaries differ from source-bound numeric rebuild")
++        method_views = [
++            ResearchMethodView(
++                method_id=method,
++                **{
++                    name: values.get(name)
++                    for name in ResearchMethodView.model_fields
++                    if name not in {"method_id", "metric_scope"}
++                },
++            )
++            for method, values in metrics["methods"].items()
++        ]
++        stage_counts: dict[str, Counter[str]] = {}
++        for row in rows:
++            for stage in row.provenance.stages:
++                stage_counts.setdefault(stage.stage, Counter())[str(stage.status)] += 1
++        strata = {
++            method: dict(Counter(row.stratum_id for row in rebuilt if row.method_id == method))
++            for method in CORE_METHODS
++        }
++        view = ResearchRunView(
++            run_id=run_id,
++            status=report["status"],
++            scope=report["scope"],
++            protocol_hash=frozen.content_hash,
++            selected_n=frozen.spec.selected_n,
++            assigned_denominator=len(rows),
++            paired_group_denominator=frozen.spec.selected_n,
++            coverage_status="COMPLETE",
++            strata_counts_by_method=strata,
++            terminal_status_counts=dict(Counter(row.run_status for row in rows)),
++            methods=method_views,
++            goals=[
++                ResearchGoalView(
++                    goal_id=value["goal_id"],
++                    diagnostic_status=value["status"],
++                    evidence_scope=value["evidence_scope"],
++                    estimate=value["estimate"],
++                    reasons=list(value["reasons"]),
++                )
++                for value in goals
++            ],
++            effects=metrics["effects"],
++            primary_family=metrics["primary_family"],
++            stages=[
++                ResearchStageView(stage=stage, declared_status_counts=dict(counts))
++                for stage, counts in sorted(stage_counts.items())
++            ],
++            failures=[
++                ResearchFailureView(
++                    assignment_id=row.assignment.assignment_id,
++                    group_id=row.assignment.group_id,
++                    method_id=row.assignment.method_id,
++                    status=row.run_status,
++                    reason=row.outcome.terminal_reason or row.outcome.failure_reason,
++                )
++                for row in rows
++                if not row.accepted_task_success
++            ],
++            reasons=[
++                "independent raw physical source verifier is not integrated",
++                "condition UNKNOWN and decision fallback need source-qualified round counts",
++                "candidate/accepted/started timeline and rule probabilities are not recorded",
++            ],
++        )
++        cache[run_id] = (fingerprint, view.model_copy(deep=True))
++        request.app.state.research_results_cache = cache
++        return view
++    except (OSError, ValueError, KeyError, TypeError) as error:
++        raise HTTPException(409, "research_artifact_invalid") from error
++
++
++@router.get("/runs", response_model=ResearchRunList)
++def list_research_runs(request: Request) -> ResearchRunList:
++    _authorize(request)
++    return ResearchRunList(
++        runs=[_load_view(request, run_id) for run_id in sorted(_registry(request))],
++        reasons=["actual research evidence remains NOT_RUN"],
++    )
++
++
++@router.get("/runs/{run_id}/evidence", response_model=ResearchRunView)
++def get_research_evidence(request: Request, run_id: str) -> ResearchRunView:
++    _authorize(request)
++    return _load_view(request, run_id)
++
++
++@router.get("/runs/{run_id}/export", response_model=ResearchRunView)
++def export_research_evidence(request: Request, run_id: str) -> JSONResponse:
++    _authorize(request)
++    view = _load_view(request, run_id)
++    return JSONResponse(
++        view.model_dump(mode="json"),
++        headers={"Content-Disposition": f'attachment; filename="{run_id}.research.json"'},
++    )
+--- baseline/tests/test_research_results_api.py
++++ final/tests/test_research_results_api.py
+@@ -0,0 +1,220 @@
++"""研究结果仅只读完整冻结来源，软件判定不赋予实际成功。"""
++
++import importlib
++import json
++import shutil
++from dataclasses import asdict
++from pathlib import Path
++
++import pytest
++from fastapi.testclient import TestClient
++
++
++def api():
++    return importlib.import_module("cloud_edge_robot_arm.cloud.api.research_results")
++
++
++@pytest.fixture(scope="module")
++def prepared_sources(tmp_path_factory):
++    api()  # Missing production boundary is the first RED, not fabricated data.
++    from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
++    from cloud_edge_robot_arm.research.acceptance import analyze_research_runs
++    from cloud_edge_robot_arm.research.assignments import build_assignments
++    from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec
++    from cloud_edge_robot_arm.research.runner import run_assignment
++    from tests.test_research_assignments import scene_pool
++
++    root = tmp_path_factory.mktemp("research-results")
++    pool = scene_pool.__wrapped__()
++    methods = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY", "NO_TIME_VALIDITY", "NO_LOCAL_REPAIR")
++    spec = ProtocolSpec(
++        selected_n=600,
++        tcap_s=120,
++        pool_hashes={"formal": content_digest(pool)},
++        model_snapshot_hash="a" * 64,
++        method_hashes={key: content_digest(key) for key in methods},
++        initial_protocol_hash="b" * 64,
++        opportunity_hash="c" * 64,
++        recovery_fault_manifest_hash="d" * 64,
++    )
++    frozen = FrozenProtocol(
++        spec=spec,
++        stage="FINAL",
++        content_hash=content_digest({"spec": spec.model_dump(mode="json"), "stage": "FINAL"}),
++    )
++    runs, protocol = root / "run-1/runs", root / "run-1/protocol"
++    runs.mkdir(parents=True)
++    protocol.mkdir()
++    (protocol / "protocol.json").write_text(frozen.model_dump_json())
++    assignments = build_assignments(frozen, methods, scene_pool=pool)
++    manifest = {
++        "schema_version": "ced.assignments.v1",
++        "protocol_hash": frozen.content_hash,
++        "assignments": [asdict(row) for row in assignments],
++    }
++    manifest["content_hash"] = content_digest(manifest)
++    (runs / "assignments.json").write_text(canonical_json(manifest))
++    (runs / "pools.json").write_text(canonical_json({"formal": pool}))
++    (runs / "records.jsonl").write_text(
++        "\n".join(
++            canonical_json(run_assignment(row, frozen).to_payload(protocol=frozen))
++            for row in assignments
++        )
++        + "\n"
++    )
++    analyze_research_runs(runs, protocol, root / "run-1/analysis", software_only=True)
++    return root, frozen.content_hash
++
++
++def browser(monkeypatch, root: Path):
++    from cloud_edge_robot_arm.cloud.api.app import create_app
++    from cloud_edge_robot_arm.cloud.planning.adapter import MockPlannerAdapter
++    from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
++
++    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "LOCAL_ONLY")
++    app = create_app(PlanningPipeline(planner=MockPlannerAdapter()))
++    app.state.research_artifact_root = root
++    app.state.research_runs_registry = {
++        "run-1": api().ResearchRunRegistration(
++            runs_path="run-1/runs", protocol_path="run-1/protocol", analysis_path="run-1/analysis"
++        )
++    }
++    return TestClient(app)
++
++
++def test_results_keep_blocked_denominator_and_protocol_hash(prepared_sources, monkeypatch):
++    root, protocol_hash = prepared_sources
++    response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
++    assert response.status_code == 200, response.text
++    value = response.json()
++    assert value["protocol_hash"] == protocol_hash
++    assert value["assigned_denominator"] == 4200
++    assert value["paired_group_denominator"] == 600
++    assert value["terminal_status_counts"] == {"BLOCKED": 4200}
++    assert {row["assigned_denominator"] for row in value["methods"]} == {600}
++    assert value["formal_accepted"] is False and value["physical_success"] == 0
++    assert value["actual_research_status"] == "NOT_RUN"
++    assert value["scope"] == "SOFTWARE_ONLY"
++    assert all(goal["actual_status"] == "NOT_RUN" for goal in value["goals"])
++
++
++def test_export_retains_same_protocol_denominators_and_software_scope(
++    prepared_sources, monkeypatch
++):
++    root, _ = prepared_sources
++    client = browser(monkeypatch, root)
++    detail = client.get("/api/v1/research/runs/run-1/evidence").json()
++    exported = client.get("/api/v1/research/runs/run-1/export")
++    assert exported.status_code == 200 and exported.json() == detail
++    assert "attachment" in exported.headers["content-disposition"]
++
++
++@pytest.mark.parametrize("target", ["other", "..%2F..%2Fsecret", "a%3Btouch-secret"])
++def test_result_ids_cannot_select_paths_or_other_runs(prepared_sources, monkeypatch, target):
++    root, _ = prepared_sources
++    assert (
++        browser(monkeypatch, root).get(f"/api/v1/research/runs/{target}/evidence").status_code
++        == 404
++    )
++
++
++def test_read_only_view_has_no_run_creation_and_requires_existing_auth(
++    prepared_sources, monkeypatch
++):
++    root, _ = prepared_sources
++    client = browser(monkeypatch, root)
++    assert client.post("/api/v1/research/runs", json={"shell": "touch sentinel"}).status_code == 405
++    monkeypatch.setenv("DASHBOARD_AUTH_MODE", "TOKEN")
++    assert client.get("/api/v1/research/runs").status_code == 401
++
++
++@pytest.mark.parametrize("tamper", ["denominator", "source", "goals", "symlink"])
++def test_results_reject_changed_summary_or_source(prepared_sources, monkeypatch, tmp_path, tamper):
++    original, _ = prepared_sources
++    root = tmp_path / "artifacts"
++    shutil.copytree(original, root)
++    analysis = root / "run-1/analysis"
++    if tamper == "denominator":
++        path = analysis / "metrics.json"
++        value = json.loads(path.read_text())
++        value["assignment_denominator"] = 1
++        path.write_text(json.dumps(value))
++    elif tamper == "source":
++        (root / "run-1/runs/records.jsonl").write_text("{}\n")
++    elif tamper == "goals":
++        path = analysis / "goal_verdicts.json"
++        value = json.loads(path.read_text())
++        value[0]["status"] = "PASS"
++        path.write_text(json.dumps(value))
++    else:
++        path = analysis / "metrics.json"
++        outside = tmp_path / "outside.json"
++        path.rename(outside)
++        path.symlink_to(outside)
++    assert browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence").status_code == 409
++
++
++def test_missing_registered_outputs_are_explicit_not_run(monkeypatch, tmp_path):
++    client = browser(monkeypatch, tmp_path)
++    response = client.get("/api/v1/research/runs/run-1/evidence")
++    assert response.status_code == 200
++    value = response.json()
++    assert value["status"] == value["actual_research_status"] == "NOT_RUN"
++    assert value["assigned_denominator"] is None
++    assert value["source_missing"]
++    assert value["timeline"]["candidate_count"] is None
++    assert value["timeline"]["accepted_count"] is None
++    assert value["timeline"]["started_count"] is None
++
++
++def test_query_shell_and_path_are_not_an_input_surface(prepared_sources, monkeypatch):
++    root, _ = prepared_sources
++    response = browser(monkeypatch, root).get(
++        "/api/v1/research/runs/run-1/evidence?path=/etc/passwd&shell=touch"
++    )
++    assert response.status_code == 422
++
++
++@pytest.mark.parametrize("artifact", ["report.json", "metrics.json", "goal_verdicts.json"])
++def test_malformed_result_shapes_fail_closed(prepared_sources, monkeypatch, tmp_path, artifact):
++    original, _ = prepared_sources
++    root = tmp_path / "artifacts"
++    shutil.copytree(original, root)
++    (root / "run-1/analysis" / artifact).write_text("null\n")
++    response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
++    assert response.status_code == 409
++
++
++@pytest.mark.parametrize(
++    "artifact,value",
++    [
++        ("assignments.json", None),
++        ("assignments.json", []),
++        ("assignments.json", {"assignments": [None]}),
++        ("pools.json", None),
++        ("pools.json", []),
++        ("pools.json", {"formal": None}),
++        ("pools.json", {"formal": [None]}),
++        ("records.jsonl", None),
++        ("records.jsonl", []),
++        ("records.jsonl", {"assignment": None}),
++    ],
++)
++def test_rehashed_malformed_raw_tables_return_conflict(
++    prepared_sources, monkeypatch, tmp_path, artifact, value
++):
++    import hashlib
++
++    original, _ = prepared_sources
++    root = tmp_path / "artifacts"
++    shutil.copytree(original, root)
++    source = root / "run-1/runs" / artifact
++    source.write_text(json.dumps(value) + "\n")
++    report = root / "run-1/analysis/report.json"
++    payload = json.loads(report.read_text())
++    name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
++    payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
++    report.write_text(json.dumps(payload))
++    response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
++    assert response.status_code == 409
++    assert response.json()["error"] == "research_artifact_invalid"
+--- baseline/dashboard/src/simulation/api/researchResultsApi.ts
++++ final/dashboard/src/simulation/api/researchResultsApi.ts
+@@ -0,0 +1,33 @@
++// 研究结果仅从后端登记的只读产物读取；软件诊断不代表实际研究验收。
++import type { components } from "../../api/generated/schema";
++
++export type ResearchGoalView = components["schemas"]["ResearchGoalView"];
++export type ResearchMethodView = components["schemas"]["ResearchMethodView"];
++export type ResearchRunView = components["schemas"]["ResearchRunView"];
++export type ResearchRunList = components["schemas"]["ResearchRunList"];
++
++const PREFIX = "/api/v1/research/runs";
++
++async function read<T>(url: string, signal?: AbortSignal): Promise<T> {
++  const response = await fetch(url, {
++    method: "GET",
++    headers: { Accept: "application/json", "x-dashboard-role": "VIEWER" },
++    signal,
++  });
++  if (!response.ok) {
++    throw new Error(
++      `研究证据请求失败 (${response.status})：${await response.text()}`,
++    );
++  }
++  return (await response.json()) as T;
++}
++
++export const researchResultsApi = {
++  runs: (signal?: AbortSignal) => read<ResearchRunList>(PREFIX, signal),
++  evidence: (runId: string, signal?: AbortSignal) =>
++    read<ResearchRunView>(
++      `${PREFIX}/${encodeURIComponent(runId)}/evidence`,
++      signal,
++    ),
++  exportUrl: (runId: string) => `${PREFIX}/${encodeURIComponent(runId)}/export`,
++};
+--- baseline/dashboard/src/simulation/api/researchResultsApi.test.ts
++++ final/dashboard/src/simulation/api/researchResultsApi.test.ts
+@@ -0,0 +1,69 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++
++import { researchResultsApi } from "./researchResultsApi";
++
++afterEach(() => vi.unstubAllGlobals());
++
++describe("read-only research API", () => {
++  it("encodes run ids without sending paths or shell bodies", async () => {
++    const fetcher = vi
++      .fn()
++      .mockResolvedValue({ ok: true, json: async () => ({ run_id: "run" }) });
++    vi.stubGlobal("fetch", fetcher);
++    await researchResultsApi.evidence("a/b;touch");
++    expect(fetcher).toHaveBeenCalledWith(
++      "/api/v1/research/runs/a%2Fb%3Btouch/evidence",
++      expect.objectContaining({ method: "GET" }),
++    );
++    expect(fetcher.mock.calls[0][1].body).toBeUndefined();
++    expect(researchResultsApi.exportUrl("run-1")).toBe(
++      "/api/v1/research/runs/run-1/export",
++    );
++  });
++
++  it("reports a missing or rejected source instead of fabricating an empty success", async () => {
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue({
++        ok: false,
++        status: 409,
++        text: async () => "research_artifact_invalid",
++      }),
++    );
++    await expect(researchResultsApi.evidence("run")).rejects.toThrow("409");
++  });
++
++  it("lists only server registrations with viewer headers and an abort signal", async () => {
++    const payload = {
++      runs: [],
++      actual_research_status: "NOT_RUN",
++      reasons: [],
++    };
++    const fetcher = vi
++      .fn()
++      .mockResolvedValue({ ok: true, json: async () => payload });
++    vi.stubGlobal("fetch", fetcher);
++    const controller = new AbortController();
++    expect(await researchResultsApi.runs(controller.signal)).toEqual(payload);
++    const [url, init] = fetcher.mock.calls[0];
++    expect(url).toBe("/api/v1/research/runs");
++    expect(init.method).toBe("GET");
++    expect(init.signal).toBe(controller.signal);
++    expect(init.headers["x-dashboard-role"]).toBe("VIEWER");
++    expect(init.headers.Accept).toBe("application/json");
++  });
++
++  it("encodes the identical run identity for read and JSON export", async () => {
++    const fetcher = vi
++      .fn()
++      .mockResolvedValue({ ok: true, json: async () => ({ run_id: "x y" }) });
++    vi.stubGlobal("fetch", fetcher);
++    await researchResultsApi.evidence("x y");
++    expect(fetcher.mock.calls[0][0]).toBe(
++      "/api/v1/research/runs/x%20y/evidence",
++    );
++    expect(researchResultsApi.exportUrl("x y")).toBe(
++      "/api/v1/research/runs/x%20y/export",
++    );
++  });
++});
+--- baseline/dashboard/src/simulation/pages/ResearchEvidencePage.tsx
++++ final/dashboard/src/simulation/pages/ResearchEvidencePage.tsx
+@@ -0,0 +1,380 @@
++// 研究记录、软件统计和独立物理验收分别展示，所有分配保留在表格及 JSON 中。
++import { useQuery } from "@tanstack/react-query";
++import {
++  Alert,
++  Card,
++  Empty,
++  Input,
++  Select,
++  Space,
++  Spin,
++  Table,
++  Tag,
++  Typography,
++} from "antd";
++import { useSearchParams } from "react-router-dom";
++
++import {
++  researchResultsApi,
++  type ResearchRunView,
++} from "../api/researchResultsApi";
++
++function count(value: number | null | undefined): string {
++  return value == null ? "N/A" : String(value);
++}
++
++function statistic(value: unknown): string {
++  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
++  const rounded = value.toFixed(3);
++  return Number(rounded) === value ? rounded : String(value);
++}
++
++function record(value: unknown): Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value)
++    ? (value as Record<string, unknown>)
++    : {};
++}
++
++function counts(values: Record<string, number> | undefined): string {
++  return (
++    Object.entries(values ?? {})
++      .map(([key, value]) => `${key}: ${value}`)
++      .join(" · ") || "未记录"
++  );
++}
++
++function rate(value: number | null | undefined): string {
++  return value == null ? "未记录（N/A）" : statistic(value);
++}
++
++export function ResearchEvidenceSummary({ view }: { view: ResearchRunView }) {
++  const effects = view.effects ?? {};
++  const sourceMissing = view.source_missing ?? [];
++  const family = view.primary_family ?? {};
++  const hypotheses = Array.isArray(family.hypotheses)
++    ? family.hypotheses.filter(
++        (value): value is string => typeof value === "string",
++      )
++    : [];
++  const names = [...new Set([...hypotheses, ...Object.keys(effects)])];
++  const adjusted = record(family.holm_adjusted_p);
++  const rows = names.map((name) => ({ name, values: record(effects[name]) }));
++  const timeline = view.timeline;
++
++  return (
++    <Space orientation="vertical" size="large" style={{ width: "100%" }}>
++      <Card title={`研究证据 · ${view.run_id}`}>
++        <Space orientation="vertical" style={{ width: "100%" }}>
++          <Alert
++            type="info"
++            title={`实际研究：${view.actual_research_status ?? "NOT_RUN"}`}
++            description={`记录范围：${view.scope}。软件诊断通过仅说明数值规则；独立物理来源尚未验收。`}
++          />
++          <Typography.Text>
++            正式验收：{String(view.formal_accepted)} · 独立物理结果计数：
++            {count(view.physical_success)}
++          </Typography.Text>
++          <Typography.Text>
++            {count(view.paired_group_denominator)} 组配对 /{" "}
++            {count(view.assigned_denominator)} 条全部分配
++          </Typography.Text>
++          <Typography.Text>
++            冻结 N：{count(view.selected_n)} · 覆盖状态：{view.coverage_status}
++          </Typography.Text>
++          <Typography.Text>
++            协议 hash：
++            <Typography.Text code>
++              {view.protocol_hash ?? "N/A（来源缺失）"}
++            </Typography.Text>
++          </Typography.Text>
++          <Typography.Text>
++            全部终止状态：{counts(view.terminal_status_counts)}
++          </Typography.Text>
++          {sourceMissing.length > 0 && (
++            <Alert
++              type="warning"
++              title={`缺失来源：${sourceMissing.join("、")}`}
++            />
++          )}
++          {(view.reasons ?? []).map((reason, index) => (
++            <Typography.Text key={index}>{reason}</Typography.Text>
++          ))}
++          <a href={researchResultsApi.exportUrl(view.run_id)}>
++            导出同分母 JSON
++          </a>
++        </Space>
++      </Card>
++
++      <Card title="目标判定与统计">
++        <Typography.Paragraph>
++          原始 95% CI 与 Holm 校正 p
++          分列；缺失检验仍属于冻结假设族，不能据软件诊断声明实际收益。
++        </Typography.Paragraph>
++        <Table
++          rowKey="goal_id"
++          pagination={false}
++          dataSource={view.goals ?? []}
++          columns={[
++            { title: "目标", dataIndex: "goal_id" },
++            {
++              title: "软件诊断",
++              render: (_, goal) => (
++                <Tag>软件诊断：{goal.diagnostic_status}</Tag>
++              ),
++            },
++            {
++              title: "实际研究",
++              render: (_, goal) => `实际研究：${goal.actual_status}`,
++            },
++            { title: "来源范围", dataIndex: "evidence_scope" },
++            {
++              title: "依据",
++              render: (_, goal) => (goal.reasons ?? []).join("；"),
++            },
++          ]}
++        />
++        <Table
++          rowKey="name"
++          pagination={false}
++          dataSource={rows}
++          scroll={{ x: 780 }}
++          columns={[
++            { title: "指标", dataIndex: "name" },
++            {
++              title: "点估计 [原始 95% 区间]",
++              render: (_, row) =>
++                `${statistic(row.values.point)} [${statistic(row.values.lower95)}, ${statistic(row.values.upper95)}]`,
++            },
++            {
++              title: "单侧 95% 界",
++              render: (_, row) =>
++                `[${statistic(row.values.one_sided_lower95)}, ${statistic(row.values.one_sided_upper95)}]`,
++            },
++            {
++              title: "原始 p",
++              render: (_, row) => statistic(row.values.p_value),
++            },
++            {
++              title: "Holm 校正 p",
++              render: (_, row) =>
++                statistic(row.values.adjusted_p_value ?? adjusted[row.name]),
++            },
++            {
++              title: "配对组分母",
++              render: (_, row) =>
++                typeof row.values.denominator === "number"
++                  ? count(row.values.denominator)
++                  : "N/A",
++            },
++            {
++              title: "计算来源",
++              render: (_, row) =>
++                typeof row.values.method === "string"
++                  ? row.values.method
++                  : "N/A",
++            },
++          ]}
++        />
++      </Card>
++
++      <Card title="方法分母、角色成本与诊断">
++        {(view.methods ?? []).length === 0 ? (
++          <Empty description="方法记录未提供" />
++        ) : (
++          (view.methods ?? []).map((method) => (
++            <Card
++              key={method.method_id}
++              size="small"
++              title={method.method_id}
++              style={{ marginBottom: 12 }}
++            >
++              <Space orientation="vertical">
++                <Typography.Text>
++                  全部分配：{method.assigned_denominator} ·{" "}
++                  {counts(method.terminal_status_counts)}
++                </Typography.Text>
++                <Typography.Text>
++                  云请求合计: {method.cloud_requests_total} · 角色：
++                  {counts(method.model_requests_by_role)}
++                </Typography.Text>
++                <Typography.Text>
++                  应用层字节: {method.application_bytes_total} B · 惩罚后 P95:{" "}
++                  {count(method.penalized_duration_p95_s)} s
++                </Typography.Text>
++                <Typography.Text>
++                  条件 UNKNOWN：{rate(method.unknown_condition_rate)} ·
++                  分母为全部条件判断，未提供来源时不以 episode 替代
++                </Typography.Text>
++                <Typography.Text>
++                  决策 fallback：{rate(method.fallback_decision_rate)} ·
++                  分母为全部决策轮次，未提供来源时不以 episode 替代
++                </Typography.Text>
++                <Typography.Text>
++                  附加 episode 指标：UNKNOWN {rate(method.unknown_episode_rate)}{" "}
++                  · fallback {rate(method.fallback_episode_rate)} · 无进展终止{" "}
++                  {rate(method.no_progress_rate)}
++                </Typography.Text>
++                <Typography.Text>
++                  方法分层：
++                  {counts(view.strata_counts_by_method?.[method.method_id])}
++                </Typography.Text>
++                <Typography.Text>
++                  成本范围：{method.metric_scope} · provider 版本：
++                  {JSON.stringify(method.provider_versions ?? [])}
++                </Typography.Text>
++              </Space>
++            </Card>
++          ))
++        )}
++      </Card>
++
++      <Card title="候选、接受、启动与独立结果">
++        <Space orientation="vertical" style={{ width: "100%" }}>
++          <Typography.Text>
++            时间线来源：{timeline?.status ?? "NOT_RECORDED"}
++          </Typography.Text>
++          <Typography.Text>
++            候选：{count(timeline?.candidate_count)}
++          </Typography.Text>
++          <Typography.Text>
++            接受：{count(timeline?.accepted_count)}
++          </Typography.Text>
++          <Typography.Text>
++            启动：{count(timeline?.started_count)}
++          </Typography.Text>
++          <Typography.Text>
++            独立物理结果：{count(timeline?.independent_physical_success)}
++          </Typography.Text>
++          <Typography.Text>
++            规则评分不等于概率；缺失概率保持 N/A，规则分数不能充当校准风险。
++          </Typography.Text>
++          <Typography.Text>
++            规则评分：
++            {timeline?.rule_scores == null
++              ? "N/A（未记录）"
++              : JSON.stringify(timeline.rule_scores)}
++          </Typography.Text>
++          <Typography.Text>
++            候选概率：
++            {timeline?.candidate_probabilities == null
++              ? "N/A（未记录）"
++              : JSON.stringify(timeline.candidate_probabilities)}
++          </Typography.Text>
++          <Table
++            rowKey="stage"
++            pagination={false}
++            dataSource={view.stages ?? []}
++            columns={[
++              { title: "阶段", dataIndex: "stage" },
++              {
++                title: "声明状态",
++                render: (_, stage) => counts(stage.declared_status_counts),
++              },
++              { title: "来源核验", dataIndex: "source_validation_status" },
++              { title: "已独立接受计数", dataIndex: "accepted_count" },
++            ]}
++          />
++        </Space>
++      </Card>
++
++      <Card title={`全部未独立验收记录（${(view.failures ?? []).length}）`}>
++        <Typography.Paragraph>
++          保留 FAILED、BLOCKED、UNKNOWN 等全部分配；分页仅改变显示，JSON
++          导出保留完整记录。
++        </Typography.Paragraph>
++        <Table
++          rowKey="assignment_id"
++          dataSource={view.failures ?? []}
++          pagination={{ pageSize: 20, showSizeChanger: true }}
++          scroll={{ x: 700 }}
++          columns={[
++            { title: "分配 ID", dataIndex: "assignment_id" },
++            { title: "组", dataIndex: "group_id" },
++            { title: "方法", dataIndex: "method_id" },
++            { title: "终止状态", dataIndex: "status" },
++            {
++              title: "原因",
++              render: (_, failure) => failure.reason ?? "未记录",
++            },
++          ]}
++        />
++      </Card>
++
++      <Card title="同一响应的完整 JSON">
++        <pre
++          data-testid="research-view-json"
++          style={{ margin: 0, maxHeight: 360, overflow: "auto" }}
++        >
++          {JSON.stringify(view, null, 2)}
++        </pre>
++      </Card>
++    </Space>
++  );
++}
++
++export function ResearchEvidencePage() {
++  const [params, setParams] = useSearchParams();
++  const runId = params.get("run_id") ?? "";
++  const runs = useQuery({
++    queryKey: ["research-runs"],
++    queryFn: ({ signal }) => researchResultsApi.runs(signal),
++    retry: false,
++  });
++  const evidence = useQuery({
++    queryKey: ["research-evidence", runId],
++    queryFn: ({ signal }) => researchResultsApi.evidence(runId, signal),
++    enabled: runId.length > 0,
++    retry: false,
++  });
++  const selectRun = (value: string) =>
++    setParams(value ? { run_id: value } : {});
++
++  return (
++    <Space orientation="vertical" size="large" style={{ width: "100%" }}>
++      <Card title="研究结果与证据">
++        <Space orientation="vertical" style={{ width: "100%" }}>
++          <Typography.Text>
++            实际研究：NOT_RUN。读取已登记的产物，不启动实验。
++          </Typography.Text>
++          <Select
++            aria-label="已登记研究记录"
++            placeholder="选择已登记记录"
++            value={runId || undefined}
++            options={(runs.data?.runs ?? []).map((run) => ({
++              value: run.run_id,
++              label: `${run.run_id} · ${run.scope}`,
++            }))}
++            onChange={selectRun}
++            style={{ width: "100%" }}
++          />
++          <Input.Search
++            aria-label="研究运行 ID"
++            placeholder="已登记的运行 ID"
++            enterButton="读取证据"
++            onSearch={(value) => selectRun(value.trim())}
++          />
++          {runs.error && (
++            <Alert
++              type="error"
++              title={`记录列表不可用：${runs.error.message}`}
++            />
++          )}
++          {!runs.isLoading &&
++            !runs.error &&
++            (runs.data?.runs ?? []).length === 0 && (
++              <Empty description="暂无已登记研究记录；实际研究 NOT_RUN" />
++            )}
++        </Space>
++      </Card>
++      {evidence.isLoading && (
++        <Spin tip="读取完整研究来源">
++          <div style={{ minHeight: 80 }} />
++        </Spin>
++      )}
++      {evidence.error && (
++        <Alert type="error" title={`证据未载入：${evidence.error.message}`} />
++      )}
++      {evidence.data && <ResearchEvidenceSummary view={evidence.data} />}
++    </Space>
++  );
++}
+--- baseline/dashboard/src/simulation/pages/ResearchEvidencePage.test.tsx
++++ final/dashboard/src/simulation/pages/ResearchEvidencePage.test.tsx
+@@ -0,0 +1,226 @@
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import { render, screen } from "@testing-library/react";
++import { MemoryRouter } from "react-router-dom";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++
++import type { ResearchRunView } from "../api/researchResultsApi";
++import {
++  ResearchEvidencePage,
++  ResearchEvidenceSummary,
++} from "./ResearchEvidencePage";
++
++beforeEach(() => {
++  // jsdom has no pseudo-element styles; keep real computed styles for Ant tables.
++  const computedStyle = window.getComputedStyle.bind(window);
++  vi.spyOn(window, "getComputedStyle").mockImplementation((element) =>
++    computedStyle(element),
++  );
++});
++afterEach(() => {
++  vi.restoreAllMocks();
++  vi.unstubAllGlobals();
++});
++
++function view(): ResearchRunView {
++  return {
++    run_id: "fixture-run",
++    status: "SOFTWARE_ONLY",
++    scope: "SOFTWARE_ONLY",
++    actual_research_status: "NOT_RUN",
++    formal_accepted: false,
++    physical_success: 0,
++    protocol_hash: "a".repeat(64),
++    selected_n: 600,
++    assigned_denominator: 4200,
++    paired_group_denominator: 600,
++    coverage_status: "COMPLETE",
++    strata_counts_by_method: { JOINT: { STATIC_RTT0: 50 } },
++    terminal_status_counts: { BLOCKED: 4000, FAILED: 100, UNKNOWN: 100 },
++    methods: [
++      {
++        method_id: "JOINT",
++        assigned_denominator: 600,
++        cloud_requests_total: 4,
++        model_requests_by_role: { PLANNER: 3, JUDGE: 1 },
++        application_bytes_total: 100,
++        penalized_duration_p95_s: 120,
++        unknown_episode_rate: 0.5,
++        unknown_condition_rate: null,
++        fallback_episode_rate: 0.25,
++        fallback_decision_rate: null,
++        no_progress_rate: 0.2,
++        terminal_status_counts: { BLOCKED: 600 },
++        provider_versions: [],
++        metric_scope: "DECLARED_SOURCE_BOUND_DIAGNOSTIC",
++      },
++    ],
++    goals: [
++      {
++        goal_id: "G2",
++        diagnostic_status: "PASS",
++        actual_status: "NOT_RUN",
++        evidence_scope: "SOFTWARE_ONLY",
++        estimate: null,
++        reasons: ["software fixture"],
++      },
++    ],
++    effects: {
++      G2_REQUESTS: {
++        point: 0.4,
++        lower95: 0.1,
++        upper95: 0.6,
++        p_value: 0.001,
++        adjusted_p_value: 0.005,
++        denominator: 600,
++        method: "SOFTWARE_ONLY",
++        one_sided_lower95: 0.15,
++        one_sided_upper95: 0.55,
++      },
++    },
++    primary_family: {},
++    stages: ["CAPTURE", "PLANNING", "EXECUTION"].map((stage) => ({
++      stage,
++      declared_status_counts: { NOT_EXECUTED: 4200 },
++      source_validation_status: "NOT_RUN",
++      accepted_count: 0,
++    })),
++    timeline: {
++      status: "NOT_RECORDED",
++      candidate_count: null,
++      accepted_count: null,
++      started_count: null,
++      independent_physical_success: 0,
++      rule_scores: null,
++      candidate_probabilities: null,
++    },
++    failures: [
++      {
++        assignment_id: "g1::JOINT",
++        group_id: "g1",
++        method_id: "JOINT",
++        status: "BLOCKED",
++        reason: "SOURCE_NOT_ACCEPTED",
++      },
++    ],
++    source_missing: [],
++    reasons: ["independent raw physical source verifier is not integrated"],
++  };
++}
++
++describe("research evidence", () => {
++  it("shows separate software planning and physical evidence without success badge", () => {
++    render(<ResearchEvidenceSummary view={view()} />);
++    expect(screen.getAllByText(/SOFTWARE_ONLY/).length).toBeGreaterThan(0);
++    expect(screen.getAllByText(/实际研究.*NOT_RUN/).length).toBeGreaterThan(0);
++    expect(screen.getAllByText(/NOT_EXECUTED/).length).toBeGreaterThan(0);
++    expect(screen.queryByText("物理成功")).not.toBeInTheDocument();
++    expect(screen.queryByText("研究验收通过")).not.toBeInTheDocument();
++  });
++
++  it("renders original point interval paired denominator protocol and blocked records", () => {
++    render(<ResearchEvidenceSummary view={view()} />);
++    expect(screen.getByText("0.400 [0.100, 0.600]")).toBeInTheDocument();
++    expect(
++      screen.getByText("600 组配对 / 4200 条全部分配"),
++    ).toBeInTheDocument();
++    expect(screen.getByText("a".repeat(64))).toBeInTheDocument();
++    expect(screen.getByText("g1::JOINT")).toBeInTheDocument();
++    expect(screen.getByText("SOURCE_NOT_ACCEPTED")).toBeInTheDocument();
++    expect(screen.getAllByText(/BLOCKED/).length).toBeGreaterThan(0);
++  });
++
++  it("keeps unknown condition and fallback decision denominators missing", () => {
++    render(<ResearchEvidenceSummary view={view()} />);
++    expect(screen.getByText(/条件 UNKNOWN.*未记录/)).toBeInTheDocument();
++    expect(screen.getByText(/决策 fallback.*未记录/)).toBeInTheDocument();
++    expect(screen.getByText(/规则评分.*概率/)).toBeInTheDocument();
++    expect(screen.getByText("候选：N/A")).toBeInTheDocument();
++    expect(screen.getByText(/接受.*N\/A/)).toBeInTheDocument();
++    expect(screen.getByText(/启动.*N\/A/)).toBeInTheDocument();
++  });
++
++  it("exports JSON through the same allowed run identity", () => {
++    render(<ResearchEvidenceSummary view={view()} />);
++    expect(
++      screen.getByRole("link", { name: "导出同分母 JSON" }),
++    ).toHaveAttribute("href", "/api/v1/research/runs/fixture-run/export");
++  });
++
++  it("keeps raw confidence intervals and Holm p separate from goal acceptance", () => {
++    render(<ResearchEvidenceSummary view={view()} />);
++    expect(screen.getByText(/原始 95% CI/)).toBeInTheDocument();
++    expect(
++      screen.getByRole("columnheader", { name: "Holm 校正 p" }),
++    ).toBeInTheDocument();
++    expect(screen.getByText("0.005")).toBeInTheDocument();
++    expect(screen.getByText(/FAILED: 100/)).toBeInTheDocument();
++    expect(screen.getByText(/UNKNOWN: 100/)).toBeInTheDocument();
++    expect(screen.getByText(/软件诊断.*PASS/)).toBeInTheDocument();
++  });
++
++  it("includes remote JUDGE in cloud role costs and keeps byte and time units", () => {
++    render(<ResearchEvidenceSummary view={view()} />);
++    expect(screen.getByText(/JUDGE: 1/)).toBeInTheDocument();
++    expect(screen.getByText(/PLANNER: 3/)).toBeInTheDocument();
++    expect(screen.getByText(/云请求合计: 4/)).toBeInTheDocument();
++    expect(screen.getByText(/应用层字节: 100 B/)).toBeInTheDocument();
++    expect(screen.getByText(/惩罚后 P95: 120 s/)).toBeInTheDocument();
++  });
++
++  it("shows missing sources with N/A denominators rather than zero successes", () => {
++    const missing = {
++      ...view(),
++      status: "NOT_RUN" as const,
++      scope: "UNVERIFIED" as const,
++      protocol_hash: null,
++      assigned_denominator: null,
++      paired_group_denominator: null,
++      methods: [],
++      effects: {},
++      stages: [],
++      failures: [],
++      source_missing: ["records", "protocol"],
++    };
++    render(<ResearchEvidenceSummary view={missing} />);
++    expect(screen.getByText("N/A 组配对 / N/A 条全部分配")).toBeInTheDocument();
++    expect(screen.getByText(/缺失来源.*records.*protocol/)).toBeInTheDocument();
++    expect(
++      screen.queryByText("0 组配对 / 0 条全部分配"),
++    ).not.toBeInTheDocument();
++  });
++
++  it("preserves the full loaded view in the inspectable JSON including failed records", () => {
++    const record = view();
++    render(<ResearchEvidenceSummary view={record} />);
++    const raw = JSON.parse(
++      screen.getByTestId("research-view-json").textContent ?? "",
++    );
++    expect(raw).toEqual(record);
++  });
++
++  it("reports an artifact rejection without displaying a fabricated result", async () => {
++    vi.stubGlobal(
++      "fetch",
++      vi.fn().mockResolvedValue({
++        ok: false,
++        status: 409,
++        text: async () => "research_artifact_invalid",
++      }),
++    );
++    const client = new QueryClient({
++      defaultOptions: { queries: { retry: false } },
++    });
++    render(
++      <QueryClientProvider client={client}>
++        <MemoryRouter initialEntries={["/simulation/research?run_id=rejected"]}>
++          <ResearchEvidencePage />
++        </MemoryRouter>
++      </QueryClientProvider>,
++    );
++    expect(
++      (await screen.findAllByText(/research_artifact_invalid/)).length,
++    ).toBeGreaterThan(0);
++    expect(screen.queryByText("研究验收通过")).not.toBeInTheDocument();
++    expect(screen.queryByTestId("research-view-json")).not.toBeInTheDocument();
++  });
++});
+--- baseline/src/cloud_edge_robot_arm/cloud/api/app.py
++++ final/src/cloud_edge_robot_arm/cloud/api/app.py
+@@ -137,6 +137,9 @@
+     from cloud_edge_robot_arm.cloud.api.rgbd_datasets import router as rgbd_datasets_router
+ 
+     app.include_router(rgbd_datasets_router)
++    from cloud_edge_robot_arm.cloud.api.research_results import router as research_results_router
++
++    app.include_router(research_results_router)
+ 
+     # ── Health ───────────────────────────────────────────────────────────
+ 
+--- baseline/dashboard/src/app/App.tsx
++++ final/dashboard/src/app/App.tsx
+@@ -45,6 +45,10 @@
+   {
+     key: "/simulation/analysis",
+     label: <Link to="/simulation/analysis">结果分析</Link>,
++  },
++  {
++    key: "/simulation/research",
++    label: <Link to="/simulation/research">研究证据</Link>,
+   },
+   {
+     key: "/simulation/sim2real",
+--- baseline/dashboard/src/app/router.tsx
++++ final/dashboard/src/app/router.tsx
+@@ -50,6 +50,11 @@
+ const ResultAnalysisPage = lazy(() =>
+   import("../simulation/pages/ResultAnalysisPage").then((module) => ({
+     default: module.ResultAnalysisPage,
++  })),
++);
++const ResearchEvidencePage = lazy(() =>
++  import("../simulation/pages/ResearchEvidencePage").then((module) => ({
++    default: module.ResearchEvidencePage,
+   })),
+ );
+ const ModeComparisonPage = lazy(() =>
+@@ -109,6 +114,7 @@
+         <Route path="/simulation/batch" element={<BatchExperimentPage />} />
+         <Route path="/simulation/live" element={<LiveRunPage />} />
+         <Route path="/simulation/analysis" element={<ResultAnalysisPage />} />
++        <Route path="/simulation/research" element={<ResearchEvidencePage />} />
+         <Route path="/simulation/modes" element={<ModeComparisonPage />} />
+         <Route
+           path="/simulation/backends"

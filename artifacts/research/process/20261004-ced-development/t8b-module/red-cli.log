@@ -1,0 +1,64 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__ test_ced_cli_callable_dry_preregisters_without_loading_legacy_or_renderer ___
+
+pools = {'formal': [{'assignment_id': 'formal-0001', 'ood_definition': None, 'perturbation': {'invalid_fraction': 0.0, 'moveme...'position': [...], 'rgba': [...]}, 'distractors': [], ...}, 'schema_version': 'rgbd.dataset.v1', ...}, ...}, ...], ...}
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-688/test_ced_cli_callable_dry_prer0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ba85cce0320>
+
+    def test_ced_cli_callable_dry_preregisters_without_loading_legacy_or_renderer(pools, tmp_path, monkeypatch):
+        import yaml
+        import scripts.run_rgbd_pilot as script
+    
+        path = tmp_path / "pools.json"
+        path.write_text(json.dumps(pools))
+        config = tmp_path / "config.yaml"
+        config.write_text(yaml.safe_dump({"schema_version": "ced.pilot-config.v1",
+            "protocol_version": "ced.research.v2", "episodes": 120, "seed": 981301,
+            "pools_path": str(path), "timeout_s": 120., "role_config": "missing-role-config",
+            "role_probe": None, "selection_evidence": None, "protocol_evidence": None,
+            "exclude_datasets": [], "exclude_pilots": []}))
+        calls = []
+        monkeypatch.setattr(script, "load_frozen_planner", lambda *a: calls.append("legacy"))
+>       result = script.run_ced_pilot(config, tmp_path / "dry", "selection")
+                 ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'scripts.run_rgbd_pilot' has no attribute 'run_ced_pilot'
+
+tests/test_ced_pilot_stages.py:162: AttributeError
+____ test_foundation_missing_selection_keeps_groups_without_guessing_period ____
+
+pools = {'formal': [{'assignment_id': 'formal-0001', 'ood_definition': None, 'perturbation': {'invalid_fraction': 0.0, 'moveme...'position': [...], 'rgba': [...]}, 'distractors': [], ...}, 'schema_version': 'rgbd.dataset.v1', ...}, ...}, ...], ...}
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-688/test_foundation_missing_select0')
+
+    def test_foundation_missing_selection_keeps_groups_without_guessing_period(pools, tmp_path):
+>       result = api().run_pilot_stage("foundation", pools, tmp_path / "foundation")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ced_pilot_stages.py:168: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/pilot.py:163: in run_pilot_stage
+    assignments = build_pilot_assignments(pools, stage, period_s=period_s,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'formal': [{'assignment_id': 'formal-0001', 'ood_definition': None, 'perturbation': {'invalid_fraction': 0.0, 'moveme...'position': [...], 'rgba': [...]}, 'distractors': [], ...}, 'schema_version': 'rgbd.dataset.v1', ...}, ...}, ...], ...}
+stage = 'foundation'
+
+    def build_pilot_assignments(
+        pools: Mapping[str, Any], stage: str, *, role_bundle_hash: str | None = None,
+        period_s: float | None = None, seed: int = 20261004,
+    ) -> list[dict[str, Any]]:
+        """Full paired scenes/schedules; order is randomized once and then persisted."""
+        validate_pilot_pools(pools)
+        if stage not in {"selection", "foundation", "power"}:
+            raise ValueError("unsupported explicit pilot stage")
+        if period_s is not None and period_s not in B0_PERIODS:
+            raise ValueError("unsupported B0 period")
+        if stage == "foundation" and period_s is None:
+>           raise ValueError("foundation requires the source-verified selection period")
+E           ValueError: foundation requires the source-verified selection period
+
+src/cloud_edge_robot_arm/research/pilot.py:70: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_ced_pilot_stages.py::test_ced_cli_callable_dry_preregisters_without_loading_legacy_or_renderer
+FAILED tests/test_ced_pilot_stages.py::test_foundation_missing_selection_keeps_groups_without_guessing_period
+2 failed, 14 deselected in 1.21s

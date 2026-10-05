@@ -1,0 +1,49 @@
+{
+  "scope": "research-only; production untouched",
+  "official_sources": [
+    "https://huggingface.co/allenai/Molmo2-4B",
+    "https://huggingface.co/allenai/MolmoPoint-8B"
+  ],
+  "mirrors": [
+    "https://modelscope.cn/models/allenai/Molmo2-4B",
+    "https://modelscope.cn/models/allenai/MolmoPoint-8B"
+  ],
+  "remote_source_review": {
+    "Molmo2-4B": {
+      "native_output": "<points coords=\"one_based_image_id object_id x_normalized_1000 y_normalized_1000\"/>",
+      "generation": "unconstrained native decode, do_sample=False; explicit dtype BF16",
+      "remote_network_paths": "video_processing_molmo2.py requests.get(video) is reachable only when given HTTP(S) video URL; bridge supplies local PIL images only; offline HF cache enforced"
+    },
+    "MolmoPoint-8B": {
+      "native_output": "POINT special token triples decoded by official model.extract_image_points with processor metadata; output ordering=(object_id,image_index,pixel_x,pixel_y)",
+      "native_image_index": "zero-based; only RGB index0 can supply a selected point",
+      "processor_auto_map": "official pinned processor_config maps to processing_molmo2.Molmo2Processor, with return_pointing_metadata=True",
+      "required_decoder": "model.build_logit_processor_from_inputs(inputs), skip_special_tokens=False",
+      "quantization_preflight": "class import and CPU preprocessing pass; GPU INT8 load/inference NOT YET RUN; custom ExtendedLmHead nn.Parameter weights remain BF16; skip lm_head explicitly",
+      "source_side_effect": "Unused debug decode() references absolute /weka path; bridge does not invoke it. Converter scripts are downloaded for provenance but not imported or executed."
+    }
+  },
+  "method_difference": {
+    "default": "two independent role-conditioned model calls (target and destination), native localization/refusal only",
+    "optional_full_contract": "third free-decoding JSON evidence call; require model-emitted label, presence, self-confidence, observed_scene and skills; reject missing/conflicting fields",
+    "absence": "Only explicit ABSENT with no native points is a validated absence result; zero points or vague uncertainty are unavailable, never manufactured absence",
+    "points": "Reject malformed coordinates, unknown images, depth-only results, ambiguity and ABSENT/point contradictions. Preserve raw token IDs, text, all native decoded points, metadata, call/token/time costs. No semantic coordinate correction.",
+    "units": "Molmo2 native normalized1000 unchanged; MolmoPoint pixel -> normalized1000 via round-half-up using actual image dimensions; native float pixels preserved for offline audit",
+    "online_assets": "observation-transport.json plus instruction from bank manifest only; no offline truth/masks/scene object labels",
+    "full_contract_not_implied_by_native_points": true
+  },
+  "environment": {
+    "python": "3.12.3",
+    "local_venv": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/.venv",
+    "read_only_frozen_torch_site_packages": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv-vlm/lib/python3.12/site-packages",
+    "torch": "2.6.0+cu124",
+    "torchvision": "0.21.0",
+    "transformers": "4.57.1",
+    "tokenizers": "0.22.1",
+    "hf_cache": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-t7-parallel-local-models-physics/molmo/hf-cache",
+    "HF_HUB_OFFLINE": true
+  },
+  "integrity": "Every mirrored blob is pinned to its metadata Revision plus exact Size and Sha256. GPU constructor rechecks all sources and weights before importing CUDA inference.",
+  "public_hf_physical_transport": "Official Hugging Face metadata failed strict enp7s0 TLS; exact errors preserved in *-hf-verification-error.json. No network fallback attempted.",
+  "GPU": "No GPU allocation or model loading yet; lease required before screen mode."
+}

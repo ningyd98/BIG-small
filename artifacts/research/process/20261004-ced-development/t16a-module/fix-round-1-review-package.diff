@@ -1,0 +1,133 @@
+--- a/src/cloud_edge_robot_arm/research/metrics.py
++++ b/src/cloud_edge_robot_arm/research/metrics.py
+@@ -91,12 +91,23 @@
+         "false_completion_count": false_completion,
+         "false_completion_rate": _rate(false_completion, online),
+         "false_completion_basis": "DECLARED_UNVERIFIED_PHYSICAL_OUTCOME",
+-        "fallback_count": fallback,
+-        "fallback_rate": _rate(fallback, n),
++        "fallback_episode_count": fallback,
++        "fallback_episode_rate": _rate(fallback, n),
++        "fallback_decision_count": None,
++        "decision_round_denominator": None,
++        "fallback_rate": None,
++        "fallback_decision_rate": None,
++        "fallback_decision_status": "NOT_RECORDED",
++        "fallback_basis": "SOURCE_QUALIFIED_DECISION_ROUNDS_REQUIRED",
+         "no_progress_count": progress,
+         "no_progress_rate": _rate(progress, n),
+         "unknown_episode_count": unknown,
+         "unknown_episode_rate": _rate(unknown, n),
++        "unknown_condition_count": None,
++        "condition_evaluation_denominator": None,
++        "unknown_condition_rate": None,
++        "unknown_condition_status": "NOT_RECORDED",
++        "unknown_condition_basis": "SOURCE_QUALIFIED_CONDITION_EVALUATIONS_REQUIRED",
+         "terminal_status_counts": dict(Counter(row.run_status for row in rows)),
+         "cloud_requests_total": sum(row.costs.cloud_model_requests for row in rows),
+         "cloud_requests_mean": float(np.mean([row.costs.cloud_model_requests for row in rows]))
+--- a/src/cloud_edge_robot_arm/research/acceptance.py
++++ b/src/cloud_edge_robot_arm/research/acceptance.py
+@@ -46,6 +46,17 @@
+         and success.one_sided_lower95 > -0.03
+         and safety.one_sided_upper95 <= 0.01
+     )
++
++
++def noninferiority_status(success: EffectEstimate, safety: EffectEstimate) -> GoalStatus:
++    """明确越界为 FAIL，跨界未知为证据不足，不把劣于改成不确定。"""
++    if noninferiority_passes(success, safety):
++        return "PASS"
++    if (success.one_sided_upper95 is not None and success.one_sided_upper95 <= -0.03) or (
++        safety.one_sided_lower95 is not None and safety.one_sided_lower95 > 0.01
++    ):
++        return "FAIL"
++    return "INSUFFICIENT_EVIDENCE"
+ 
+ 
+ def improvement_status(estimate: EffectEstimate, target: float) -> GoalStatus:
+@@ -193,7 +204,10 @@
+         )
+         if requests is not None and success is not None and safety is not None:
+             status = improvement_status(requests, 0.3)
+-            if not noninferiority_passes(success, safety):
++            ni_status = noninferiority_status(success, safety)
++            if status == "FAIL" or ni_status == "FAIL":
++                status = "FAIL"
++            elif ni_status != "PASS":
+                 status = "INSUFFICIENT_EVIDENCE"
+             if any(adjusted[key] > 0.05 for key in ("G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY")):
+                 status = "INSUFFICIENT_EVIDENCE" if status != "FAIL" else status
+--- a/tests/test_research_acceptance.py
++++ b/tests/test_research_acceptance.py
+@@ -111,8 +111,58 @@
+     metrics = api("metrics").compute_research_metrics(changed, (), (), software_only=True)
+     joint = metrics["methods"]["JOINT"]
+     assert joint["assigned_denominator"] == 2
+-    assert joint["fallback_rate"] == 0.5
++    assert joint["fallback_episode_rate"] == 0.5
+     assert joint["no_progress_rate"] == 1.0
++
++
++def test_unknown_conditions_and_fallback_decisions_do_not_use_episode_denominators():
++    rows = records(2)
++    changed = []
++    for row in rows:
++        if row.assignment.method_id == "JOINT" and row.assignment.group_id == "g0":
++            statuses = ({"status": "UNKNOWN"},) + tuple({"status": "PASS"} for _ in range(99))
++            changed.append(replace(row, verification_records=statuses, run_status="FALLBACK"))
++        else:
++            changed.append(row)
++    joint = api("metrics").compute_research_metrics(changed, (), (), software_only=True)["methods"][
++        "JOINT"
++    ]
++    assert joint["unknown_episode_rate"] == joint["fallback_episode_rate"] == 0.5
++    # Legacy verdict dictionaries and episode outcomes do not provide verified
++    # condition-evaluation / decision-round denominators. Never relabel their ratios.
++    assert joint["unknown_condition_rate"] is None
++    assert joint["condition_evaluation_denominator"] is None
++    assert joint["unknown_condition_status"] == "NOT_RECORDED"
++    assert joint["fallback_rate"] is joint["fallback_decision_rate"] is None
++    assert joint["decision_round_denominator"] is None
++    assert joint["fallback_decision_status"] == "NOT_RECORDED"
++
++
++@pytest.mark.parametrize(
++    "requests,success",
++    [
++        ((0.2, 0.1, 0.25), (0, -0.04, 0.02)),
++        ((0.4, 0.1, 0.6), (-0.5, -0.55, -0.45)),
++    ],
++)
++def test_g2_preserves_definite_target_failure_and_clear_inferiority(requests, success):
++    from tests.test_research_assignments import frozen
++
++    metrics = {
++        "scope": "SOFTWARE_ONLY",
++        "main_paired_group_denominator": 600,
++        "effects": {
++            "G2_REQUESTS": effect(*requests).__dict__,
++            "G2_SUCCESS": effect(*success).__dict__,
++            "G2_SAFETY": effect(0, -0.005, 0.005).__dict__,
++        },
++    }
++    verdict = next(
++        value
++        for value in api("acceptance").evaluate_goals(metrics, frozen([]), software_only=True)
++        if value.goal_id == "G2"
++    )
++    assert verdict.status == "FAIL"
+ 
+ 
+ def test_false_rejection_excludes_unknown():
+@@ -297,7 +347,9 @@
+ 
+ @pytest.mark.parametrize("tamper", ["omit_failed", "omit_pool", "complete"])
+ def test_final_analysis_rejects_rehashed_incomplete_coverage(
+-    scene_pool, tmp_path, tamper  # noqa: F811
++    scene_pool,  # noqa: F811
++    tmp_path,
++    tamper,
+ ):
+     import json
+     from dataclasses import asdict

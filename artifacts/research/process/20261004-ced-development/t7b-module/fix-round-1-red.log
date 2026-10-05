@@ -1,0 +1,243 @@
+..................FFFFFFFFFF..FF......FFF                                [100%]
+=================================== FAILURES ===================================
+___ test_unsupported_region_topology_cannot_certify_aabb_placement[rotated] ____
+
+topology = 'rotated'
+
+    @pytest.mark.parametrize("topology", ["rotated", "hole", "notch"])
+    def test_unsupported_region_topology_cannot_certify_aabb_placement(topology):
+        def alter(rgb, depth):
+            if topology == "rotated":
+                rgb[20:36, 45:61] = 100
+                yy, xx = np.indices(depth.shape)
+                rgb[(abs(xx - 53) + abs(yy - 28)) <= 11] = [20, 230, 20]
+            elif topology == "hole":
+                rgb[23:27, 48:52] = 100
+            else:
+                rgb[20:29, 45:50] = 100
+        invalid = image_variant(scene(), alter)
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:225: Failed
+_____ test_unsupported_region_topology_cannot_certify_aabb_placement[hole] _____
+
+topology = 'hole'
+
+    @pytest.mark.parametrize("topology", ["rotated", "hole", "notch"])
+    def test_unsupported_region_topology_cannot_certify_aabb_placement(topology):
+        def alter(rgb, depth):
+            if topology == "rotated":
+                rgb[20:36, 45:61] = 100
+                yy, xx = np.indices(depth.shape)
+                rgb[(abs(xx - 53) + abs(yy - 28)) <= 11] = [20, 230, 20]
+            elif topology == "hole":
+                rgb[23:27, 48:52] = 100
+            else:
+                rgb[20:29, 45:50] = 100
+        invalid = image_variant(scene(), alter)
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:225: Failed
+____ test_unsupported_region_topology_cannot_certify_aabb_placement[notch] _____
+
+topology = 'notch'
+
+    @pytest.mark.parametrize("topology", ["rotated", "hole", "notch"])
+    def test_unsupported_region_topology_cannot_certify_aabb_placement(topology):
+        def alter(rgb, depth):
+            if topology == "rotated":
+                rgb[20:36, 45:61] = 100
+                yy, xx = np.indices(depth.shape)
+                rgb[(abs(xx - 53) + abs(yy - 28)) <= 11] = [20, 230, 20]
+            elif topology == "hole":
+                rgb[23:27, 48:52] = 100
+            else:
+                rgb[20:29, 45:50] = 100
+        invalid = image_variant(scene(), alter)
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:225: Failed
+_______ test_unresolved_depth_at_outer_boundary_is_unknown[invalid_edge] _______
+
+damage = 'invalid_edge'
+
+    @pytest.mark.parametrize("damage", ["invalid_edge", "mild_edge", "coplanar_edge"])
+    def test_unresolved_depth_at_outer_boundary_is_unknown(damage):
+        initial = scene()
+        facts = tracker(initial).facts(scene("new", time=0.1, damage=damage,
+                                            started=initial.captured_at))
+>       assert facts["target_visible"]["value"] is None
+E       assert True is None
+
+tests/test_opencv_target_evidence.py:234: AssertionError
+________ test_unresolved_depth_at_outer_boundary_is_unknown[mild_edge] _________
+
+damage = 'mild_edge'
+
+    @pytest.mark.parametrize("damage", ["invalid_edge", "mild_edge", "coplanar_edge"])
+    def test_unresolved_depth_at_outer_boundary_is_unknown(damage):
+        initial = scene()
+        facts = tracker(initial).facts(scene("new", time=0.1, damage=damage,
+                                            started=initial.captured_at))
+>       assert facts["target_visible"]["value"] is None
+E       assert True is None
+
+tests/test_opencv_target_evidence.py:234: AssertionError
+______ test_unresolved_depth_at_outer_boundary_is_unknown[coplanar_edge] _______
+
+damage = 'coplanar_edge'
+
+    @pytest.mark.parametrize("damage", ["invalid_edge", "mild_edge", "coplanar_edge"])
+    def test_unresolved_depth_at_outer_boundary_is_unknown(damage):
+        initial = scene()
+        facts = tracker(initial).facts(scene("new", time=0.1, damage=damage,
+                                            started=initial.captured_at))
+>       assert facts["target_visible"]["value"] is None
+E       assert True is None
+
+tests/test_opencv_target_evidence.py:234: AssertionError
+_________ test_initial_capture_requires_nonempty_episode_binding[None] _________
+
+episode = None
+
+    @pytest.mark.parametrize("episode", [None, ""])
+    def test_initial_capture_requires_nonempty_episode_binding(episode):
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:239: Failed
+___________ test_initial_capture_requires_nonempty_episode_binding[] ___________
+
+episode = ''
+
+    @pytest.mark.parametrize("episode", [None, ""])
+    def test_initial_capture_requires_nonempty_episode_binding(episode):
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:239: Failed
+__________ test_stale_initial_capture_cannot_establish_lift_baseline ___________
+
+    def test_stale_initial_capture_cannot_establish_lift_baseline():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:244: Failed
+______ test_placement_uncertainty_overlap_is_unknown_not_definite_failure ______
+
+    def test_placement_uncertainty_overlap_is_unknown_not_definite_failure():
+        initial = scene()
+        tracked = tracker(initial)
+        for index, x in enumerate((20, 30, 40, 46), 1):
+            facts = tracked.facts(scene(str(index), time=index * 0.1, x=x,
+                                        started=initial.captured_at))
+>       assert facts["object_inside_target_region"]["value"] is None
+E       assert False is None
+
+tests/test_opencv_target_evidence.py:254: AssertionError
+__________ test_error_bounds_cannot_round_subthreshold_lift_up[0.049] __________
+
+lift = 0.049
+
+    @pytest.mark.parametrize("lift", [0.049, 0.05])
+    def test_error_bounds_cannot_round_subthreshold_lift_up(lift):
+        initial = scene()
+        facts = tracker(initial).facts(
+            scene("next", time=0.1, lift=lift, started=initial.captured_at), held()
+        )
+>       assert facts["object_lifted"]["value"] is None
+E       assert False is None
+
+tests/test_visual_effect_evidence.py:51: AssertionError
+__________ test_error_bounds_cannot_round_subthreshold_lift_up[0.05] ___________
+
+lift = 0.05
+
+    @pytest.mark.parametrize("lift", [0.049, 0.05])
+    def test_error_bounds_cannot_round_subthreshold_lift_up(lift):
+        initial = scene()
+        facts = tracker(initial).facts(
+            scene("next", time=0.1, lift=lift, started=initial.captured_at), held()
+        )
+>       assert facts["object_lifted"]["value"] is None
+E       assert False is None
+
+tests/test_visual_effect_evidence.py:51: AssertionError
+_______ test_visible_fast_oscillation_cannot_accumulate_stability[lift] ________
+
+phase = 'lift'
+
+    @pytest.mark.parametrize("phase", ["lift", "placement"])
+    def test_visible_fast_oscillation_cannot_accumulate_stability(phase):
+        initial = scene()
+        tracked = tracker(initial)
+        x = 10
+        if phase == "placement":
+            for index, x in enumerate((20, 30, 40, 48), 1):
+                tracked.facts(scene(str(index), time=index * 0.1, x=x,
+                                    started=initial.captured_at), held())
+        for index in range(14):
+            facts = tracked.facts(scene(f"oscillate-{index}", time=0.5 + index * 0.1,
+                                        x=x + index % 2, lift=0.06 if phase == "lift" else 0,
+                                        started=initial.captured_at), held() if phase == "lift"
+                                  else RobotState(connected=True, gripper_open=True))
+        condition = "object_stable" if phase == "lift" else "object_placed"
+>       assert facts[condition]["value"] is not True
+E       assert True is not True
+
+tests/test_visual_effect_evidence.py:151: AssertionError
+_____ test_visible_fast_oscillation_cannot_accumulate_stability[placement] _____
+
+phase = 'placement'
+
+    @pytest.mark.parametrize("phase", ["lift", "placement"])
+    def test_visible_fast_oscillation_cannot_accumulate_stability(phase):
+        initial = scene()
+        tracked = tracker(initial)
+        x = 10
+        if phase == "placement":
+            for index, x in enumerate((20, 30, 40, 48), 1):
+                tracked.facts(scene(str(index), time=index * 0.1, x=x,
+                                    started=initial.captured_at), held())
+        for index in range(14):
+            facts = tracked.facts(scene(f"oscillate-{index}", time=0.5 + index * 0.1,
+                                        x=x + index % 2, lift=0.06 if phase == "lift" else 0,
+                                        started=initial.captured_at), held() if phase == "lift"
+                                  else RobotState(connected=True, gripper_open=True))
+        condition = "object_stable" if phase == "lift" else "object_placed"
+>       assert facts[condition]["value"] is not True
+E       assert True is not True
+
+tests/test_visual_effect_evidence.py:151: AssertionError
+__________ test_coarse_center_uncertainty_cannot_prove_slow_stability __________
+
+    def test_coarse_center_uncertainty_cannot_prove_slow_stability():
+        initial = scene()
+        tracked = tracker(initial)
+        for index in range(7):
+            facts = tracked.facts(scene(str(index), time=0.1 + index * 0.1, lift=0.06,
+                                        started=initial.captured_at), held())
+>       assert facts["object_stable"]["value"] is None
+E       assert True is None
+
+tests/test_visual_effect_evidence.py:160: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_opencv_target_evidence.py::test_unsupported_region_topology_cannot_certify_aabb_placement[rotated]
+FAILED tests/test_opencv_target_evidence.py::test_unsupported_region_topology_cannot_certify_aabb_placement[hole]
+FAILED tests/test_opencv_target_evidence.py::test_unsupported_region_topology_cannot_certify_aabb_placement[notch]
+FAILED tests/test_opencv_target_evidence.py::test_unresolved_depth_at_outer_boundary_is_unknown[invalid_edge]
+FAILED tests/test_opencv_target_evidence.py::test_unresolved_depth_at_outer_boundary_is_unknown[mild_edge]
+FAILED tests/test_opencv_target_evidence.py::test_unresolved_depth_at_outer_boundary_is_unknown[coplanar_edge]
+FAILED tests/test_opencv_target_evidence.py::test_initial_capture_requires_nonempty_episode_binding[None]
+FAILED tests/test_opencv_target_evidence.py::test_initial_capture_requires_nonempty_episode_binding[]
+FAILED tests/test_opencv_target_evidence.py::test_stale_initial_capture_cannot_establish_lift_baseline
+FAILED tests/test_opencv_target_evidence.py::test_placement_uncertainty_overlap_is_unknown_not_definite_failure
+FAILED tests/test_visual_effect_evidence.py::test_error_bounds_cannot_round_subthreshold_lift_up[0.049]
+FAILED tests/test_visual_effect_evidence.py::test_error_bounds_cannot_round_subthreshold_lift_up[0.05]
+FAILED tests/test_visual_effect_evidence.py::test_visible_fast_oscillation_cannot_accumulate_stability[lift]
+FAILED tests/test_visual_effect_evidence.py::test_visible_fast_oscillation_cannot_accumulate_stability[placement]
+FAILED tests/test_visual_effect_evidence.py::test_coarse_center_uncertainty_cannot_prove_slow_stability
+15 failed, 26 passed in 1.04s

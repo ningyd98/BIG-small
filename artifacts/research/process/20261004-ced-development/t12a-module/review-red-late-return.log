@@ -1,0 +1,91 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_late_contract_return_cannot_reserve_capture_after_absolute_deadline[False] _
+
+raises = False
+
+    @pytest.mark.parametrize("raises", [False, True])
+    def test_late_contract_return_cannot_reserve_capture_after_absolute_deadline(raises):
+        current_time = [NOW]
+        chosen = policy(clock=lambda: current_time[0])
+    
+        def late_provider(context):
+            current_time[0] = NOW + timedelta(seconds=61)
+            if raises:
+                raise TimeoutError("contract provider returned late")
+            return {}
+    
+        chosen.contract_provider = late_provider
+        ctx = prepared_context()
+>       assert chosen.decide(ctx) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...: 'REOBSERVE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + REOBSERVE
+
+tests/test_joint_visual_policy.py:503: AssertionError
+_ test_late_contract_return_cannot_reserve_capture_after_absolute_deadline[True] _
+
+raises = True
+
+    @pytest.mark.parametrize("raises", [False, True])
+    def test_late_contract_return_cannot_reserve_capture_after_absolute_deadline(raises):
+        current_time = [NOW]
+        chosen = policy(clock=lambda: current_time[0])
+    
+        def late_provider(context):
+            current_time[0] = NOW + timedelta(seconds=61)
+            if raises:
+                raise TimeoutError("contract provider returned late")
+            return {}
+    
+        chosen.contract_provider = late_provider
+        ctx = prepared_context()
+>       assert chosen.decide(ctx) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...: 'REOBSERVE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + REOBSERVE
+
+tests/test_joint_visual_policy.py:503: AssertionError
+___ test_late_audit_acknowledgement_never_publishes_capture_or_charges_quota ___
+
+    def test_late_audit_acknowledgement_never_publishes_capture_or_charges_quota():
+        current_time = [NOW]
+        chosen = policy(clock=lambda: current_time[0])
+        chosen.contract_provider = None
+        acknowledged = []
+    
+        def late_ack(trace):
+            acknowledged.append(trace)
+            current_time[0] = NOW + timedelta(seconds=61)
+    
+        chosen.trace_sink = late_ack
+        ctx = prepared_context()
+>       with pytest.raises(RuntimeError, match="deadline|budget changed"):
+E       Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_joint_visual_policy.py:521: Failed
+_______ test_late_audit_acknowledgement_cannot_return_ordinary_continue ________
+
+    def test_late_audit_acknowledgement_cannot_return_ordinary_continue():
+        current_time = [NOW]
+        chosen = policy(clock=lambda: current_time[0])
+    
+        def late_ack(trace):
+            current_time[0] = NOW + timedelta(seconds=61)
+    
+        chosen.trace_sink = late_ack
+>       with pytest.raises(RuntimeError, match="deadline|budget changed"):
+E       Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_joint_visual_policy.py:540: Failed
+=========================== short test summary info ============================
+FAILED tests/test_joint_visual_policy.py::test_late_contract_return_cannot_reserve_capture_after_absolute_deadline[False]
+FAILED tests/test_joint_visual_policy.py::test_late_contract_return_cannot_reserve_capture_after_absolute_deadline[True]
+FAILED tests/test_joint_visual_policy.py::test_late_audit_acknowledgement_never_publishes_capture_or_charges_quota
+FAILED tests/test_joint_visual_policy.py::test_late_audit_acknowledgement_cannot_return_ordinary_continue
+4 failed, 29 deselected in 0.34s
+
+exit_code=1
+

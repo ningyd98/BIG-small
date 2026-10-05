@@ -1,0 +1,1800 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF                                   [100%]
+=================================== FAILURES ===================================
+_ test_missing_feature_then_pure_binding_has_no_owner_method_or_execution_authority _
+
+    def test_missing_feature_then_pure_binding_has_no_owner_method_or_execution_authority():
+>       result = bind()
+                 ^^^^^^
+
+tests/test_visual_owner_registration.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:88: in bind
+    return api().bind_step_grounding(**{**values(), **changes})
+                                          ^^^^^^^^
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdfff7b00>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_original_requirements_payload_preserves_policy_for_planning_only_carrier _
+
+    def test_original_requirements_payload_preserves_policy_for_planning_only_carrier():
+>       original = values()["original"]
+                   ^^^^^^^^
+
+tests/test_visual_owner_registration.py:104: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd7b1760>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_callers_cannot_mutate_original_steps_requirements_or_bound_step_aliases _
+
+    def test_callers_cannot_mutate_original_steps_requirements_or_bound_step_aliases():
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd7b2660>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+___ test_placeholder_invalid_owner_identity_rejects[robot_id-robot-unknown] ____
+
+field = 'robot_id', value = 'robot-unknown'
+
+    @pytest.mark.parametrize("field,value", [
+        ("robot_id", "robot-unknown"), ("owner_epoch", ""), ("job_id", "../job"),
+        ("attempt", True), ("lease_id", "unknown"),
+    ])
+    def test_placeholder_invalid_owner_identity_rejects(field, value):
+        with pytest.raises((ValueError, TypeError)):
+>           replace(values()["current_identity"], **{field: value})
+                    ^^^^^^^^
+
+tests/test_visual_owner_registration.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd7b3980>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+________ test_placeholder_invalid_owner_identity_rejects[owner_epoch-] _________
+
+field = 'owner_epoch', value = ''
+
+    @pytest.mark.parametrize("field,value", [
+        ("robot_id", "robot-unknown"), ("owner_epoch", ""), ("job_id", "../job"),
+        ("attempt", True), ("lease_id", "unknown"),
+    ])
+    def test_placeholder_invalid_owner_identity_rejects(field, value):
+        with pytest.raises((ValueError, TypeError)):
+>           replace(values()["current_identity"], **{field: value})
+                    ^^^^^^^^
+
+tests/test_visual_owner_registration.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd158590>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+________ test_placeholder_invalid_owner_identity_rejects[job_id-../job] ________
+
+field = 'job_id', value = '../job'
+
+    @pytest.mark.parametrize("field,value", [
+        ("robot_id", "robot-unknown"), ("owner_epoch", ""), ("job_id", "../job"),
+        ("attempt", True), ("lease_id", "unknown"),
+    ])
+    def test_placeholder_invalid_owner_identity_rejects(field, value):
+        with pytest.raises((ValueError, TypeError)):
+>           replace(values()["current_identity"], **{field: value})
+                    ^^^^^^^^
+
+tests/test_visual_owner_registration.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd1595e0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+________ test_placeholder_invalid_owner_identity_rejects[attempt-True] _________
+
+field = 'attempt', value = True
+
+    @pytest.mark.parametrize("field,value", [
+        ("robot_id", "robot-unknown"), ("owner_epoch", ""), ("job_id", "../job"),
+        ("attempt", True), ("lease_id", "unknown"),
+    ])
+    def test_placeholder_invalid_owner_identity_rejects(field, value):
+        with pytest.raises((ValueError, TypeError)):
+>           replace(values()["current_identity"], **{field: value})
+                    ^^^^^^^^
+
+tests/test_visual_owner_registration.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd15a8a0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+______ test_placeholder_invalid_owner_identity_rejects[lease_id-unknown] _______
+
+field = 'lease_id', value = 'unknown'
+
+    @pytest.mark.parametrize("field,value", [
+        ("robot_id", "robot-unknown"), ("owner_epoch", ""), ("job_id", "../job"),
+        ("attempt", True), ("lease_id", "unknown"),
+    ])
+    def test_placeholder_invalid_owner_identity_rejects(field, value):
+        with pytest.raises((ValueError, TypeError)):
+>           replace(values()["current_identity"], **{field: value})
+                    ^^^^^^^^
+
+tests/test_visual_owner_registration.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd7b3ad0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_____ test_current_binding_rejects_foreign_stale_or_malformed_sources[job] _____
+
+change = 'job'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd7b1e80>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_current_binding_rejects_foreign_stale_or_malformed_sources[epoch] ____
+
+change = 'epoch'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd1597c0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_current_binding_rejects_foreign_stale_or_malformed_sources[robot] ____
+
+change = 'robot'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd15be60>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_current_binding_rejects_foreign_stale_or_malformed_sources[plan] _____
+
+change = 'plan'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd15cd70>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_____ test_current_binding_rejects_foreign_stale_or_malformed_sources[seq] _____
+
+change = 'seq'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd15dd00>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_current_binding_rejects_foreign_stale_or_malformed_sources[frame] ____
+
+change = 'frame'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd1596a0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+__ test_current_binding_rejects_foreign_stale_or_malformed_sources[checksum] ___
+
+change = 'checksum'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd7b1e80>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+___ test_current_binding_rejects_foreign_stale_or_malformed_sources[context] ___
+
+change = 'context'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd15fa10>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_current_binding_rejects_foreign_stale_or_malformed_sources[checkpoint] __
+
+change = 'checkpoint'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd15c710>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_current_binding_rejects_foreign_stale_or_malformed_sources[naive] ____
+
+change = 'naive'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11c470>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_current_binding_rejects_foreign_stale_or_malformed_sources[late] _____
+
+change = 'late'
+
+    @pytest.mark.parametrize("change", ["job", "epoch", "robot", "plan", "seq", "frame",
+                                         "checksum", "context", "checkpoint", "naive", "late"])
+    def test_current_binding_rejects_foreign_stale_or_malformed_sources(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11d250>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_grounding_cannot_change_original_policy_or_deterministic_recipe[target] _
+
+change = 'target'
+
+    @pytest.mark.parametrize("change", ["target", "timeout", "retry", "coordinates", "conditions"])
+    def test_grounding_cannot_change_original_policy_or_deterministic_recipe(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd15f6b0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_grounding_cannot_change_original_policy_or_deterministic_recipe[timeout] _
+
+change = 'timeout'
+
+    @pytest.mark.parametrize("change", ["target", "timeout", "retry", "coordinates", "conditions"])
+    def test_grounding_cannot_change_original_policy_or_deterministic_recipe(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd7b2810>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_grounding_cannot_change_original_policy_or_deterministic_recipe[retry] __
+
+change = 'retry'
+
+    @pytest.mark.parametrize("change", ["target", "timeout", "retry", "coordinates", "conditions"])
+    def test_grounding_cannot_change_original_policy_or_deterministic_recipe(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd158e00>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_grounding_cannot_change_original_policy_or_deterministic_recipe[coordinates] _
+
+change = 'coordinates'
+
+    @pytest.mark.parametrize("change", ["target", "timeout", "retry", "coordinates", "conditions"])
+    def test_grounding_cannot_change_original_policy_or_deterministic_recipe(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11c830>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_grounding_cannot_change_original_policy_or_deterministic_recipe[conditions] _
+
+change = 'conditions'
+
+    @pytest.mark.parametrize("change", ["target", "timeout", "retry", "coordinates", "conditions"])
+    def test_grounding_cannot_change_original_policy_or_deterministic_recipe(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11f1a0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_longer_horizon_requires_fresh_exact_duration_calculation_binding _____
+
+    def test_longer_horizon_requires_fresh_exact_duration_calculation_binding():
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:178: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd130440>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[nonfinite] _
+
+kind = 'nonfinite'
+
+    @pytest.mark.parametrize("kind", ["nonfinite", "empty", "missingname", "modelcopy", "effect"])
+    def test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph(kind):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdfff7a70>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[empty] _
+
+kind = 'empty'
+
+    @pytest.mark.parametrize("kind", ["nonfinite", "empty", "missingname", "modelcopy", "effect"])
+    def test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph(kind):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1b32c90>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[missingname] _
+
+kind = 'missingname'
+
+    @pytest.mark.parametrize("kind", ["nonfinite", "empty", "missingname", "modelcopy", "effect"])
+    def test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph(kind):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1b75ac0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[modelcopy] _
+
+kind = 'modelcopy'
+
+    @pytest.mark.parametrize("kind", ["nonfinite", "empty", "missingname", "modelcopy", "effect"])
+    def test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph(kind):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1b8ca40>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[effect] _
+
+kind = 'effect'
+
+    @pytest.mark.parametrize("kind", ["nonfinite", "empty", "missingname", "modelcopy", "effect"])
+    def test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph(kind):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1bb2690>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+__ test_same_version_original_replacement_rejects_and_deadlines_never_extend ___
+
+    def test_same_version_original_replacement_rejects_and_deadlines_never_extend():
+>       original = values()["original"]
+                   ^^^^^^^^
+
+tests/test_visual_owner_registration.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1bb2f00>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_______ test_direct_original_and_binding_constructors_detach_source_maps _______
+
+    def test_direct_original_and_binding_constructors_detach_source_maps():
+>       original = values()["original"]
+                   ^^^^^^^^
+
+tests/test_visual_owner_registration.py:233: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1bb3830>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+____ test_direct_invalid_or_mutated_nested_models_fail_before_binding[plan] ____
+
+change = 'plan'
+
+    @pytest.mark.parametrize("change", ["plan", "binding", "nestedmodel", "posebool"])
+    def test_direct_invalid_or_mutated_nested_models_fail_before_binding(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1b764e0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+__ test_direct_invalid_or_mutated_nested_models_fail_before_binding[binding] ___
+
+change = 'binding'
+
+    @pytest.mark.parametrize("change", ["plan", "binding", "nestedmodel", "posebool"])
+    def test_direct_invalid_or_mutated_nested_models_fail_before_binding(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abe1b323c0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_ test_direct_invalid_or_mutated_nested_models_fail_before_binding[nestedmodel] _
+
+change = 'nestedmodel'
+
+    @pytest.mark.parametrize("change", ["plan", "binding", "nestedmodel", "posebool"])
+    def test_direct_invalid_or_mutated_nested_models_fail_before_binding(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11c0e0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+__ test_direct_invalid_or_mutated_nested_models_fail_before_binding[posebool] __
+
+change = 'posebool'
+
+    @pytest.mark.parametrize("change", ["plan", "binding", "nestedmodel", "posebool"])
+    def test_direct_invalid_or_mutated_nested_models_fail_before_binding(change):
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11d220>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_________ test_requested_horizon_cannot_shorten_original_frozen_policy _________
+
+    def test_requested_horizon_cannot_shorten_original_frozen_policy():
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:262: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11c2f0>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+_______ test_registered_calibration_requirement_must_match_current_frame _______
+
+    def test_registered_calibration_requirement_must_match_current_frame():
+>       data = values()
+               ^^^^^^^^
+
+tests/test_visual_owner_registration.py:273: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_visual_owner_registration.py:45: in values
+    requirements[step.step_id] = module.OriginalActionRequirements(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x75abdd11f590>
+original_step = TaskStep(step_id='move', skill=<SkillName.MOVE_ABOVE: 'MOVE_ABOVE'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=10000, retry_limit=0, preconditions=['target_visible'], success_conditions=['tcp_above_target'])
+preconditions = (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={'max_age_s': 5.0, 'minimum_safe_height': 0.08}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = {'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+            raise ValueError("original condition names cannot be removed")
+        sensors = tuple(sensor_requirements)
+        if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+            raise ValueError("explicit original sensor policy required")
+        duration = _positive(expected_duration_s)
+>       if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+                          ^^^^^^^^^^^
+E       NameError: name 'requirement' is not defined
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:231: NameError
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_registration.py::test_missing_feature_then_pure_binding_has_no_owner_method_or_execution_authority
+FAILED tests/test_visual_owner_registration.py::test_original_requirements_payload_preserves_policy_for_planning_only_carrier
+FAILED tests/test_visual_owner_registration.py::test_callers_cannot_mutate_original_steps_requirements_or_bound_step_aliases
+FAILED tests/test_visual_owner_registration.py::test_placeholder_invalid_owner_identity_rejects[robot_id-robot-unknown]
+FAILED tests/test_visual_owner_registration.py::test_placeholder_invalid_owner_identity_rejects[owner_epoch-]
+FAILED tests/test_visual_owner_registration.py::test_placeholder_invalid_owner_identity_rejects[job_id-../job]
+FAILED tests/test_visual_owner_registration.py::test_placeholder_invalid_owner_identity_rejects[attempt-True]
+FAILED tests/test_visual_owner_registration.py::test_placeholder_invalid_owner_identity_rejects[lease_id-unknown]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[job]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[epoch]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[robot]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[plan]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[seq]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[frame]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[checksum]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[context]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[checkpoint]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[naive]
+FAILED tests/test_visual_owner_registration.py::test_current_binding_rejects_foreign_stale_or_malformed_sources[late]
+FAILED tests/test_visual_owner_registration.py::test_grounding_cannot_change_original_policy_or_deterministic_recipe[target]
+FAILED tests/test_visual_owner_registration.py::test_grounding_cannot_change_original_policy_or_deterministic_recipe[timeout]
+FAILED tests/test_visual_owner_registration.py::test_grounding_cannot_change_original_policy_or_deterministic_recipe[retry]
+FAILED tests/test_visual_owner_registration.py::test_grounding_cannot_change_original_policy_or_deterministic_recipe[coordinates]
+FAILED tests/test_visual_owner_registration.py::test_grounding_cannot_change_original_policy_or_deterministic_recipe[conditions]
+FAILED tests/test_visual_owner_registration.py::test_longer_horizon_requires_fresh_exact_duration_calculation_binding
+FAILED tests/test_visual_owner_registration.py::test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[nonfinite]
+FAILED tests/test_visual_owner_registration.py::test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[empty]
+FAILED tests/test_visual_owner_registration.py::test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[missingname]
+FAILED tests/test_visual_owner_registration.py::test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[modelcopy]
+FAILED tests/test_visual_owner_registration.py::test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[effect]
+FAILED tests/test_visual_owner_registration.py::test_same_version_original_replacement_rejects_and_deadlines_never_extend
+FAILED tests/test_visual_owner_registration.py::test_direct_original_and_binding_constructors_detach_source_maps
+FAILED tests/test_visual_owner_registration.py::test_direct_invalid_or_mutated_nested_models_fail_before_binding[plan]
+FAILED tests/test_visual_owner_registration.py::test_direct_invalid_or_mutated_nested_models_fail_before_binding[binding]
+FAILED tests/test_visual_owner_registration.py::test_direct_invalid_or_mutated_nested_models_fail_before_binding[nestedmodel]
+FAILED tests/test_visual_owner_registration.py::test_direct_invalid_or_mutated_nested_models_fail_before_binding[posebool]
+FAILED tests/test_visual_owner_registration.py::test_requested_horizon_cannot_shorten_original_frozen_policy
+FAILED tests/test_visual_owner_registration.py::test_registered_calibration_requirement_must_match_current_frame
+38 failed in 1.06s

@@ -1,6 +1,16 @@
 # 《面向边缘智能场景的小型机械臂云边协同控制系统的设计》项目整体规划与提示词工程
 
-> 历史总体规划。2026-10-03 起，研究开发以 [RGB-D 云边协同代理执行计划](superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md) 和 [量化目标设计](superpowers/specs/2026-10-03-rgbd-evidence-research-design.md) 为准；本文保留早期架构与命名沿革，不表示下列阶段已经验收。
+> 当前研发以[2026-10-04云、边、端整体执行计划](superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)和[研究设计 ced.research.v2](superpowers/specs/2026-10-04-cloud-edge-device-research-design.md)为准。本文后续章节保留历史总体规划、提示词和命名沿革，不表示历史阶段或新三层架构已经验收。
+
+## 当前整体计划（2026-10-04）
+
+云端使用Qwen3.8-Max承担任务规划、监督与复杂重规划；端侧使用OpenCV＋RGB-D几何及现有控制器/SafetyShield；边缘先完成受约束判断、能力和提交接口，以规则/成本provider形成闭环，模型选型与优化后置，暂不锁定Qwen3.5-4B。
+
+执行顺序：**端侧证据补强／云Max接入 → 固定机会与离线故障证明、B0周期筛选 → 新120组基础先导与初冻 → 风险校准／证据门控／共同基线／边缘联合判断 → 在线局部恢复 → 方法冻结及独立功效先导 → 正式实验、统计与复现。**
+
+T1/T2/T3/T4/T5/T6a/T7与T17a保持各自限定DONE。T8目前IN_PROGRESS：第二批120例5成功、静态4/40，初次冻结拒绝。新模型和端侧算法尚未部署，不能用计划更新升级G1或C1/C2。每步仍写局部报告并汇入[阶段总结](research/process/continuation_20261004.md)。G0—G5、B0—B5、样本与统计规则保留，基础补强、边缘选型和正式测试分别隔离。
+
+---
 
 ## 一、项目总体定位
 

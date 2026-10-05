@@ -1,0 +1,13 @@
+# T10 fix round 1 independent review
+
+**PASS — software-only fix scope.** Specification/code-quality verdicts pass for the three reviewed module findings. Overall T10 runtime/research acceptance remains incomplete.
+
+Reviewed the original review, `fix-round-1.diff`, report appendix, current source and exact `fix-round-1-hashes.json`. All six current hashes match, including the narrow canonical `conditions.py` change. No suite rerun, GPU, network or live capture; no production/test edits.
+
+- **F1 closed:** `evaluate_conditions` accepts a keyword-only explicit evaluation time and retains the original current-UTC default. JOINT/B3 pass their supplied `now` to that single evaluator, including nested condition evaluation. The independent narrow-TTL probe (1.1-second age, max_age 0.5 seconds, ordinary TTL 5 seconds, zero motion) now returns UNKNOWN for both methods. Naive explicit clocks also fail closed. Historical replay no longer relies on a separate wall-clock read in the evaluator.
+- **F2 closed:** Opportunity now requires the replay time/configuration, binds the online observation checksum to the exact fixed observation, and freezes copied RobotState/TCP Pose and nested facts. These inputs are included in its content hash. Replay accepts no external online-evidence override and rejects time/configuration mismatch. Independent checks confirmed that nested stored Pose mutation raises validation error and modifying the caller's original Pose/facts does not change the frozen hash or replay verdict. Replacing fixed inputs changes the hash and invalidates old records at summary. No oracle label is passed online.
+- **F3 closed:** unsupported EvidenceVerdict statuses and GateReplayRecord methods reject during construction; the prior normal-constructor/replace path cannot produce silently omitted categories. Complete-set, duplicate, hash and mixed-method checks remain in the summarizer.
+
+B3 retains the common sensor/identity/context/condition/ordinary-TTL checks. Commit version/cancellation/candidate-identity behavior is unchanged. G3 valid/invalid denominators and separate UNKNOWN counts are unchanged and appropriate for well-formed fixed records.
+
+The reported 78 targeted tests and static checks were read, not rerun. Independent scoped CPU checks above exited 0. This PASS covers input consistency and software behavior, not genuine frozen opportunity production, accepted calibration, actual joint/B3 research results, clustered inference or submission-path integration. SafetyShield/executor integration and preserving T7b stability UNKNOWN in the native completion path remain root-owned acceptance work.

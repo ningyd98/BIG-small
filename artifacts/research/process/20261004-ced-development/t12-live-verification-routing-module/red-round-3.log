@@ -1,0 +1,88 @@
+FFF.......                                                               [100%]
+=================================== FAILURES ===================================
+_ test_current_repository_source_rows_cannot_hide_unknown_serialized_fields[memory-checkpoint] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d28b5709700>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+row_kind = 'checkpoint'
+
+    @pytest.mark.parametrize('row_kind', ['checkpoint', 'active'])
+    def test_current_repository_source_rows_cannot_hide_unknown_serialized_fields(source, row_kind):
+        repo,data=source
+        task=data['original'].identity.task_id
+        if isinstance(repo,InMemoryEventAutonomyRepository):
+            if row_kind=='checkpoint':
+                checkpoint=repo._checkpoints[data['source_checkpoint'].checkpoint_id]
+                repo._checkpoints[checkpoint.checkpoint_id]=checkpoint.model_copy(update={'undeclared_source':True})
+            else:
+                repo._active_contracts[task]=repo._active_contracts[task].model_copy(update={'undeclared_source':True})
+        else:
+            table,column=('execution_checkpoints','payload_json') if row_kind=='checkpoint' else ('active_task_contracts','record_json')
+            row=repo._conn.execute(f'SELECT {column} FROM {table} WHERE task_id=?',(task,)).fetchone()
+            payload=json.loads(row[0]);payload['undeclared_source']=True
+            repo._conn.execute(f'UPDATE {table} SET {column}=? WHERE task_id=?',(json.dumps(payload),task));repo._conn.commit()
+>       assert repo.route_visual_verification_if_current(request=request_for(data)) is None
+E       AssertionError: assert <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteWriteResult object at 0x7d28b4f8ec50> is None
+E        +  where <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteWriteResult object at 0x7d28b4f8ec50> = route_visual_verification_if_current(request=<cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteInput object at 0x7d28b2b3a690>)
+E        +    where route_visual_verification_if_current = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d28b5709700>.route_visual_verification_if_current
+E        +    and   <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteInput object at 0x7d28b2b3a690> = request_for({'current_identity': VisualOwnerIdentity(job_id='job-1', run_id='run-1', attempt=1, worker_id='worker-1', lease_id='le...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+tests/test_visual_verification_repository.py:580: AssertionError
+_ test_current_repository_source_rows_cannot_hide_unknown_serialized_fields[memory-active] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d28b21fa2d0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+row_kind = 'active'
+
+    @pytest.mark.parametrize('row_kind', ['checkpoint', 'active'])
+    def test_current_repository_source_rows_cannot_hide_unknown_serialized_fields(source, row_kind):
+        repo,data=source
+        task=data['original'].identity.task_id
+        if isinstance(repo,InMemoryEventAutonomyRepository):
+            if row_kind=='checkpoint':
+                checkpoint=repo._checkpoints[data['source_checkpoint'].checkpoint_id]
+                repo._checkpoints[checkpoint.checkpoint_id]=checkpoint.model_copy(update={'undeclared_source':True})
+            else:
+                repo._active_contracts[task]=repo._active_contracts[task].model_copy(update={'undeclared_source':True})
+        else:
+            table,column=('execution_checkpoints','payload_json') if row_kind=='checkpoint' else ('active_task_contracts','record_json')
+            row=repo._conn.execute(f'SELECT {column} FROM {table} WHERE task_id=?',(task,)).fetchone()
+            payload=json.loads(row[0]);payload['undeclared_source']=True
+            repo._conn.execute(f'UPDATE {table} SET {column}=? WHERE task_id=?',(json.dumps(payload),task));repo._conn.commit()
+>       assert repo.route_visual_verification_if_current(request=request_for(data)) is None
+E       AssertionError: assert <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteWriteResult object at 0x7d28b570b2b0> is None
+E        +  where <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteWriteResult object at 0x7d28b570b2b0> = route_visual_verification_if_current(request=<cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteInput object at 0x7d288a51c890>)
+E        +    where route_visual_verification_if_current = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d28b21fa2d0>.route_visual_verification_if_current
+E        +    and   <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteInput object at 0x7d288a51c890> = request_for({'current_identity': VisualOwnerIdentity(job_id='job-1', run_id='run-1', attempt=1, worker_id='worker-1', lease_id='le...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+tests/test_visual_verification_repository.py:580: AssertionError
+_ test_current_repository_source_rows_cannot_hide_unknown_serialized_fields[sqlite-checkpoint] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d28b21fb2f0>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+row_kind = 'checkpoint'
+
+    @pytest.mark.parametrize('row_kind', ['checkpoint', 'active'])
+    def test_current_repository_source_rows_cannot_hide_unknown_serialized_fields(source, row_kind):
+        repo,data=source
+        task=data['original'].identity.task_id
+        if isinstance(repo,InMemoryEventAutonomyRepository):
+            if row_kind=='checkpoint':
+                checkpoint=repo._checkpoints[data['source_checkpoint'].checkpoint_id]
+                repo._checkpoints[checkpoint.checkpoint_id]=checkpoint.model_copy(update={'undeclared_source':True})
+            else:
+                repo._active_contracts[task]=repo._active_contracts[task].model_copy(update={'undeclared_source':True})
+        else:
+            table,column=('execution_checkpoints','payload_json') if row_kind=='checkpoint' else ('active_task_contracts','record_json')
+            row=repo._conn.execute(f'SELECT {column} FROM {table} WHERE task_id=?',(task,)).fetchone()
+            payload=json.loads(row[0]);payload['undeclared_source']=True
+            repo._conn.execute(f'UPDATE {table} SET {column}=? WHERE task_id=?',(json.dumps(payload),task));repo._conn.commit()
+>       assert repo.route_visual_verification_if_current(request=request_for(data)) is None
+E       AssertionError: assert <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteWriteResult object at 0x7d28b43b07c0> is None
+E        +  where <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteWriteResult object at 0x7d28b43b07c0> = route_visual_verification_if_current(request=<cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteInput object at 0x7d28b21f3d10>)
+E        +    where route_visual_verification_if_current = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d28b21fb2f0>.route_visual_verification_if_current
+E        +    and   <cloud_edge_robot_arm.repositories.event_autonomy.visual_verification.VisualVerificationRouteInput object at 0x7d28b21f3d10> = request_for({'current_identity': VisualOwnerIdentity(job_id='job-1', run_id='run-1', attempt=1, worker_id='worker-1', lease_id='le...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+tests/test_visual_verification_repository.py:580: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_verification_repository.py::test_current_repository_source_rows_cannot_hide_unknown_serialized_fields[memory-checkpoint]
+FAILED tests/test_visual_verification_repository.py::test_current_repository_source_rows_cannot_hide_unknown_serialized_fields[memory-active]
+FAILED tests/test_visual_verification_repository.py::test_current_repository_source_rows_cannot_hide_unknown_serialized_fields[sqlite-checkpoint]
+3 failed, 7 passed, 71 deselected in 2.27s

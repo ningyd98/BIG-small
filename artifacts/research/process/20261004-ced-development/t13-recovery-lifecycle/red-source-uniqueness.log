@@ -1,0 +1,76 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_failure_events_cannot_share_one_execution_attempt_identity[memory] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71ba17b84200>
+
+    def test_failure_events_cannot_share_one_execution_attempt_identity(lifecycle_repo):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        second = detected_record(lifecycle_repo, event_id="second-event", recovery_id="second-recovery")
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_recovery_lifecycle_module.py:835: Failed
+___ test_failure_events_cannot_share_one_execution_attempt_identity[sqlite] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71ba1627ee70>
+
+    def test_failure_events_cannot_share_one_execution_attempt_identity(lifecycle_repo):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        second = detected_record(lifecycle_repo, event_id="second-event", recovery_id="second-recovery")
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_recovery_lifecycle_module.py:835: Failed
+_ test_same_camera_frame_under_new_observation_id_is_not_fresh_resolution[memory] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71ba1627ebd0>
+
+    def test_same_camera_frame_under_new_observation_id_is_not_fresh_resolution(lifecycle_repo):
+        from dataclasses import replace
+        from uuid import uuid4
+        service, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "FAIL")
+        record = verify_round(lifecycle_repo, record, "FAIL", snapshot=source)
+        service.reserve_reobservation(record.recovery_id)
+        record = lifecycle_repo.get_recovery(record.recovery_id)
+        pass_source = verification_snapshot(lifecycle_repo, record, "PASS")
+>       observation = type(pass_source.observation).model_validate({
+            **pass_source.observation.model_dump(), "observation_id": uuid4().hex,
+            "frame_id": source.observation.frame_id, "checksum_sha256": "",
+        })
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RGBDObservation
+E         Value error, observation_id must match frame_id [type=value_error, input_value={'frame_id': 'c63e6658b39..., 'checksum_sha256': ''}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+tests/test_recovery_lifecycle_module.py:849: ValidationError
+_ test_same_camera_frame_under_new_observation_id_is_not_fresh_resolution[sqlite] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71ba17dc05f0>
+
+    def test_same_camera_frame_under_new_observation_id_is_not_fresh_resolution(lifecycle_repo):
+        from dataclasses import replace
+        from uuid import uuid4
+        service, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "FAIL")
+        record = verify_round(lifecycle_repo, record, "FAIL", snapshot=source)
+        service.reserve_reobservation(record.recovery_id)
+        record = lifecycle_repo.get_recovery(record.recovery_id)
+        pass_source = verification_snapshot(lifecycle_repo, record, "PASS")
+>       observation = type(pass_source.observation).model_validate({
+            **pass_source.observation.model_dump(), "observation_id": uuid4().hex,
+            "frame_id": source.observation.frame_id, "checksum_sha256": "",
+        })
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for RGBDObservation
+E         Value error, observation_id must match frame_id [type=value_error, input_value={'frame_id': 'efcda4524a3..., 'checksum_sha256': ''}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/value_error
+
+tests/test_recovery_lifecycle_module.py:849: ValidationError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_failure_events_cannot_share_one_execution_attempt_identity[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_failure_events_cannot_share_one_execution_attempt_identity[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_same_camera_frame_under_new_observation_id_is_not_fresh_resolution[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_same_camera_frame_under_new_observation_id_is_not_fresh_resolution[sqlite]
+4 failed, 108 deselected in 1.12s

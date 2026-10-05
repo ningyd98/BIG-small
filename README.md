@@ -12,6 +12,8 @@ BIG-small 是一个面向边缘智能场景的小型机械臂云边协同控制�
 
 ## 2. 当前状态
 
+**2026-10-04 整体计划更新：** 后续按[云、边、端研发计划](docs/superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)推进：云端Qwen3.8-Max规划，边缘受约束判断接口与规则/成本provider，端侧OpenCV＋RGB-D几何＋现有控制器/SafetyShield。边缘模型选型与优化后置，暂不锁型号。近期T3b/T7b补强，随后T8a证据/周期筛选→T8b新先导冻结；新路径已形成角色/OpenCV门控、规则/CAS、候选修复、原始分配/统计/复现和只读证据页的软件能力，正在补齐持久恢复、staged先导和资源编译器；真实研究准入仍关闭。T17a已DONE，T8仍IN_PROGRESS（v2全120组5成功、静态4/40，初次冻结拒绝）。详见[阶段总结](docs/research/process/continuation_20261004.md)、[复现入口](docs/research/reproduction.md)与[结果/限制](docs/research/results_and_limits.md)；下列T7收尾叙述为历史验收快照。
+
 2026-10-03 RGB-D 路线的 T1/T2/T3/T6a/T4/T5 已分别完成验收。T3 通过坐标协议、提示和顶抓几何适配，已将本地 Qwen3-VL 4B 的固定场景双图定位从 0/4 提升至 4/4，并冻结配置；范围限当前资产的竖直方块规划，独立场景中的拒答失败仍完整保留，见[T3 优化验收](artifacts/research/process/20261003-t3-small-model-optimization/acceptance.md)。T5 的20例离线教师为7成功、12失败、1安全违规。截至 2026-10-04，T7 在线视觉闭环为 `DONE`：v2 同 20 个预分配场景全保留，2 成功、18 失败、0 blocked、0 false completion（正常 2/12、全分配 10%）；[独立复算](artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v2-validation.json)核对 34,353 个物理样本、154 帧、52 动作，valid/accepted=true。最终454项回归及30个源文件Ruff/mypy通过，T8/T17a 为 `READY`，T6b 保持 `TODO`。该结果限当前 MuJoCo 直立有色方块的开发 smoke，不是正式 G1；[使用说明](docs/rgbd_visual_closed_loop.md)与 [T7 证据目录](artifacts/research/process/20261003-t7-visual-closed-loop/)分别记录入口和完整失败证据。开发按[任务依赖](docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md)推进，范围以[当前权威状态](docs/current_authoritative_status.md)为准。
 
 第三方真实 RGB-D 精选已可用：魔搭 `Voxel51/graspclutter6d` 的 10 个场景、40 帧四相机数据完成校验、5 组预览与 CPU 0/2 worker 读取，状态为 `CURATED_RGBD_VERIFIED`。约 754 MiB 的来源文件通过物理网卡大陆直连下载，深度单位为毫米；精选导出缺少相机内参，不能生成可靠点云。见[精选使用说明](docs/rgbd_curated_quickstart.md)和[实际验收](artifacts/research/process/20261003-curated-rgbd/acceptance.md)。原 RoboMIND 完整目标仍为 `BLOCKED_BUDGET`，原 GraspClutter6D 完整归档仍为 `BLOCKED_NETWORK`，两者均未升级验收。
@@ -113,6 +115,8 @@ python3.12 -m venv .venv-data
 ```
 
 默认入口：<http://127.0.0.1:5173/simulation/workbench>，API：<http://127.0.0.1:8000/docs>。启动脚本创建持久开发数据库并启动 API、内置仿真 worker、Dashboard；停止时按 Ctrl-C。默认 simulation / MuJoCo / headless / loopback，真实运动 dispatch 关闭。
+
+RGB-D 默认入口现共用修复后夹爪的 `mujoco_upright_box_v2` 标定与 Qwen3-VL 4B 冻结包；无 active profile 或显式模型覆盖时自动加载。用 `.venv/bin/python scripts/probe_rgbd_model.py --verify-frozen` 复验；首次准备或源码漂移后，运行 `MUJOCO_GL=egl .venv/bin/python scripts/probe_rgbd_model.py` 重新探测。采集不依赖模型，冻结不可用时规划如实阻断；显式配置及 active profile 保持优先。使用说明见 [RGB-D闭环入口](docs/rgbd_visual_closed_loop.md)，原教师修复结果见 [验证报告](artifacts/research/process/20261004-t5-gripper-fix/acceptance.md)。
 
 `./scripts/linux/install.sh` 安装项目声明的 Python extras、锁定的前端依赖与 Chromium。Python venv 支持、Node 22.12+、NVIDIA、ROS/MoveIt、Isaac 和 TeX 为独立运行时前提，本次部署的版本、路径与实验命令见 [交接报告](docs/handover/ubuntu_deployment_report.md)。macOS 支持继续保留。
 

@@ -1,0 +1,2295 @@
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
+@@ -40,6 +40,13 @@
+         VerificationBudgetRecord,
+     )
+     from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++        VisualOwnerPublicationRecord,
++    )
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        StepGroundingBinding,
++        VisualOriginalPlan,
++    )
+ 
+ 
+ class RepositoryConflictError(RuntimeError):
+@@ -57,6 +64,39 @@
+ @runtime_checkable
+ class EventAutonomyRepository(Protocol):
+     """Unified persistence contract for event-triggered edge autonomy."""
++
++    def initialize_visual_owner_if_absent(
++        self,
++        original: VisualOriginalPlan,
++        checkpoint: ExecutionCheckpoint,
++        verification_state: VerificationBudgetState,
++        retry_budget: RecoveryBudget,
++    ) -> VisualOwnerPublicationRecord:
++        """Atomically register a durable source only, preserving complete existing pools."""
++        ...
++
++    def get_visual_original_plan(
++        self, task_id: str, plan_version: int
++    ) -> VisualOriginalPlan | None: ...
++
++    def get_visual_owner_publication(self, task_id: str) -> VisualOwnerPublicationRecord | None:
++        """Coherent current durable source; stale/expired publications remain unavailable."""
++        ...
++
++    def publish_visual_boundary_if_current(
++        self,
++        *,
++        task_id: str,
++        owner_epoch: str,
++        expected_owner_revision: int,
++        expected_contract_hash: str,
++        expected_checkpoint_hash: str,
++        checkpoint: ExecutionCheckpoint,
++        grounding: StepGroundingBinding | None,
++        state_generation: int,
++    ) -> VisualOwnerPublicationRecord | None:
++        """CAS checkpoint/publication only, with no physical or mode authority."""
++        ...
+ 
+     # ── Events ──────────────────────────────────────────────────────────
+ 
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
+@@ -76,6 +76,13 @@
+         VerificationBudgetRecord,
+     )
+     from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++        VisualOwnerPublicationRecord,
++    )
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        StepGroundingBinding,
++        VisualOriginalPlan,
++    )
+ 
+ 
+ class InMemoryEventAutonomyRepository:
+@@ -116,6 +123,318 @@
+         self._acks_by_key: dict[str, CommandAck] = {}
+         self._ack_hashes: dict[str, str] = {}
+         self._audit: dict[str, list[dict[str, object]]] = {}
++        self._visual_originals: dict[tuple[str, int], tuple[str, str]] = {}
++        self._visual_publications: dict[tuple[str, int], str] = {}
++
++    def _visual_original_locked(self, task_id: str, plan_version: int) -> VisualOriginalPlan | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            original_from_payload,
++        )
++
++        stored = self._visual_originals.get((task_id, plan_version))
++        if stored is None:
++            return None
++        original = original_from_payload(json.loads(stored[0]))
++        if (
++            original.digest() != stored[1]
++            or original.identity.task_id != task_id
++            or original.contract.plan_version != plan_version
++        ):
++            raise ValueError("stored original key/hash differs")
++        return original
++
++    def _visual_record_locked(
++        self, task_id: str, revision: int | None = None
++    ) -> VisualOwnerPublicationRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            VisualOwnerPublicationRecord,
++        )
++
++        if revision is None:
++            revisions = [version for task, version in self._visual_publications if task == task_id]
++            if not revisions:
++                return None
++            revision = max(revisions)
++        raw = self._visual_publications.get((task_id, revision))
++        if raw is None:
++            return None
++        record = VisualOwnerPublicationRecord.from_payload(json.loads(raw))
++        if record.identity.task_id != task_id or record.owner_revision != revision:
++            raise ValueError("stored publication key differs")
++        return record
++
++    def _visual_group_locked(self, task_id: str) -> tuple[Any, Any, Any, Any]:
++        ids = self._checkpoints_by_task.get(task_id, [])
++        return (
++            self._active_contracts.get(task_id),
++            self._checkpoints.get(ids[-1]) if ids else None,
++            self._verification_budgets.get(task_id),
++            self._budgets.get(task_id),
++        )
++
++    def _visual_versions_match(self, original: VisualOriginalPlan) -> bool:
++        task, contract = original.identity.task_id, original.contract
++        version = self._version_record(task, contract.plan_version)
++        active = self._active_contracts.get(task)
++        return (
++            self._plan_versions.get(task) == (contract.plan_version, contract.command_seq)
++            and version is not None
++            and active is not None
++            and version.model_dump(mode="json") == active.model_dump(mode="json")
++        )
++
++    def get_visual_original_plan(
++        self, task_id: str, plan_version: int
++    ) -> VisualOriginalPlan | None:
++        with self._lock:
++            return self._visual_original_locked(task_id, plan_version)
++
++    def get_visual_owner_publication(self, task_id: str) -> VisualOwnerPublicationRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            current_publication,
++        )
++
++        with self._lock:
++            record = self._visual_record_locked(task_id)
++            if record is None:
++                return None
++            original = self._visual_original_locked(task_id, record.checkpoint.plan_version)
++            previous = (
++                self._visual_record_locked(task_id, record.owner_revision - 1)
++                if record.owner_revision > 1
++                else None
++            )
++            if (
++                original is None
++                or not self._visual_versions_match(original)
++                or not current_publication(
++                    record, original, *self._visual_group_locked(task_id), previous=previous
++                )
++            ):
++                return None
++            return record.detached()
++
++    def initialize_visual_owner_if_absent(
++        self,
++        original: VisualOriginalPlan,
++        checkpoint: ExecutionCheckpoint,
++        verification_state: VerificationBudgetState,
++        retry_budget: RecoveryBudget,
++    ) -> VisualOwnerPublicationRecord:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            canonical,
++            current_publication,
++            initial_inputs,
++            publication,
++            retry_definition,
++            validate_group,
++            verification_definition,
++        )
++
++        original, checkpoint, pool, retry, key = initial_inputs(
++            original, checkpoint, verification_state, retry_budget
++        )
++        task = original.identity.task_id
++        with self._lock:
++            first = self._visual_record_locked(task, 1)
++            if first is not None:
++                self._ensure_same_hash(
++                    "VisualOwnerInitial", task, first.to_payload()["operation_hash"], key
++                )
++                existing = self._visual_record_locked(task)
++                stored_original = self._visual_original_locked(task, original.contract.plan_version)
++                previous = (
++                    self._visual_record_locked(task, existing.owner_revision - 1)
++                    if existing and existing.owner_revision > 1
++                    else None
++                )
++                if (
++                    existing is None
++                    or stored_original is None
++                    or stored_original.digest() != original.digest()
++                    or not self._visual_versions_match(original)
++                    or not current_publication(
++                        existing,
++                        stored_original,
++                        *self._visual_group_locked(task),
++                        previous=previous,
++                    )
++                ):
++                    raise IdempotencyConflictError(
++                        "visual source currently unavailable; fresh publication required"
++                    )
++                return existing.detached()
++            if any(name == task for name, _ in self._visual_originals):
++                raise IdempotencyConflictError("original sidecar exists without publication")
++            active, prior_checkpoint, prior_pool, prior_retry = self._visual_group_locked(task)
++            present = [
++                value is not None for value in (active, prior_checkpoint, prior_pool, prior_retry)
++            ]
++            if any(present):
++                if not all(present):
++                    raise IdempotencyConflictError("partial existing visual task group")
++                try:
++                    validate_group(original, active, prior_checkpoint, prior_pool, prior_retry)
++                    if (
++                        canonical(prior_checkpoint.model_dump(mode="json"))
++                        != canonical(checkpoint.model_dump(mode="json"))
++                        or not self._visual_versions_match(original)
++                        or verification_definition(prior_pool) != verification_definition(pool)
++                        or retry_definition(prior_retry) != retry_definition(retry)
++                    ):
++                        raise ValueError("existing source definition differs")
++                except (ValueError, TypeError) as error:
++                    raise IdempotencyConflictError("existing visual source differs") from error
++                pool, retry = prior_pool.detached(), prior_retry.model_copy(deep=True)
++            else:
++                if self._contract_versions.get(task) or self._plan_versions.get(task):
++                    raise IdempotencyConflictError("partial existing contract/version history")
++                if checkpoint.checkpoint_id in self._checkpoints:
++                    raise IdempotencyConflictError(
++                        "initial checkpoint identity already belongs to a source"
++                    )
++                now = _utc_now()
++                active = ActiveTaskContractRecord(
++                    task_id=task,
++                    plan_id=original.identity.plan_id,
++                    robot_id=original.identity.robot_id,
++                    plan_version=original.contract.plan_version,
++                    command_seq=original.contract.command_seq,
++                    scene_version=original.contract.scene_version,
++                    contract=original.contract,
++                    status="ACTIVE",
++                    created_at=now,
++                    activated_at=now,
++                    contract_hash=_contract_hash(original.contract),
++                )
++            saved = publication(
++                original,
++                checkpoint,
++                pool,
++                retry,
++                revision=1,
++                generation=0,
++                source_revision=None,
++                operation_hash=key,
++            )
++            # All validation completed before the first mutation under this lock.
++            if not any(present):
++                self._active_contracts[task] = active
++                self._contract_versions[task] = [active]
++                self._plan_versions[task] = (active.plan_version, active.command_seq)
++                self._checkpoints[checkpoint.checkpoint_id] = checkpoint
++                self._checkpoint_hashes[checkpoint.checkpoint_id] = checkpoint.checkpoint_hash
++                self._checkpoints_by_task[task] = [checkpoint.checkpoint_id]
++                self._verification_budgets[task] = pool
++                self._budgets[task] = retry
++            self._visual_originals[(task, original.contract.plan_version)] = (
++                canonical(original.to_payload()),
++                original.digest(),
++            )
++            self._visual_publications[(task, 1)] = canonical(saved.to_payload())
++            return saved.detached()
++
++    def publish_visual_boundary_if_current(
++        self,
++        *,
++        task_id: str,
++        owner_epoch: str,
++        expected_owner_revision: int,
++        expected_contract_hash: str,
++        expected_checkpoint_hash: str,
++        checkpoint: ExecutionCheckpoint,
++        grounding: StepGroundingBinding | None,
++        state_generation: int,
++    ) -> VisualOwnerPublicationRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            canonical,
++            counter,
++            monotonic_pools,
++            operation_hash,
++            publication,
++            record_binding_valid,
++            validate_checkpoint,
++            validate_grounding,
++            validate_group,
++        )
++
++        counter(expected_owner_revision)
++        counter(state_generation)
++        key = operation_hash(
++            task_id=task_id,
++            owner_epoch=owner_epoch,
++            expected_owner_revision=expected_owner_revision,
++            expected_contract_hash=expected_contract_hash,
++            expected_checkpoint_hash=expected_checkpoint_hash,
++            checkpoint=checkpoint,
++            grounding=grounding,
++            state_generation=state_generation,
++        )
++        with self._lock:
++            duplicate = self._visual_record_locked(task_id, expected_owner_revision + 1)
++            if duplicate is not None and duplicate.to_payload()["operation_hash"] == key:
++                return duplicate.detached()
++            previous = self._visual_record_locked(task_id)
++            if (
++                previous is None
++                or previous.owner_revision != expected_owner_revision
++                or previous.identity.owner_epoch != owner_epoch
++                or state_generation <= previous.state_generation
++            ):
++                return None
++            original = self._visual_original_locked(task_id, previous.checkpoint.plan_version)
++            active, current, pool, retry = self._visual_group_locked(task_id)
++            if (
++                original is None
++                or any(value is None for value in (active, current, pool, retry))
++                or not self._visual_versions_match(original)
++                or active.contract_hash != expected_contract_hash
++                or current.checkpoint_hash != expected_checkpoint_hash
++                or current.checkpoint_hash != previous.checkpoint.checkpoint_hash
++            ):
++                return None
++            try:
++                ancestor = (
++                    self._visual_record_locked(task_id, previous.owner_revision - 1)
++                    if previous.owner_revision > 1
++                    else None
++                )
++                if not record_binding_valid(previous, original, ancestor):
++                    return None
++                validate_group(original, active, current, pool, retry)
++                if not monotonic_pools(previous, pool, retry):
++                    return None
++                next_checkpoint = validate_checkpoint(original, checkpoint, current)
++                bound = validate_grounding(
++                    original, previous, next_checkpoint, grounding, state_generation
++                )
++                saved = publication(
++                    original,
++                    next_checkpoint,
++                    pool,
++                    retry,
++                    revision=previous.owner_revision + 1,
++                    generation=state_generation,
++                    source_revision=previous.owner_revision,
++                    operation_hash=key,
++                    grounding=bound,
++                )
++            except (ValueError, TypeError):
++                return None
++            collision = self._checkpoints.get(next_checkpoint.checkpoint_id)
++            if collision is not None and canonical(collision.model_dump(mode="json")) != canonical(
++                next_checkpoint.model_dump(mode="json")
++            ):
++                return None
++            self._checkpoints[next_checkpoint.checkpoint_id] = next_checkpoint
++            self._checkpoint_hashes[next_checkpoint.checkpoint_id] = next_checkpoint.checkpoint_hash
++            ids = self._checkpoints_by_task.setdefault(task_id, [])
++            if next_checkpoint.checkpoint_id not in ids:
++                ids.append(next_checkpoint.checkpoint_id)
++            self._visual_publications[(task_id, saved.owner_revision)] = canonical(
++                saved.to_payload()
++            )
++            return saved.detached()
+ 
+     # ── generic idempotency helpers ───────────────────────────────────────
+ 
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
+@@ -78,6 +78,13 @@
+         VerificationBudgetRecord,
+     )
+     from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++        VisualOwnerPublicationRecord,
++    )
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        StepGroundingBinding,
++        VisualOriginalPlan,
++    )
+ 
+ 
+ class SQLiteEventAutonomyRepository:
+@@ -97,6 +104,22 @@
+     def _create_schema(self) -> None:
+         self._conn.executescript(
+             """
++            CREATE TABLE IF NOT EXISTS visual_original_plans (
++                task_id TEXT NOT NULL,
++                plan_version INTEGER NOT NULL,
++                payload_json TEXT NOT NULL,
++                original_hash TEXT NOT NULL,
++                PRIMARY KEY (task_id, plan_version)
++            );
++            CREATE TABLE IF NOT EXISTS visual_owner_publications (
++                task_id TEXT NOT NULL,
++                owner_revision INTEGER NOT NULL,
++                owner_epoch TEXT NOT NULL,
++                state_generation INTEGER NOT NULL,
++                payload_json TEXT NOT NULL,
++                publication_hash TEXT NOT NULL,
++                PRIMARY KEY (task_id, owner_revision)
++            );
+             CREATE TABLE IF NOT EXISTS recovery_records (
+                 recovery_id TEXT PRIMARY KEY,
+                 event_id TEXT UNIQUE NOT NULL,
+@@ -2017,5 +2040,489 @@
+             )
+             self._conn.commit()
+ 
++    def _visual_original_locked(self, task_id: str, plan_version: int) -> VisualOriginalPlan | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            original_from_payload,
++        )
++
++        row = self._conn.execute(
++            "SELECT * FROM visual_original_plans WHERE task_id=? AND plan_version=?",
++            (task_id, plan_version),
++        ).fetchone()
++        if row is None:
++            return None
++        original = original_from_payload(json.loads(row["payload_json"]))
++        if (
++            original.digest() != row["original_hash"]
++            or original.identity.task_id != task_id
++            or original.contract.plan_version != plan_version
++        ):
++            raise ValueError("stored original key/hash differs")
++        return original
++
++    def _visual_record_locked(
++        self, task_id: str, revision: int | None = None
++    ) -> VisualOwnerPublicationRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            VisualOwnerPublicationRecord,
++        )
++
++        if revision is None:
++            row = self._conn.execute(
++                "SELECT * FROM visual_owner_publications WHERE task_id=? "
++                "ORDER BY owner_revision DESC LIMIT 1",
++                (task_id,),
++            ).fetchone()
++        else:
++            row = self._conn.execute(
++                "SELECT * FROM visual_owner_publications WHERE task_id=? AND owner_revision=?",
++                (task_id, revision),
++            ).fetchone()
++        if row is None:
++            return None
++        result = VisualOwnerPublicationRecord.from_payload(json.loads(row["payload_json"]))
++        if (
++            result.identity.task_id != task_id
++            or result.owner_revision != row["owner_revision"]
++            or result.identity.owner_epoch != row["owner_epoch"]
++            or result.state_generation != row["state_generation"]
++            or result.digest() != row["publication_hash"]
++        ):
++            raise ValueError("stored publication columns/hash differ")
++        return result
++
++    def _visual_group_locked(self, task_id: str) -> tuple[Any, Any, Any, Any]:
++        active = None
++        row = self._conn.execute(
++            "SELECT * FROM active_task_contracts WHERE task_id=?", (task_id,)
++        ).fetchone()
++        if row is not None:
++            active = ActiveTaskContractRecord.model_validate_json(row["record_json"])
++            if any(
++                getattr(active, name) != row[name]
++                for name in (
++                    "task_id",
++                    "plan_id",
++                    "robot_id",
++                    "plan_version",
++                    "command_seq",
++                    "scene_version",
++                    "contract_hash",
++                )
++            ):
++                raise ValueError("active source columns differ")
++        checkpoint = None
++        row = self._conn.execute(
++            "SELECT * FROM execution_checkpoints WHERE task_id=? ORDER BY id DESC LIMIT 1",
++            (task_id,),
++        ).fetchone()
++        if row is not None:
++            checkpoint = ExecutionCheckpoint.model_validate_json(row["payload_json"])
++            if any(
++                getattr(checkpoint, name) != row[name]
++                for name in (
++                    "checkpoint_id",
++                    "task_id",
++                    "plan_id",
++                    "robot_id",
++                    "plan_version",
++                    "command_seq",
++                    "execution_state",
++                    "checkpoint_hash",
++                )
++            ):
++                raise ValueError("checkpoint source columns differ")
++        return (
++            active,
++            checkpoint,
++            self.get_verification_budget(task_id),
++            self.get_retry_budget(task_id),
++        )
++
++    def _visual_versions_match(self, original: VisualOriginalPlan) -> bool:
++        row = self._conn.execute(
++            "SELECT plan_version,command_seq FROM plan_versions WHERE task_id=?",
++            (original.identity.task_id,),
++        ).fetchone()
++        active = self._conn.execute(
++            "SELECT record_json FROM active_task_contracts WHERE task_id=?",
++            (original.identity.task_id,),
++        ).fetchone()
++        version = self._conn.execute(
++            "SELECT record_json,contract_hash,plan_id,robot_id,command_seq,scene_version "
++            "FROM task_contract_versions WHERE task_id=? AND plan_version=?",
++            (original.identity.task_id, original.contract.plan_version),
++        ).fetchone()
++        if row is None or active is None or version is None:
++            return False
++        active_payload, version_payload = (
++            json.loads(active["record_json"]),
++            json.loads(version["record_json"]),
++        )
++        return (
++            (row["plan_version"], row["command_seq"])
++            == (original.contract.plan_version, original.contract.command_seq)
++            and active_payload == version_payload
++            and all(
++                version_payload[name] == version[name]
++                for name in ("contract_hash", "plan_id", "robot_id", "command_seq", "scene_version")
++            )
++        )
++
++    def _visual_store_record_locked(self, record: VisualOwnerPublicationRecord) -> None:
++        self._conn.execute(
++            "INSERT INTO visual_owner_publications VALUES (?,?,?,?,?,?)",
++            (
++                record.identity.task_id,
++                record.owner_revision,
++                record.identity.owner_epoch,
++                record.state_generation,
++                self._json(record.to_payload()),
++                record.digest(),
++            ),
++        )
++
++    def _visual_store_checkpoint_locked(self, checkpoint: ExecutionCheckpoint) -> None:
++        row = self._conn.execute(
++            "SELECT checkpoint_hash FROM execution_checkpoints WHERE checkpoint_id=?",
++            (checkpoint.checkpoint_id,),
++        ).fetchone()
++        if row is not None:
++            _same_or_conflict(
++                "ExecutionCheckpoint",
++                checkpoint.checkpoint_id,
++                row["checkpoint_hash"],
++                checkpoint.checkpoint_hash,
++            )
++            return
++        self._conn.execute(
++            """INSERT INTO execution_checkpoints (
++            checkpoint_id,task_id,plan_id,robot_id,plan_version,command_seq,execution_state,
++            completed_step_ids_json,payload_json,checkpoint_hash,created_at,updated_at
++            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
++            (
++                checkpoint.checkpoint_id,
++                checkpoint.task_id,
++                checkpoint.plan_id,
++                checkpoint.robot_id,
++                checkpoint.plan_version,
++                checkpoint.command_seq,
++                checkpoint.execution_state,
++                self._json(checkpoint.completed_step_ids),
++                checkpoint.model_dump_json(),
++                checkpoint.checkpoint_hash,
++                checkpoint.created_at.isoformat(),
++                checkpoint.updated_at.isoformat(),
++            ),
++        )
++
++    def _visual_store_retry_locked(self, retry: RecoveryBudget) -> None:
++        self._conn.execute(
++            """INSERT INTO recovery_budgets (
++            budget_id,task_id,per_step_retry_limit,per_skill_retry_limit,task_total_retry_limit,
++            retry_count_used,task_retry_count,step_retry_counts_json,skill_retry_counts_json,event_retry_counts_json,
++            retry_cooldown_ms,retry_deadline,retry_backoff_policy,effective_retry_limit,remaining_retries,
++            scene_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
++            (
++                retry.budget_id,
++                retry.task_id,
++                retry.per_step_retry_limit,
++                retry.per_skill_retry_limit,
++                retry.task_total_retry_limit,
++                retry.retry_count_used,
++                retry.task_retry_count,
++                self._json(retry.step_retry_counts),
++                self._json(retry.skill_retry_counts),
++                self._json(retry.event_retry_counts),
++                retry.retry_cooldown_ms,
++                retry.retry_deadline.isoformat() if retry.retry_deadline else None,
++                retry.retry_backoff_policy,
++                retry.effective_retry_limit,
++                retry.remaining_retries,
++                retry.scene_version,
++                retry.created_at.isoformat(),
++                retry.updated_at.isoformat(),
++            ),
++        )
++
++    def get_visual_original_plan(
++        self, task_id: str, plan_version: int
++    ) -> VisualOriginalPlan | None:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN")
++            return self._visual_original_locked(task_id, plan_version)
++
++    def get_visual_owner_publication(self, task_id: str) -> VisualOwnerPublicationRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            current_publication,
++        )
++
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN")
++            record = self._visual_record_locked(task_id)
++            if record is None:
++                return None
++            original = self._visual_original_locked(task_id, record.checkpoint.plan_version)
++            if original is None or not self._visual_versions_match(original):
++                return None
++            previous = (
++                self._visual_record_locked(task_id, record.owner_revision - 1)
++                if record.owner_revision > 1
++                else None
++            )
++            try:
++                group = self._visual_group_locked(task_id)
++            except (ValueError, TypeError):
++                return None
++            return (
++                record.detached()
++                if current_publication(record, original, *group, previous=previous)
++                else None
++            )
++
++    def initialize_visual_owner_if_absent(
++        self,
++        original: VisualOriginalPlan,
++        checkpoint: ExecutionCheckpoint,
++        verification_state: VerificationBudgetState,
++        retry_budget: RecoveryBudget,
++    ) -> VisualOwnerPublicationRecord:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            canonical,
++            current_publication,
++            initial_inputs,
++            publication,
++            retry_definition,
++            validate_group,
++            verification_definition,
++        )
++
++        original, checkpoint, pool, retry, key = initial_inputs(
++            original, checkpoint, verification_state, retry_budget
++        )
++        task = original.identity.task_id
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            first = self._visual_record_locked(task, 1)
++            if first is not None:
++                _same_or_conflict(
++                    "VisualOwnerInitial", task, first.to_payload()["operation_hash"], key
++                )
++                existing = self._visual_record_locked(task)
++                stored_original = self._visual_original_locked(task, original.contract.plan_version)
++                previous = (
++                    self._visual_record_locked(task, existing.owner_revision - 1)
++                    if existing and existing.owner_revision > 1
++                    else None
++                )
++                if (
++                    existing is None
++                    or stored_original is None
++                    or stored_original.digest() != original.digest()
++                    or not self._visual_versions_match(original)
++                    or not current_publication(
++                        existing,
++                        stored_original,
++                        *self._visual_group_locked(task),
++                        previous=previous,
++                    )
++                ):
++                    raise IdempotencyConflictError(
++                        "visual source currently unavailable; fresh publication required"
++                    )
++                return existing.detached()
++            if self._conn.execute(
++                "SELECT 1 FROM visual_original_plans WHERE task_id=?", (task,)
++            ).fetchone():
++                raise IdempotencyConflictError("original sidecar exists without publication")
++            try:
++                active, prior_checkpoint, prior_pool, prior_retry = self._visual_group_locked(task)
++            except (ValueError, TypeError) as error:
++                raise IdempotencyConflictError("existing visual source differs") from error
++            present = [
++                item is not None for item in (active, prior_checkpoint, prior_pool, prior_retry)
++            ]
++            if any(present):
++                if not all(present):
++                    raise IdempotencyConflictError("partial existing visual task group")
++                try:
++                    validate_group(original, active, prior_checkpoint, prior_pool, prior_retry)
++                    if (
++                        canonical(prior_checkpoint.model_dump(mode="json"))
++                        != canonical(checkpoint.model_dump(mode="json"))
++                        or not self._visual_versions_match(original)
++                        or verification_definition(prior_pool) != verification_definition(pool)
++                        or retry_definition(prior_retry) != retry_definition(retry)
++                    ):
++                        raise ValueError("existing source definition differs")
++                except (ValueError, TypeError) as error:
++                    raise IdempotencyConflictError("existing visual source differs") from error
++                pool, retry = prior_pool.detached(), prior_retry.model_copy(deep=True)
++            else:
++                if (
++                    self._conn.execute(
++                        "SELECT 1 FROM task_contract_versions WHERE task_id=?", (task,)
++                    ).fetchone()
++                    or self._conn.execute(
++                        "SELECT 1 FROM plan_versions WHERE task_id=?", (task,)
++                    ).fetchone()
++                ):
++                    raise IdempotencyConflictError("partial existing contract/version history")
++                if self._conn.execute(
++                    "SELECT 1 FROM execution_checkpoints WHERE checkpoint_id=?",
++                    (checkpoint.checkpoint_id,),
++                ).fetchone():
++                    raise IdempotencyConflictError(
++                        "initial checkpoint identity already belongs to a source"
++                    )
++            saved = publication(
++                original,
++                checkpoint,
++                pool,
++                retry,
++                revision=1,
++                generation=0,
++                source_revision=None,
++                operation_hash=key,
++            )
++            if not any(present):
++                self._save_active_contract_locked(
++                    original.contract,
++                    plan_id=original.identity.plan_id,
++                    robot_id=original.identity.robot_id,
++                    status="ACTIVE",
++                    based_on_plan_version=None,
++                    correlation_id="",
++                    commit=False,
++                )
++                self._visual_store_checkpoint_locked(checkpoint)
++                self._visual_store_retry_locked(retry)
++                self._conn.execute(
++                    "INSERT INTO verification_budgets VALUES (?,?,?,?)",
++                    (
++                        task,
++                        pool.revision,
++                        self._json(pool.to_payload()),
++                        pool.content_hash,
++                    ),
++                )
++            self._conn.execute(
++                "INSERT INTO visual_original_plans VALUES (?,?,?,?)",
++                (
++                    task,
++                    original.contract.plan_version,
++                    canonical(original.to_payload()),
++                    original.digest(),
++                ),
++            )
++            self._visual_store_record_locked(saved)
++            return saved.detached()
++
++    def publish_visual_boundary_if_current(
++        self,
++        *,
++        task_id: str,
++        owner_epoch: str,
++        expected_owner_revision: int,
++        expected_contract_hash: str,
++        expected_checkpoint_hash: str,
++        checkpoint: ExecutionCheckpoint,
++        grounding: StepGroundingBinding | None,
++        state_generation: int,
++    ) -> VisualOwnerPublicationRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++            canonical,
++            counter,
++            monotonic_pools,
++            operation_hash,
++            publication,
++            record_binding_valid,
++            validate_checkpoint,
++            validate_grounding,
++            validate_group,
++        )
++
++        counter(expected_owner_revision)
++        counter(state_generation)
++        key = operation_hash(
++            task_id=task_id,
++            owner_epoch=owner_epoch,
++            expected_owner_revision=expected_owner_revision,
++            expected_contract_hash=expected_contract_hash,
++            expected_checkpoint_hash=expected_checkpoint_hash,
++            checkpoint=checkpoint,
++            grounding=grounding,
++            state_generation=state_generation,
++        )
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            duplicate = self._visual_record_locked(task_id, expected_owner_revision + 1)
++            if duplicate is not None and duplicate.to_payload()["operation_hash"] == key:
++                return duplicate.detached()
++            previous = self._visual_record_locked(task_id)
++            if (
++                previous is None
++                or previous.owner_revision != expected_owner_revision
++                or previous.identity.owner_epoch != owner_epoch
++                or state_generation <= previous.state_generation
++            ):
++                return None
++            original = self._visual_original_locked(task_id, previous.checkpoint.plan_version)
++            try:
++                active, current, pool, retry = self._visual_group_locked(task_id)
++            except (ValueError, TypeError):
++                return None
++            if (
++                original is None
++                or any(item is None for item in (active, current, pool, retry))
++                or not self._visual_versions_match(original)
++                or active.contract_hash != expected_contract_hash
++                or current.checkpoint_hash != expected_checkpoint_hash
++                or current.checkpoint_hash != previous.checkpoint.checkpoint_hash
++            ):
++                return None
++            try:
++                ancestor = (
++                    self._visual_record_locked(task_id, previous.owner_revision - 1)
++                    if previous.owner_revision > 1
++                    else None
++                )
++                if not record_binding_valid(previous, original, ancestor):
++                    return None
++                validate_group(original, active, current, pool, retry)
++                if not monotonic_pools(previous, pool, retry):
++                    return None
++                next_checkpoint = validate_checkpoint(original, checkpoint, current)
++                bound = validate_grounding(
++                    original, previous, next_checkpoint, grounding, state_generation
++                )
++                saved = publication(
++                    original,
++                    next_checkpoint,
++                    pool,
++                    retry,
++                    revision=previous.owner_revision + 1,
++                    generation=state_generation,
++                    source_revision=previous.owner_revision,
++                    operation_hash=key,
++                    grounding=bound,
++                )
++            except (ValueError, TypeError):
++                return None
++            row = self._conn.execute(
++                "SELECT payload_json,checkpoint_hash FROM execution_checkpoints "
++                "WHERE checkpoint_id=?",
++                (next_checkpoint.checkpoint_id,),
++            ).fetchone()
++            if row is not None and (
++                row["checkpoint_hash"] != next_checkpoint.checkpoint_hash
++                or canonical(json.loads(row["payload_json"]))
++                != canonical(next_checkpoint.model_dump(mode="json"))
++            ):
++                return None
++            self._visual_store_checkpoint_locked(next_checkpoint)
++            self._visual_store_record_locked(saved)
++            return saved.detached()
++
+     def close(self) -> None:
+         self._conn.close()
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py
+@@ -0,0 +1,673 @@
++"""Strict durable source codecs; no actual owner, lease, mode or admission authority."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++from dataclasses import dataclass
++from datetime import UTC, datetime
++from typing import TYPE_CHECKING, Any, ClassVar
++
++from cloud_edge_robot_arm.contracts.models import (
++    ActiveTaskContractRecord,
++    ExecutionCheckpoint,
++    RecoveryBudget,
++    TaskContract,
++    TaskStep,
++)
++from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        OriginalActionRequirements,
++        StepGroundingBinding,
++        VisualOriginalPlan,
++        VisualOwnerIdentity,
++    )
++
++
++def canonical(payload: Any) -> str:
++    return json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
++
++
++def digest(payload: Any) -> str:
++    return hashlib.sha256(canonical(payload).encode()).hexdigest()
++
++
++def aware(value: datetime) -> datetime:
++    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
++        raise ValueError("aware durable source clock required")
++    return value
++
++
++def counter(value: Any) -> int:
++    if type(value) is not int or value < 0:
++        raise ValueError("strict nonnegative source revision required")
++    return value
++
++
++def sha(value: Any) -> str:
++    if (
++        not isinstance(value, str)
++        or len(value) != 64
++        or any(c not in "0123456789abcdef" for c in value)
++    ):
++        raise ValueError("exact source SHA256 required")
++    return value
++
++
++def _finite(value: Any) -> None:
++    if isinstance(value, dict):
++        for item in value.values():
++            _finite(item)
++    elif isinstance(value, list):
++        for item in value:
++            _finite(item)
++    elif isinstance(value, float) and not math.isfinite(value):
++        raise ValueError("nonfinite durable source payload")
++
++
++def requirement_from_payload(payload: dict[str, Any]) -> OriginalActionRequirements:
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.vision.owner_registration import OriginalActionRequirements
++
++    result = OriginalActionRequirements(
++        TaskStep.model_validate_json(canonical(payload["original_step"])),
++        tuple(ConditionSpec(**condition) for condition in payload["preconditions"]),
++        tuple(ConditionSpec(**condition) for condition in payload["postconditions"]),
++        payload["allowed_error_m"],
++        tuple(payload["sensor_requirements"]),
++        payload["ordinary_ttl_s"],
++        payload["expected_duration_s"],
++        payload["policy_source_hashes"],
++    )
++    if canonical(result.to_payload()) != canonical(payload):
++        raise ValueError("original requirement envelope differs")
++    return result
++
++
++def original_from_payload(payload: dict[str, Any]) -> VisualOriginalPlan:
++    from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        VisualOwnerIdentity,
++        freeze_original_visual_plan,
++    )
++
++    result = freeze_original_visual_plan(
++        identity=VisualOwnerIdentity(**payload["identity"]),
++        contract=TaskContract.model_validate_json(canonical(payload["contract"])),
++        proposal_hash=payload["proposal_hash"],
++        role_bundle_hash=payload["role_bundle_hash"],
++        compiler_source_hashes=payload["compiler_source_hashes"],
++        source_hashes=payload["source_hashes"],
++        requirements={
++            name: requirement_from_payload(value) for name, value in payload["requirements"].items()
++        },
++        dependencies=tuple(StepDependency(**value) for value in payload["dependencies"]),
++        task_deadline_at=datetime.fromisoformat(payload["task_deadline_at"]),
++        verification_deadline_at=datetime.fromisoformat(payload["verification_deadline_at"]),
++        registered_at=datetime.fromisoformat(payload["registered_at"]),
++    )
++    if canonical(result.to_payload()) != canonical(payload):
++        raise ValueError("original source envelope differs")
++    return result
++
++
++def copy_original(original: VisualOriginalPlan) -> VisualOriginalPlan:
++    return original_from_payload(json.loads(canonical(original.to_payload())))
++
++
++def grounding_from_payload(payload: dict[str, Any]) -> StepGroundingBinding:
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        StepGroundingBinding,
++        VisualOwnerIdentity,
++    )
++
++    values = dict(payload)
++    values.pop("binding_scope", None)
++    values["current_identity"] = VisualOwnerIdentity(**values["current_identity"])
++    values["original_requirements"] = requirement_from_payload(values["original_requirements"])
++    values["_grounded_step_json"] = canonical(values.pop("grounded_step"))
++    for name in ("created_at", "valid_until"):
++        values[name] = datetime.fromisoformat(values[name])
++    result = StepGroundingBinding(**values)
++    if canonical(result.to_payload()) != canonical(payload):
++        raise ValueError("grounding source envelope differs")
++    return result
++
++
++def strict_checkpoint(checkpoint: ExecutionCheckpoint) -> ExecutionCheckpoint:
++    payload = checkpoint.model_dump(mode="json")
++    _finite(payload)
++    for name in ("plan_version", "command_seq", "scene_version", "current_step_index"):
++        counter(payload[name])
++    for value in payload["step_attempts"].values():
++        counter(value)
++    result = ExecutionCheckpoint.model_validate_json(canonical(payload))
++    aware(result.created_at)
++    aware(result.updated_at)
++    if result.created_at > result.updated_at or result.updated_at > datetime.now(UTC):
++        raise ValueError("checkpoint clock reversed or future")
++    expected = dict(result.model_dump(mode="json"))
++    expected["checkpoint_hash"] = ""
++    if sha(result.checkpoint_hash) != stable_payload_hash(expected):
++        raise ValueError("checkpoint canonical source hash differs")
++    return result
++
++
++def strict_retry(budget: RecoveryBudget) -> RecoveryBudget:
++    payload = budget.model_dump(mode="json")
++    _finite(payload)
++    for name, value in payload.items():
++        if name.endswith("_counts"):
++            for item in value.values():
++                counter(item)
++        elif name.endswith("_limit") or name in {
++            "retry_count_used",
++            "task_retry_count",
++            "retry_cooldown_ms",
++            "remaining_retries",
++            "scene_version",
++        }:
++            counter(value)
++    result = RecoveryBudget.model_validate_json(canonical(payload))
++    if not result.budget_id or result.retry_deadline is None:
++        raise ValueError("explicit original retry pool identity/deadline required")
++    aware(result.retry_deadline)
++    aware(result.created_at)
++    aware(result.updated_at)
++    if (
++        result.updated_at < result.created_at
++        or result.retry_count_used != result.task_retry_count
++        or result.task_retry_count > result.task_total_retry_limit
++        or result.remaining_retries > result.task_total_retry_limit - result.task_retry_count
++        or result.remaining_retries > result.effective_retry_limit
++    ):
++        raise ValueError("retry source counts/horizon inconsistent")
++    return result
++
++
++def retry_definition(budget: RecoveryBudget) -> dict[str, Any]:
++    values = strict_retry(budget).model_dump(mode="json")
++    return {
++        name: values[name]
++        for name in (
++            "budget_id",
++            "task_id",
++            "per_step_retry_limit",
++            "per_skill_retry_limit",
++            "task_total_retry_limit",
++            "retry_cooldown_ms",
++            "retry_deadline",
++            "retry_backoff_policy",
++            "effective_retry_limit",
++            "scene_version",
++        )
++    }
++
++
++def retry_deadline(budget: RecoveryBudget) -> datetime:
++    if budget.retry_deadline is None:
++        raise ValueError("original retry deadline unavailable")
++    return aware(budget.retry_deadline)
++
++
++def verification_definition(pool: VerificationBudgetRecord) -> dict[str, Any]:
++    verified = pool.detached()
++    return {
++        "task_id": verified.task_id,
++        "limits": verified.to_payload()["state"]["limits"],
++        "deadline_at": verified.state.deadline_at.isoformat(),
++    }
++
++
++def make_verification_pool(
++    task_id: str, state: VerificationBudgetState
++) -> VerificationBudgetRecord:
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++
++    return VerificationBudgetRecord.create(task_id, state)
++
++
++def validate_checkpoint(
++    original: VisualOriginalPlan,
++    checkpoint: ExecutionCheckpoint,
++    previous: ExecutionCheckpoint | None = None,
++) -> ExecutionCheckpoint:
++    current = strict_checkpoint(checkpoint)
++    identity, contract = original.identity, original.contract
++    ids = [step.step_id for step in contract.steps]
++    done = current.completed_step_ids
++    if (
++        (current.task_id, current.plan_id, current.robot_id)
++        != (identity.task_id, identity.plan_id, identity.robot_id)
++        or (current.plan_version, current.command_seq, current.scene_version)
++        != (contract.plan_version, contract.command_seq, contract.scene_version)
++        or ids[: len(done)] != done
++        or current.pending_step_ids != ids[len(done) :]
++        or current.current_step_index != len(done)
++        or current.current_step_id
++        != (current.pending_step_ids[0] if current.pending_step_ids else "")
++        or current.created_at < original.registered_at
++    ):
++        raise ValueError("original checkpoint identity/version/cursor differs")
++    if previous is not None and (
++        done[: len(previous.completed_step_ids)] != previous.completed_step_ids
++        or current.created_at != previous.created_at
++        or current.updated_at < previous.updated_at
++    ):
++        raise ValueError("completed original effects or boundary clock regressed")
++    return current
++
++
++def validate_group(
++    original: VisualOriginalPlan,
++    active: ActiveTaskContractRecord,
++    checkpoint: ExecutionCheckpoint,
++    pool: VerificationBudgetRecord,
++    retry: RecoveryBudget,
++) -> None:
++    identity, contract = original.identity, original.contract
++    record = ActiveTaskContractRecord.model_validate_json(active.model_dump_json())
++    if (
++        record.status != "ACTIVE"
++        or record.contract_hash != stable_payload_hash(record.contract)
++        or record.contract_hash != stable_payload_hash(contract)
++        or (record.task_id, record.plan_id, record.robot_id)
++        != (identity.task_id, identity.plan_id, identity.robot_id)
++        or (record.plan_version, record.command_seq, record.scene_version)
++        != (contract.plan_version, contract.command_seq, contract.scene_version)
++    ):
++        raise ValueError("original active contract/source identity differs")
++    validate_checkpoint(original, checkpoint)
++    pool = pool.detached()
++    retry = strict_retry(retry)
++    if (
++        pool.task_id != identity.task_id
++        or retry.task_id != identity.task_id
++        or retry.scene_version != contract.scene_version
++        or pool.state.deadline_at != original.verification_deadline_at
++        or retry_deadline(retry) > original.effective_deadline_at
++    ):
++        raise ValueError("original task pool identity/deadline differs")
++
++
++@dataclass(frozen=True, init=False)
++class VisualOwnerPublicationRecord:
++    _payload_json: str
++    binding_scope: ClassVar[str] = "DURABLE_BINDING_ONLY"
++    mode_scope: ClassVar[str] = "NOT_INCLUDED"
++
++    def __init__(self, payload: dict[str, Any]) -> None:
++        values = dict(payload)
++        declared = values.pop("publication_hash", None)
++        required = {
++            "schema_version",
++            "binding_scope",
++            "mode_scope",
++            "identity",
++            "original_plan_hash",
++            "contract_hash",
++            "owner_revision",
++            "state_generation",
++            "checkpoint",
++            "verification_budget",
++            "retry_budget",
++            "grounding",
++            "effective_deadline_at",
++            "operation_hash",
++            "source_owner_revision",
++            "published_at",
++        }
++        if (
++            set(values) != required
++            or values["schema_version"] != "visual.owner.publication.v1"
++            or values["binding_scope"] != "DURABLE_BINDING_ONLY"
++            or values["mode_scope"] != "NOT_INCLUDED"
++        ):
++            raise ValueError("unsupported durable publication envelope/scope")
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++        from cloud_edge_robot_arm.vision.owner_registration import VisualOwnerIdentity
++
++        identity = VisualOwnerIdentity(**values["identity"])
++        checkpoint = strict_checkpoint(
++            ExecutionCheckpoint.model_validate_json(canonical(values["checkpoint"]))
++        )
++        pool = VerificationBudgetRecord.from_payload(values["verification_budget"])
++        retry = strict_retry(RecoveryBudget.model_validate_json(canonical(values["retry_budget"])))
++        if (
++            (checkpoint.task_id, checkpoint.plan_id, checkpoint.robot_id)
++            != (identity.task_id, identity.plan_id, identity.robot_id)
++            or pool.task_id != identity.task_id
++            or retry.task_id != identity.task_id
++        ):
++            raise ValueError("foreign publication source identity")
++        for name in ("original_plan_hash", "contract_hash", "operation_hash"):
++            sha(values[name])
++        for name in ("owner_revision", "state_generation"):
++            counter(values[name])
++        if values["owner_revision"] < 1:
++            raise ValueError("initial owner revision must be positive")
++        if values["source_owner_revision"] is not None:
++            counter(values["source_owner_revision"])
++        deadline, published = (
++            aware(datetime.fromisoformat(values[name]))
++            for name in ("effective_deadline_at", "published_at")
++        )
++        if (
++            deadline > pool.state.deadline_at
++            or deadline > retry_deadline(retry)
++            or checkpoint.updated_at > published
++        ):
++            raise ValueError("publication deadline/clock differs")
++        if values["grounding"] is not None:
++            grounding_from_payload(values["grounding"])
++        _finite(values)
++        encoded = canonical(values)
++        if declared is not None and sha(declared) != digest(values):
++            raise ValueError("publication hash differs")
++        object.__setattr__(self, "_payload_json", encoded)
++
++    def to_payload(self) -> dict[str, Any]:
++        values = json.loads(self._payload_json)
++        return {**values, "publication_hash": digest(values)}
++
++    @classmethod
++    def from_payload(cls, payload: dict[str, Any]) -> VisualOwnerPublicationRecord:
++        if "publication_hash" not in payload:
++            raise ValueError("stored publication hash missing")
++        return cls(payload)
++
++    def digest(self) -> str:
++        return digest(json.loads(self._payload_json))
++
++    def detached(self) -> VisualOwnerPublicationRecord:
++        return type(self).from_payload(self.to_payload())
++
++    @property
++    def identity(self) -> VisualOwnerIdentity:
++        from cloud_edge_robot_arm.vision.owner_registration import VisualOwnerIdentity
++
++        return VisualOwnerIdentity(**json.loads(self._payload_json)["identity"])
++
++    @property
++    def checkpoint(self) -> ExecutionCheckpoint:
++        return ExecutionCheckpoint.model_validate_json(
++            canonical(json.loads(self._payload_json)["checkpoint"])
++        )
++
++    @property
++    def verification_budget(self) -> VerificationBudgetRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++
++        return VerificationBudgetRecord.from_payload(
++            json.loads(self._payload_json)["verification_budget"]
++        )
++
++    @property
++    def retry_budget(self) -> RecoveryBudget:
++        return RecoveryBudget.model_validate_json(
++            canonical(json.loads(self._payload_json)["retry_budget"])
++        )
++
++    @property
++    def owner_revision(self) -> int:
++        return int(json.loads(self._payload_json)["owner_revision"])
++
++    @property
++    def state_generation(self) -> int:
++        return int(json.loads(self._payload_json)["state_generation"])
++
++    @property
++    def original_plan_hash(self) -> str:
++        return str(json.loads(self._payload_json)["original_plan_hash"])
++
++    @property
++    def effective_deadline_at(self) -> datetime:
++        return datetime.fromisoformat(json.loads(self._payload_json)["effective_deadline_at"])
++
++
++def publication(
++    original: VisualOriginalPlan,
++    checkpoint: ExecutionCheckpoint,
++    pool: VerificationBudgetRecord,
++    retry: RecoveryBudget,
++    *,
++    revision: int,
++    generation: int,
++    source_revision: int | None,
++    operation_hash: str,
++    grounding: StepGroundingBinding | None = None,
++) -> VisualOwnerPublicationRecord:
++    deadline = min(original.effective_deadline_at, pool.state.deadline_at, retry_deadline(retry))
++    if datetime.now(UTC) >= deadline:
++        raise ValueError("original source deadline expired")
++    return VisualOwnerPublicationRecord(
++        {
++            "schema_version": "visual.owner.publication.v1",
++            "binding_scope": "DURABLE_BINDING_ONLY",
++            "mode_scope": "NOT_INCLUDED",
++            "identity": original.identity.to_payload(),
++            "original_plan_hash": original.digest(),
++            "contract_hash": stable_payload_hash(original.contract),
++            "owner_revision": revision,
++            "state_generation": generation,
++            "checkpoint": checkpoint.model_dump(mode="json"),
++            "verification_budget": pool.to_payload(),
++            "retry_budget": retry.model_dump(mode="json"),
++            "grounding": grounding.to_payload() if grounding else None,
++            "effective_deadline_at": deadline.isoformat(),
++            "operation_hash": operation_hash,
++            "source_owner_revision": source_revision,
++            "published_at": datetime.now(UTC).isoformat(),
++        }
++    )
++
++
++def current_publication(
++    record: VisualOwnerPublicationRecord,
++    original: VisualOriginalPlan,
++    active: ActiveTaskContractRecord | None,
++    checkpoint: ExecutionCheckpoint | None,
++    pool: VerificationBudgetRecord | None,
++    retry: RecoveryBudget | None,
++    previous: VisualOwnerPublicationRecord | None = None,
++) -> bool:
++    if active is None or checkpoint is None or pool is None or retry is None:
++        return False
++    try:
++        validate_group(original, active, checkpoint, pool, retry)
++    except (ValueError, TypeError):
++        return False
++    try:
++        if not record_binding_valid(record, original, previous):
++            return False
++        payload = record.to_payload()
++        if payload["grounding"] is not None and (
++            datetime.now(UTC) >= grounding_from_payload(payload["grounding"]).valid_until
++        ):
++            return False
++    except (ValueError, TypeError):
++        return False
++    return (
++        record.identity == original.identity
++        and record.original_plan_hash == original.digest()
++        and record.to_payload()["contract_hash"] == active.contract_hash
++        and canonical(record.checkpoint.model_dump(mode="json"))
++        == canonical(checkpoint.model_dump(mode="json"))
++        and record.verification_budget.content_hash == pool.detached().content_hash
++        and canonical(record.retry_budget.model_dump(mode="json"))
++        == canonical(retry.model_dump(mode="json"))
++        and datetime.now(UTC) < record.effective_deadline_at
++    )
++
++
++def record_binding_valid(
++    record: VisualOwnerPublicationRecord,
++    original: VisualOriginalPlan,
++    previous: VisualOwnerPublicationRecord | None,
++) -> bool:
++    payload = record.to_payload()
++    if (
++        record.identity != original.identity
++        or record.original_plan_hash != original.digest()
++        or payload["contract_hash"] != stable_payload_hash(original.contract)
++    ):
++        return False
++    if record.owner_revision == 1:
++        if (
++            previous is not None
++            or record.state_generation != 0
++            or payload["source_owner_revision"] is not None
++            or payload["grounding"] is not None
++        ):
++            return False
++        expected = operation_hash(
++            original_hash=original.digest(),
++            checkpoint=record.checkpoint,
++            verification_definition=verification_definition(record.verification_budget),
++            retry_definition=retry_definition(record.retry_budget),
++        )
++    else:
++        if (
++            previous is None
++            or previous.owner_revision != record.owner_revision - 1
++            or previous.identity != original.identity
++            or previous.original_plan_hash != original.digest()
++            or payload["source_owner_revision"] != previous.owner_revision
++            or record.state_generation <= previous.state_generation
++        ):
++            return False
++        validate_checkpoint(original, record.checkpoint, previous.checkpoint)
++        ground = (
++            grounding_from_payload(payload["grounding"])
++            if payload["grounding"] is not None
++            else None
++        )
++        validate_grounding(
++            original,
++            previous,
++            record.checkpoint,
++            ground,
++            record.state_generation,
++            at=aware(datetime.fromisoformat(payload["published_at"])),
++        )
++        expected = operation_hash(
++            task_id=original.identity.task_id,
++            owner_epoch=original.identity.owner_epoch,
++            expected_owner_revision=previous.owner_revision,
++            expected_contract_hash=payload["contract_hash"],
++            expected_checkpoint_hash=previous.checkpoint.checkpoint_hash,
++            checkpoint=record.checkpoint,
++            grounding=ground,
++            state_generation=record.state_generation,
++        )
++    return bool(payload["operation_hash"] == expected)
++
++
++def operation_hash(**values: Any) -> str:
++    return digest(
++        {
++            name: value.to_payload()
++            if hasattr(value, "to_payload")
++            else value.model_dump(mode="json")
++            if hasattr(value, "model_dump")
++            else value
++            for name, value in values.items()
++        }
++    )
++
++
++def initial_inputs(
++    original: VisualOriginalPlan,
++    checkpoint: ExecutionCheckpoint,
++    state: VerificationBudgetState,
++    retry: RecoveryBudget,
++) -> tuple[VisualOriginalPlan, ExecutionCheckpoint, VerificationBudgetRecord, RecoveryBudget, str]:
++    original = copy_original(original)
++    checkpoint = validate_checkpoint(original, checkpoint)
++    pool = make_verification_pool(original.identity.task_id, state)
++    retry = strict_retry(retry)
++    if (
++        pool.state.deadline_at != original.verification_deadline_at
++        or retry.task_id != original.identity.task_id
++        or retry.scene_version != original.contract.scene_version
++        or retry_deadline(retry) > original.effective_deadline_at
++        or pool.state.remaining_retries > retry.remaining_retries
++    ):
++        raise ValueError("initial source pool definition differs from original")
++    key = operation_hash(
++        original_hash=original.digest(),
++        checkpoint=checkpoint,
++        verification_definition=verification_definition(pool),
++        retry_definition=retry_definition(retry),
++    )
++    return original, checkpoint, pool, retry, key
++
++
++def monotonic_pools(
++    record: VisualOwnerPublicationRecord, pool: VerificationBudgetRecord, retry: RecoveryBudget
++) -> bool:
++    before_pool, before_retry = record.verification_budget, record.retry_budget
++    if (
++        verification_definition(pool) != verification_definition(before_pool)
++        or retry_definition(retry) != retry_definition(before_retry)
++        or pool.revision < before_pool.revision
++        or pool.state.remaining_reobservations > before_pool.state.remaining_reobservations
++        or pool.state.remaining_retries > before_pool.state.remaining_retries
++        or pool.state.verification_rounds < before_pool.state.verification_rounds
++        or retry.remaining_retries > before_retry.remaining_retries
++        or retry.task_retry_count < before_retry.task_retry_count
++        or retry.retry_count_used < before_retry.retry_count_used
++        or retry.created_at != before_retry.created_at
++        or retry.updated_at < before_retry.updated_at
++    ):
++        return False
++    for name in ("step_retry_counts", "skill_retry_counts", "event_retry_counts"):
++        if any(
++            getattr(retry, name).get(key, 0) < value
++            for key, value in getattr(before_retry, name).items()
++        ):
++            return False
++    return True
++
++
++def validate_grounding(
++    original: VisualOriginalPlan,
++    previous: VisualOwnerPublicationRecord,
++    checkpoint: ExecutionCheckpoint,
++    grounding: StepGroundingBinding | None,
++    generation: int,
++    *,
++    at: datetime | None = None,
++) -> StepGroundingBinding | None:
++    if grounding is None:
++        return None
++    copied = grounding_from_payload(json.loads(canonical(grounding.to_payload())))
++    requirement = original.requirements.get(copied.grounded_step.step_id)
++    if (
++        copied.current_identity != original.identity
++        or copied.original_plan_hash != original.digest()
++        or copied.owner_revision != previous.owner_revision
++        or copied.state_generation != generation
++        or copied.source_checkpoint_hash != previous.checkpoint.checkpoint_hash
++        or (copied.plan_version, copied.command_seq)
++        != (checkpoint.plan_version, checkpoint.command_seq)
++        or copied.grounded_step.step_id != checkpoint.current_step_id
++        or requirement is None
++        or copied.original_requirements.digest() != requirement.digest()
++        or copied.valid_until > original.effective_deadline_at
++        or (aware(at) if at is not None else datetime.now(UTC)) >= copied.valid_until
++        or copied.created_at > checkpoint.updated_at
++        or checkpoint.safety_state.get("grounding_binding_hash") != copied.binding_hash
++        or checkpoint.safety_state.get("original_requirements_hash") != requirement.digest()
++        or any(
++            original.source_hashes.get(name) != value
++            for name, value in copied.grounding_source_hashes.items()
++        )
++    ):
++        raise ValueError("grounding original/current boundary binding differs")
++    return copied
+--- a/tests/test_visual_owner_repository.py
++++ b/tests/test_visual_owner_repository.py
+@@ -0,0 +1,696 @@
++"""SOFTWARE_ONLY durable bindings, never actual owner/lease or physical admission."""
++
++from __future__ import annotations
++
++import importlib
++import sqlite3
++from concurrent.futures import ThreadPoolExecutor
++from dataclasses import replace
++from datetime import UTC, datetime, timedelta
++
++import pytest
++
++from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
++from cloud_edge_robot_arm.edge.recovery.verification_router import (
++    VerificationBudget,
++    VerificationBudgetState,
++)
++from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
++from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
++from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
++from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import SQLiteEventAutonomyRepository
++from tests.test_visual_owner_registration import values
++
++
++def fresh_source_values():
++    """Fresh synthetic clocks only; no saved actual frame is retimestamped."""
++    data = values()
++    before = data["original"]
++    now = datetime.now(UTC)
++    contract = before.contract.model_copy(
++        update={"issued_at": now, "valid_until": now + timedelta(seconds=60)}, deep=True
++    )
++    module = importlib.import_module("cloud_edge_robot_arm.vision.owner_registration")
++    data["original"] = module.freeze_original_visual_plan(
++        **{
++            **before.freeze_inputs(),
++            "contract": contract,
++            "registered_at": now,
++            "task_deadline_at": now + timedelta(seconds=60),
++            "verification_deadline_at": now + timedelta(seconds=40),
++        }
++    )
++    checkpoint = data["source_checkpoint"].model_copy(
++        update={"created_at": now, "updated_at": now, "checkpoint_hash": ""}, deep=True
++    )
++    data["source_checkpoint"] = checkpoint.model_copy(
++        update={"checkpoint_hash": checkpoint_digest(checkpoint)}
++    )
++    return data
++
++
++@pytest.fixture(params=["memory", "sqlite"])
++def prepared(request, tmp_path):
++    repo = (
++        InMemoryEventAutonomyRepository()
++        if request.param == "memory"
++        else SQLiteEventAutonomyRepository(tmp_path / "event.db")
++    )
++    data = fresh_source_values()
++    original, checkpoint = data["original"], data["source_checkpoint"]
++    state = VerificationBudgetState(
++        3, 2, 0, original.verification_deadline_at, VerificationBudget(3, 2, 3, 40.0)
++    )
++    retry = RecoveryBudget(
++        budget_id="original-retry-pool",
++        task_id=original.identity.task_id,
++        task_total_retry_limit=2,
++        per_step_retry_limit=1,
++        per_skill_retry_limit=2,
++        effective_retry_limit=2,
++        remaining_retries=2,
++        retry_deadline=original.verification_deadline_at,
++        scene_version=original.contract.scene_version,
++        created_at=original.registered_at,
++        updated_at=original.registered_at,
++    )
++    yield repo, original, checkpoint, state, retry
++    if request.param == "sqlite":
++        repo.close()
++
++
++def initialize(prepared):
++    repo, original, checkpoint, state, retry = prepared
++    return repo.initialize_visual_owner_if_absent(original, checkpoint, state, retry)
++
++
++def boundary(checkpoint, *, suffix="next", completed=()):
++    ids = ["move", "grasp"]
++    pending = ids[len(completed) :]
++    changed = checkpoint.model_copy(
++        update={
++            "checkpoint_id": checkpoint.checkpoint_id + "-" + suffix,
++            "completed_step_ids": list(completed),
++            "pending_step_ids": pending,
++            "current_step_id": pending[0] if pending else "",
++            "current_step_index": len(completed),
++            "updated_at": datetime.now(UTC),
++            "checkpoint_hash": "",
++        },
++        deep=True,
++    )
++    return changed.model_copy(update={"checkpoint_hash": checkpoint_digest(changed)})
++
++
++def publish(prepared, checkpoint, **overrides):
++    repo, original, before, _, _ = prepared
++    kwargs = dict(
++        task_id=original.identity.task_id,
++        owner_epoch=original.identity.owner_epoch,
++        expected_owner_revision=1,
++        expected_contract_hash=stable_payload_hash(original.contract),
++        expected_checkpoint_hash=before.checkpoint_hash,
++        checkpoint=checkpoint,
++        grounding=None,
++        state_generation=1,
++    )
++    kwargs.update(overrides)
++    return repo.publish_visual_boundary_if_current(**kwargs)
++
++
++def test_initializes_exact_original_active_checkpoint_pools_without_authority(prepared):
++    repo, original, checkpoint, _, retry = prepared
++    record = initialize(prepared)
++    assert record.binding_scope == "DURABLE_BINDING_ONLY"
++    assert record.mode_scope == "NOT_INCLUDED"
++    assert not hasattr(record, "method_admitted") and not hasattr(record, "execution_admitted")
++    assert record.owner_revision == 1 and record.state_generation == 0
++    assert record.original_plan_hash == original.digest()
++    assert record.checkpoint.checkpoint_hash == checkpoint.checkpoint_hash
++    assert repo.get_active_contract(original.identity.task_id).contract_hash == stable_payload_hash(
++        original.contract
++    )
++    assert repo.get_retry_budget(original.identity.task_id) == retry
++    assert (
++        repo.get_verification_budget(original.identity.task_id).state.deadline_at
++        == original.verification_deadline_at
++    )
++    assert repo.get_visual_original_plan(original.identity.task_id, 1).digest() == original.digest()
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == record.digest()
++    assert repo.get_visual_owner_publication("foreign-task") is None
++    assert repo.get_visual_original_plan(original.identity.task_id, 99) is None
++
++
++def test_same_initialization_is_idempotent_and_nested_outputs_are_detached(prepared):
++    repo, original, checkpoint, state, retry = prepared
++    first = initialize(prepared)
++    second = initialize(prepared)
++    assert first.digest() == second.digest()
++    checkpoint.robot_state["external"] = {"mutable": True}
++    state.remaining_reobservations = 0
++    retry.remaining_retries = 0
++    first.checkpoint.robot_state["caller"] = True
++    first.verification_budget.state.remaining_reobservations = 0
++    first.retry_budget.remaining_retries = 0
++    returned = repo.get_visual_owner_publication(original.identity.task_id)
++    assert returned.checkpoint.robot_state.get("external") is None
++    assert returned.checkpoint.robot_state.get("caller") is None
++    assert returned.verification_budget.state.remaining_reobservations == 3
++    assert returned.retry_budget.remaining_retries == 2
++    detached = repo.get_visual_original_plan(original.identity.task_id, 1)
++    detached.contract.steps[0].parameters["object_id"] = "decoy"
++    assert (
++        repo.get_visual_original_plan(original.identity.task_id, 1)
++        .contract.steps[0]
++        .parameters["object_id"]
++        != "decoy"
++    )
++
++
++@pytest.mark.parametrize("change", ["epoch", "proposal", "checkpoint"])
++def test_same_original_key_rejects_changed_initial_identity_or_content(prepared, change):
++    repo, original, checkpoint, state, retry = prepared
++    first = initialize(prepared)
++    if change == "epoch":
++        original = replace(
++            original, identity=replace(original.identity, owner_epoch="foreign-epoch")
++        )
++    elif change == "proposal":
++        original = replace(original, proposal_hash="b" * 64)
++    else:
++        checkpoint = boundary(checkpoint)
++    with pytest.raises(IdempotencyConflictError):
++        repo.initialize_visual_owner_if_absent(original, checkpoint, state, retry)
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == first.digest()
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("owner_epoch", "foreign"),
++        ("expected_owner_revision", 99),
++        ("expected_contract_hash", "b" * 64),
++        ("expected_checkpoint_hash", "b" * 64),
++        ("state_generation", 0),
++    ],
++)
++def test_stale_or_foreign_publication_cas_writes_nothing(prepared, field, value):
++    repo, original, checkpoint, _, _ = prepared
++    first = initialize(prepared)
++    assert publish(prepared, boundary(checkpoint), **{field: value}) is None
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == first.digest()
++    assert (
++        repo.get_latest_execution_checkpoint(original.identity.task_id).checkpoint_hash
++        == checkpoint.checkpoint_hash
++    )
++
++
++def test_publish_atomic_checkpoint_revision_exact_retry_and_stale_conflict(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    initialize(prepared)
++    next_checkpoint = boundary(checkpoint)
++    result = publish(prepared, next_checkpoint)
++    assert result.owner_revision == 2 and result.state_generation == 1
++    assert (
++        repo.get_latest_execution_checkpoint(original.identity.task_id).checkpoint_hash
++        == next_checkpoint.checkpoint_hash
++    )
++    assert publish(prepared, next_checkpoint).digest() == result.digest()
++    assert publish(prepared, boundary(checkpoint, suffix="changed")) is None
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == result.digest()
++
++
++def test_completed_prefix_cannot_be_replayed_by_later_boundary(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    initialize(prepared)
++    advanced = boundary(checkpoint, completed=("move",))
++    record = publish(prepared, advanced)
++    assert record is not None
++    assert (
++        publish(
++            prepared,
++            boundary(advanced),
++            expected_owner_revision=2,
++            expected_checkpoint_hash=advanced.checkpoint_hash,
++            state_generation=2,
++        )
++        is None
++    )
++    assert repo.get_visual_owner_publication(
++        original.identity.task_id
++    ).checkpoint.completed_step_ids == ["move"]
++
++
++def test_partial_existing_task_group_cannot_be_completed_from_caller_assertions(prepared):
++    repo, original, _, _, retry = prepared
++    repo.initialize_retry_budget_if_absent(retry)
++    with pytest.raises(IdempotencyConflictError):
++        initialize(prepared)
++    assert repo.get_active_contract(original.identity.task_id) is None
++    assert repo.get_latest_execution_checkpoint(original.identity.task_id) is None
++    assert repo.get_verification_budget(original.identity.task_id) is None
++    assert repo.get_visual_original_plan(original.identity.task_id, 1) is None
++    assert repo.get_retry_budget(original.identity.task_id) == retry
++
++
++def test_legal_retry_debit_invalidates_old_snapshot_then_fresh_publication_preserves_pool(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    initialize(prepared)
++    success, retry = repo.consume_retry_if_available(
++        original.identity.task_id, "move", "MOVE_ABOVE", 0, "event-original"
++    )
++    assert success and retry.remaining_retries == 1
++    assert repo.get_visual_owner_publication(original.identity.task_id) is None
++    record = publish(prepared, boundary(checkpoint))
++    assert record.retry_budget.remaining_retries == 1
++    assert record.retry_budget.event_retry_counts == {"event-original": 1}
++    assert record.effective_deadline_at <= original.verification_deadline_at
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == record.digest()
++
++
++def test_external_checkpoint_hash_drift_does_not_get_relabelled_current(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    initialize(prepared)
++    repo.save_execution_checkpoint(boundary(checkpoint))
++    assert repo.get_visual_owner_publication(original.identity.task_id) is None
++    assert publish(prepared, boundary(checkpoint, suffix="owner-return")) is None
++
++
++def test_software_record_constructor_cannot_claim_method_or_actual_scope(prepared):
++    record = initialize(prepared)
++    payload = record.to_payload()
++    payload["binding_scope"] = "ACTUAL_OWNER"
++    module = importlib.import_module(
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
++    )
++    with pytest.raises(ValueError):
++        module.VisualOwnerPublicationRecord.from_payload(payload)
++
++
++def test_two_sqlite_connections_restart_and_conflicting_owner_race(tmp_path):
++    path = tmp_path / "event.db"
++    first, second = SQLiteEventAutonomyRepository(path), SQLiteEventAutonomyRepository(path)
++    data = fresh_source_values()
++    original, checkpoint = data["original"], data["source_checkpoint"]
++    state = VerificationBudgetState(
++        3, 2, 0, original.verification_deadline_at, VerificationBudget(3, 2, 3, 40.0)
++    )
++    retry = RecoveryBudget(
++        budget_id="pool",
++        task_id=original.identity.task_id,
++        remaining_retries=2,
++        retry_deadline=original.verification_deadline_at,
++        scene_version=original.contract.scene_version,
++    )
++    alternate = replace(original, identity=replace(original.identity, owner_epoch="epoch-2"))
++
++    def race(repo, source):
++        try:
++            return repo.initialize_visual_owner_if_absent(source, checkpoint, state, retry)
++        except IdempotencyConflictError:
++            return None
++
++    with ThreadPoolExecutor(max_workers=2) as workers:
++        futures = [workers.submit(race, first, original), workers.submit(race, second, alternate)]
++        results = [future.result() for future in futures]
++    assert sum(result is not None for result in results) == 1
++    winner = next(result for result in results if result is not None)
++    first.close()
++    second.close()
++    reopened = SQLiteEventAutonomyRepository(path)
++    try:
++        assert (
++            reopened.get_visual_owner_publication(original.identity.task_id).digest()
++            == winner.digest()
++        )
++        assert (
++            reopened.get_visual_original_plan(original.identity.task_id, 1).identity
++            == winner.identity
++        )
++    finally:
++        reopened.close()
++
++
++def test_global_checkpoint_identity_collision_cannot_overwrite_another_task(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    foreign = checkpoint.model_copy(
++        update={"task_id": "other-task", "checkpoint_hash": ""}, deep=True
++    )
++    foreign = foreign.model_copy(update={"checkpoint_hash": checkpoint_digest(foreign)})
++    repo.save_execution_checkpoint(foreign)
++    with pytest.raises(IdempotencyConflictError):
++        initialize(prepared)
++    assert repo.get_checkpoint(foreign.checkpoint_id).task_id == "other-task"
++    assert repo.get_active_contract(original.identity.task_id) is None
++
++
++def test_publication_scope_subclass_cannot_create_an_actual_authority_envelope(prepared):
++    record = initialize(prepared)
++    module = importlib.import_module(
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
++    )
++
++    class CallerActualScope(module.VisualOwnerPublicationRecord):
++        binding_scope = "ACTUAL_OWNER"
++
++    payload = record.to_payload()
++    payload["binding_scope"] = "ACTUAL_OWNER"
++    payload.pop("publication_hash")
++    payload["publication_hash"] = module.digest(payload)
++    with pytest.raises(ValueError):
++        CallerActualScope.from_payload(payload)
++
++
++def test_foreign_checkpoint_cannot_alias_a_publication_via_a_declared_hash(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    initialize(prepared)
++    next_checkpoint = boundary(checkpoint)
++    # Existing legacy diagnostic save accepts a caller-declared hash; the new boundary must not.
++    foreign = next_checkpoint.model_copy(update={"task_id": "other-task"}, deep=True)
++    repo.save_execution_checkpoint(foreign)
++    assert publish(prepared, next_checkpoint) is None
++    assert repo.get_checkpoint(foreign.checkpoint_id).task_id == "other-task"
++    assert repo.get_visual_owner_publication(original.identity.task_id).owner_revision == 1
++
++
++@pytest.mark.parametrize("change", ["limits", "deadline", "refill"])
++def test_changed_pool_definition_or_refilled_history_cannot_be_published(prepared, change):
++    repo, original, checkpoint, _, _ = prepared
++    initialize(prepared)
++    _, used = repo.consume_retry_if_available(
++        original.identity.task_id, "move", "MOVE_ABOVE", 0, "event"
++    )
++    record = publish(prepared, boundary(checkpoint))
++    assert record is not None
++    if change == "limits":
++        altered = used.model_copy(update={"task_total_retry_limit": 3}, deep=True)
++    elif change == "deadline":
++        altered = used.model_copy(
++            update={"retry_deadline": used.retry_deadline + timedelta(seconds=1)}, deep=True
++        )
++    else:
++        altered = used.model_copy(
++            update={
++                "remaining_retries": 2,
++                "retry_count_used": 0,
++                "task_retry_count": 0,
++                "step_retry_counts": {},
++                "skill_retry_counts": {},
++                "event_retry_counts": {},
++            },
++            deep=True,
++        )
++    repo.save_retry_budget(altered)
++    assert repo.get_visual_owner_publication(original.identity.task_id) is None
++    assert (
++        publish(
++            prepared,
++            boundary(record.checkpoint, suffix="after-drift"),
++            expected_owner_revision=2,
++            expected_checkpoint_hash=record.checkpoint.checkpoint_hash,
++            state_generation=2,
++        )
++        is None
++    )
++
++
++def test_sqlite_failure_after_candidate_writes_rolls_back_entire_initial_group(prepared):
++    repo, original, _, _, _ = prepared
++    if not isinstance(repo, SQLiteEventAutonomyRepository):
++        pytest.skip("SQLite transaction failure only")
++    repo._conn.execute(
++        "CREATE TRIGGER fail_visual_publication BEFORE INSERT ON visual_owner_publications "
++        "BEGIN SELECT RAISE(ABORT, 'qualified-storage-failure'); END"
++    )
++    repo._conn.commit()
++    with pytest.raises(sqlite3.IntegrityError, match="qualified-storage-failure"):
++        initialize(prepared)
++    task = original.identity.task_id
++    assert repo.get_active_contract(task) is None
++    assert repo.get_latest_execution_checkpoint(task) is None
++    assert repo.get_retry_budget(task) is None and repo.get_verification_budget(task) is None
++    assert repo.get_visual_original_plan(task, 1) is None
++    assert repo.get_visual_owner_publication(task) is None
++
++
++def test_complete_legacy_group_adoption_preserves_spent_counts_and_original_deadline(prepared):
++    repo, original, checkpoint, state, retry = prepared
++    repo.save_active_contract(
++        original.contract, plan_id=original.identity.plan_id, robot_id=original.identity.robot_id
++    )
++    repo.save_execution_checkpoint(checkpoint)
++    repo.initialize_retry_budget_if_absent(retry)
++    repo.initialize_verification_budget_if_absent(original.identity.task_id, state)
++    _, spent = repo.consume_retry_if_available(
++        original.identity.task_id, "move", "MOVE_ABOVE", 0, "old-event"
++    )
++    old_pool = repo.get_verification_budget(original.identity.task_id).to_payload()
++    record = initialize(prepared)
++    assert record.retry_budget == spent
++    assert repo.get_retry_budget(original.identity.task_id) == spent
++    assert repo.get_verification_budget(original.identity.task_id).to_payload() == old_pool
++    assert record.effective_deadline_at <= original.verification_deadline_at
++
++
++def test_initial_expired_source_rolls_back_without_a_fresh_timeout(prepared):
++    repo, original, checkpoint, state, retry = prepared
++    before = original.registered_at - timedelta(seconds=80)
++    contract = original.contract.model_copy(
++        update={"issued_at": before, "valid_until": before + timedelta(seconds=60)}, deep=True
++    )
++    module = importlib.import_module("cloud_edge_robot_arm.vision.owner_registration")
++    original = module.freeze_original_visual_plan(
++        **{
++            **original.freeze_inputs(),
++            "contract": contract,
++            "registered_at": before,
++            "task_deadline_at": before + timedelta(seconds=60),
++            "verification_deadline_at": before + timedelta(seconds=40),
++        }
++    )
++    checkpoint = checkpoint.model_copy(
++        update={"created_at": before, "updated_at": before, "checkpoint_hash": ""}, deep=True
++    )
++    checkpoint = checkpoint.model_copy(update={"checkpoint_hash": checkpoint_digest(checkpoint)})
++    state.deadline_at = original.verification_deadline_at
++    retry = retry.model_copy(update={"retry_deadline": original.verification_deadline_at})
++    with pytest.raises(ValueError, match="expired"):
++        repo.initialize_visual_owner_if_absent(original, checkpoint, state, retry)
++    assert repo.get_active_contract(original.identity.task_id) is None
++    assert repo.get_retry_budget(original.identity.task_id) is None
++
++
++def test_two_memory_publishers_race_only_one_revision_and_checkpoint(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    if not isinstance(repo, InMemoryEventAutonomyRepository):
++        pytest.skip("memory concurrency case; SQLite distinct connection case below")
++    initialize(prepared)
++    with ThreadPoolExecutor(max_workers=2) as workers:
++        futures = [
++            workers.submit(publish, prepared, boundary(checkpoint, suffix=name))
++            for name in ("race-a", "race-b")
++        ]
++        results = [future.result() for future in futures]
++    assert sum(record is not None for record in results) == 1
++    winner = next(record for record in results if record is not None)
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == winner.digest()
++    assert (
++        repo.get_latest_execution_checkpoint(original.identity.task_id).checkpoint_hash
++        == winner.checkpoint.checkpoint_hash
++    )
++
++
++def test_two_sqlite_boundary_publishers_one_committed_revision(prepared):
++    first, original, checkpoint, state, retry = prepared
++    if not isinstance(first, SQLiteEventAutonomyRepository):
++        pytest.skip("SQLite distinct connections only")
++    initialize(prepared)
++    second = SQLiteEventAutonomyRepository(first.path)
++    try:
++        other_prepared = (second, original, checkpoint, state, retry)
++        with ThreadPoolExecutor(max_workers=2) as workers:
++            futures = [
++                workers.submit(publish, source, boundary(checkpoint, suffix=suffix))
++                for source, suffix in ((prepared, "race-a"), (other_prepared, "race-b"))
++            ]
++            results = [future.result() for future in futures]
++        assert sum(record is not None for record in results) == 1
++        winner = next(record for record in results if record is not None)
++        assert (
++            first.get_visual_owner_publication(original.identity.task_id).digest()
++            == winner.digest()
++        )
++        assert (
++            second.get_latest_execution_checkpoint(original.identity.task_id).checkpoint_hash
++            == winner.checkpoint.checkpoint_hash
++        )
++        assert (
++            first._conn.execute("SELECT COUNT(*) FROM visual_owner_publications").fetchone()[0] == 2
++        )
++    finally:
++        second.close()
++
++
++@pytest.mark.parametrize("field", ["owner_epoch", "contract_hash"])
++def test_rehashed_publication_must_still_bind_the_original_owner_and_contract(prepared, field):
++    repo, original, _, _, _ = prepared
++    record = initialize(prepared)
++    module = importlib.import_module(
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
++    )
++    payload = record.to_payload()
++    if field == "owner_epoch":
++        payload["identity"]["owner_epoch"] = "foreign-epoch"
++    else:
++        payload["contract_hash"] = "b" * 64
++    payload.pop("publication_hash")
++    payload["publication_hash"] = module.digest(payload)
++    encoded = module.canonical(payload)
++    if isinstance(repo, InMemoryEventAutonomyRepository):
++        repo._visual_publications[(original.identity.task_id, 1)] = encoded
++    else:
++        repo._conn.execute(
++            "UPDATE visual_owner_publications SET payload_json=?, publication_hash=?, "
++            "owner_epoch=? WHERE task_id=?",
++            (
++                encoded,
++                payload["publication_hash"],
++                payload["identity"]["owner_epoch"],
++                original.identity.task_id,
++            ),
++        )
++        repo._conn.commit()
++    assert repo.get_visual_owner_publication(original.identity.task_id) is None
++
++
++def test_missing_active_version_history_is_an_incomplete_source_group(prepared):
++    repo, original, _, _, _ = prepared
++    initialize(prepared)
++    if isinstance(repo, InMemoryEventAutonomyRepository):
++        repo._contract_versions.pop(original.identity.task_id)
++    else:
++        repo._conn.execute(
++            "DELETE FROM task_contract_versions WHERE task_id=?", (original.identity.task_id,)
++        )
++        repo._conn.commit()
++    assert repo.get_visual_owner_publication(original.identity.task_id) is None
++
++
++def source_grounding(prepared):
++    """SOFTWARE_ONLY carrier, with no real frame/geometry/verdict or lease authority."""
++    _, original, checkpoint, _, _ = prepared
++    module = importlib.import_module("cloud_edge_robot_arm.vision.owner_registration")
++    now = datetime.now(UTC)
++    grounded = original.contract.steps[0].model_copy(
++        update={"preconditions": [], "success_conditions": []}, deep=True
++    )
++    return module.StepGroundingBinding(
++        original.digest(),
++        original.identity,
++        original.requirements["move"],
++        1,
++        2,
++        checkpoint.checkpoint_hash,
++        "software-frame-carrier",
++        "a" * 64,
++        "software-calibration",
++        checkpoint.plan_version,
++        checkpoint.command_seq,
++        "a" * 64,
++        "a" * 64,
++        None,
++        original.source_hashes,
++        grounded.model_dump_json(),
++        original.requirements["move"].expected_duration_s,
++        now,
++        now + timedelta(seconds=3),
++    )
++
++
++def publish_source_grounding(prepared):
++    repo, original, checkpoint, _, _ = prepared
++    initialize(prepared)
++    grounding = source_grounding(prepared)
++    changed = boundary(checkpoint).model_copy(
++        update={
++            "safety_state": {
++                **checkpoint.safety_state,
++                "grounding_binding_hash": grounding.binding_hash,
++                "original_requirements_hash": original.requirements["move"].digest(),
++            },
++            "checkpoint_hash": "",
++        },
++        deep=True,
++    )
++    changed = changed.model_copy(update={"checkpoint_hash": checkpoint_digest(changed)})
++    return publish(prepared, changed, grounding=grounding, state_generation=2)
++
++
++def test_optional_grounding_preserves_original_requirements_without_geometry_admission(prepared):
++    repo, original, _, _, _ = prepared
++    record = publish_source_grounding(prepared)
++    assert record is not None and record.binding_scope == "DURABLE_BINDING_ONLY"
++    payload = record.to_payload()["grounding"]
++    assert payload["binding_scope"] == "SOURCE_BINDING_ONLY"
++    assert payload["original_requirements"] == original.requirements["move"].to_payload()
++    assert repo.get_visual_owner_publication(original.identity.task_id).digest() == record.digest()
++
++
++def test_rehashed_grounding_cannot_weaken_registered_requirements_on_read(prepared):
++    repo, original, _, _, _ = prepared
++    record = publish_source_grounding(prepared)
++    assert record is not None
++    module = importlib.import_module(
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
++    )
++    payload = record.to_payload()
++    payload["grounding"]["original_requirements"]["allowed_error_m"] = 0.1
++    payload.pop("publication_hash")
++    payload["publication_hash"] = module.digest(payload)
++    encoded = module.canonical(payload)
++    if isinstance(repo, InMemoryEventAutonomyRepository):
++        repo._visual_publications[(original.identity.task_id, 2)] = encoded
++    else:
++        repo._conn.execute(
++            "UPDATE visual_owner_publications SET payload_json=?,publication_hash=? "
++            "WHERE task_id=? AND owner_revision=2",
++            (encoded, payload["publication_hash"], original.identity.task_id),
++        )
++        repo._conn.commit()
++    assert repo.get_visual_owner_publication(original.identity.task_id) is None
++
++
++def test_expired_prior_grounding_remains_history_and_allows_fresh_boundary(prepared, monkeypatch):
++    """A synthetic clock advance never retimestamps an actual observation."""
++    repo, original, _, _, _ = prepared
++    previous = publish_source_grounding(prepared)
++    assert previous is not None
++    module = importlib.import_module(
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
++    )
++    advanced = datetime.fromisoformat(previous.to_payload()["grounding"]["valid_until"])
++
++    class SoftwareClockType(type):
++        def __instancecheck__(cls, value):
++            return isinstance(value, datetime)
++
++    class LaterSoftwareClock(datetime, metaclass=SoftwareClockType):
++        @classmethod
++        def now(cls, tz=None):
++            return advanced if tz is None else advanced.astimezone(tz)
++
++    monkeypatch.setattr(module, "datetime", LaterSoftwareClock)
++    assert repo.get_visual_owner_publication(original.identity.task_id) is None
++    refreshed = publish(
++        prepared,
++        boundary(previous.checkpoint, suffix="fresh-without-old-grounding"),
++        expected_owner_revision=2,
++        expected_checkpoint_hash=previous.checkpoint.checkpoint_hash,
++        state_generation=3,
++    )
++    assert refreshed is not None and refreshed.owner_revision == 3
++    assert refreshed.to_payload()["grounding"] is None
++    assert (
++        repo.get_visual_owner_publication(original.identity.task_id).digest() == refreshed.digest()
++    )

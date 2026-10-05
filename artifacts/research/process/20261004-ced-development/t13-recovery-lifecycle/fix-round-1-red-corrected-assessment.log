@@ -1,0 +1,38 @@
+.FF..                                                                    [100%]
+=================================== FAILURES ===================================
+________ test_original_required_preconditions_cannot_be_dropped[memory] ________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x72fa696fc650>
+
+    def test_original_required_preconditions_cannot_be_dropped(lifecycle_repo):
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("gripper_open",)))
+        proof = authorization_proof(saved)
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='2b6b746e0f69e3572a99e4d5c1887b6009d6e0fc2ca442f7d1a7019b38f11e8e'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='2b6b746e0f69e3572a99e4d5c1887b6009d6e0fc2ca442f7d1a7019b38f11e8e'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x72fa696fc650>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='67522963c42f25c6addc696b0c6f94a890f70371396125c2c8f1380152181f89'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1407: AssertionError
+________ test_original_required_preconditions_cannot_be_dropped[sqlite] ________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x72fa64bb39e0>
+
+    def test_original_required_preconditions_cannot_be_dropped(lifecycle_repo):
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("gripper_open",)))
+        proof = authorization_proof(saved)
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c628ea9298fce6fbeba9f393507d779e83e3abaf3466262b91deeb898c6464f4'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c628ea9298fce6fbeba9f393507d779e83e3abaf3466262b91deeb898c6464f4'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x72fa64bb39e0>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='cbd610eeba2eec5706e3a9b797b9e9d44f49506c4ed434f9ae430f58bf17ea92'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1407: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_original_required_preconditions_cannot_be_dropped[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_original_required_preconditions_cannot_be_dropped[sqlite]
+2 failed, 3 passed, 156 deselected in 1.05s

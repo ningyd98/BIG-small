@@ -1,0 +1,149 @@
+F.FF..F.FFF                                                              [100%]
+=================================== FAILURES ===================================
+___ test_terminal_relation_cannot_point_to_the_preserved_before_action_frame ___
+
+    def test_terminal_relation_cannot_point_to_the_preserved_before_action_frame():
+        envelope, records = fixture()
+        stale = replace(records.joins[0], relation="TERMINAL")
+        view = api().validate_raw_episode_v3(
+            envelope, renumber(replace(records, joins=(*records.joins, stale)))
+        )
+>       assert view.status == "INVALID"
+E       AssertionError: assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:995: AssertionError
+__ test_accepted_stop_cannot_be_erased_by_a_later_ordinary_command_false_flag __
+
+    def test_accepted_stop_cannot_be_erased_by_a_later_ordinary_command_false_flag():
+        envelope, records = stop_order_fixture()
+        view = api().validate_raw_episode_v3(envelope, records)
+>       assert view.status == "INVALID"
+E       AssertionError: assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:1012: AssertionError
+__ test_consistently_stopped_states_cannot_accept_ordinary_command_false_flag __
+
+    def test_consistently_stopped_states_cannot_accept_ordinary_command_false_flag():
+        envelope, records = fixture()
+        previous = {**dict(envelope.reset_state_payload), "estop_engaged": True}
+        physics = []
+        for row in records.physics:
+            post = {**dict(row.post_state_payload), "estop_engaged": True}
+            physics.append(replace(row, previous_state_hash=hash_payload(previous), post_state_payload=post))
+            previous = post
+        by_step = {row.physics_step: row.post_state_payload for row in physics}
+        indices = {interval.interval_id: interval.start_step for interval in records.intervals}
+        frames = tuple(
+            replace(frame, joined_physics_observation_hash=hash_payload(dict(by_step[indices[frame.interval_id]])))
+            for frame in records.frames
+        )
+        view = api().validate_raw_episode_v3(
+            replace(
+                envelope,
+                reset_state_payload={**dict(envelope.reset_state_payload), "estop_engaged": True},
+                terminal_state_payload=previous,
+            ),
+            replace(records, physics=tuple(physics), frames=frames),
+        )
+>       assert view.status == "INVALID"
+E       AssertionError: assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:1039: AssertionError
+__ test_rejected_ordinary_stop_flag_and_later_physics_must_preserve_the_latch __
+
+    def test_rejected_ordinary_stop_flag_and_later_physics_must_preserve_the_latch():
+        envelope, records = stop_order_fixture(later="rejected")
+        bad = replace(
+            records.commands[-1],
+            command_payload={**dict(records.commands[-1].command_payload), "after_emergency_stop": False},
+        )
+>       assert api().validate_raw_episode_v3(envelope, replace(records, commands=(*records.commands[:-1], bad))).status == "INVALID"
+E       AssertionError: assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:1059: AssertionError
+________ test_terminal_join_obeys_the_final_termination_boundary[True] _________
+
+late = True
+
+    @pytest.mark.parametrize("late", [False, True])
+    def test_terminal_join_obeys_the_final_termination_boundary(late):
+        envelope, records = fixture()
+        base = next(i for i in records.intervals if i.interval_id == "attempt")
+        first = clock_interval(base, "termination-1", "TERMINATION", 121, 121, 220100000, 220900000)
+        intervals = (*records.intervals, first)
+        if late:
+            intervals += (clock_interval(base, "termination-final", "TERMINATION", 121, 121, 230000000, 240000000),)
+        terminal = replace(records.joins[1], relation="TERMINAL")
+        view = api().validate_raw_episode_v3(
+            envelope, renumber(replace(records, intervals=intervals, joins=(*records.joins, terminal)))
+        )
+>       assert view.status == ("INVALID" if late else "COMPLETE"), view.reasons
+E       AssertionError: ()
+E       assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:1076: AssertionError
+________ test_terminal_missing_actual_return_boundary_stays_incomplete _________
+
+    def test_terminal_missing_actual_return_boundary_stays_incomplete():
+        envelope, records = fixture()
+        terminal = replace(records.joins[1], relation="TERMINAL")
+        records = renumber(replace(
+            records,
+            actions=(replace(records.actions[0], returned_result=None),),
+            joins=(*records.joins, terminal),
+        ))
+        view = api().validate_raw_episode_v3(envelope, records)
+        assert view.status == "INCOMPLETE"
+>       assert "terminal_action_completion_boundary_unavailable" in view.reasons
+E       AssertionError: assert 'terminal_action_completion_boundary_unavailable' in ('actual_action_return_missing',)
+E        +  where ('actual_action_return_missing',) = RawV3ConsistencyView(status='INCOMPLETE', counts=mappingproxy({'allocated_episodes': 1, 'allocated_actions': 1, 'recor...COMPLETE', utc_mapping='UNAVAILABLE', source_digest='5947720e9d9c825a5314226d444f4ee5f78daaa6e8c7c998c9e7433000b0f880').reasons
+
+tests/test_raw_episode_v3.py:1089: AssertionError
+_ test_terminal_boundaries_consider_all_actions_including_later_zero_step_rejection _
+
+    def test_terminal_boundaries_consider_all_actions_including_later_zero_step_rejection():
+        envelope, records = fixture()
+        base = next(i for i in records.intervals if i.interval_id == "attempt")
+        rejected = clock_interval(base, "grasp-rejected", "EXECUTOR_ATTEMPT", 121, 121, 230000000, 240000000)
+        action = replace(
+            records.actions[0], span_id="span-2", step_id="grasp", interval_id=rejected.interval_id,
+            command_seq_start=2, command_seq_end=2, returned_result=None, disposition="REJECTED",
+            error="precondition_rejected", executed_step_payload=records.actions[0].original_plan.requirements["grasp"].original_step.model_dump(mode="json"),
+        )
+        before_second = replace(records.joins[1], span_id="span-2", relation="BEFORE_SUBMIT")
+        premature_terminal = replace(records.joins[1], relation="TERMINAL")
+        view = api().validate_raw_episode_v3(
+            replace(envelope, allocated_action_span_ids=("span-1", "span-2")),
+            renumber(replace(records, intervals=(*records.intervals, rejected), actions=(*records.actions, action), joins=(*records.joins, before_second, premature_terminal))),
+        )
+>       assert view.status == "INVALID"
+E       AssertionError: assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:1108: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_terminal_relation_cannot_point_to_the_preserved_before_action_frame
+FAILED tests/test_raw_episode_v3.py::test_accepted_stop_cannot_be_erased_by_a_later_ordinary_command_false_flag
+FAILED tests/test_raw_episode_v3.py::test_consistently_stopped_states_cannot_accept_ordinary_command_false_flag
+FAILED tests/test_raw_episode_v3.py::test_rejected_ordinary_stop_flag_and_later_physics_must_preserve_the_latch
+FAILED tests/test_raw_episode_v3.py::test_terminal_join_obeys_the_final_termination_boundary[True]
+FAILED tests/test_raw_episode_v3.py::test_terminal_missing_actual_return_boundary_stays_incomplete
+FAILED tests/test_raw_episode_v3.py::test_terminal_boundaries_consider_all_actions_including_later_zero_step_rejection
+7 failed, 4 passed, 45 deselected in 5.76s

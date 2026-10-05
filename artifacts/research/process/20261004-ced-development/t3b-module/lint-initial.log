@@ -1,0 +1,306 @@
+E501 Line too long (109 > 100)
+   --> scripts/probe_rgbd_roles.py:110:101
+    |
+108 | def read_role_config(path: Path) -> dict[str, Any]:
+109 |     config = yaml.safe_load(path.read_text())
+110 |     if not isinstance(config, dict) or set(config) != {"schema_version", "cloud", "edge", "device", "probe"}:
+    |                                                                                                     ^^^^^^^^^
+111 |         raise ValueError("invalid role config fields")
+112 |     if config["schema_version"] != "ced.roles.v1":
+    |
+
+E501 Line too long (103 > 100)
+   --> scripts/probe_rgbd_roles.py:117:101
+    |
+115 |                                "coordinate_system", "grasp_profile"}:
+116 |         raise ValueError("cloud config must reference a profile, never credentials")
+117 |     if config["cloud"]["model_family"] != "qwen3.8-max" or config["cloud"]["image_size"] != [320, 240]:
+    |                                                                                                     ^^^
+118 |         raise ValueError("cloud requires Max family and fixed 320x240 RGB-D")
+119 |     if not isinstance(config["cloud"]["available_model_ids"], list):
+    |
+
+E501 Line too long (105 > 100)
+   --> scripts/probe_rgbd_roles.py:121:101
+    |
+119 |     if not isinstance(config["cloud"]["available_model_ids"], list):
+120 |         raise ValueError("available_model_ids must be provider-advertised IDs")
+121 |     if set(config["edge"]) != {"provider_id", "provider_location", "model_id", "source_paths", "policy"}:
+    |                                                                                                     ^^^^^
+122 |         raise ValueError("invalid edge provider config")
+123 |     if config["edge"]["model_id"] is not None:
+    |
+
+E501 Line too long (102 > 100)
+   --> scripts/probe_rgbd_roles.py:154:101
+    |
+152 |             return False
+153 |         attempts = report["attempts"]
+154 |         if not isinstance(attempts, list) or len(attempts) != report["probe_config"]["warm_runs"] + 1:
+    |                                                                                                     ^^
+155 |             return False
+156 |         if report["probe_config"]["warm_runs"] < 3:
+    |
+
+E501 Line too long (104 > 100)
+   --> scripts/probe_rgbd_roles.py:160:101
+    |
+158 |         for attempt in attempts:
+159 |             if not all(attempt.get(key) is True for key in
+160 |                        ("transport_two_images", "parsed", "grounded", "target_hit", "destination_hit")):
+    |                                                                                                     ^^^^
+161 |                 return False
+162 |             summary = attempt["request_summary"]
+    |
+
+E501 Line too long (101 > 100)
+   --> scripts/probe_rgbd_roles.py:202:101
+    |
+200 |             report["reason"] = "execution not requested; no service or renderer contacted"
+201 |         elif service is None or not selected:
+202 |             raise ValueError("probe requires an existing model-control service and selected profile")
+    |                                                                                                     ^
+203 |         else:
+204 |             if not service.secret_store.has_secret(selected):
+    |
+
+E501 Line too long (111 > 100)
+   --> scripts/probe_rgbd_roles.py:220:101
+    |
+218 |             bundle = RoleModelBundle(cloud, edge.provider_id, edge.digest(),
+219 |                 configuration_hash(_hash_sources(config["device"]["source_paths"])))
+220 |             report.update(bundle=bundle.evidence(), bundle_hash=bundle.digest(), edge_snapshot=edge.evidence())
+    |                                                                                                     ^^^^^^^^^^^
+221 |             if cloud.provider_location != "REMOTE_SERVICE" or not allow_paid:
+222 |                 raise ValueError("real cloud probe requires a remote profile and --allow-paid")
+    |
+
+E501 Line too long (139 > 100)
+   --> scripts/probe_rgbd_roles.py:246:101
+    |
+244 | …         raise ValueError("capture passes are not synchronized")
+245 | …     request = InitialPlanningRequest(request_id=f"cloud-role-probe-{index:02d}",
+246 | …         user_instruction=config["probe"]["instruction"], scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
+    |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+247 | …         observation=frame.observation)
+248 | …     attempt = _attempt(planner, request, frame, output, index, cloud)
+    |
+
+E501 Line too long (112 > 100)
+   --> scripts/probe_rgbd_roles.py:279:101
+    |
+277 |         decision_schema=VisualDecision.model_json_schema())
+278 |     expected = summarize_role_request({"model": planner.model_name,
+279 |         "messages": compatible_messages(messages), "temperature": snapshot.generation_parameters["temperature"],
+    |                                                                                                     ^^^^^^^^^^^^
+280 |         "max_tokens": snapshot.generation_parameters["num_predict"],
+281 |         "response_format": {"type": "json_object"}})
+    |
+
+E501 Line too long (105 > 100)
+   --> scripts/probe_rgbd_roles.py:316:101
+    |
+314 |     actual["serialized_sent_bytes"] = sum(row.serialized_sent_bytes for row in rows)
+315 |     evidence = draft.observation_evidence or {}
+316 |     target_hit, target_evidence = _pixel_hit(frame, evidence.get("original_pixel_target"), "object_geom")
+    |                                                                                                     ^^^^^
+317 |     destination_hit, destination_evidence = _pixel_hit(frame, evidence.get("original_pixel_destination"), "target_region_geom")
+318 |     summary = actual.get("request_summary", {})
+    |
+
+E501 Line too long (127 > 100)
+   --> scripts/probe_rgbd_roles.py:317:101
+    |
+315 |     evidence = draft.observation_evidence or {}
+316 |     target_hit, target_evidence = _pixel_hit(frame, evidence.get("original_pixel_target"), "object_geom")
+317 |     destination_hit, destination_evidence = _pixel_hit(frame, evidence.get("original_pixel_destination"), "target_region_geom")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+318 |     summary = actual.get("request_summary", {})
+319 |     attempt = actual | {"status": "COMPLETE", "index": index, "phase": "first" if index == 0 else "warm",
+    |
+
+E501 Line too long (105 > 100)
+   --> scripts/probe_rgbd_roles.py:319:101
+    |
+317 |     destination_hit, destination_evidence = _pixel_hit(frame, evidence.get("original_pixel_destination"), "target_region_geom")
+318 |     summary = actual.get("request_summary", {})
+319 |     attempt = actual | {"status": "COMPLETE", "index": index, "phase": "first" if index == 0 else "warm",
+    |                                                                                                     ^^^^^
+320 |         "expected_request_summary": expected, "wall_latency_ms": (time.monotonic() - started) * 1000,
+321 |         "transport_two_images": summary.get("image_count") == 2 and summary.get("distinct_image_count") == 2,
+    |
+
+E501 Line too long (101 > 100)
+   --> scripts/probe_rgbd_roles.py:320:101
+    |
+318 |     summary = actual.get("request_summary", {})
+319 |     attempt = actual | {"status": "COMPLETE", "index": index, "phase": "first" if index == 0 else "warm",
+320 |         "expected_request_summary": expected, "wall_latency_ms": (time.monotonic() - started) * 1000,
+    |                                                                                                     ^
+321 |         "transport_two_images": summary.get("image_count") == 2 and summary.get("distinct_image_count") == 2,
+322 |         "parsed": draft.parse_error is None, "grounded": draft.observed_scene is not None,
+    |
+
+E501 Line too long (109 > 100)
+   --> scripts/probe_rgbd_roles.py:321:101
+    |
+319 |     attempt = actual | {"status": "COMPLETE", "index": index, "phase": "first" if index == 0 else "warm",
+320 |         "expected_request_summary": expected, "wall_latency_ms": (time.monotonic() - started) * 1000,
+321 |         "transport_two_images": summary.get("image_count") == 2 and summary.get("distinct_image_count") == 2,
+    |                                                                                                     ^^^^^^^^^
+322 |         "parsed": draft.parse_error is None, "grounded": draft.observed_scene is not None,
+323 |         "target_hit": target_hit, "destination_hit": destination_hit,
+    |
+
+E501 Line too long (101 > 100)
+   --> scripts/probe_rgbd_roles.py:369:101
+    |
+367 |         if not args.model_control_db.is_file() or not selected:
+368 |             parser.error("--execute requires an existing profile database and profile ID")
+369 |         service = ModelControlService(repository=SQLiteModelProfileRepository(args.model_control_db),
+    |                                                                                                     ^
+370 |             secret_store=_EnvironmentProfileSecrets(selected, args.secret_env))
+371 |     report = run_probe(args.config, args.output, service=service, profile_id=args.profile_id,
+    |
+
+E501 Line too long (111 > 100)
+   --> scripts/probe_rgbd_roles.py:373:101
+    |
+371 |     report = run_probe(args.config, args.output, service=service, profile_id=args.profile_id,
+372 |                        execute=args.execute, allow_paid=args.allow_paid)
+373 |     print(json.dumps({"status": report["status"], "report_path": str(args.output / "role-probe-report.json")}))
+    |                                                                                                     ^^^^^^^^^^^
+374 |     return 0 if report["status"] in {"PASS", "NOT_STARTED"} else 2
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/vision/role_models.py:99:101
+    |
+ 98 |     def __post_init__(self) -> None:
+ 99 |         if not isinstance(self.cloud_snapshot, RoleProviderSnapshot) or self.cloud_snapshot.role != "CLOUD":
+    |                                                                                                     ^^^^^^^^
+100 |             raise ValueError("cloud_snapshot must bind the CLOUD role")
+101 |         _require_id(self.edge_provider_id, "edge_provider_id")
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/vision/role_models.py:135:101
+    |
+133 |     candidates = []
+134 |     for candidate in available_model_ids:
+135 |         if not isinstance(candidate, str) or not re.fullmatch(r"qwen3\.8-max-\d{4}-\d{2}-\d{2}", candidate):
+    |                                                                                                     ^^^^^^^^
+136 |             continue
+137 |         try:
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/vision/role_models.py:149:101
+    |
+147 |     allow_paid: bool = False, image_size: tuple[int, int] = (320, 240),
+148 |     coordinate_system: Literal["pixel", "normalized_1000"] = "pixel",
+149 |     grasp_profile: Literal["unconfigured", "mujoco_upright_box_v1", "mujoco_upright_box_v2"] = "unconfigured",
+    |                                                                                                     ^^^^^^^^^^
+150 |     available_model_ids: Iterable[str] = (),
+151 | ) -> tuple[RGBDPlannerAdapter, RoleProviderSnapshot]:
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/vision/role_models.py:167:101
+    |
+165 |         provider="openai_compatible", model=model_id, endpoint=profile.base_url,
+166 |         weight_digest=None, quantization=None, image_size=image_size,
+167 |         generation_parameters={"temperature": profile.temperature, "num_predict": profile.max_tokens},
+    |                                                                                                     ^^
+168 |         timeout_s=profile.timeout_seconds, coordinate_system=coordinate_system,
+169 |         grasp_profile=grasp_profile,
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_rgbd_role_models.py:102:101
+    |
+100 |     service = ModelControlService(repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+101 |                                   secret_store=InMemorySecretStore())
+102 |     profile = service.create_profile(display_name="max", provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+    |                                                                                                     ^^^^^^^^^
+103 |                                      model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com",
+104 |                                      api_key="test-only-secret", max_tokens=777)
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_rgbd_role_models.py:136:101
+    |
+134 |     service = ModelControlService(repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+135 |                                   secret_store=InMemorySecretStore())
+136 |     profile = service.create_profile(display_name="max", provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+    |                                                                                                     ^^^^^^^^^
+137 |                                      model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com")
+138 |     adapter, snapshot = module.resolve_cloud_role(service, profile.profile_id,
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/test_rgbd_role_models.py:139:101
+    |
+137 |                                      model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com")
+138 |     adapter, snapshot = module.resolve_cloud_role(service, profile.profile_id,
+139 |                                                  source_hashes={"messages.py": "b" * 64}, allow_paid=True)
+    |                                                                                                     ^^^^^^
+140 |     payloads = []
+    |
+
+E501 Line too long (138 > 100)
+   --> tests/test_rgbd_role_models.py:153:101
+    |
+151 | …rvation_payload())
+152 | …instruction="pick missing target",
+153 | …ceneSummary(scene_version=1, updated_at=datetime.now(UTC)), observation=observation))
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+154 | …
+155 | …"] if isinstance(message["content"], list)
+    |
+
+E501 Line too long (110 > 100)
+   --> tests/test_rgbd_role_models.py:187:101
+    |
+185 |     assert importlib.util.find_spec("scripts.probe_rgbd_roles") is not None, "role probe missing"
+186 |     probe = importlib.import_module("scripts.probe_rgbd_roles")
+187 |     assert probe.can_accept_role_probe({"status": "PASS", "source": "software_test", "attempts": []}) is False
+    |                                                                                                     ^^^^^^^^^^
+188 |     assert probe.can_accept_role_probe({"source": "mujoco_camera", "transport": "REAL_HTTP",
+189 |                                         "capture": {"synchronized": True}, "attempts": []}) is False
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_rgbd_role_models.py:232:101
+    |
+230 |             raise AssertionError("dry run contacted a profile service")
+231 |
+232 |     report = run_probe(Path("configs/research/ced_roles.yaml"), tmp_path / "dry", service=ForbiddenService())
+    |                                                                                                     ^^^^^^^^^
+233 |     assert report["status"] == "NOT_STARTED"
+234 |     assert report["attempts"] == []
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_rgbd_role_models.py:250:101
+    |
+248 |     service = ModelControlService(repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+249 |                                   secret_store=InMemorySecretStore())
+250 |     profile = service.create_profile(display_name="max", provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+    |                                                                                                     ^^^^^^^^^
+251 |                                      model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com")
+252 |     report = run_probe(Path("configs/research/ced_roles.yaml"), tmp_path / "missing-secret", service=service,
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_rgbd_role_models.py:252:101
+    |
+250 |     profile = service.create_profile(display_name="max", provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+251 |                                      model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com")
+252 |     report = run_probe(Path("configs/research/ced_roles.yaml"), tmp_path / "missing-secret", service=service,
+    |                                                                                                     ^^^^^^^^^
+253 |                        profile_id=profile.profile_id, execute=True, allow_paid=True)
+254 |     assert report["status"] == "BLOCKED"
+    |
+
+Found 34 errors (6 fixed, 28 remaining).

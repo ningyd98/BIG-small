@@ -1,0 +1,24 @@
+F........................                                                [100%]
+=================================== FAILURES ===================================
+________ test_uniquely_visible_target_has_metric_extent_and_provenance _________
+
+    def test_uniquely_visible_target_has_metric_extent_and_provenance():
+        original = scene()
+        tracked = tracker(original)
+        current = scene("next", time=0.1, started=original.captured_at)
+        fact = tracked.facts(current)["target_visible"]
+        assert fact["value"] is True
+        assert fact["identity_confirmed"] is True
+        assert fact["observation_id"] == "next"
+        assert fact["captured_at"] == current.captured_at.isoformat()
+        assert fact["calibration_version"] == "test-cal"
+        extent = fact["measured_values"]
+        assert extent["extent_complete"] is True
+        assert extent["min"][0] <= -0.286
+>       assert extent["max"][0] >= -0.230
+E       assert -0.23005499941587448 >= -0.23
+
+tests/test_opencv_target_evidence.py:80: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_opencv_target_evidence.py::test_uniquely_visible_target_has_metric_extent_and_provenance
+1 failed, 24 passed in 0.66s

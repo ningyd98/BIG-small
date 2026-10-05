@@ -1,0 +1,2836 @@
+diff --git a/src/cloud_edge_robot_arm/research/pilot.py b/src/cloud_edge_robot_arm/research/pilot.py
+--- a/src/cloud_edge_robot_arm/research/pilot.py
++++ b/src/cloud_edge_robot_arm/research/pilot.py
+@@ -2,11 +2,315 @@
+ 
+ from __future__ import annotations
+ 
++import json
+ import math
++import random
++from collections import Counter
++from collections.abc import Callable, Mapping, Sequence
+ from dataclasses import dataclass, field
++from pathlib import Path
+ from typing import Any
+ 
+ import numpy as np
++
++from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec, canonical_json, content_digest
++from cloud_edge_robot_arm.research.network import NetworkSchedule
++from cloud_edge_robot_arm.research.protocol import NETWORKS, STRATA
++
++B0_PERIODS = (0.5, 1.0, 2.0, 5.0)
++PILOT_POOL_SIZES = {
++    "selection": 120,
++    "foundation": 120,
++    "power": 120,
++    "formal": 2400,
++    "recovery": 200,
++    "ood": 300,
++}
++BUDGET_SELECTION_RULE = {
++    "schema_version": "ced.pilot-selection-rule.v1",
++    "periods_s": list(B0_PERIODS),
++    "minimum_nominal_success": 0.9,
++    "minimum_overall_success": 0.8,
++    "maximum_safety_violation": 0.01,
++    "rank": ["cloud_requests_total", "mean_wall_duration_s", "fixed_period_order"],
++    "tcap": "ceil(2*P99(successful_B0_wall_seconds)/10)*10 clamped to [120,600]",
++    "all_assigned_denominator": True,
++}
++
++
++def stage_source_paths() -> list[Path]:
++    """Full collector inventory; a caller cannot narrow source attestation."""
++    return [
++        *sorted(Path("src/cloud_edge_robot_arm").rglob("*.py")),
++        *sorted(Path("scripts").rglob("*.py")),
++        *sorted(Path("configs/research").glob("*.yaml")),
++        Path("assets/robots/franka_panda/scene.xml"),
++        Path("pyproject.toml"),
++    ]
++
++
++def validate_pilot_pools(pools: Mapping[str, Any]) -> None:
++    """Validate the entire frozen topology before using any developmental pool."""
++    if set(pools) != set(PILOT_POOL_SIZES):
++        raise ValueError("v2 pilot requires all six complete isolated pools")
++    groups: set[str] = set()
++    for name, count in PILOT_POOL_SIZES.items():
++        rows = pools[name]
++        if not isinstance(rows, list) or len(rows) != count:
++            raise ValueError(f"incomplete {name} pool")
++        for index, row in enumerate(rows):
++            if not isinstance(row, Mapping):
++                raise ValueError("pool assignment must be an object")
++            scene = SceneSpec.model_validate(row["scene"])
++            if row["assignment_id"] != f"{name}-{index + 1:04d}" or (
++                row["stratum_id"] != STRATA[index % len(STRATA)]
++                or row["scene_hash"] != scene.scene_hash
++                or not isinstance(row.get("perturbation"), Mapping)
++            ):
++                raise ValueError("full pool assignment identity/scene/stratum drift")
++            if scene.group_id in groups:
++                raise ValueError("cross-pool scene group leakage")
++            groups.add(scene.group_id)
++
++
++def build_pilot_assignments(
++    pools: Mapping[str, Any],
++    stage: str,
++    *,
++    role_bundle_hash: str | None = None,
++    period_s: float | None = None,
++    seed: int = 20261004,
++) -> list[dict[str, Any]]:
++    """Full paired scenes/schedules; order is randomized once and then persisted."""
++    validate_pilot_pools(pools)
++    if stage not in {"selection", "foundation", "power"}:
++        raise ValueError("unsupported explicit pilot stage")
++    if period_s is not None and period_s not in B0_PERIODS:
++        raise ValueError("unsupported B0 period")
++    if role_bundle_hash is not None and (
++        len(role_bundle_hash) != 64
++        or any(char not in "0123456789abcdef" for char in role_bundle_hash)
++    ):
++        raise ValueError("role bundle hash must be SHA256")
++    periods = B0_PERIODS if stage == "selection" else (period_s,)
++    assignments = []
++    pools_hash = content_digest(pools)
++    for base in pools[stage]:
++        scene = SceneSpec.model_validate(base["scene"])
++        rtt = int(base["stratum_id"].split("RTT")[1])
++        schedule = NetworkSchedule(
++            schedule_id=base["assignment_id"],
++            rtt_ms=rtt,
++            loss_rate=dict(NETWORKS)[rtt],
++            seed=scene.seed,
++        ).model_dump(mode="json")
++        for period in periods:
++            identity = base["assignment_id"] + (
++                f"::B0@{period:g}"
++                if period is not None
++                else (
++                    "::METHODS_NOT_INTEGRATED" if stage == "power" else "::B0_PERIOD_NOT_SELECTED"
++                )
++            )
++            assignments.append(
++                {
++                    "assignment_id": identity,
++                    "stage": stage,
++                    "stratum_id": base["stratum_id"],
++                    "group_id": scene.group_id,
++                    "scene_hash": scene.scene_hash,
++                    "physics_seed": scene.seed,
++                    "base_assignment": json.loads(canonical_json(base)),
++                    "network_schedule": schedule,
++                    "period_s": period,
++                    "role_bundle_hash": role_bundle_hash,
++                    "pools_hash": pools_hash,
++                }
++            )
++    random.Random(f"{seed}:{stage}").shuffle(assignments)
++    return assignments
++
++
++def choose_b0_period(
++    assignments: Sequence[Mapping[str, Any]],
++    records: Sequence[Mapping[str, Any]],
++) -> dict[str, Any]:
++    """Pure software diagnostic. Actual selection requires separate raw-source audit."""
++    expected = {row["assignment_id"]: row for row in assignments}
++    actual = {row["assignment_id"]: row for row in records}
++    if (
++        len(assignments) != 480
++        or len(expected) != 480
++        or len(records) != len(actual)
++        or (set(expected) != set(actual))
++    ):
++        raise ValueError("selection must retain all 120 groups across all four periods")
++    periods = []
++    for period in B0_PERIODS:
++        assigned = [r for r in assignments if r["period_s"] == period]
++        if len(assigned) != 120 or Counter(r["stratum_id"] for r in assigned) != (
++            Counter({s: 10 for s in STRATA})
++        ):
++            raise ValueError("selection periods must retain fixed twelve-stratum coverage")
++        rows = [actual[row["assignment_id"]] for row in assigned]
++        for row in rows:
++            if (
++                type(row.get("success")) is not bool
++                or type(row.get("safety_violation")) is not bool
++            ):
++                raise ValueError("selection outcomes require explicit measured boolean outcomes")
++            if any(
++                type(row.get(key)) not in {int, float}
++                or (not math.isfinite(row[key]) or row[key] < 0)
++                for key in ("wall_duration_s", "cloud_requests")
++            ) or (type(row["cloud_requests"]) is not int):
++                raise ValueError(
++                    "selection costs require finite durations and actual integer counts"
++                )
++        nominal = [
++            actual[r["assignment_id"]] for r in assigned if r["stratum_id"].startswith("STATIC")
++        ]
++        overall = sum(r["success"] for r in rows) / 120
++        nominal_rate = sum(r["success"] for r in nominal) / 40
++        safety = sum(r["safety_violation"] for r in rows) / 120
++        eligible = nominal_rate >= 0.9 and overall >= 0.8 and safety <= 0.01
++        periods.append(
++            {
++                "period_s": period,
++                "assigned_denominator": 120,
++                "nominal_denominator": 40,
++                "overall_success_rate": overall,
++                "nominal_success_rate": nominal_rate,
++                "safety_violation_rate": safety,
++                "cloud_requests_total": sum(r["cloud_requests"] for r in rows),
++                "mean_wall_duration_s": sum(r["wall_duration_s"] for r in rows) / 120,
++                "eligible": eligible,
++                "terminal_status_counts": dict(Counter(r["status"] for r in rows)),
++            }
++        )
++    qualified = [row for row in periods if row["eligible"]]
++    chosen = (
++        min(
++            qualified,
++            key=lambda r: (
++                r["cloud_requests_total"],
++                r["mean_wall_duration_s"],
++                B0_PERIODS.index(r["period_s"]),
++            ),
++        )
++        if qualified
++        else None
++    )
++    return {
++        "scope": "SOFTWARE_ONLY",
++        "actual_research_status": "NOT_RUN",
++        "selected_period_s": None,
++        "diagnostic_selected_period_s": chosen["period_s"] if chosen else None,
++        "diagnostic_status": "FEASIBLE" if chosen else "NO_FEASIBLE_BASELINE",
++        "periods": periods,
++        "selection_rule_hash": content_digest(BUDGET_SELECTION_RULE),
++    }
++
++
++def run_pilot_stage(
++    stage: str,
++    pools: Mapping[str, Any],
++    output: Path,
++    *,
++    period_s: float | None = None,
++    role_bundle_hash: str | None = None,
++    software_only: bool = False,
++    software_adapter: Callable[[Mapping[str, Any], Path], Mapping[str, Any]] | None = None,
++    _real_executor: Callable[[Mapping[str, Any], Path], Mapping[str, Any]] | None = None,
++) -> dict[str, Any]:
++    """Preregister and retain all originals; no actual runtime is inferred from fixtures."""
++    if software_adapter is not None and not software_only:
++        raise ValueError("injected adapters require explicit SOFTWARE_ONLY")
++    if stage == "power" and software_adapter is not None:
++        raise ValueError("power method runtime is not integrated")
++    if _real_executor is not None and (
++        software_adapter is not None or software_only or stage == "power"
++    ):
++        raise ValueError("real executor and software/power modes cannot be combined")
++    assignments = build_pilot_assignments(
++        pools, stage, period_s=period_s, role_bundle_hash=role_bundle_hash
++    )
++    output.mkdir(parents=True, exist_ok=False)
++    for name, data in (
++        ("pools.json", pools),
++        ("assignments.json", assignments),
++        ("selection-rule.json", BUDGET_SELECTION_RULE),
++    ):
++        (output / name).write_text(canonical_json(data) + "\n")
++    records = []
++    for assignment in assignments:
++        directory = output / "cases" / assignment["assignment_id"]
++        directory.mkdir(parents=True)
++        (directory / "assignment.json").write_text(canonical_json(assignment) + "\n")
++        row = {
++            "assignment_id": assignment["assignment_id"],
++            "status": "NOT_EXECUTED",
++            "success": False,
++            "safety_violation": False,
++            "wall_duration_s": 0.0,
++            "cloud_requests": 0,
++            "accepted_success": False,
++            "scope": "UNVERIFIED",
++            "reason": "actual role-bound runtime/accepted prerequisites not supplied",
++        }
++        executor = software_adapter or _real_executor
++        if executor is not None:
++            try:
++                supplied = dict(executor(assignment, directory))
++            except Exception as error:
++                # Preserve the original assigned case and any partial raw execution.
++                supplied = {
++                    "status": "FAILED",
++                    "success": False,
++                    "safety_violation": False,
++                    "reason": f"executor failed: {type(error).__name__}",
++                }
++            if (
++                supplied.get("assignment_id", assignment["assignment_id"])
++                != assignment["assignment_id"]
++            ):
++                raise ValueError("software adapter returned foreign assignment")
++            row.update(supplied)
++            row.update(
++                assignment_id=assignment["assignment_id"],
++                accepted_success=False,
++                scope="SOFTWARE_ONLY" if software_adapter is not None else "REAL_RUNTIME",
++            )
++            if software_adapter is not None:
++                row["reason"] = "explicit software fixture; no physical acceptance"
++        records.append(row)
++        (directory / "case-result.json").write_text(canonical_json(row) + "\n")
++    (output / "results.json").write_text(canonical_json(records) + "\n")
++    summary = {
++        "schema_version": "ced.pilot-stage.v1",
++        "protocol_version": "ced.research.v2",
++        "stage": stage,
++        "scope": "SOFTWARE_ONLY" if software_only else "UNVERIFIED",
++        "actual_research_status": "NOT_RUN",
++        "status": "SOFTWARE_ONLY" if software_only else "NOT_RUN",
++        "group_denominator": 120,
++        "assigned_denominator": len(assignments) if stage != "power" else None,
++        "recorded_denominator": len(records),
++        "accepted_success": 0,
++        "freeze_ready": False,
++        "selected_period_s": None,
++        "role_bundle_hash": role_bundle_hash,
++        "assignment_manifest_hash": content_digest(assignments),
++        "pools_hash": content_digest(pools),
++        "method_runtime_integrated": False if stage == "power" else None,
++        "execution_mode": "REAL_RUNTIME" if _real_executor is not None else "NOT_EXECUTED",
++        "b0_period_s": period_s if stage == "foundation" else None,
++        "terminal_status_counts": dict(Counter(r["status"] for r in records)),
++    }
++    if stage == "selection":
++        summary["selection_diagnostic"] = choose_b0_period(assignments, records)
++    (output / "summary.json").write_text(canonical_json(summary) + "\n")
++    return summary
+ 
+ 
+ def derive_tcap(successful_b0_durations_s: list[float]) -> int:
+@@ -14,7 +318,7 @@
+         raise ValueError("no B0 successes; Tcap freeze is BLOCKED")
+     if any(not math.isfinite(v) or v <= 0 for v in successful_b0_durations_s):
+         raise ValueError("successful durations must be positive finite measured seconds")
+-    p99 = float(np.quantile(successful_b0_durations_s, .99))
++    p99 = float(np.quantile(successful_b0_durations_s, 0.99))
+     return min(600, max(120, math.ceil(2 * p99 / 10) * 10))
+ 
+ 
+@@ -26,13 +330,15 @@
+     def summary(self) -> dict[str, Any]:
+         successes = [row for row in self.records if row.get("success", False)]
+         return {
+-            "assigned": self.assigned, "recorded": len(self.records),
++            "assigned": self.assigned,
++            "recorded": len(self.records),
+             "unrecorded": self.assigned - len(self.records),
+             "succeeded": len(successes),
+             "blocked": sum(bool(row.get("blocked")) for row in self.records),
+             "success_rate_all_assigned": len(successes) / self.assigned if self.assigned else None,
+-            "tcap_derivable": len(self.records) == self.assigned and bool(successes)
+-                            and not any(row.get("blocked") for row in self.records),
++            "tcap_derivable": len(self.records) == self.assigned
++            and bool(successes)
++            and not any(row.get("blocked") for row in self.records),
+             # Only the independent evidence verifier can accept a protocol.
+             "freeze_ready": False,
+         }
+diff --git a/src/cloud_edge_robot_arm/research/freeze_evidence.py b/src/cloud_edge_robot_arm/research/freeze_evidence.py
+--- a/src/cloud_edge_robot_arm/research/freeze_evidence.py
++++ b/src/cloud_edge_robot_arm/research/freeze_evidence.py
+@@ -2,8 +2,18 @@
+ 
+ from __future__ import annotations
+ 
++import base64
++import hashlib
++import json
++import math
++import struct
+ from collections import Counter
++from collections.abc import Mapping
++from datetime import datetime
+ from pathlib import Path
++from typing import Any
++
++import numpy as np
+ 
+ from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+ from cloud_edge_robot_arm.research.pilot import derive_tcap
+@@ -17,8 +27,737 @@
+ from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+ 
+ 
++def _inside(directory: Path, relative: str) -> Path:
++    name = Path(relative)
++    if name.is_absolute() or ".." in name.parts or name == Path("."):
++        raise ValueError("evidence path must be relative and cannot traverse")
++    root = directory.absolute()
++    if root.resolve() != root or root.is_symlink():
++        raise ValueError("evidence root cannot follow symlinks")
++    path = root / name
++    for ancestor in (path, *path.parents):
++        if ancestor == root:
++            break
++        if ancestor.is_symlink():
++            raise ValueError("evidence symlinks are forbidden")
++    if not path.resolve().is_relative_to(root):
++        raise ValueError("evidence path escapes its root")
++    return path
++
++
++def _read_frame(directory: Path) -> Any:
++    """Reconstruct calibrated registered observation from the original payloads."""
++    from cloud_edge_robot_arm.vision.capture import CapturedFrame
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    metadata = read_json(_inside(directory, "observation.json"))
++    if not isinstance(metadata, Mapping):
++        raise ValueError("raw observation metadata must be an object")
++    fields = {name: metadata[name] for name in RGBDObservation.model_fields if name in metadata}
++    for field, filename in (
++        ("rgb_png_base64", "rgb.png"),
++        ("depth_float32_base64", "depth.f32"),
++        ("valid_mask_base64", "valid_mask.u8"),
++    ):
++        fields[field] = base64.b64encode(_inside(directory, filename).read_bytes()).decode()
++    observation = RGBDObservation.model_validate(fields)
++    if (observation.width, observation.height) != (320, 240) or not all(
++        (
++            observation.episode_id,
++            observation.scene_id,
++            observation.calibration_version,
++        )
++    ):
++        raise ValueError("probe requires complete 320x240 calibrated episode identity")
++    if metadata["rgb_sha256"] != observation.evidence()["rgb_sha256"] or (
++        metadata["depth_sha256"] != observation.evidence()["depth_sha256"]
++    ):
++        raise ValueError("registered image hashes do not reproduce")
++    raw_ids = _inside(directory, "instance_geom_ids.i32").read_bytes()
++    if len(raw_ids) != 320 * 240 * 4:
++        raise ValueError("instance pixels do not cover the registered observation")
++    passes = metadata["pass_state_hashes"]
++    physics = metadata["physics_state_hash"]
++    if not isinstance(passes, list) or len(passes) != 3 or set(passes) != {physics}:
++        raise ValueError("raw RGB/depth/instance passes are not synchronized")
++    labels = {int(key): value for key, value in metadata["instance_labels"].items()}
++    return CapturedFrame(
++        observation, struct.unpack("<76800i", raw_ids), labels, physics, tuple(passes)
++    )
++
++
++def _model_evidence(settings: Mapping[str, Any]) -> dict[str, Any]:
++    """Rebuild the adapter's model snapshot from recorded effective settings."""
++    return {
++        name: settings[name]
++        for name in (
++            "provider",
++            "model",
++            "endpoint_hash",
++            "weight_digest",
++            "quantization",
++            "image_size",
++            "generation_parameters",
++            "timeout_s",
++            "coordinate_system",
++            "grasp_profile",
++        )
++    }
++
++
++def _model_evidence_hash(settings: Mapping[str, Any]) -> str:
++    return hashlib.sha256(
++        json.dumps(_model_evidence(settings), sort_keys=True).encode()
++    ).hexdigest()
++
++
++def verify_role_probe_evidence(directory: Path) -> dict[str, Any]:
++    """Read exact role wire/frames and redo nominal parsing/grounding, without HTTP.
++
++    Byte integrity and reproduced nominal checks do not authenticate remote
++    weights or accept edge/physical performance. Missing/suppressed wire is unavailable.
++    """
++    errors: list[str] = []
++    reconstructed: dict[str, Any] | None = None
++    try:
++        from scripts.probe_rgbd_model import _pixel_hit
++        from scripts.probe_rgbd_roles import can_accept_role_probe, summarize_role_request
++
++        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
++        from cloud_edge_robot_arm.research.cost_ledger import RequestCost
++        from cloud_edge_robot_arm.vision.messages import build_visual_messages
++        from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter, VisualDecision
++        from cloud_edge_robot_arm.vision.role_models import RoleModelBundle, RoleProviderSnapshot
++
++        path = _inside(directory, "role-probe-report.json")
++        raw = path.read_bytes()
++        if _inside(directory, "role-probe-report.sha256").read_text().strip() != (
++            hashlib.sha256(raw).hexdigest()
++        ):
++            raise ValueError("role report content hash mismatch")
++        report = json.loads(raw)
++        if not isinstance(report, dict) or report.get("schema_version") != "ced.role-probe.v1":
++            raise ValueError("unsupported role report schema")
++        if (
++            report.get("status") != "PASS"
++            or report.get("scope") == "SOFTWARE_ONLY"
++            or (
++                report.get("physical_acceptance") is not False
++                or report.get("edge_acceptance") is not False
++                or report.get("dispatch") is not False
++            )
++        ):
++            raise ValueError("nominal probe cannot claim physical/edge/software acceptance")
++        if read_json(_inside(directory, "roles-frozen.json")) != report["bundle"]:
++            raise ValueError("role snapshot differs from the original probe")
++        cloud = RoleProviderSnapshot(**report["bundle"]["cloud_snapshot"])
++        assert cloud.model_id is not None
++        bundle = RoleModelBundle(
++            cloud,
++            report["bundle"]["edge_provider_id"],
++            report["bundle"]["edge_provider_hash"],
++            report["bundle"]["device_pipeline_hash"],
++        )
++        settings = report["request_settings"]
++        reconstructed = json.loads(json.dumps(report))
++        rebuilt_attempts = []
++        attempts = report["attempts"]
++        if (
++            not isinstance(attempts, list)
++            or len(attempts) != report["probe_config"]["warm_runs"] + 1
++        ):
++            raise ValueError("role probe first/warm attempt coverage is incomplete")
++        for index, attempt in enumerate(attempts):
++            relative = f"attempt-{index:02d}"
++            case = _inside(directory, relative)
++            if read_json(_inside(case, "attempt.json")) != attempt or (
++                attempt.get("index") != index
++                or attempt.get("phase") != ("first" if index == 0 else "warm")
++            ):
++                raise ValueError("persisted probe attempt identity/content differs")
++            request_raw = _inside(case, "request.raw").read_bytes()
++            response_raw = _inside(case, "response.raw").read_bytes()
++            if any(len(value) > 2_000_000 for value in (request_raw, response_raw)):
++                raise ValueError("wire payload exceeds the original transport bound")
++            if any(
++                hashlib.sha256(value).hexdigest() != attempt[f"{name}_sha256"]
++                for name, value in (("request", request_raw), ("response", response_raw))
++            ):
++                raise ValueError("wire payload hash drift")
++            body, response = json.loads(request_raw), json.loads(response_raw)
++            if read_json(_inside(case, "request.json")) != body or (
++                read_json(_inside(case, "response.json")) != response
++            ):
++                raise ValueError("parsed wire convenience artifact differs from original bytes")
++            frame = _read_frame(case)
++            request = InitialPlanningRequest(
++                request_id=f"cloud-role-probe-{index:02d}",
++                user_instruction=report["probe_config"]["instruction"],
++                scene=SceneSummary(
++                    scene_version=1,
++                    updated_at=datetime.fromisoformat(str(frame.observation.captured_at)),
++                ),
++                observation=frame.observation,
++            )
++            messages = build_visual_messages(
++                request.user_instruction,
++                frame.observation,
++                image_size=tuple(settings["image_size"]),
++                coordinate_system=settings["coordinate_system"],
++                decision_schema=VisualDecision.model_json_schema(),
++            )
++            from cloud_edge_robot_arm.vision.planner import compatible_messages
++
++            expected_body = {
++                "model": settings["model"],
++                "messages": compatible_messages(messages),
++                "temperature": settings["generation_parameters"]["temperature"],
++                "max_tokens": settings["generation_parameters"]["num_predict"],
++                "response_format": {"type": "json_object"},
++            }
++            if body != expected_body:
++                raise ValueError("actual wire does not bind the frozen frame/prompt/settings")
++            offline = RGBDPlannerAdapter(
++                base_url="http://127.0.0.1:11434",
++                model=cloud.model_id,
++                provider="openai_compatible",
++            )
++            draft = offline._ground_response(
++                request,
++                response,
++                0,
++                frame.observation,
++                messages,
++                tuple(settings["image_size"]),
++                settings["coordinate_system"],
++                settings["grasp_profile"],
++            )
++            evidence = draft.observation_evidence or {}
++            target_hit, target_check = _pixel_hit(
++                frame, evidence.get("original_pixel_target"), "object_geom"
++            )
++            destination_hit, destination_check = _pixel_hit(
++                frame, evidence.get("original_pixel_destination"), "target_region_geom"
++            )
++            saved_evidence = dict(attempt["observation_evidence"])
++            saved_evidence.pop("cloud_snapshot_hash", None)
++            saved_evidence.pop("valid_decision_latency_ms", None)
++            compared = dict(evidence)
++            compared.pop("valid_decision_latency_ms", None)
++            compared["model_snapshot"] = _model_evidence(settings)
++            compared["model_snapshot_hash"] = _model_evidence_hash(settings)
++            if (
++                saved_evidence != compared
++                or attempt["parsed_json"] != draft.parsed_json
++                or (
++                    attempt["target_offline_check"] != target_check
++                    or attempt["destination_offline_check"] != destination_check
++                )
++            ):
++                raise ValueError("response parsing/grounding does not reproduce from raw RGB-D")
++            costs = attempt["cost_ledger"]
++            sent = [RequestCost.model_validate(item) for item in costs["requests"]]
++            if len(sent) != 1 or any(
++                r.status != "SUCCESS"
++                or r.model_role != "PLANNER"
++                or r.provider_version != _model_evidence_hash(settings)
++                or (
++                    r.provider_location != "REMOTE_SERVICE"
++                    or r.sent_at is None
++                    or r.serialized_sent_bytes != len(request_raw)
++                    or r.serialized_received_bytes != len(response_raw)
++                )
++                for r in sent
++            ):
++                raise ValueError("actual probe wire counts do not join the settled request ledger")
++            rebuilt = dict(
++                attempt,
++                artifact_directory=str(case),
++                parsed=draft.parse_error is None,
++                grounded=draft.observed_scene is not None,
++                target_hit=target_hit,
++                destination_hit=destination_hit,
++                transport_two_images=True,
++                request_summary=summarize_role_request(body),
++                expected_request_summary=summarize_role_request(expected_body),
++            )
++            rebuilt_attempts.append(rebuilt)
++        reconstructed["attempts"] = rebuilt_attempts
++        reconstructed["capture"] = {"synchronized": True, "image_size": [320, 240]}
++        if not can_accept_role_probe(reconstructed):
++            raise ValueError("reconstructed nominal role probe gate rejected source/settings/wire")
++        reconstructed["bundle_hash"] = bundle.digest()
++    except (OSError, ValueError, KeyError, TypeError, IndexError, struct.error) as exc:
++        errors.append(f"role probe unavailable: {type(exc).__name__}: {exc}")
++    return {
++        "schema_version": "ced.role-probe-reader.v1",
++        "available": not errors,
++        "errors": errors,
++        "physical_acceptance": False,
++        "edge_acceptance": False,
++        "scope": "NOMINAL_PROBE_ONLY",
++        "report": reconstructed if not errors else None,
++    }
++
++
++def _registered_observation(directory: Path) -> Any:
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++
++    metadata = read_json(_inside(directory, "observation.json"))
++    fields = {name: metadata[name] for name in RGBDObservation.model_fields if name in metadata}
++    fields.update(
++        rgb_png_base64=base64.b64encode(_inside(directory, "rgb.png").read_bytes()).decode(),
++        depth_float32_base64=base64.b64encode(
++            _inside(directory, "depth.f32").read_bytes()
++        ).decode(),
++    )
++    observation = RGBDObservation.model_validate(fields)
++    if (observation.width, observation.height) != (320, 240) or not all(
++        (
++            observation.episode_id,
++            observation.calibration_version,
++        )
++    ):
++        raise ValueError("case observation identity/calibration/resolution is incomplete")
++    if any(
++        metadata[name] != observation.evidence()[name]
++        for name in (
++            "rgb_sha256",
++            "depth_sha256",
++            "checksum_sha256",
++        )
++    ):
++        raise ValueError("case observation payload identity drift")
++    return observation
++
++
++def _audit_actuators(case: Path, raw: list[Any], header: Mapping[str, Any]) -> None:
++    """Join complete actual backend commands to every recorded pre-step controller output."""
++    commands = read_json(_inside(case, "commands.json"))
++    controls = read_json(_inside(case, "actuator-steps.json"))
++    if (
++        not isinstance(commands, list)
++        or not isinstance(controls, list)
++        or len(controls) != len(raw) - 1
++    ):
++        raise ValueError("raw command/controller step coverage is incomplete")
++    if [c["command_seq"] for c in commands] != list(range(1, len(commands) + 1)):
++        raise ValueError("raw backend command prefix/identity is incomplete")
++    initial = header["initial_controller_targets"]
++    targets = np.asarray(initial["joints_rad"], dtype=float)
++    fingers = np.asarray(initial["fingers_m"], dtype=float)
++    if (
++        targets.shape != (7,)
++        or fingers.shape != (2,)
++        or not np.isfinite(targets).all()
++        or (not np.isfinite(fingers).all() or header.get("actuator_delay_steps") != 0)
++    ):
++        raise ValueError("unsupported initial controller state/delay")
++    for command in commands:
++        if type(command["physics_step"]) is not int or not 0 <= command["physics_step"] < len(raw):
++            raise ValueError("backend dispatch step is outside recorded episode")
++        if (
++            command["episode_id"] != raw[0].episode_id
++            or abs(command["sim_time_s"] - raw[command["physics_step"]].sim_time_s) > 1e-9
++            or command.get("type") not in {"joint_target", "hold_current_joints", "gripper"}
++        ):
++            raise ValueError("backend command source/time/semantics are incomplete")
++    cursor = 0
++    for index, control in enumerate(controls, start=1):
++        if (
++            control["physics_step"] != index
++            or control["episode_id"] != raw[0].episode_id
++            or abs(control["sim_time_s"] - raw[index - 1].sim_time_s) > 1e-9
++        ):
++            raise ValueError("actuator/physical step alignment differs")
++        while cursor < len(commands) and commands[cursor]["physics_step"] < index:
++            command = commands[cursor]
++            if command["accepted"]:
++                if command["type"] in {"joint_target", "hold_current_joints"}:
++                    requested = np.asarray(command["target_positions_rad"], dtype=float)
++                    applied = np.asarray(command["applied_target_positions_rad"], dtype=float)
++                    if (
++                        requested.shape != (7,)
++                        or not np.isfinite(requested).all()
++                        or (not np.array_equal(applied, np.clip(requested, -2.8, 2.8)))
++                    ):
++                        raise ValueError("actual accepted joint target does not reproduce")
++                    targets = applied
++                else:
++                    if type(command["target_open"]) is not bool:
++                        raise ValueError("gripper target must be an actual boolean")
++                    fingers = np.full(2, 0.039 if command["target_open"] else 0.0)
++            cursor += 1
++        q = np.asarray(control["pre_joint_positions_rad"], dtype=float)
++        gain = np.asarray(control["actuator_gains"], dtype=float)
++        ranges = np.asarray(control["actuator_ctrl_ranges"], dtype=float)
++        bias = np.asarray(control["pre_gravity_bias_nm"], dtype=float)
++        actual = np.asarray(control["control_rad"], dtype=float)
++        if any(v.shape != (7,) or not np.isfinite(v).all() for v in (q, gain, bias, actual)) or (
++            ranges.shape != (7, 2)
++            or not np.isfinite(ranges).all()
++            or np.any(gain <= 0)
++            or np.any(ranges[:, 0] >= ranges[:, 1])
++        ):
++            raise ValueError("controller vectors/ranges are incomplete or nonfinite")
++        expected = np.clip(
++            q + np.clip(targets - q, -0.1, 0.1) + bias / gain, ranges[:, 0], ranges[:, 1]
++        )
++        if not np.allclose(q, raw[index - 1].joint_positions_rad, atol=1e-9, rtol=0) or (
++            not np.allclose(actual, expected, atol=1e-9, rtol=0)
++            or not np.allclose(control["applied_joint_targets_rad"], targets, atol=1e-9, rtol=0)
++            or not np.allclose(control["finger_control_targets_m"], fingers, atol=1e-9, rtol=0)
++        ):
++            raise ValueError("actual controller outputs do not join dispatch/raw physical state")
++
++
++def _audit_ced_reset(raw: list[Any], header: Mapping[str, Any], scene: Mapping[str, Any]) -> None:
++    target = scene["scene_parameters"]["target"]
++    destination = scene["scene_parameters"]["destination"]
++    initial = header["initial_controller_targets"]
++    reference_joints = [-0.8, 0, 0, 0, 0, 0, 0]
++    if not raw or (
++        not np.allclose(raw[0].object_position_m, target["position"], atol=1e-9, rtol=0)
++        or not np.allclose(raw[0].object_half_extent_m, target["half_size"], atol=1e-9, rtol=0)
++        or not np.allclose(raw[0].joint_positions_rad, reference_joints, atol=1e-9, rtol=0)
++        or not np.allclose(initial["joints_rad"], reference_joints, atol=1e-9, rtol=0)
++        or not np.allclose(initial["fingers_m"], [0.039, 0.039], atol=1e-9, rtol=0)
++        or any(
++            not np.allclose(item.region_center_m, destination["position"], atol=1e-9, rtol=0)
++            or not np.allclose(
++                item.region_half_extent_m, destination["half_size"], atol=1e-9, rtol=0
++            )
++            for item in raw
++        )
++    ):
++        raise ValueError("raw reset scene/controller geometry differs from full assignment")
++
++
++def _case_wire_payloads(case: Path, entry: Mapping[str, Any]) -> tuple[bytes, bytes]:
++    request = _inside(case, entry["request_path"]).read_bytes()
++    response = (
++        _inside(case, entry["response_path"]).read_bytes() if entry.get("response_path") else b""
++    )
++    if (
++        hashlib.sha256(request).hexdigest() != entry["request_sha256"]
++        or len(request) != entry["serialized_sent_bytes"]
++        or len(response) != entry["serialized_received_bytes"]
++        or (response and hashlib.sha256(response).hexdigest() != entry["response_sha256"])
++    ):
++        raise ValueError("actual request/response wire length/hash differs from settled counts")
++    return request, response
++
++
++def _audit_ced_case(
++    case: Path, assignment: Mapping[str, Any], row: Mapping[str, Any], probe: Mapping[str, Any]
++) -> dict[str, Any]:
++    from dataclasses import asdict
++
++    from scripts.probe_rgbd_roles import summarize_role_request
++
++    from cloud_edge_robot_arm.research.cost_ledger import RequestCost
++    from cloud_edge_robot_arm.research.protocol_evidence import _trace
++    from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
++        CompletionCriteria,
++        evaluate_evidence,
++        sample_physical_observation,
++    )
++    from cloud_edge_robot_arm.vision.messages import build_visual_messages
++    from cloud_edge_robot_arm.vision.planner import VisualDecision
++
++    if (
++        read_json(_inside(case, "assignment.json")) != assignment
++        or row.get("scope") != "REAL_RUNTIME"
++    ):
++        raise ValueError("case source/assignment binding is unavailable")
++    if read_json(_inside(case, "case-result.json")) != row:
++        raise ValueError("case result publication differs from all-original results table")
++    header = read_json(_inside(case, "context.json"))
++    if header.get("pilot_assignment_hash") != content_digest(assignment) or (
++        header.get("role_bundle_hash") != probe["bundle_hash"]
++    ):
++        raise ValueError("raw episode does not bind the full paired assignment/roles")
++    raw = _trace(case, dict(assignment["base_assignment"]), header)
++    _audit_ced_reset(raw, header, assignment["base_assignment"]["scene"])
++    _audit_actuators(case, raw, header)
++    policy = read_json(_inside(case, "policy.json"))
++    if (
++        policy["device_pipeline"] != "OPENCV"
++        or policy["model_snapshot_hash"] != _model_evidence_hash(probe["request_settings"])
++        or policy["role_binding"]["bundle"] != probe["bundle"]
++        or (
++            policy["role_binding"]["edge_snapshot"] != probe["edge_snapshot"]
++            or policy["role_binding"]["device_source_hashes"] != probe["device_source_hashes"]
++            or policy["role_binding"]["edge_policy"] != probe["edge_policy"]
++            or policy["verification_budget"] != probe["edge_policy"]["verification_budget"]
++            or policy["supervision_period_s"] != assignment["period_s"]
++            or policy["advance_physics_during_wait"] is not True
++        )
++    ):
++        raise ValueError("actual episode policy differs from frozen B0/role/verification boundary")
++    start = header["evaluation_start_step"]
++    if type(start) is not int or not 0 <= start < len(raw):
++        raise ValueError("independent evaluation start is outside full raw trajectory")
++    criteria = CompletionCriteria("object", "target_region")
++    samples = [sample_physical_observation(item, criteria) for item in raw[start:]]
++    if content_digest([asdict(s) for s in samples]) != content_digest(
++        read_json(_inside(case, "physical-evidence.json"))
++    ):
++        raise ValueError("physical samples do not reproduce from reset-complete raw physics")
++    physical = evaluate_evidence(samples, criteria, evaluation_start_step=start)
++    if content_digest(asdict(physical)) != content_digest(
++        read_json(_inside(case, "physical-outcome.json"))
++    ):
++        raise ValueError("independent physical verdict differs from original raw evaluation")
++    episode = read_json(_inside(case, "episode.json"))
++    if (
++        episode["episode_id"] != raw[0].episode_id
++        or episode["physical_success"] != physical.success
++        or episode["status"] != row["status"]
++    ):
++        raise ValueError("episode physical identity/outcome differs")
++    success = bool(
++        physical.success
++        and episode["online_reported_complete"] is True
++        and episode["terminal_reason"] is None
++    )
++    if success != row["success"] or success != episode["success"]:
++        raise ValueError("online/independent physical success conjunction differs")
++    observations = {}
++    for folder in ("frames", "supervision-frames"):
++        directory = _inside(case, folder)
++        if directory.is_dir():
++            for path in sorted(directory.iterdir()):
++                observation = _registered_observation(path)
++                if observation.episode_id != raw[0].episode_id:
++                    raise ValueError("observation belongs to a foreign raw episode")
++                observations[observation.observation_id] = observation
++    declared = [v for v in episode["verification_records"] if v.get("layer") == "OBSERVATION"]
++    if not declared or any(
++        v["observation_id"] not in observations
++        or (v["checksum_sha256"] != observations[v["observation_id"]].checksum_sha256)
++        for v in declared
++    ):
++        raise ValueError("online observation trace does not reproduce from raw frames")
++    settings = probe["request_settings"]
++    image_pairs = set()
++    for observation in observations.values():
++        messages = build_visual_messages(
++            "audit",
++            observation,
++            image_size=tuple(settings["image_size"]),
++            coordinate_system=settings["coordinate_system"],
++            decision_schema=VisualDecision.model_json_schema(),
++        )
++        blobs = []
++        for message in messages:
++            encoded = message.get("images", [])
++            if not isinstance(encoded, list) or any(not isinstance(v, str) for v in encoded):
++                raise ValueError("registered model images must be base64 strings")
++            blobs.extend(encoded)
++        images = tuple(hashlib.sha256(base64.b64decode(image)).hexdigest() for image in blobs)
++        image_pairs.add(images)
++    wire = read_json(_inside(case, "wire-index.json"))
++    costs = read_json(_inside(case, "costs.json"))
++    requests = [RequestCost.model_validate(value) for value in costs["requests"]]
++    sent = [r for r in requests if r.sent_at is not None]
++    if len(sent) != len(wire) or any(
++        r.status == "IN_FLIGHT"
++        or r.provider_location != "REMOTE_SERVICE"
++        or r.model_role != "PLANNER"
++        or r.provider_version != _model_evidence_hash(settings)
++        for r in sent
++    ):
++        raise ValueError("settled actual request/wire denominator is incomplete")
++    for entry in wire:
++        request_raw, _ = _case_wire_payloads(case, entry)
++        body = json.loads(request_raw)
++        summary = summarize_role_request(body)
++        if hashlib.sha256(request_raw).hexdigest() != entry["request_sha256"] or (
++            summary["model"] != settings["model"]
++            or tuple(summary["image_sha256"]) not in image_pairs
++            or body["temperature"] != settings["generation_parameters"]["temperature"]
++            or body["max_tokens"] != settings["generation_parameters"]["num_predict"]
++            or body["response_format"] != {"type": "json_object"}
++        ):
++            raise ValueError("actual model wire differs from frozen model/current RGB-D")
++    if sum(e["serialized_sent_bytes"] for e in wire) != sum(
++        r.serialized_sent_bytes for r in sent
++    ) or (
++        sum(e["serialized_received_bytes"] for e in wire)
++        != sum(r.serialized_received_bytes for r in sent)
++        or costs["summary"]["cloud_model_requests"] != len(sent)
++        or costs["summary"]["application_bytes"]
++        != sum(r.serialized_sent_bytes + r.serialized_received_bytes for r in sent)
++        or row["costs"] != costs["summary"]
++        or row["cloud_requests"] != len(sent)
++    ):
++        raise ValueError("actual serialized role costs differ from all final publications")
++    duration = row["wall_duration_s"]
++    if type(duration) not in {int, float} or not math.isfinite(duration) or duration <= 0:
++        raise ValueError("measured original wall duration is unavailable")
++    return {
++        **row,
++        "stratum_id": assignment["stratum_id"],
++        "success": success,
++        "safety_violation": physical.safety_violation,
++        "cloud_requests": len(sent),
++    }
++
++
++def audit_ced_pilot_stage(directory: Path, stage: str) -> dict[str, Any]:
++    """Independent complete raw audit; synthetic/metadata-only evidence stays unavailable."""
++    errors: list[str] = []
++    cases: list[dict[str, Any]] = []
++    result: dict[str, Any] = {}
++    try:
++        from cloud_edge_robot_arm.research.pilot import (
++            BUDGET_SELECTION_RULE,
++            build_pilot_assignments,
++            choose_b0_period,
++            stage_source_paths,
++        )
++
++        report = read_json(_inside(directory, "summary.json"))
++        if (
++            stage not in {"selection", "foundation"}
++            or not isinstance(report, Mapping)
++            or (
++                report.get("schema_version") != "ced.pilot-stage.v1"
++                or report.get("protocol_version") != "ced.research.v2"
++                or report.get("stage") != stage
++                or report.get("scope") != "UNVERIFIED"
++                or report.get("execution_mode") != "REAL_RUNTIME"
++            )
++        ):
++            raise ValueError("stage requires complete original REAL_RUNTIME sources")
++        hashes = read_json(_inside(directory, "source-hashes.json"))
++        if not isinstance(hashes, dict) or not hashes:
++            raise ValueError("missing immutable runner/source archive")
++        if set(hashes) != {str(path) for path in stage_source_paths()}:
++            raise ValueError("stage source inventory must retain every collector source")
++        for name, expected in hashes.items():
++            if (
++                file_hash(_inside(directory, "source/" + name)) != expected
++                or file_hash(Path(name)) != expected
++            ):
++                raise ValueError("stage archived/current source hashes differ")
++        probe_audit = verify_role_probe_evidence(_inside(directory, "role-probe"))
++        if not probe_audit["available"]:
++            raise ValueError(f"nominal role probe unavailable: {probe_audit['errors']}")
++        probe = probe_audit["report"]
++        pools = read_json(_inside(directory, "pools.json"))
++        assignments = read_json(_inside(directory, "assignments.json"))
++        expected = build_pilot_assignments(
++            pools,
++            stage,
++            role_bundle_hash=probe["bundle_hash"],
++            period_s=report.get("b0_period_s") if stage == "foundation" else None,
++        )
++        if assignments != expected or report["assignment_manifest_hash"] != content_digest(
++            expected
++        ):
++            raise ValueError("complete paired frozen assignment manifest differs")
++        records = read_json(_inside(directory, "results.json"))
++        rows = {row["assignment_id"]: row for row in records}
++        if len(rows) != len(records) or set(rows) != {r["assignment_id"] for r in expected}:
++            raise ValueError("all assigned failed/blocked original records are required")
++        if read_json(_inside(directory, "selection-rule.json")) != BUDGET_SELECTION_RULE:
++            raise ValueError("selection/budget rule differs from fixed design")
++        for assignment in expected:
++            cases.append(
++                _audit_ced_case(
++                    _inside(directory, "cases/" + assignment["assignment_id"]),
++                    assignment,
++                    rows[assignment["assignment_id"]],
++                    probe,
++                )
++            )
++        result = {
++            "role_bundle_hash": probe["bundle_hash"],
++            "pools": pools,
++            "assignment_manifest_hash": content_digest(expected),
++            "cases": cases,
++            "selected_period_s": report.get("b0_period_s"),
++        }
++        if stage == "selection":
++            diagnostic = choose_b0_period(expected, cases)
++            if diagnostic["diagnostic_selected_period_s"] is None:
++                raise ValueError("NO_FEASIBLE_BASELINE")
++            result["selected_period_s"] = diagnostic["diagnostic_selected_period_s"]
++            result["selection_curve"] = diagnostic["periods"]
++        result["evidence_hash"] = content_digest(
++            {
++                "assignments": expected,
++                "results": records,
++                "source_hashes": hashes,
++                "role_probe_hash": file_hash(
++                    _inside(directory, "role-probe/role-probe-report.json")
++                ),
++            }
++        )
++    except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
++        errors.append(f"stage unavailable: {type(exc).__name__}: {exc}")
++    return {
++        "schema_version": "ced.pilot-stage-audit.v1",
++        "available": not errors,
++        "errors": errors,
++        "accepted_success": sum(r["success"] for r in cases) if not errors else 0,
++        "actual_research_status": "NOT_RUN",
++        **(result if not errors else {}),
++    }
++
++
++def _initial_v2_spec(directory: Path) -> ProtocolSpec:
++    from cloud_edge_robot_arm.research.pilot import BUDGET_SELECTION_RULE
++    from cloud_edge_robot_arm.research.protocol_evidence import verify_protocol_evidence
++
++    foundation = audit_ced_pilot_stage(directory, "foundation")
++    if not foundation["available"]:
++        raise ValueError(f"foundation unavailable: {foundation['errors']}")
++    selection = audit_ced_pilot_stage(_inside(directory, "selection-evidence"), "selection")
++    if not selection["available"] or any(
++        foundation[name] != selection[name]
++        for name in ("pools", "role_bundle_hash", "selected_period_s")
++    ):
++        raise ValueError("foundation selection source/period/roles/pools are not identical")
++    cases = foundation["cases"]
++    nominal = [r for r in cases if r["stratum_id"].startswith("STATIC")]
++    if (
++        sum(r["success"] for r in cases) / 120 < 0.8
++        or sum(r["success"] for r in nominal) / 40 < 0.9
++        or (sum(r["safety_violation"] for r in cases) / 120 > 0.01)
++    ):
++        raise ValueError("NO_FEASIBLE_BASELINE; foundation did not reproduce quality")
++    evidence_directory = _inside(directory, "protocol-evidence")
++    evidence = verify_protocol_evidence(evidence_directory)
++    if (
++        not evidence["valid"]
++        or read_json(_inside(evidence_directory, "evidence-pools.json")) != foundation["pools"]
++    ):
++        raise ValueError("fixed opportunity/recovery evidence is incomplete or has different pools")
++    return ProtocolSpec(
++        schema_version="ced.research.v2",
++        tcap_s=derive_tcap([r["wall_duration_s"] for r in cases if r["success"]]),
++        pool_hashes={name: content_digest(rows) for name, rows in foundation["pools"].items()},
++        model_snapshot_hash=foundation["role_bundle_hash"],
++        role_bundle_hash=foundation["role_bundle_hash"],
++        selected_b0_period_s=selection["selected_period_s"],
++        selection_manifest_hash=selection["evidence_hash"],
++        budget_selection_rule_hash=content_digest(BUDGET_SELECTION_RULE),
++        opportunity_hash=content_digest(
++            read_json(_inside(evidence_directory, "opportunities.json"))
++        ),
++        recovery_fault_manifest_hash=content_digest(
++            read_json(_inside(evidence_directory, "recovery-faults.json"))
++        ),
++    )
++
++
+ def initial_spec_from_evidence(directory: Path) -> ProtocolSpec:
+     report = read_json(directory / "summary.json")
++    if isinstance(report, Mapping) and report.get("protocol_version") == "ced.research.v2":
++        return _initial_v2_spec(directory)
+     if report.get("method_id") != "B0":
+         raise ValueError("initial protocol requires actual B0 foundation pilot")
+     # A report can claim anything; completeness and quality come from raw artifacts.
+@@ -29,12 +768,17 @@
+         raise ValueError("foundation requires all 120 balanced preregistered records")
+     audit = audit_pilot(directory)
+     if not audit["physical_reconstruction_valid"]:
+-        raise ValueError(f'foundation physical evidence invalid: {audit["errors"]}')
++        raise ValueError(f"foundation physical evidence invalid: {audit['errors']}")
+     measured = audit["summary"]
+     if measured["cost_publication_mismatches"] or measured["inflight_requests"]:
+         raise ValueError("foundation request costs are inconsistent or unsettled")
+-    if measured["blocked"] or measured["nominal_success_rate"] < .9 or (
+-        measured["success_rate_all_assigned"] < .8 or measured["safety_violations"] / 120 > .01
++    if (
++        measured["blocked"]
++        or measured["nominal_success_rate"] < 0.9
++        or (
++            measured["success_rate_all_assigned"] < 0.8
++            or measured["safety_violations"] / 120 > 0.01
++        )
+     ):
+         raise ValueError("NO_FEASIBLE_BASELINE; cannot accept initial protocol")
+     pools = read_json(directory / "pools.json")
+@@ -56,8 +800,10 @@
+     source_hashes = read_json(directory / "source-hashes.json")
+     for relative, digest in source_hashes.items():
+         archived = directory / "source" / relative
+-        if not archived.is_relative_to(directory) or not archived.is_file() or (
+-            file_hash(archived) != digest
++        if (
++            not archived.is_relative_to(directory)
++            or not archived.is_file()
++            or (file_hash(archived) != digest)
+         ):
+             raise ValueError("missing or drifted archived source evidence")
+     model = ModelConfigSnapshot(**read_json(directory / "model-probe" / "model-frozen.json"))
+@@ -87,8 +833,10 @@
+                 raise ValueError("opportunity snapshot payload drift")
+         # This proof is produced by the independent opportunity evaluator, not online.
+         proof = item["independent_label_evidence"]
+-        expected_label = "UNKNOWN" if not proof["sensor_and_identity_sufficient"] else (
+-            "VALID" if proof["geometry_safe"] and proof["within_validity"] else "INVALID"
++        expected_label = (
++            "UNKNOWN"
++            if not proof["sensor_and_identity_sufficient"]
++            else ("VALID" if proof["geometry_safe"] and proof["within_validity"] else "INVALID")
+         )
+         if proof["rule_version"] != "rgbd.opportunity.v1" or seed.oracle_label != expected_label:
+             raise ValueError("opportunity independent label mismatch")
+@@ -99,8 +847,9 @@
+     for item in faults:
+         # Full independent successful teacher traces must demonstrate recoverability.
+         path = (directory / item["recoverability_evidence_path"]).resolve()
+-        if not path.is_relative_to(directory.resolve()) or file_hash(path) != (
+-            item["recoverability_evidence_hash"]
++        if (
++            not path.is_relative_to(directory.resolve())
++            or file_hash(path) != (item["recoverability_evidence_hash"])
+         ):
+             raise ValueError("recoverability evidence missing or drifted")
+         if not item.get("fault"):
+@@ -111,14 +860,19 @@
+         )
+ 
+         samples = [physical_sample(row) for row in read_json(path)]
+-        if not samples or not evaluate_evidence(
+-            samples, CompletionCriteria("object", "target_region"),
+-            evaluation_start_step=samples[0].physics_step,
+-        ).success:
++        if (
++            not samples
++            or not evaluate_evidence(
++                samples,
++                CompletionCriteria("object", "target_region"),
++                evaluation_start_step=samples[0].physics_step,
++            ).success
++        ):
+             raise ValueError("fault recoverability requires independent successful trajectory")
+     return ProtocolSpec(
+         tcap_s=derive_tcap([r["wall_duration_s"] for r in audit["cases"] if r["success"]]),
+         pool_hashes={name: content_digest(rows) for name, rows in pools.items()},
+-        model_snapshot_hash=model.digest(), opportunity_hash=content_digest(opportunities),
++        model_snapshot_hash=model.digest(),
++        opportunity_hash=content_digest(opportunities),
+         recovery_fault_manifest_hash=content_digest(faults),
+     )
+diff --git a/src/cloud_edge_robot_arm/research/protocol.py b/src/cloud_edge_robot_arm/research/protocol.py
+--- a/src/cloud_edge_robot_arm/research/protocol.py
++++ b/src/cloud_edge_robot_arm/research/protocol.py
+@@ -7,13 +7,13 @@
+ from pathlib import Path
+ from typing import Any, Literal
+ 
+-from pydantic import BaseModel, ConfigDict, Field, model_validator
++from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+ 
+ from cloud_edge_robot_arm.datasets.rgbd.models import DatasetConfig, canonical_json, content_digest
+ from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import sample_scene
+ 
+ TASKS = ("STATIC", "SENSOR", "DYNAMIC")
+-NETWORKS = ((0, 0.), (100, 0.), (300, .01), (600, .05))
++NETWORKS = ((0, 0.0), (100, 0.0), (300, 0.01), (600, 0.05))
+ STRATA = tuple(f"{task}_RTT{rtt}" for task in TASKS for rtt, _ in NETWORKS)
+ 
+ 
+@@ -28,31 +28,52 @@
+ 
+ class ProtocolSpec(BaseModel):
+     model_config = ConfigDict(extra="forbid", frozen=True)
+-    schema_version: Literal["rgbd.research.v1"] = "rgbd.research.v1"
++    schema_version: Literal["rgbd.research.v1", "ced.research.v2"] = "rgbd.research.v1"
+     strata: tuple[str, ...] = STRATA
+     formal_ns: tuple[int, ...] = (600, 1200, 1800, 2400)
+     selected_n: int | None = None
+     tcap_s: int | None = Field(default=None, ge=120, le=600, multiple_of=10)
+     rcap_s: Literal[60] = 60
+     hypothesis_family: tuple[str, ...] = (
+-        "G2_REQUESTS", "G2_SUCCESS", "G2_SAFETY", "G3_FALSE_ACCEPT", "G4_DURATION"
++        "G2_REQUESTS",
++        "G2_SUCCESS",
++        "G2_SAFETY",
++        "G3_FALSE_ACCEPT",
++        "G4_DURATION",
+     )
+     bootstrap_iterations: int = Field(default=10000, ge=10000)
+     statistics_seed: int = 20261003
+-    alpha: float = Field(default=.05, ge=.05, le=.05)
+-    target_power: float = Field(default=.8, ge=.8, le=.8)
+-    b0_periods_s: tuple[float, ...] = (.5, 1., 2., 5.)
+-    success_noninferiority_margin: float = Field(default=.03, ge=.03, le=.03)
+-    safety_noninferiority_margin: float = Field(default=.01, ge=.01, le=.01)
+-    minimum_baseline_nominal_success: float = Field(default=.9, ge=.9, le=.9)
+-    minimum_baseline_overall_success: float = Field(default=.8, ge=.8, le=.8)
+-    maximum_baseline_safety_violation: float = Field(default=.01, ge=.01, le=.01)
++    alpha: float = Field(default=0.05, ge=0.05, le=0.05)
++    target_power: float = Field(default=0.8, ge=0.8, le=0.8)
++    b0_periods_s: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0)
++    success_noninferiority_margin: float = Field(default=0.03, ge=0.03, le=0.03)
++    safety_noninferiority_margin: float = Field(default=0.01, ge=0.01, le=0.01)
++    minimum_baseline_nominal_success: float = Field(default=0.9, ge=0.9, le=0.9)
++    minimum_baseline_overall_success: float = Field(default=0.8, ge=0.8, le=0.8)
++    maximum_baseline_safety_violation: float = Field(default=0.01, ge=0.01, le=0.01)
+     pool_hashes: dict[str, str] = Field(default_factory=dict)
+     model_snapshot_hash: str | None = None
+     method_hashes: dict[str, str] = Field(default_factory=dict)
+     initial_protocol_hash: str | None = None
+     opportunity_hash: str | None = None
+     recovery_fault_manifest_hash: str | None = None
++    role_bundle_hash: str | None = None
++    selection_manifest_hash: str | None = None
++    selected_b0_period_s: float | None = None
++    budget_selection_rule_hash: str | None = None
++
++    @model_serializer(mode="wrap")
++    def preserve_v1_shape(self, handler: Any) -> dict[str, Any]:
++        payload = dict(handler(self))
++        if self.schema_version == "rgbd.research.v1":
++            for name in (
++                "role_bundle_hash",
++                "selection_manifest_hash",
++                "selected_b0_period_s",
++                "budget_selection_rule_hash",
++            ):
++                payload.pop(name, None)
++        return payload
+ 
+     @model_validator(mode="after")
+     def fixed_design(self) -> ProtocolSpec:
+@@ -60,6 +81,30 @@
+             raise ValueError("task strata and N candidates are fixed by the approved design")
+         if self.selected_n is not None and self.selected_n not in self.formal_ns:
+             raise ValueError("N must be an allowed candidate")
++        if self.selected_b0_period_s is not None and self.selected_b0_period_s not in (
++            0.5,
++            1.0,
++            2.0,
++            5.0,
++        ):
++            raise ValueError("B0 period must be a fixed candidate")
++        v2_fields = (
++            self.role_bundle_hash,
++            self.selection_manifest_hash,
++            self.selected_b0_period_s,
++            self.budget_selection_rule_hash,
++        )
++        if self.schema_version == "rgbd.research.v1" and any(v is not None for v in v2_fields):
++            raise ValueError("role/stage bindings require explicit ced.research.v2")
++        for digest in (
++            self.role_bundle_hash,
++            self.selection_manifest_hash,
++            self.budget_selection_rule_hash,
++        ):
++            if digest is not None and (
++                len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest)
++            ):
++                raise ValueError("v2 stage bindings require full SHA256")
+         return self
+ 
+ 
+@@ -77,8 +122,11 @@
+ 
+ 
+ def freeze_protocol(
+-    spec: ProtocolSpec, output: Path, stage: Literal["INITIAL", "FINAL"],
+-    *, evidence_directory: Path | None = None,
++    spec: ProtocolSpec,
++    output: Path,
++    stage: Literal["INITIAL", "FINAL"],
++    *,
++    evidence_directory: Path | None = None,
+ ) -> FrozenProtocol:
+     if spec.tcap_s is None:
+         raise ValueError("Tcap requires real successful B0 pilot durations")
+@@ -90,8 +138,18 @@
+     from cloud_edge_robot_arm.research.freeze_evidence import initial_spec_from_evidence
+ 
+     derived = initial_spec_from_evidence(evidence_directory)
+-    for name in ("tcap_s", "pool_hashes", "model_snapshot_hash", "opportunity_hash",
+-                 "recovery_fault_manifest_hash"):
++    for name in (
++        "schema_version",
++        "tcap_s",
++        "pool_hashes",
++        "model_snapshot_hash",
++        "opportunity_hash",
++        "recovery_fault_manifest_hash",
++        "role_bundle_hash",
++        "selection_manifest_hash",
++        "selected_b0_period_s",
++        "budget_selection_rule_hash",
++    ):
+         if getattr(spec, name) != getattr(derived, name):
+             raise ValueError(f"protocol {name} differs from verified pilot evidence")
+     if stage == "INITIAL" and spec.selected_n is not None:
+@@ -114,35 +172,66 @@
+     payload = {"spec": frozen.spec.model_dump(mode="json"), "stage": frozen.stage}
+     if content_digest(payload) != frozen.content_hash:
+         raise ValueError("protocol content hash mismatch")
+-    if not all((frozen.spec.pool_hashes, frozen.spec.model_snapshot_hash,
+-                frozen.spec.opportunity_hash, frozen.spec.recovery_fault_manifest_hash)):
++    if not all(
++        (
++            frozen.spec.pool_hashes,
++            frozen.spec.model_snapshot_hash,
++            frozen.spec.opportunity_hash,
++            frozen.spec.recovery_fault_manifest_hash,
++        )
++    ):
+         raise ValueError("protocol lacks required evidence bindings")
++    if frozen.spec.schema_version == "ced.research.v2" and not all(
++        (
++            frozen.spec.role_bundle_hash,
++            frozen.spec.selection_manifest_hash,
++            frozen.spec.selected_b0_period_s,
++            frozen.spec.budget_selection_rule_hash,
++        )
++    ):
++        raise ValueError("v2 protocol lacks role/selection/budget evidence bindings")
+     return frozen
+ 
+ 
+ def build_scene_pools(
+-    seed: int, excluded_groups: set[str], *, protocol_version: str = "rgbd.research.v1",
++    seed: int,
++    excluded_groups: set[str],
++    *,
++    protocol_version: str = "rgbd.research.v1",
+ ) -> dict[str, list[dict[str, Any]]]:
+     """Freeze scenes before runs, matching physical group identity across all pools."""
+     if protocol_version not in {"rgbd.research.v1", "ced.research.v2"}:
+         raise ValueError("unsupported explicit scene pool protocol version")
+-    sizes: tuple[tuple[str, int], ...] = (("foundation", 120), ("power", 120), ("formal", 2400),
+-             ("recovery", 200), ("ood", 300))
++    sizes: tuple[tuple[str, int], ...] = (
++        ("foundation", 120),
++        ("power", 120),
++        ("formal", 2400),
++        ("recovery", 200),
++        ("ood", 300),
++    )
+     if protocol_version == "ced.research.v2":
+         sizes = (("selection", 120), *sizes)
+     config = DatasetConfig(
+-        dataset_id="research-pools", groups=sum(count for _, count in sizes), seed=seed,
+-        target_x=(.34, .43), target_y=(-.07, .08), half_size=(.032, .037),
+-        camera_height=(1.4, 1.4), camera_x=(.35, .35), camera_y=(0., 0.),
+-        camera_fovy=(45., 45.), distractor_count=(0, 0),
+-        depth_noise_m=(0.,), invalid_depth_fractions=(0.,),
++        dataset_id="research-pools",
++        groups=sum(count for _, count in sizes),
++        seed=seed,
++        target_x=(0.34, 0.43),
++        target_y=(-0.07, 0.08),
++        half_size=(0.032, 0.037),
++        camera_height=(1.4, 1.4),
++        camera_x=(0.35, 0.35),
++        camera_y=(0.0, 0.0),
++        camera_fovy=(45.0, 45.0),
++        distractor_count=(0, 0),
++        depth_noise_m=(0.0,),
++        invalid_depth_fractions=(0.0,),
+     )
+     pools: dict[str, list[dict[str, Any]]] = {}
+     seen = set(excluded_groups)
+     cursor = seed
+     for name, count in sizes:
+         rows = []
+-        local = config if name != "ood" else config.model_copy(update={"camera_fovy": (60., 65.)})
++        local = config if name != "ood" else config.model_copy(update={"camera_fovy": (60.0, 65.0)})
+         for index in range(count):
+             for _attempt in range(
+                 max(5, len(seen) + 1) if protocol_version == "ced.research.v2" else 5
+@@ -160,18 +249,24 @@
+             ordinal = index // 12
+             levels = {}
+             for parameter, choices in {
+-                "movement_speed_m_s": (0., .02, .04), "noise_m": (0., .002, .005),
+-                "invalid_fraction": (0., .1, .3), "occlusion_fraction": (0., .2, .4),
++                "movement_speed_m_s": (0.0, 0.02, 0.04),
++                "noise_m": (0.0, 0.002, 0.005),
++                "invalid_fraction": (0.0, 0.1, 0.3),
++                "occlusion_fraction": (0.0, 0.2, 0.4),
+             }.items():
+                 order = list(choices)
+                 random.Random(f"{seed}:{name}:{stratum}:{parameter}").shuffle(order)
+                 levels[parameter] = order[ordinal % 3]
+-            rows.append({"assignment_id": f"{name}-{index + 1:04d}",
+-                         "stratum_id": stratum, "scene": scene.model_dump(mode="json"),
+-                         "scene_hash": scene.scene_hash,
+-                         "perturbation": levels,
+-                         "ood_definition": "unseen camera fovy 60-65 degrees" if name == "ood"
+-                         else None})
++            rows.append(
++                {
++                    "assignment_id": f"{name}-{index + 1:04d}",
++                    "stratum_id": stratum,
++                    "scene": scene.model_dump(mode="json"),
++                    "scene_hash": scene.scene_hash,
++                    "perturbation": levels,
++                    "ood_definition": "unseen camera fovy 60-65 degrees" if name == "ood" else None,
++                }
++            )
+         pools[name] = rows
+     return pools
+ 
+diff --git a/scripts/run_rgbd_pilot.py b/scripts/run_rgbd_pilot.py
+--- a/scripts/run_rgbd_pilot.py
++++ b/scripts/run_rgbd_pilot.py
+@@ -10,7 +10,9 @@
+ import os
+ import shutil
+ import sys
++import threading
+ import time
++from collections.abc import Mapping
+ from dataclasses import asdict
+ from pathlib import Path
+ from typing import Any
+@@ -27,7 +29,7 @@
+ from cloud_edge_robot_arm.research.budget import estimate_budget
+ from cloud_edge_robot_arm.research.cost_ledger import CostLedger
+ from cloud_edge_robot_arm.research.network import NetworkInjector, NetworkSchedule
+-from cloud_edge_robot_arm.research.pilot import PilotReport, derive_tcap
++from cloud_edge_robot_arm.research.pilot import PilotReport, derive_tcap, run_pilot_stage
+ from cloud_edge_robot_arm.research.protocol import (
+     NETWORKS,
+     ProtocolSpec,
+@@ -47,6 +49,7 @@
+ 
+ class PerturbedCapture(MuJoCoCaptureSession):
+     """Offline-fixed sensor faults; never inspect target labels to choose corruption."""
++
+     noise_m = 0.0
+     invalid_fraction = 0.0
+     occlusion_fraction = 0.0
+@@ -74,25 +77,29 @@
+         width = round(observation.width * self.occlusion_fraction)
+         if width:
+             start = (observation.width - width) // 2
+-            rgb[:, start:start+width] = 0
+-            depth[:, start:start+width] = 0
++            rgb[:, start : start + width] = 0
++            depth[:, start : start + width] = 0
+         encoded = io.BytesIO()
+         Image.fromarray(rgb).save(encoded, format="PNG")
+         data = observation.model_dump()
+-        data.update(rgb_png_base64=base64.b64encode(encoded.getvalue()).decode(),
+-                    depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+-                    valid_mask_base64=None, checksum_sha256="")
++        data.update(
++            rgb_png_base64=base64.b64encode(encoded.getvalue()).decode(),
++            depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
++            valid_mask_base64=None,
++            checksum_sha256="",
++        )
+         return RGBDObservation.model_validate(data)
+ 
+ 
+-def publish_final_costs(report: PilotReport, ledgers: list[tuple[CostLedger, Path]],
+-                        *, settle_timeout_s: float = 5.) -> int:
++def publish_final_costs(
++    report: PilotReport, ledgers: list[tuple[CostLedger, Path]], *, settle_timeout_s: float = 5.0
++) -> int:
+     """Take one settled snapshot per case and publish it consistently everywhere."""
+     deadline = time.monotonic() + settle_timeout_s
+     while any(r.status == "IN_FLIGHT" for ledger, _ in ledgers for r in ledger.requests()):
+         if time.monotonic() >= deadline:
+             break
+-        time.sleep(.025)
++        time.sleep(0.025)
+     rows = {row["assignment_id"]: row for row in report.records}
+     inflight = 0
+     for ledger, directory in ledgers:
+@@ -101,19 +108,28 @@
+         inflight += pending
+         snapshot = publication["summary"]
+         row = rows[directory.name]
+-        row.update(costs=snapshot, model_calls=snapshot["model_requests"],
+-                   cost_settlement="UNSETTLED" if pending else "SETTLED",
+-                   inflight_requests=pending)
+-        write_json(directory / "costs.json", {
+-            **publication, "settlement": row["cost_settlement"],
+-        })
++        row.update(
++            costs=snapshot,
++            model_calls=snapshot["model_requests"],
++            cost_settlement="UNSETTLED" if pending else "SETTLED",
++            inflight_requests=pending,
++        )
++        write_json(
++            directory / "costs.json",
++            {
++                **publication,
++                "settlement": row["cost_settlement"],
++            },
++        )
+         write_json(directory / "case-result.json", row)
+     return inflight
+ 
+ 
+ def run_foundation(config_path: Path, output: Path) -> dict[str, Any]:
+     settings = yaml.safe_load(config_path.read_text())
+-    if settings["episodes"] != 120 or settings["b0_period_s"] not in (.5, 1, 2, 5):
++    if isinstance(settings, dict) and settings.get("protocol_version") == "ced.research.v2":
++        return run_ced_pilot(config_path, output, "foundation")
++    if settings["episodes"] != 120 or settings["b0_period_s"] not in (0.5, 1, 2, 5):
+         raise ValueError("foundation needs 120 scenes and a preregistered B0 period")
+     excluded = read_excluded_groups([Path(p) for p in settings["exclude_datasets"]])
+     for previous in settings.get("exclude_pilots", []):
+@@ -125,24 +141,31 @@
+     write_json(output / "assignments.json", pools["foundation"])
+     write_json(output / "excluded-groups.json", sorted(excluded))
+     (output / "config.yaml").write_bytes(config_path.read_bytes())
+-    sources = [*sorted(Path("src/cloud_edge_robot_arm").rglob("*.py")),
++    sources = [
++        *sorted(Path("src/cloud_edge_robot_arm").rglob("*.py")),
+         *sorted(Path("scripts").rglob("*.py")),
+         *sorted(Path("configs/research").glob("*.yaml")),
+-        Path("assets/robots/franka_panda/scene.xml"), Path("pyproject.toml")]
++        Path("assets/robots/franka_panda/scene.xml"),
++        Path("pyproject.toml"),
++    ]
+     write_json(output / "source-hashes.json", {str(p): file_hash(p) for p in sources})
+     for source in sources:
+         archived = output / "source" / source
+         archived.parent.mkdir(parents=True, exist_ok=True)
+         archived.write_bytes(source.read_bytes())
+-    write_json(output / "pool-audit.json", {
+-        "pool_hashes": {k: content_digest(v) for k, v in pools.items()},
+-        "excluded_group_count": len(excluded),
+-        "excluded_group_ids_hash": content_digest(sorted(excluded)),
+-        "model_snapshot_hash": None,
+-        "seed": settings["seed"], "all_groups_disjoint": True,
+-        "opportunity_snapshots": "NOT_EXECUTED",
+-        "recovery_fault_manifest": "NOT_EXECUTED",
+-    })
++    write_json(
++        output / "pool-audit.json",
++        {
++            "pool_hashes": {k: content_digest(v) for k, v in pools.items()},
++            "excluded_group_count": len(excluded),
++            "excluded_group_ids_hash": content_digest(sorted(excluded)),
++            "model_snapshot_hash": None,
++            "seed": settings["seed"],
++            "all_groups_disjoint": True,
++            "opportunity_snapshots": "NOT_EXECUTED",
++            "recovery_fault_manifest": "NOT_EXECUTED",
++        },
++    )
+     planner = None
+     blocked_reason = None
+     try:
+@@ -159,10 +182,13 @@
+         ledger = CostLedger()
+         ledgers.append((ledger, directory))
+         started = time.monotonic()
+-        row: dict[str, Any] = {"assignment_id": assignment["assignment_id"],
+-                              "stratum_id": assignment["stratum_id"],
+-                              "scene_hash": assignment["scene_hash"],
+-                              "success": False, "blocked": False}
++        row: dict[str, Any] = {
++            "assignment_id": assignment["assignment_id"],
++            "stratum_id": assignment["stratum_id"],
++            "scene_hash": assignment["scene_hash"],
++            "success": False,
++            "blocked": False,
++        }
+         try:
+             if planner is None:
+                 raise RuntimeError(blocked_reason)
+@@ -171,11 +197,13 @@
+             rtt = int(assignment["stratum_id"].split("RTT")[1])
+             loss = dict(NETWORKS)[rtt]
+             scene = SceneSpec.model_validate(assignment["scene"])
+-            schedule = NetworkSchedule(schedule_id=assignment["assignment_id"], rtt_ms=rtt,
+-                                       loss_rate=loss, seed=scene.seed)
++            schedule = NetworkSchedule(
++                schedule_id=assignment["assignment_id"], rtt_ms=rtt, loss_rate=loss, seed=scene.seed
++            )
+             active.network_injector = NetworkInjector(schedule)
+-            config = SimulatorConfig(render_rgb=True, render_depth=True,
+-                                     domain_randomization=False, seed=scene.seed)
++            config = SimulatorConfig(
++                render_rgb=True, render_depth=True, domain_randomization=False, seed=scene.seed
++            )
+             capture = PerturbedCapture(config)
+             with capture:
+                 capture.apply_scene(scene)
+@@ -189,73 +217,104 @@
+                     capture.invalid_fraction = perturbation["invalid_fraction"]
+                     capture.occlusion_fraction = perturbation["occlusion_fraction"]
+                 if task == "DYNAMIC":
+-                    capture._backend.inject_fault(PhysicalFault(
+-                        fault_type=PhysicalFaultType.TARGET_MOTION,
+-                        parameters={"speed_m_s": perturbation["movement_speed_m_s"],
+-                                    "duration_s": 5., "direction_y": 1.},
+-                    ))
+-                write_json(directory / "perturbation.json", {
+-                    "assignment": perturbation, "task": task,
+-                    "sensor_applied_from_frame": 1,
+-                    "movement_duration_sim_s": 5. if task == "DYNAMIC" else 0.,
+-                    "network": schedule.model_dump(mode="json"),
+-                })
++                    capture._backend.inject_fault(
++                        PhysicalFault(
++                            fault_type=PhysicalFaultType.TARGET_MOTION,
++                            parameters={
++                                "speed_m_s": perturbation["movement_speed_m_s"],
++                                "duration_s": 5.0,
++                                "direction_y": 1.0,
++                            },
++                        )
++                    )
++                write_json(
++                    directory / "perturbation.json",
++                    {
++                        "assignment": perturbation,
++                        "task": task,
++                        "sensor_applied_from_frame": 1,
++                        "movement_duration_sim_s": 5.0 if task == "DYNAMIC" else 0.0,
++                        "network": schedule.model_dump(mode="json"),
++                    },
++                )
+                 color = scene.scene_parameters["target"]["color_name"]
+                 assert active.model_snapshot is not None
+                 policy = ExecutionPolicy(
+                     instruction=f"Move the {color} block to the green region.",
+-                    model_snapshot_hash=active.model_snapshot.digest(), output_dir=directory,
++                    model_snapshot_hash=active.model_snapshot.digest(),
++                    output_dir=directory,
+                     timeout_s=float(settings["timeout_s"]),
+                     supervision_period_s=float(settings["b0_period_s"]),
+                     advance_physics_during_wait=True,
+                     verification_budget=VerificationBudget(**settings["verification_budget"]),
+                 )
+-                outcome = run_visual_episode(active, MuJoCoSkillRobot(capture._backend),
+-                                             capture, policy)
+-                row.update({k: v for k, v in asdict(outcome).items()
+-                            if k != "verification_records"})
+-                row["blocked"] = bool(outcome.terminal_reason and
+-                                      outcome.terminal_reason.startswith("BLOCKED_BY_ENV"))
++                outcome = run_visual_episode(
++                    active, MuJoCoSkillRobot(capture._backend), capture, policy
++                )
++                row.update(
++                    {k: v for k, v in asdict(outcome).items() if k != "verification_records"}
++                )
++                row["blocked"] = bool(
++                    outcome.terminal_reason and outcome.terminal_reason.startswith("BLOCKED_BY_ENV")
++                )
+                 row["network_cost"] = active.network_injector.snapshot().model_dump(mode="json")
+                 write_json(directory / "fault-events.json", capture._backend.fault_records)
+         except Exception as exc:
+             # Never erase already recorded stages if a runner exception follows motion.
+-            row.update(blocked=planner is None, status="BLOCKED" if planner is None else "FAILED",
+-                       terminal_reason=f"{type(exc).__name__}: {exc}",
+-                       model_calls=ledger.snapshot().model_requests,
+-                       stage_accounting="SEE_RAW_CASE_ARTIFACTS")
++            row.update(
++                blocked=planner is None,
++                status="BLOCKED" if planner is None else "FAILED",
++                terminal_reason=f"{type(exc).__name__}: {exc}",
++                model_calls=ledger.snapshot().model_requests,
++                stage_accounting="SEE_RAW_CASE_ARTIFACTS",
++            )
+         row["wall_duration_s"] = time.monotonic() - started
+-        write_json(directory / "costs.json", {
+-            "summary": ledger.snapshot().model_dump(),
+-            "requests": [r.model_dump(mode="json") for r in ledger.requests()],
+-        })
++        write_json(
++            directory / "costs.json",
++            {
++                "summary": ledger.snapshot().model_dump(),
++                "requests": [r.model_dump(mode="json") for r in ledger.requests()],
++            },
++        )
+         row["artifact_bytes"] = sum(p.stat().st_size for p in directory.rglob("*") if p.is_file())
+         row["costs"] = ledger.snapshot().model_dump()
+         write_json(directory / "case-result.json", row)
+         report.records.append(row)
+         write_json(output / "progress.json", report.summary())
+-        print(f'{row["assignment_id"]} {row["stratum_id"]}: '
+-              f'{row.get("status", "BLOCKED")} {row.get("terminal_reason", "")}', flush=True)
++        print(
++            f"{row['assignment_id']} {row['stratum_id']}: "
++            f"{row.get('status', 'BLOCKED')} {row.get('terminal_reason', '')}",
++            flush=True,
++        )
+     # A late actual response updates its own ledger, never online state or success.
+     inflight = publish_final_costs(report, ledgers)
+-    summary = {**report.summary(), "method_id": "B0", "b0_period_s": settings["b0_period_s"],
+-               "formal_g1": False, "inflight_requests": inflight,
+-               "protocol_snapshot_complete": False,
+-               "status": "COMPLETE" if len(report.records) == 120 else "INCOMPLETE",
+-               "research_acceptance": "NOT_ACCEPTED_PENDING_PROTOCOL_EVIDENCE"}
++    summary = {
++        **report.summary(),
++        "method_id": "B0",
++        "b0_period_s": settings["b0_period_s"],
++        "formal_g1": False,
++        "inflight_requests": inflight,
++        "protocol_snapshot_complete": False,
++        "status": "COMPLETE" if len(report.records) == 120 else "INCOMPLETE",
++        "research_acceptance": "NOT_ACCEPTED_PENDING_PROTOCOL_EVIDENCE",
++    }
+     durations = [r["wall_duration_s"] for r in report.records if r.get("success")]
+     summary["tcap_s"] = derive_tcap(durations) if durations else None
+     nominal = [r for r in report.records if r["stratum_id"].startswith("STATIC")]
+     summary["nominal_success_rate"] = sum(r.get("success", False) for r in nominal) / len(nominal)
+-    summary["safety_violation_rate"] = sum(r.get("safety_violation", False)
+-                                           for r in report.records) / 120
++    summary["safety_violation_rate"] = (
++        sum(r.get("safety_violation", False) for r in report.records) / 120
++    )
+     summary["baseline_feasibility"] = (
+-        "FEASIBLE" if summary["nominal_success_rate"] >= .9
+-        and summary["success_rate_all_assigned"] >= .8
+-        and summary["safety_violation_rate"] <= .01 else "NO_FEASIBLE_BASELINE"
++        "FEASIBLE"
++        if summary["nominal_success_rate"] >= 0.9
++        and summary["success_rate_all_assigned"] >= 0.8
++        and summary["safety_violation_rate"] <= 0.01
++        else "NO_FEASIBLE_BASELINE"
+     )
+-    summary["model_snapshot_hash"] = planner.model_snapshot.digest() if (
+-        planner and planner.model_snapshot) else None
++    summary["model_snapshot_hash"] = (
++        planner.model_snapshot.digest() if (planner and planner.model_snapshot) else None
++    )
+     write_json(output / "budget.json", estimate_budget(report, ProtocolSpec().formal_ns))
+     write_json(output / "results.json", report.records)
+     write_json(output / "summary.json", summary)
+@@ -263,12 +322,446 @@
+     return summary
+ 
+ 
+-def main() -> int:
++def _ced_pools(settings: Mapping[str, Any]) -> dict[str, Any]:
++    """Exclude every supplied historical source before freezing all six pools."""
++    from cloud_edge_robot_arm.research.pilot import validate_pilot_pools
++
++    excluded = read_excluded_groups([Path(p) for p in settings["exclude_datasets"]])
++    for previous in settings["exclude_pilots"]:
++        source = Path(previous)
++        rows = json.loads((source / "assignments.json").read_text())
++        if isinstance(rows, dict):
++            rows = rows["assignments"]
++        if not isinstance(rows, list):
++            raise ValueError("historical source assignments must be complete raw rows")
++        for row in rows:
++            base = row.get("base_assignment", row)
++            scene = base.get("scene")
++            group = scene["group_id"] if isinstance(scene, dict) else base.get("group_id")
++            if not isinstance(group, str) or not group:
++                raise ValueError("historical source group identity is unavailable")
++            excluded.add(group)
++    if settings["pools_path"]:
++        pools = json.loads(Path(settings["pools_path"]).read_text())
++    else:
++        pools = build_scene_pools(
++            int(settings["seed"]), excluded, protocol_version="ced.research.v2"
++        )
++    validate_pilot_pools(pools)
++    if excluded & {row["scene"]["group_id"] for rows in pools.values() for row in rows}:
++        raise ValueError("pilot pool reuses a previously used source group")
++    return dict(pools)
++
++
++class _RoleBoundPilotExecutor:
++    """The existing B0/skill path with actual role binding and detached raw observers."""
++
++    def __init__(self, settings: Mapping[str, Any], planner: Any, binding: Any, output: Path):
++        self.settings, self.planner, self.binding, self.output = settings, planner, binding, output
++        self.ledgers: list[tuple[CostLedger, Path]] = []
++        self.archived = False
++
++    def _archive(self) -> None:
++        if self.archived:
++            return
++        from cloud_edge_robot_arm.research.pilot import stage_source_paths
++
++        sources = stage_source_paths()
++        write_json(self.output / "source-hashes.json", {str(p): file_hash(p) for p in sources})
++        for source in sources:
++            destination = self.output / "source" / source
++            destination.parent.mkdir(parents=True, exist_ok=True)
++            destination.write_bytes(source.read_bytes())
++        shutil.copytree(self.settings["role_probe"], self.output / "role-probe")
++        for key, name in (
++            ("selection_evidence", "selection-evidence"),
++            ("protocol_evidence", "protocol-evidence"),
++        ):
++            if self.settings.get(key):
++                shutil.copytree(self.settings[key], self.output / name)
++        self.archived = True
++
++    def __call__(self, assignment: Mapping[str, Any], directory: Path) -> Mapping[str, Any]:
++        self._archive()
++        active = copy.copy(self.planner)
++        ledger = CostLedger()
++        active.cost_ledger = ledger
++        self.ledgers.append((ledger, directory))
++        schedule = NetworkSchedule.model_validate(assignment["network_schedule"])
++        active.network_injector = NetworkInjector(schedule)
++        wire: list[dict[str, Any]] = []
++        pending: dict[int, dict[str, Any]] = {}
++        lock = threading.Lock()
++
++        def observe(phase: str, path: str, raw: bytes) -> None:
++            import hashlib
++
++            from scripts.probe_rgbd_roles import _text_contains_credential
++
++            # Hashing records actual bytes; a credential-bearing body is withheld.
++            if active._api_key and _text_contains_credential(
++                raw.decode(errors="replace"), active._api_key
++            ):
++                raise ValueError("credential-bearing body withheld")
++            with lock:
++                thread = threading.get_ident()
++                if phase == "REQUEST":
++                    if thread in pending:
++                        raise ValueError("provider has multiple in-flight requests in one thread")
++                    entry: dict[str, Any] = {
++                        "request_path": f"wire/{len(wire):05d}.request.raw",
++                        "request_sha256": hashlib.sha256(raw).hexdigest(),
++                        "chat_path": path,
++                        "serialized_sent_bytes": len(raw),
++                        "serialized_received_bytes": 0,
++                    }
++                    wire.append(entry)
++                    pending[thread] = entry
++                    target = directory / entry["request_path"]
++                else:
++                    entry = pending.pop(thread)
++                    entry.update(
++                        response_path=entry["request_path"].replace("request", "response"),
++                        response_sha256=hashlib.sha256(raw).hexdigest(),
++                        serialized_received_bytes=len(raw),
++                    )
++                    target = directory / entry["response_path"]
++                target.parent.mkdir(parents=True, exist_ok=True)
++                with target.open("xb") as stream:
++                    stream.write(raw)
++                write_json(directory / "wire-index.json", wire)
++
++        active.raw_transport_observer = observe
++        scene = SceneSpec.model_validate(assignment["base_assignment"]["scene"])
++        config = SimulatorConfig(
++            render_rgb=True,
++            render_depth=True,
++            camera_width=320,
++            camera_height=240,
++            domain_randomization=False,
++            seed=scene.seed,
++        )
++        started = time.monotonic()
++        row: dict[str, Any] = {
++            "assignment_id": assignment["assignment_id"],
++            "success": False,
++            "stratum_id": assignment["stratum_id"],
++            "status": "FAILED",
++            "safety_violation": False,
++            "scope": "REAL_RUNTIME",
++            "accepted_success": False,
++            "wall_duration_s": 0.0,
++            "cloud_requests": 0,
++        }
++        capture = PerturbedCapture(config)
++        with capture:
++            capture.apply_scene(scene)
++            backend = capture._backend
++            assert backend._data is not None
++            raw: list[dict[str, Any]] = []
++            controls: list[dict[str, Any]] = []
++            initial = {
++                "joints_rad": backend._target_positions.tolist(),
++                "fingers_m": backend._data.ctrl[7:9].tolist(),
++            }
++
++            def collect(control: Any) -> None:
++                # Read the preceding physical step through the detached actuator hook.
++                # run_visual_episode retains ownership of its own physics observer.
++                raw.append(asdict(backend.current_physics_observation()))
++                controls.append(asdict(control))
++
++            try:
++                with backend.observe_actuator_steps(collect):
++                    backend.step(steps=120)
++                    capture.raw_directory = directory / "raw-frames"
++                    capture.perturbation_seed = scene.seed
++                    task = assignment["stratum_id"].split("_RTT")[0]
++                    perturbation = assignment["base_assignment"]["perturbation"]
++                    if task == "SENSOR":
++                        capture.noise_m = perturbation["noise_m"]
++                        capture.invalid_fraction = perturbation["invalid_fraction"]
++                        capture.occlusion_fraction = perturbation["occlusion_fraction"]
++                    if task == "DYNAMIC":
++                        backend.inject_fault(
++                            PhysicalFault(
++                                fault_type=PhysicalFaultType.TARGET_MOTION,
++                                parameters={
++                                    "speed_m_s": perturbation["movement_speed_m_s"],
++                                    "duration_s": 5.0,
++                                    "direction_y": 1.0,
++                                },
++                            )
++                        )
++                    write_json(
++                        directory / "perturbation.json",
++                        {
++                            "task": task,
++                            "assignment": perturbation,
++                            "network": schedule.model_dump(mode="json"),
++                        },
++                    )
++                    assert active.model_snapshot is not None
++                    color = scene.scene_parameters["target"]["color_name"]
++                    policy = ExecutionPolicy(
++                        instruction=f"Move the {color} block to the green region.",
++                        model_snapshot_hash=active.model_snapshot.digest(),
++                        output_dir=directory,
++                        timeout_s=float(self.settings["timeout_s"]),
++                        supervision_period_s=assignment["period_s"],
++                        advance_physics_during_wait=True,
++                        verification_budget=VerificationBudget(
++                            **dict(self.binding.edge_policy["verification_budget"])
++                        ),
++                        device_pipeline="OPENCV",
++                        role_binding=self.binding,
++                    )
++                    self.binding.validate(active)
++                    outcome = run_visual_episode(active, MuJoCoSkillRobot(backend), capture, policy)
++                    row.update(
++                        {
++                            key: value
++                            for key, value in asdict(outcome).items()
++                            if key != "verification_records"
++                        }
++                    )
++            except Exception as error:
++                row.update(
++                    success=False,
++                    status="FAILED",
++                    terminal_reason=f"PILOT_RUNTIME_{type(error).__name__}",
++                )
++            finally:
++                raw.append(asdict(backend.current_physics_observation()))
++                write_json(directory / "physical-observations.json", raw)
++                write_json(directory / "actuator-steps.json", controls)
++                write_json(directory / "commands.json", backend.command_records)
++                write_json(directory / "fault-events.json", backend.fault_records)
++                write_json(
++                    directory / "context.json",
++                    {
++                        "schema_version": "rgbd.raw-episode.v2",
++                        "assignment_hash": content_digest(assignment["base_assignment"]),
++                        "pilot_assignment_hash": content_digest(assignment),
++                        "group_id": scene.group_id,
++                        "scene_hash": scene.scene_hash,
++                        "episode_id": raw[0]["episode_id"],
++                        "reset_step": 0,
++                        "reset_sim_time_s": 0.0,
++                        "terminal_step": raw[-1]["physics_step"],
++                        "terminal_sim_time_s": raw[-1]["sim_time_s"],
++                        "physics_dt_s": config.physics_dt_s,
++                        "reset_observation_hash": content_digest(raw[0]),
++                        "terminal_observation_hash": content_digest(raw[-1]),
++                        "evaluation_start_step": 120,
++                        "initial_controller_targets": initial,
++                        "actuator_delay_steps": backend._actuator_delay_steps,
++                        "role_bundle_hash": self.binding.bundle.digest(),
++                    },
++                )
++        row.update(
++            wall_duration_s=time.monotonic() - started,
++            costs=ledger.snapshot().model_dump(),
++            cloud_requests=ledger.snapshot().cloud_model_requests,
++        )
++        write_json(directory / "costs.json", ledger.export())
++        write_json(directory / "wire-index.json", wire)
++        return row
++
++
++def run_ced_pilot(
++    config_path: Path,
++    output: Path,
++    stage: str,
++    *,
++    service: Any = None,
++    profile_id: str | None = None,
++    execute: bool = False,
++    allow_paid: bool = False,
++    initial: Path | None = None,
++    methods: Path | None = None,
++) -> dict[str, Any]:
++    """Explicit v2 stages; dry/unavailable prerequisites retain every unexecuted group."""
++    from cloud_edge_robot_arm.research.freeze_evidence import (
++        audit_ced_pilot_stage,
++        verify_role_probe_evidence,
++    )
++    from cloud_edge_robot_arm.research.protocol import load_protocol
++    from cloud_edge_robot_arm.vision.role_models import (
++        RoleModelBundle,
++        RoleProviderSnapshot,
++        resolve_cloud_role,
++    )
++    from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
++    from scripts.probe_rgbd_roles import read_role_config
++
++    settings = yaml.safe_load(config_path.read_text())
++    fields = {
++        "schema_version",
++        "protocol_version",
++        "episodes",
++        "seed",
++        "pools_path",
++        "timeout_s",
++        "role_config",
++        "role_probe",
++        "selection_evidence",
++        "protocol_evidence",
++        "exclude_datasets",
++        "exclude_pilots",
++    }
++    if (
++        not isinstance(settings, dict)
++        or set(settings) != fields
++        or (
++            settings["schema_version"] != "ced.pilot-config.v1"
++            or settings["protocol_version"] != "ced.research.v2"
++            or settings["episodes"] != 120
++            or type(settings["seed"]) is not int
++            or type(settings["timeout_s"]) not in {int, float}
++            or not 0 < settings["timeout_s"] <= 600
++            or not isinstance(settings["exclude_datasets"], list)
++            or not isinstance(settings["exclude_pilots"], list)
++        )
++    ):
++        raise ValueError("v2 pilot config cannot override stages/periods/roles/fixed design")
++    pools = _ced_pools(settings)
++    reasons = []
++    period = None
++    executor = None
++    bundle_hash = None
++    if stage == "power":
++        try:
++            if initial is None or methods is None:
++                raise ValueError("power requires actual INITIAL and accepted frozen methods")
++            frozen = load_protocol(initial)
++            if frozen.stage != "INITIAL" or frozen.spec.schema_version != "ced.research.v2":
++                raise ValueError("power requires the current v2 INITIAL")
++            json.loads(methods.read_text())
++            reasons.append("method runtime and actual power source acceptance are not integrated")
++        except (OSError, ValueError, TypeError, KeyError):
++            reasons.append("power prerequisites unavailable; no full-method pilot was run")
++    elif execute:
++        try:
++            if service is None or not profile_id or not allow_paid or not settings["role_probe"]:
++                raise ValueError(
++                    "actual v2 execution requires selected service, probe and payment authorization"
++                )
++            if not service.secret_store.has_secret(profile_id):
++                raise ValueError("selected cloud secret unavailable")
++            verified = verify_role_probe_evidence(Path(settings["role_probe"]))
++            if not verified["available"]:
++                raise ValueError("original nominal cloud role probe unavailable")
++            probe = verified["report"]
++            role_config = read_role_config(Path(settings["role_config"]))
++            planner, cloud = resolve_cloud_role(
++                service,
++                profile_id,
++                source_hashes=probe["bundle"]["cloud_snapshot"]["source_hashes"],
++                allow_paid=allow_paid,
++                image_size=tuple(role_config["cloud"]["image_size"]),
++                coordinate_system=role_config["cloud"]["coordinate_system"],
++                grasp_profile=role_config["cloud"]["grasp_profile"],
++                available_model_ids=role_config["cloud"]["available_model_ids"],
++            )
++            if cloud.evidence() != probe["bundle"]["cloud_snapshot"]:
++                raise ValueError("resolved cloud settings differ from frozen probe")
++            bundle = RoleModelBundle(
++                cloud,
++                probe["bundle"]["edge_provider_id"],
++                probe["bundle"]["edge_provider_hash"],
++                probe["bundle"]["device_pipeline_hash"],
++            )
++            edge = RoleProviderSnapshot(**probe["edge_snapshot"])
++            binding = RoleRuntimeBinding(
++                bundle, edge, probe["device_source_hashes"], probe["edge_policy"]
++            )
++            binding.validate(planner)
++            bundle_hash = bundle.digest()
++            if stage == "foundation":
++                if not settings["selection_evidence"]:
++                    raise ValueError("foundation selection source unavailable")
++                selection = audit_ced_pilot_stage(Path(settings["selection_evidence"]), "selection")
++                if (
++                    not selection["available"]
++                    or selection["pools"] != pools
++                    or selection["role_bundle_hash"] != bundle_hash
++                ):
++                    raise ValueError(
++                        "foundation source selection does not bind the same frozen pool/roles"
++                    )
++                period = selection["selected_period_s"]
++            executor = _RoleBoundPilotExecutor(settings, planner, binding, output)
++        except Exception as error:
++            # Never persist an endpoint, key or arbitrary remote error body.
++            reasons.append(f"actual stage prerequisites unavailable: {type(error).__name__}")
++    else:
++        reasons.append("execution not requested; no model/renderer contacted")
++    summary = run_pilot_stage(
++        stage, pools, output, period_s=period, role_bundle_hash=bundle_hash, _real_executor=executor
++    )
++    if executor is not None:
++        results = json.loads((output / "results.json").read_text())
++        report = PilotReport(assigned=len(results), records=results)
++        unsettled = publish_final_costs(report, executor.ledgers)
++        for row in report.records:
++            row["cloud_requests"] = row["costs"]["cloud_model_requests"]
++            write_json(output / "cases" / row["assignment_id"] / "case-result.json", row)
++        write_json(output / "results.json", report.records)
++        summary["unsettled_requests"] = unsettled
++        summary["declared_success"] = sum(r["success"] for r in report.records)
++        reasons.append(
++            "raw records require independent stage audit; no automatic INITIAL/FINAL freeze"
++        )
++    summary["reasons"] = reasons
++    write_json(output / "summary.json", summary)
++    (output / "config.yaml").write_bytes(config_path.read_bytes())
++    return summary
++
++
++def main(argv: list[str] | None = None) -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("--stage", choices=["foundation", "power"], required=True)
++    parser.add_argument("--stage", choices=["selection", "foundation", "power"], required=True)
+     parser.add_argument("--config", type=Path, required=True)
+     parser.add_argument("--output", type=Path, required=True)
+-    args = parser.parse_args()
++    parser.add_argument("--execute", action="store_true")
++    parser.add_argument("--allow-paid", action="store_true")
++    parser.add_argument("--profile-id")
++    parser.add_argument("--model-control-db", type=Path, default=Path("data/model_control.db"))
++    parser.add_argument("--secret-env", default="BIGSMALL_VLM_API_KEY")
++    parser.add_argument("--initial", type=Path)
++    parser.add_argument("--methods", type=Path)
++    args = parser.parse_args(argv)
++    settings = yaml.safe_load(args.config.read_text())
++    if isinstance(settings, dict) and settings.get("protocol_version") == "ced.research.v2":
++        service = None
++        if args.execute and args.model_control_db.is_file() and args.profile_id:
++            from cloud_edge_robot_arm.model_control.service import ModelControlService
++            from cloud_edge_robot_arm.model_control.sqlite_repository import (
++                SQLiteModelProfileRepository,
++            )
++            from scripts.probe_rgbd_roles import _EnvironmentProfileSecrets
++
++            service = ModelControlService(
++                repository=SQLiteModelProfileRepository(args.model_control_db),
++                secret_store=_EnvironmentProfileSecrets(args.profile_id, args.secret_env),
++            )
++        try:
++            summary = run_ced_pilot(
++                args.config,
++                args.output,
++                args.stage,
++                service=service,
++                profile_id=args.profile_id,
++                execute=args.execute,
++                allow_paid=args.allow_paid,
++                initial=args.initial,
++                methods=args.methods,
++            )
++        except (ValueError, OSError, TypeError, KeyError) as error:
++            parser.exit(3, f"v2 pilot not started: {type(error).__name__}\n")
++        print(json.dumps(summary, indent=2, ensure_ascii=False))
++        return 3
+     if args.stage != "foundation":
+         parser.exit(3, "power pilot BLOCKED: T13/T15a/T16a are not accepted\n")
+     os.environ.setdefault("MUJOCO_GL", "egl")
+@@ -277,8 +770,10 @@
+     except (ValueError, OSError) as exc:
+         parser.exit(2, f"pilot not started: {exc}\n")
+     print(json.dumps(summary, indent=2, ensure_ascii=False))
+-    return 0 if summary["freeze_ready"] and summary["protocol_snapshot_complete"] else (
+-        3 if summary["blocked"] == summary["assigned"] else 4
++    return (
++        0
++        if summary["freeze_ready"] and summary["protocol_snapshot_complete"]
++        else (3 if summary["blocked"] == summary["assigned"] else 4)
+     )
+ 
+ 
+diff --git a/scripts/freeze_rgbd_protocol.py b/scripts/freeze_rgbd_protocol.py
+--- a/scripts/freeze_rgbd_protocol.py
++++ b/scripts/freeze_rgbd_protocol.py
+@@ -29,15 +29,22 @@
+ def main() -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--stage", choices=["initial", "final"], required=True)
+-    parser.add_argument("--config", type=Path, required=True)
++    parser.add_argument("--config", type=Path)
++    parser.add_argument(
++        "--expected-protocol-version", choices=["rgbd.research.v1", "ced.research.v2"]
++    )
+     parser.add_argument("--pilot", type=Path, required=True)
+     parser.add_argument("--output", type=Path, required=True)
+     args = parser.parse_args()
+     if args.stage == "final":
+         parser.exit(3, "final freeze BLOCKED: method freeze and power pilot not accepted\n")
+     try:
+-        settings = yaml.safe_load(args.config.read_text())
++        settings = yaml.safe_load(args.config.read_text()) if args.config else {}
++        if not isinstance(settings, dict):
++            raise ValueError("freeze config must be an object")
+         spec = initial_spec_from_pilot(args.pilot)
++        if args.expected_protocol_version and spec.schema_version != args.expected_protocol_version:
++            raise ValueError("actual stage evidence has a different protocol version")
+         spec = apply_settings(spec, settings)
+         frozen = freeze_protocol(spec, args.output, "INITIAL", evidence_directory=args.pilot)
+     except (ValueError, OSError) as exc:
+diff --git a/configs/research/ced_selection.yaml b/configs/research/ced_selection.yaml
+--- a/configs/research/ced_selection.yaml
++++ b/configs/research/ced_selection.yaml
+@@ -0,0 +1,17 @@
++# Dry by default. Real rendering/paid cloud calls require explicit CLI flags and a verified role probe.
++schema_version: ced.pilot-config.v1
++protocol_version: ced.research.v2
++episodes: 120
++seed: 981301
++pools_path: null
++timeout_s: 120.0
++role_config: configs/research/ced_roles.yaml
++role_probe: null
++selection_evidence: null
++protocol_evidence: null
++exclude_datasets:
++  - datasets/rgbd-smoke-20261003
++  - datasets/rgbd-validation-20261003
++exclude_pilots:
++  - artifacts/research/process/20261004-t8-foundation/pilot-v1
++  - artifacts/research/process/20261004-t8-foundation/pilot-v2
+diff --git a/configs/research/ced_foundation.yaml b/configs/research/ced_foundation.yaml
+--- a/configs/research/ced_foundation.yaml
++++ b/configs/research/ced_foundation.yaml
+@@ -0,0 +1,18 @@
++# Supply the exact selection pools and independently audited selection/protocol/role evidence.
++# Missing inputs retain 120 unexecuted groups; no B0 period is guessed.
++schema_version: ced.pilot-config.v1
++protocol_version: ced.research.v2
++episodes: 120
++seed: 981301
++pools_path: null
++timeout_s: 120.0
++role_config: configs/research/ced_roles.yaml
++role_probe: null
++selection_evidence: null
++protocol_evidence: null
++exclude_datasets:
++  - datasets/rgbd-smoke-20261003
++  - datasets/rgbd-validation-20261003
++exclude_pilots:
++  - artifacts/research/process/20261004-t8-foundation/pilot-v1
++  - artifacts/research/process/20261004-t8-foundation/pilot-v2
+diff --git a/tests/test_ced_pilot_stages.py b/tests/test_ced_pilot_stages.py
+--- a/tests/test_ced_pilot_stages.py
++++ b/tests/test_ced_pilot_stages.py
+@@ -0,0 +1,197 @@
++"""Isolated staged pilot fixtures verify software, never a research freeze."""
++
++import copy
++import importlib
++import json
++from collections import Counter
++
++import pytest
++
++from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++from cloud_edge_robot_arm.research.protocol import STRATA, build_scene_pools
++
++
++def api():
++    return importlib.import_module("cloud_edge_robot_arm.research.pilot")
++
++
++@pytest.fixture(scope="module")
++def pools():
++    return build_scene_pools(981301, set(), protocol_version="ced.research.v2")
++
++
++def selection_rows(assignments):
++    return [
++        {
++            "assignment_id": row["assignment_id"],
++            "success": True,
++            "safety_violation": False,
++            "wall_duration_s": 20.0,
++            "cloud_requests": {0.5: 10, 1.0: 8, 2.0: 4, 5.0: 3}[row["period_s"]],
++            "status": "SUCCESS",
++        }
++        for row in assignments
++    ]
++
++
++def test_selection_pairs_four_periods_and_full_scene_network(pools):
++    rows = api().build_pilot_assignments(pools, "selection", role_bundle_hash="a" * 64)
++    assert len(rows) == 480
++    assert len({row["group_id"] for row in rows}) == 120
++    assert Counter(row["period_s"] for row in rows) == Counter(
++        {0.5: 120, 1.0: 120, 2.0: 120, 5.0: 120}
++    )
++    for period in (0.5, 1.0, 2.0, 5.0):
++        assert Counter(row["stratum_id"] for row in rows if row["period_s"] == period) == (
++            Counter({stratum: 10 for stratum in STRATA})
++        )
++    paired = [row for row in rows if row["group_id"] == rows[0]["group_id"]]
++    assert len({content_digest(row["base_assignment"]) for row in paired}) == 1
++    assert len({content_digest(row["network_schedule"]) for row in paired}) == 1
++    assert len({row["physics_seed"] for row in paired}) == 1
++    assert rows == api().build_pilot_assignments(pools, "selection", role_bundle_hash="a" * 64)
++
++
++def test_selection_keeps_all_candidates_and_chooses_fixed_cost_rule(pools):
++    assignments = api().build_pilot_assignments(pools, "selection", role_bundle_hash="a" * 64)
++    records = selection_rows(assignments)
++    # The cheapest candidate fails quality; keep it in the diagnostic curve.
++    for row in records:
++        if row["assignment_id"].endswith("@5"):
++            row["success"] = False
++    result = api().choose_b0_period(assignments, records)
++    assert result["diagnostic_selected_period_s"] == 2.0
++    assert result["selected_period_s"] is None
++    assert result["scope"] == "SOFTWARE_ONLY"
++    assert result["actual_research_status"] == "NOT_RUN"
++    assert len(result["periods"]) == 4
++    assert all(row["assigned_denominator"] == 120 for row in result["periods"])
++
++
++@pytest.mark.parametrize("tamper", ["omit", "duplicate", "foreign", "nonfinite"])
++def test_selection_rejects_incomplete_or_invalid_originals(pools, tamper):
++    assignments = api().build_pilot_assignments(pools, "selection", role_bundle_hash="a" * 64)
++    records = selection_rows(assignments)
++    if tamper == "omit":
++        records.pop()
++    elif tamper == "duplicate":
++        records[-1] = records[0]
++    elif tamper == "foreign":
++        records[-1]["assignment_id"] = "foreign"
++    else:
++        records[-1]["wall_duration_s"] = float("nan")
++    with pytest.raises(ValueError):
++        api().choose_b0_period(assignments, records)
++
++
++def test_no_feasible_period_and_all_failed_denominators(pools):
++    assignments = api().build_pilot_assignments(pools, "selection", role_bundle_hash="a" * 64)
++    records = selection_rows(assignments)
++    for row in records:
++        row.update(success=False, status="BLOCKED")
++    result = api().choose_b0_period(assignments, records)
++    assert result["diagnostic_status"] == "NO_FEASIBLE_BASELINE"
++    assert result["diagnostic_selected_period_s"] is None
++    assert {row["overall_success_rate"] for row in result["periods"]} == {0.0}
++
++
++@pytest.mark.parametrize("tamper", ["pool_reuse", "scene_hash", "missing", "period"])
++def test_preassignment_rejects_leakage_or_drift(pools, tamper):
++    changed = copy.deepcopy(pools)
++    kwargs = {}
++    if tamper == "pool_reuse":
++        changed["foundation"][0] = changed["selection"][0]
++    elif tamper == "scene_hash":
++        changed["selection"][0]["scene_hash"] = "f" * 64
++    elif tamper == "missing":
++        changed["selection"].pop()
++    else:
++        kwargs["period_s"] = 3.0
++    with pytest.raises(ValueError):
++        api().build_pilot_assignments(changed, "selection", role_bundle_hash="a" * 64, **kwargs)
++
++
++def test_default_stage_records_every_unexecuted_assignment_without_adapter(pools, tmp_path):
++    result = api().run_pilot_stage("selection", pools, tmp_path / "stage")
++    assert result["assigned_denominator"] == result["recorded_denominator"] == 480
++    assert result["group_denominator"] == 120
++    assert result["actual_research_status"] == "NOT_RUN"
++    assert result["accepted_success"] == 0 and result["freeze_ready"] is False
++    records = json.loads((tmp_path / "stage/results.json").read_text())
++    assert len(records) == 480
++    assert {row["status"] for row in records} == {"NOT_EXECUTED"}
++    with pytest.raises(FileExistsError):
++        api().run_pilot_stage("selection", pools, tmp_path / "stage")
++
++
++def test_software_adapter_cannot_confer_real_selection_or_foundation(pools, tmp_path):
++    def fixture(row, directory):
++        return {
++            "success": True,
++            "status": "SUCCESS",
++            "safety_violation": False,
++            "wall_duration_s": 20.0,
++            "cloud_requests": 1,
++        }
++
++    with pytest.raises(ValueError, match="SOFTWARE_ONLY"):
++        api().run_pilot_stage("selection", pools, tmp_path / "bad", software_adapter=fixture)
++    result = api().run_pilot_stage(
++        "selection", pools, tmp_path / "software", software_adapter=fixture, software_only=True
++    )
++    assert result["scope"] == "SOFTWARE_ONLY" and result["accepted_success"] == 0
++    assert result["selected_period_s"] is None
++    assert result["freeze_ready"] is False and result["actual_research_status"] == "NOT_RUN"
++    assert not (tmp_path / "software/protocol.json").exists()
++
++
++def test_power_stage_preserves_groups_and_declares_unintegrated_methods(pools, tmp_path):
++    result = api().run_pilot_stage("power", pools, tmp_path / "power")
++    assert result["group_denominator"] == 120
++    assert result["assigned_denominator"] is None
++    assert result["method_runtime_integrated"] is False
++    assert result["actual_research_status"] == "NOT_RUN"
++
++
++def test_ced_cli_callable_dry_preregisters_without_loading_legacy_or_renderer(
++    pools, tmp_path, monkeypatch
++):
++    import scripts.run_rgbd_pilot as script
++    import yaml
++
++    path = tmp_path / "pools.json"
++    path.write_text(json.dumps(pools))
++    config = tmp_path / "config.yaml"
++    config.write_text(
++        yaml.safe_dump(
++            {
++                "schema_version": "ced.pilot-config.v1",
++                "protocol_version": "ced.research.v2",
++                "episodes": 120,
++                "seed": 981301,
++                "pools_path": str(path),
++                "timeout_s": 120.0,
++                "role_config": "missing-role-config",
++                "role_probe": None,
++                "selection_evidence": None,
++                "protocol_evidence": None,
++                "exclude_datasets": [],
++                "exclude_pilots": [],
++            }
++        )
++    )
++    calls = []
++    monkeypatch.setattr(script, "load_frozen_planner", lambda *a: calls.append("legacy"))
++    result = script.run_ced_pilot(config, tmp_path / "dry", "selection")
++    assert result["recorded_denominator"] == 480 and calls == []
++    assert (
++        result["actual_research_status"] == "NOT_RUN" and result["execution_mode"] == "NOT_EXECUTED"
++    )
++
++
++def test_foundation_missing_selection_keeps_groups_without_guessing_period(pools, tmp_path):
++    result = api().run_pilot_stage("foundation", pools, tmp_path / "foundation")
++    assert result["assigned_denominator"] == 120
++    assert result["selected_period_s"] is None
++    rows = json.loads((tmp_path / "foundation/assignments.json").read_text())
++    assert len(rows) == 120 and all(row["period_s"] is None for row in rows)
+diff --git a/tests/test_ced_initial_freeze.py b/tests/test_ced_initial_freeze.py
+--- a/tests/test_ced_initial_freeze.py
++++ b/tests/test_ced_initial_freeze.py
+@@ -0,0 +1,319 @@
++"""Versioned role/stage evidence is required; software cannot publish INITIAL."""
++
++import importlib
++import json
++
++import pytest
++
++from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec, load_protocol
++
++
++def api():
++    return importlib.import_module("cloud_edge_robot_arm.research.freeze_evidence")
++
++
++def test_v2_spec_and_reader_preserve_legacy_entry_and_hash_semantics(tmp_path):
++    spec = ProtocolSpec(
++        schema_version="ced.research.v2",
++        tcap_s=120,
++        pool_hashes={"fixture": "a" * 64},
++        model_snapshot_hash="b" * 64,
++        role_bundle_hash="b" * 64,
++        selection_manifest_hash="c" * 64,
++        selected_b0_period_s=2.0,
++        budget_selection_rule_hash="d" * 64,
++        opportunity_hash="e" * 64,
++        recovery_fault_manifest_hash="f" * 64,
++    )
++    frozen = FrozenProtocol(
++        spec=spec,
++        stage="INITIAL",
++        content_hash=content_digest({"spec": spec.model_dump(mode="json"), "stage": "INITIAL"}),
++    )
++    directory = tmp_path / "reader-only"
++    directory.mkdir()
++    (directory / "protocol.json").write_text(frozen.model_dump_json())
++    assert load_protocol(directory) == frozen
++    assert ProtocolSpec().schema_version == "rgbd.research.v1"
++
++
++def test_role_probe_reader_missing_or_forged_summary_unavailable(tmp_path):
++    reader = api().verify_role_probe_evidence
++    assert reader(tmp_path)["available"] is False
++    payload = {
++        "schema_version": "ced.role-probe.v1",
++        "status": "PASS",
++        "physical_acceptance": True,
++        "source": "mujoco_camera",
++        "transport": "REAL_HTTP",
++        "attempts": [],
++    }
++    (tmp_path / "role-probe-report.json").write_text(json.dumps(payload))
++    result = reader(tmp_path)
++    assert result["available"] is False and result["physical_acceptance"] is False
++    assert result["edge_acceptance"] is False
++    assert result["errors"]
++
++
++def test_role_reader_rejects_symlinked_original_report(tmp_path):
++    outside = tmp_path / "outside.json"
++    outside.write_text("{}")
++    directory = tmp_path / "probe"
++    directory.mkdir()
++    (directory / "role-probe-report.json").symlink_to(outside)
++    assert api().verify_role_probe_evidence(directory)["available"] is False
++
++
++@pytest.mark.parametrize("scope", ["SOFTWARE_ONLY", "UNVERIFIED"])
++def test_v2_summary_cannot_freeze_without_real_stage_raw_sources(tmp_path, scope):
++    (tmp_path / "summary.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.pilot-stage.v1",
++                "protocol_version": "ced.research.v2",
++                "stage": "foundation",
++                "scope": scope,
++                "method_id": "B0",
++                "assigned": 120,
++                "recorded": 120,
++                "freeze_ready": True,
++                "accepted_success": 120,
++                "selected_period_s": 2.0,
++            }
++        )
++    )
++    with pytest.raises((ValueError, OSError)):
++        api().initial_spec_from_evidence(tmp_path)
++
++
++def test_v2_settings_cannot_override_role_selection_or_budget_evidence():
++    from scripts.freeze_rgbd_protocol import apply_settings
++
++    for field in (
++        "role_bundle_hash",
++        "selection_manifest_hash",
++        "selected_b0_period_s",
++        "budget_selection_rule_hash",
++    ):
++        with pytest.raises(ValueError, match="override"):
++            apply_settings(ProtocolSpec(tcap_s=120), {field: "a" * 64})
++
++
++def test_legacy_v1_payload_has_no_new_fields_or_hash_drift():
++    spec = ProtocolSpec(tcap_s=120)
++    assert "role_bundle_hash" not in spec.model_dump(mode="json")
++    assert "selection_manifest_hash" not in spec.model_dump(mode="json")
++    assert ProtocolSpec.model_validate(spec.model_dump()) == spec
++
++
++def test_actual_auditor_rejects_software_stage_even_if_summary_relabels_success(tmp_path):
++    (tmp_path / "summary.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.pilot-stage.v1",
++                "protocol_version": "ced.research.v2",
++                "stage": "selection",
++                "scope": "SOFTWARE_ONLY",
++                "execution_mode": "REAL_RUNTIME",
++                "accepted_success": 480,
++            }
++        )
++    )
++    result = api().audit_ced_pilot_stage(tmp_path, "selection")
++    assert result["available"] is False and result["accepted_success"] == 0
++
++
++def actuator_fixture(tmp_path):
++    from types import SimpleNamespace
++
++    raw = [
++        SimpleNamespace(
++            episode_id="SOFTWARE_ONLY", sim_time_s=i * 0.002, joint_positions_rad=(0.0,) * 7
++        )
++        for i in range(3)
++    ]
++    controls = [
++        {
++            "physics_step": i,
++            "episode_id": "SOFTWARE_ONLY",
++            "sim_time_s": (i - 1) * 0.002,
++            "pre_joint_positions_rad": [0.0] * 7,
++            "actuator_gains": [1.0] * 7,
++            "actuator_ctrl_ranges": [[-2.0, 2.0]] * 7,
++            "pre_gravity_bias_nm": [0.0] * 7,
++            "control_rad": [0.05] * 7,
++            "applied_joint_targets_rad": [0.05] * 7,
++            "finger_control_targets_m": [0.039, 0.039],
++        }
++        for i in (1, 2)
++    ]
++    command = {
++        "command_seq": 1,
++        "physics_step": 0,
++        "episode_id": "SOFTWARE_ONLY",
++        "sim_time_s": 0.0,
++        "type": "joint_target",
++        "accepted": True,
++        "target_positions_rad": [0.05] * 7,
++        "applied_target_positions_rad": [0.05] * 7,
++    }
++    (tmp_path / "commands.json").write_text(json.dumps([command]))
++    (tmp_path / "actuator-steps.json").write_text(json.dumps(controls))
++    header = {
++        "initial_controller_targets": {"joints_rad": [0.0] * 7, "fingers_m": [0.039] * 2},
++        "actuator_delay_steps": 0,
++    }
++    return raw, controls, header
++
++
++def test_pure_controller_reconstruction_does_not_accept_physical_task(tmp_path):
++    raw, _, header = actuator_fixture(tmp_path)
++    assert api()._audit_actuators(tmp_path, raw, header) is None
++    # This only verifies numeric command/controller alignment; no research/physics verdict exists.
++
++
++@pytest.mark.parametrize("damage", ["prefix", "omit", "episode", "target", "control", "prestate"])
++def test_controller_reconstruction_rejects_missing_or_mismatched_raw_steps(tmp_path, damage):
++    raw, controls, header = actuator_fixture(tmp_path)
++    if damage == "prefix":
++        commands = json.loads((tmp_path / "commands.json").read_text())
++        commands[0]["command_seq"] = 2
++        (tmp_path / "commands.json").write_text(json.dumps(commands))
++    elif damage == "omit":
++        controls.pop()
++    elif damage == "episode":
++        controls[0]["episode_id"] = "foreign"
++    elif damage == "target":
++        controls[0]["applied_joint_targets_rad"][0] = 0.5
++    elif damage == "control":
++        controls[0]["control_rad"][0] = 0.5
++    else:
++        controls[0]["pre_joint_positions_rad"][0] = 0.5
++    (tmp_path / "actuator-steps.json").write_text(json.dumps(controls))
++    with pytest.raises(ValueError):
++        api()._audit_actuators(tmp_path, raw, header)
++
++
++def test_role_reader_derives_exact_legacy_model_digest_from_effective_settings():
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++    from cloud_edge_robot_arm.vision.role_models import cloud_request_settings
++
++    model = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="qwen3.8-max",
++        endpoint="https://example.invalid",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0.0, "num_predict": 512},
++        timeout_s=30.0,
++        grasp_profile="mujoco_upright_box_v2",
++    )
++    settings = cloud_request_settings(resolve_visual_planner(model, allow_paid=False))
++    assert api()._model_evidence(settings) == model.evidence()
++    assert api()._model_evidence_hash(settings) == model.digest()
++
++
++def test_stage_source_inventory_cannot_be_narrowed_before_raw_audit(tmp_path, monkeypatch):
++    import hashlib
++
++    module = api()
++    (tmp_path / "summary.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.pilot-stage.v1",
++                "protocol_version": "ced.research.v2",
++                "stage": "selection",
++                "scope": "UNVERIFIED",
++                "execution_mode": "REAL_RUNTIME",
++            }
++        )
++    )
++    name = "src/cloud_edge_robot_arm/research/pilot.py"
++    original = __import__("pathlib").Path(name).read_bytes()
++    archived = tmp_path / "source" / name
++    archived.parent.mkdir(parents=True)
++    archived.write_bytes(original)
++    (tmp_path / "source-hashes.json").write_text(
++        json.dumps({name: hashlib.sha256(original).hexdigest()})
++    )
++
++    def should_not_reach_probe(_):
++        raise AssertionError("narrow source inventory reached the role probe")
++
++    monkeypatch.setattr(module, "verify_role_probe_evidence", should_not_reach_probe)
++    result = module.audit_ced_pilot_stage(tmp_path, "selection")
++    assert result["available"] is False
++    assert "source inventory" in " ".join(result["errors"])
++
++
++@pytest.mark.parametrize("damage", [None, "object", "extent", "destination", "controller"])
++def test_raw_reset_must_identify_the_assigned_scene_and_reference_controller(damage):
++    from types import SimpleNamespace
++
++    scene = {
++        "scene_parameters": {
++            "target": {"position": [0.45, 0.1, 0.44], "half_size": [0.03, 0.03, 0.03]},
++            "destination": {"position": [0.45, -0.1, 0.43], "half_size": [0.07, 0.07, 0.003]},
++        }
++    }
++    raw = [
++        SimpleNamespace(
++            object_position_m=(0.45, 0.1, 0.44),
++            object_half_extent_m=(0.03, 0.03, 0.03),
++            region_center_m=(0.45, -0.1, 0.43),
++            region_half_extent_m=(0.07, 0.07, 0.003),
++            joint_positions_rad=(-0.8, 0, 0, 0, 0, 0, 0),
++        )
++    ]
++    header = {
++        "initial_controller_targets": {
++            "joints_rad": [-0.8, 0, 0, 0, 0, 0, 0],
++            "fingers_m": [0.039, 0.039],
++        }
++    }
++    if damage == "object":
++        raw[0].object_position_m = (0.7, 0.1, 0.44)
++    elif damage == "extent":
++        raw[0].object_half_extent_m = (0.06, 0.03, 0.03)
++    elif damage == "destination":
++        raw[0].region_center_m = (0.8, -0.1, 0.43)
++    elif damage == "controller":
++        header["initial_controller_targets"]["joints_rad"][0] = 0
++    if damage is None:
++        assert api()._audit_ced_reset(raw, header, scene) is None
++    else:
++        with pytest.raises(ValueError):
++            api()._audit_ced_reset(raw, header, scene)
++
++
++@pytest.mark.parametrize("damage", [None, "sent_length", "received_length", "missing_response"])
++def test_case_wire_lengths_are_recomputed_from_original_payloads(tmp_path, damage):
++    import hashlib
++
++    request, response = b'{"model":"SOFTWARE_ONLY"}', b'{"choices":[]}'
++    (tmp_path / "request.raw").write_bytes(request)
++    (tmp_path / "response.raw").write_bytes(response)
++    entry = {
++        "request_path": "request.raw",
++        "response_path": "response.raw",
++        "request_sha256": hashlib.sha256(request).hexdigest(),
++        "response_sha256": hashlib.sha256(response).hexdigest(),
++        "serialized_sent_bytes": len(request),
++        "serialized_received_bytes": len(response),
++    }
++    if damage == "sent_length":
++        entry["serialized_sent_bytes"] += 1
++    elif damage == "received_length":
++        entry["serialized_received_bytes"] += 1
++    elif damage == "missing_response":
++        entry.pop("response_path")
++    if damage is None:
++        assert api()._case_wire_payloads(tmp_path, entry) == (request, response)
++    else:
++        with pytest.raises(ValueError):
++            api()._case_wire_payloads(tmp_path, entry)

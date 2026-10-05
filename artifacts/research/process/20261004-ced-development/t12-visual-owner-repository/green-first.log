@@ -1,0 +1,67 @@
+................................F                                        [100%]
+=================================== FAILURES ===================================
+________ test_two_sqlite_connections_restart_and_conflicting_owner_race ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-866/test_two_sqlite_connections_re0')
+
+    def test_two_sqlite_connections_restart_and_conflicting_owner_race(tmp_path):
+        path = tmp_path / "event.db"
+        first, second = SQLiteEventAutonomyRepository(path), SQLiteEventAutonomyRepository(path)
+        data = fresh_source_values()
+        original, checkpoint = data["original"], data["source_checkpoint"]
+        state = VerificationBudgetState(3, 2, 0, original.verification_deadline_at, VerificationBudget(3, 2, 3, 40.0))
+        retry = RecoveryBudget(budget_id="pool", task_id=original.identity.task_id, remaining_retries=2, retry_deadline=original.verification_deadline_at)
+        alternate = replace(original, identity=replace(original.identity, owner_epoch="epoch-2"))
+    
+        def race(repo, source):
+            try:
+                return repo.initialize_visual_owner_if_absent(source, checkpoint, state, retry)
+            except IdempotencyConflictError:
+                return None
+    
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [workers.submit(race, first, original), workers.submit(race, second, alternate)]
+>           results = [future.result() for future in futures]
+                       ^^^^^^^^^^^^^^^
+
+tests/test_visual_owner_repository.py:263: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/concurrent/futures/_base.py:449: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+/usr/lib/python3.12/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_visual_owner_repository.py:257: in race
+    return repo.initialize_visual_owner_if_absent(source, checkpoint, state, retry)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py:2139: in initialize_visual_owner_if_absent
+    original, checkpoint, pool, retry, key = initial_inputs(original, checkpoint, verification_state, retry_budget)
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+original = VisualOriginalPlan(identity=VisualOwnerIdentity(job_id='job-1', run_id='run-1', attempt=1, worker_id='worker-1', lease...datetime.timezone.utc), registered_at=datetime.datetime(2026, 10, 4, 16, 16, 30, 553096, tzinfo=datetime.timezone.utc))
+checkpoint = ExecutionCheckpoint(checkpoint_id='checkpoint', task_id='task', plan_id='plan', plan_version=1, command_seq=1, robot_i...info=TzInfo(0)), correlation_id='', checkpoint_hash='6e54c1d881d8b4eac2e9e0d6d3c8c06757c61d413b9fa32c39bec204a988ced5')
+state = VerificationBudgetState(remaining_reobservations=3, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...x_retries=2, max_no_progress=3, deadline_s=40.0), previous_conditions={}, exhausted_reason=None, verification_rounds=0)
+retry = RecoveryBudget(budget_id='pool', task_id='task', per_step_retry_limit=3, per_skill_retry_limit=5, task_total_retry_lim...16, 16, 30, 554563, tzinfo=TzInfo(0)), updated_at=datetime.datetime(2026, 10, 4, 16, 16, 30, 554564, tzinfo=TzInfo(0)))
+
+    def initial_inputs(original: VisualOriginalPlan, checkpoint: ExecutionCheckpoint,
+                       state: VerificationBudgetState, retry: RecoveryBudget
+                       ) -> tuple[VisualOriginalPlan, ExecutionCheckpoint, VerificationBudgetRecord, RecoveryBudget, str]:
+        original = copy_original(original)
+        checkpoint = validate_checkpoint(original, checkpoint)
+        pool = make_verification_pool(original.identity.task_id, state)
+        retry = strict_retry(retry)
+        if (pool.state.deadline_at != original.verification_deadline_at
+                or retry.task_id != original.identity.task_id or retry.scene_version != original.contract.scene_version
+                or retry.retry_deadline > original.effective_deadline_at
+                or pool.state.remaining_retries > retry.remaining_retries):
+>           raise ValueError("initial source pool definition differs from original")
+E           ValueError: initial source pool definition differs from original
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:350: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_repository.py::test_two_sqlite_connections_restart_and_conflicting_owner_race
+1 failed, 32 passed in 4.82s

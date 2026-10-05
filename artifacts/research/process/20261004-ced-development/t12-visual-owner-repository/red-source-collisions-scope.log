@@ -1,0 +1,58 @@
+F.FF......s.                                                             [100%]
+=================================== FAILURES ===================================
+_ test_global_checkpoint_identity_collision_cannot_overwrite_another_task[memory] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x702ef0ac1df0>, V...nfo=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 19, 36, 9434, tzinfo=datetime.timezone.utc)))
+
+    def test_global_checkpoint_identity_collision_cannot_overwrite_another_task(prepared):
+        repo, original, checkpoint, _, _ = prepared
+        foreign = checkpoint.model_copy(update={"task_id": "other-task", "checkpoint_hash": ""}, deep=True)
+        foreign = foreign.model_copy(update={"checkpoint_hash": checkpoint_digest(foreign)})
+        repo.save_execution_checkpoint(foreign)
+>       with pytest.raises(IdempotencyConflictError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError'>
+
+tests/test_visual_owner_repository.py:340: Failed
+_ test_publication_scope_subclass_cannot_create_an_actual_authority_envelope[memory] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x702eed33eff0>, V...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 19, 36, 289696, tzinfo=datetime.timezone.utc)))
+
+    def test_publication_scope_subclass_cannot_create_an_actual_authority_envelope(prepared):
+        record = initialize(prepared)
+        module = importlib.import_module("cloud_edge_robot_arm.repositories.event_autonomy.visual_owner")
+    
+        class CallerActualScope(module.VisualOwnerPublicationRecord):
+            binding_scope = "ACTUAL_OWNER"
+    
+        payload = record.to_payload()
+        payload["binding_scope"] = "ACTUAL_OWNER"
+        payload.pop("publication_hash")
+        payload["publication_hash"] = module.digest(payload)
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_owner_repository.py:357: Failed
+_ test_publication_scope_subclass_cannot_create_an_actual_authority_envelope[sqlite] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x702eed7c75f0>, Vis...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 19, 36, 511476, tzinfo=datetime.timezone.utc)))
+
+    def test_publication_scope_subclass_cannot_create_an_actual_authority_envelope(prepared):
+        record = initialize(prepared)
+        module = importlib.import_module("cloud_edge_robot_arm.repositories.event_autonomy.visual_owner")
+    
+        class CallerActualScope(module.VisualOwnerPublicationRecord):
+            binding_scope = "ACTUAL_OWNER"
+    
+        payload = record.to_payload()
+        payload["binding_scope"] = "ACTUAL_OWNER"
+        payload.pop("publication_hash")
+        payload["publication_hash"] = module.digest(payload)
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_owner_repository.py:357: Failed
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_repository.py::test_global_checkpoint_identity_collision_cannot_overwrite_another_task[memory]
+FAILED tests/test_visual_owner_repository.py::test_publication_scope_subclass_cannot_create_an_actual_authority_envelope[memory]
+FAILED tests/test_visual_owner_repository.py::test_publication_scope_subclass_cannot_create_an_actual_authority_envelope[sqlite]
+3 failed, 8 passed, 1 skipped, 33 deselected in 2.07s

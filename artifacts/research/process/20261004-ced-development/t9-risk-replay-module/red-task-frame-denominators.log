@@ -1,0 +1,53 @@
+.FFF                                                                     [100%]
+=================================== FAILURES ===================================
+______ test_episode_and_observation_failure_denominators_remain_distinct _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-988/test_episode_and_observation_f0')
+
+    def test_episode_and_observation_failure_denominators_remain_distinct(tmp_path):
+        registration, source, _, _, _ = registered_replay(tmp_path)
+        result=api().RiskArtifactAuditor({"replay":registration},{"source":source}).audit("replay")
+        assert result.counts["assigned_attempts"] == 1
+        assert result.counts["allocated_observations"] == 2
+>       assert result.counts["terminal_labelled_attempts"] == result.counts["terminal_failure_attempts"] == 1
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'terminal_labelled_attempts'
+
+tests/test_research_risk_replay.py:714: KeyError
+_________ test_missing_episode_labels_stay_in_unknown_task_denominator _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-988/test_missing_episode_labels_st0')
+
+    def test_missing_episode_labels_stay_in_unknown_task_denominator(tmp_path):
+        registration, source, _, directory, _ = registered_replay(tmp_path)
+        (directory/"raw-physics.jsonl").write_text("null\n")
+        result=api().RiskArtifactAuditor({"replay":registration},{"source":source}).audit("replay")
+>       assert result.counts["assigned_attempts"] == result.counts["unknown_terminal_label_attempts"] == 1
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'unknown_terminal_label_attempts'
+
+tests/test_research_risk_replay.py:723: KeyError
+_ test_action_label_missingness_keeps_test_population_without_counterfactual_labels _
+
+    def test_action_label_missingness_keeps_test_population_without_counterfactual_labels():
+        result=replay()
+        for candidate in result["candidate_results"]:
+>           assert all(v["test_outcomes"] is None and v["missing_test_rows"] == 2
+                       for v in candidate["action_coverage"].values())
+
+tests/test_research_risk_replay.py:730: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <dict_valueiterator object at 0x7b1979d1e070>
+
+>   assert all(v["test_outcomes"] is None and v["missing_test_rows"] == 2
+               ^^^^^^^^^^^^^^^^^^
+               for v in candidate["action_coverage"].values())
+E   KeyError: 'test_outcomes'
+
+tests/test_research_risk_replay.py:730: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_replay.py::test_episode_and_observation_failure_denominators_remain_distinct
+FAILED tests/test_research_risk_replay.py::test_missing_episode_labels_stay_in_unknown_task_denominator
+FAILED tests/test_research_risk_replay.py::test_action_label_missingness_keeps_test_population_without_counterfactual_labels
+3 failed, 1 passed, 62 deselected in 1.60s

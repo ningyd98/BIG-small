@@ -1,0 +1,75 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+____ test_source_inventory_rejects_str_subclasses_before_comparison[digest] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-968/test_source_inventory_rejects_0')
+kind = 'digest'
+
+    @pytest.mark.parametrize("kind", ["digest", "filename", "required_path"])
+    def test_source_inventory_rejects_str_subclasses_before_comparison(tmp_path, kind):
+        import hashlib
+    
+        (tmp_path / "source.py").write_text("VALUE=1\n")
+        actual = hashlib.sha256((tmp_path / "source.py").read_bytes()).hexdigest()
+        name = PermissiveSourceString("source.py") if kind == "filename" else "source.py"
+        digest = PermissiveSourceString("f" * 64) if kind == "digest" else actual
+        required = {PermissiveSourceString("source.py")} if kind == "required_path" else {"source.py"}
+>       with pytest.raises(ValueError, match="plain source"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_worker_owner.py:481: Failed
+___ test_source_inventory_rejects_str_subclasses_before_comparison[filename] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-968/test_source_inventory_rejects_1')
+kind = 'filename'
+
+    @pytest.mark.parametrize("kind", ["digest", "filename", "required_path"])
+    def test_source_inventory_rejects_str_subclasses_before_comparison(tmp_path, kind):
+        import hashlib
+    
+        (tmp_path / "source.py").write_text("VALUE=1\n")
+        actual = hashlib.sha256((tmp_path / "source.py").read_bytes()).hexdigest()
+        name = PermissiveSourceString("source.py") if kind == "filename" else "source.py"
+        digest = PermissiveSourceString("f" * 64) if kind == "digest" else actual
+        required = {PermissiveSourceString("source.py")} if kind == "required_path" else {"source.py"}
+>       with pytest.raises(ValueError, match="plain source"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_worker_owner.py:481: Failed
+_ test_source_inventory_rejects_str_subclasses_before_comparison[required_path] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-968/test_source_inventory_rejects_2')
+kind = 'required_path'
+
+    @pytest.mark.parametrize("kind", ["digest", "filename", "required_path"])
+    def test_source_inventory_rejects_str_subclasses_before_comparison(tmp_path, kind):
+        import hashlib
+    
+        (tmp_path / "source.py").write_text("VALUE=1\n")
+        actual = hashlib.sha256((tmp_path / "source.py").read_bytes()).hexdigest()
+        name = PermissiveSourceString("source.py") if kind == "filename" else "source.py"
+        digest = PermissiveSourceString("f" * 64) if kind == "digest" else actual
+        required = {PermissiveSourceString("source.py")} if kind == "required_path" else {"source.py"}
+>       with pytest.raises(ValueError, match="plain source"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_worker_owner.py:481: Failed
+_________ test_original_compiler_rejects_subclass_source_registration __________
+
+running = (<cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x76953eb53a40>, S...10, 4, 18, 57, 6, 258850, tzinfo=datetime.timezone.utc), ended_at=None, result='RUNNING', error='', artifact_paths={}))
+
+    def test_original_compiler_rejects_subclass_source_registration(running):
+        data = compilation(running)
+        sources = dict(data["source_hashes"])
+        key = next(iter(sources))
+        sources[key] = PermissiveSourceString(sources[key])
+>       with pytest.raises(ValueError, match="plain source"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_visual_worker_owner.py:490: Failed
+=========================== short test summary info ============================
+FAILED tests/test_visual_worker_owner.py::test_source_inventory_rejects_str_subclasses_before_comparison[digest]
+FAILED tests/test_visual_worker_owner.py::test_source_inventory_rejects_str_subclasses_before_comparison[filename]
+FAILED tests/test_visual_worker_owner.py::test_source_inventory_rejects_str_subclasses_before_comparison[required_path]
+FAILED tests/test_visual_worker_owner.py::test_original_compiler_rejects_subclass_source_registration
+4 failed, 40 deselected in 0.74s

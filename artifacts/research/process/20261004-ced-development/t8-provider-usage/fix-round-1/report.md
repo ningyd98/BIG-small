@@ -1,0 +1,13 @@
+# Original provider usage reader fix1
+
+Fix1 addresses the three concrete findings from the first independent review. The immutable first 770-file package, independent counterexamples and all first-round logs remain preserved. Only the original two owned files changed; no collector, planner, ledger, resource rule or protocol was modified.
+
+Eight qualified negative tests failed before the fixes; the existing chunk control already passed. A supported response now requires synchronous `object=chat.completion`, matching model/identity and no error envelope. Empty or all-unsent inventories remain UNKNOWN with complete original denominators. A transport ERROR with an actual typed compatible Chat response can still provide literal reported usage; an error envelope cannot. Disjoint modality counterexamples no longer pass, and cached input/reasoning output are not added a second time.
+
+The four named modality fields are bounded by a conservative parser sum sanity check. The [official compatible Chat API](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions) documents the fields and overlapping cache/reasoning subsets, but this implementation does not claim that the provider guarantees an exact four-field decomposition or image/video non-overlap in mixed requests. No modality allocation, quota guarantee, tariff or monetary amount is derived. OBSERVED retains its narrow original-reported metadata scope and does not authenticate provider origin or complete remote billing.
+
+The corrected fixtures add the supported object discriminator to earlier usage-negative examples so they still exercise count parsing rather than passing solely because a response type is missing. Nine new cases retain unsupported/error objects, empty/unsent attempts and contradictory subtotals. `fix1-qualified-red.log` and `fix1-qualified-green.log` remain outside the immutable source package as historical verification records.
+
+Final local scoped verification: 69 tests passed in 3.11 seconds, Ruff passed for the two owned files, and cold mypy passed for the new module. These are software-only fixtures, zero actual model/network/account/capture/controller calls. Currency remains null, billing UNAVAILABLE and research acceptance false in every result.
+
+The separate `source/` closure contains the exact previously reviewed frozen T8b fix3 base of 768 files plus the two corrected owned files. Manifest `source-hashes.json` has 770 entries and SHA256 `2e84395d6c062f9eb747025aee972afc4c521fcaf26327273d86460d24fc5dcb`; archive hashes and Python ASTs passed. Independent fix review is pending.

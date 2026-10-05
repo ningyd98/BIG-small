@@ -1,0 +1,74 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_frozen_nested_native_facts_remain_usable_without_mutable_aliases _____
+
+    def test_frozen_nested_native_facts_remain_usable_without_mutable_aliases():
+        from types import MappingProxyType
+        request, context, window, observation = fixture()
+        native = MappingProxyType({"target_visible": MappingProxyType(
+            dict(context.online_evidence.visual_facts["target_visible"]))})
+>       context = replace(context, online_evidence=replace(context.online_evidence,
+                                                           visual_facts=native))
+
+tests/test_visual_repair_builder.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/cloud/replanning/visual_repair.py:58: in __post_init__
+    deepcopy(dict(online.visual_facts)), online.plan_version, online.command_seq,
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/copy.py:136: in deepcopy
+    y = copier(x, memo)
+        ^^^^^^^^^^^^^^^
+/usr/lib/python3.12/copy.py:221: in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+                             ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = mappingproxy({'source': 'rgbd_estimate', 'observation_id': 'frame-1', 'target_id': 'obj-1', 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]})
+memo = {137623963943424: {}}, _nil = []
+
+    def deepcopy(x, memo=None, _nil=[]):
+        """Deep copy operation on arbitrary Python objects.
+    
+        See the module's __doc__ string for more info.
+        """
+    
+        if memo is None:
+            memo = {}
+    
+        d = id(x)
+        y = memo.get(d, _nil)
+        if y is not _nil:
+            return y
+    
+        cls = type(x)
+    
+        copier = _deepcopy_dispatch.get(cls)
+        if copier is not None:
+            y = copier(x, memo)
+        else:
+            if issubclass(cls, type):
+                y = _deepcopy_atomic(x, memo)
+            else:
+                copier = getattr(x, "__deepcopy__", None)
+                if copier is not None:
+                    y = copier(memo)
+                else:
+                    reductor = dispatch_table.get(cls)
+                    if reductor:
+                        rv = reductor(x)
+                    else:
+                        reductor = getattr(x, "__reduce_ex__", None)
+                        if reductor is not None:
+>                           rv = reductor(4)
+                                 ^^^^^^^^^^^
+E                           TypeError: cannot pickle 'mappingproxy' object
+
+/usr/lib/python3.12/copy.py:151: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_visual_repair_builder.py::test_frozen_nested_native_facts_remain_usable_without_mutable_aliases
+1 failed, 22 deselected in 0.48s

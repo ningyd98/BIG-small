@@ -1,0 +1,91 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______________ test_simultaneous_apply_claims_stage_once[False] _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-599/test_simultaneous_apply_claims0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7206eab8f3e0>
+sqlite = False
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_simultaneous_apply_claims_stage_once(tmp_path, monkeypatch, sqlite):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        path = tmp_path / "claim.sqlite"
+        first = SQLiteEventAutonomyRepository(path) if sqlite else InMemoryEventAutonomyRepository()
+        second = SQLiteEventAutonomyRepository(path) if sqlite else first
+        request, response = setup_replan(first)
+        barrier = Barrier(2)
+        for repo in {first, second}:
+            original = repo.get_replan_apply_record_for_request
+            def get_before_both_insert(request_id, original=original):
+                value = original(request_id)
+                barrier.wait(timeout=5)
+                return value
+            monkeypatch.setattr(repo, "get_replan_apply_record_for_request", get_before_both_insert)
+            original_save = repo.save_replan_apply_record
+            def save_before_both_stage(record, original_save=original_save):
+                saved = original_save(record)
+                barrier.wait(timeout=5)
+                return saved
+            monkeypatch.setattr(repo, "save_replan_apply_record", save_before_both_stage)
+        gateway = MockStagedGateway()
+        services = [ReplanApplyService(repository=repo, dispatcher=gateway,
+                                       submit_guard=submit_proof, clock=lambda: NOW)
+                    for repo in (first, second)]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(service.apply, request=request, response=response) for service in services]
+            results = [future.result(timeout=10) for future in futures]
+>       assert gateway.calls.count("stage") == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = <built-in method count of list object at 0x7206e9f24740>('stage')
+E        +    where <built-in method count of list object at 0x7206e9f24740> = ['stage', 'stage', 'resume'].count
+E        +      where ['stage', 'stage', 'resume'] = <tests.test_replan_activation.MockStagedGateway object at 0x7206eab8f680>.calls
+
+tests/test_replan_activation.py:517: AssertionError
+_______________ test_simultaneous_apply_claims_stage_once[True] ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-599/test_simultaneous_apply_claims1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7206e806a930>
+sqlite = True
+
+    @pytest.mark.parametrize("sqlite", [False, True])
+    def test_simultaneous_apply_claims_stage_once(tmp_path, monkeypatch, sqlite):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        path = tmp_path / "claim.sqlite"
+        first = SQLiteEventAutonomyRepository(path) if sqlite else InMemoryEventAutonomyRepository()
+        second = SQLiteEventAutonomyRepository(path) if sqlite else first
+        request, response = setup_replan(first)
+        barrier = Barrier(2)
+        for repo in {first, second}:
+            original = repo.get_replan_apply_record_for_request
+            def get_before_both_insert(request_id, original=original):
+                value = original(request_id)
+                barrier.wait(timeout=5)
+                return value
+            monkeypatch.setattr(repo, "get_replan_apply_record_for_request", get_before_both_insert)
+            original_save = repo.save_replan_apply_record
+            def save_before_both_stage(record, original_save=original_save):
+                saved = original_save(record)
+                barrier.wait(timeout=5)
+                return saved
+            monkeypatch.setattr(repo, "save_replan_apply_record", save_before_both_stage)
+        gateway = MockStagedGateway()
+        services = [ReplanApplyService(repository=repo, dispatcher=gateway,
+                                       submit_guard=submit_proof, clock=lambda: NOW)
+                    for repo in (first, second)]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(service.apply, request=request, response=response) for service in services]
+            results = [future.result(timeout=10) for future in futures]
+>       assert gateway.calls.count("stage") == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = <built-in method count of list object at 0x7206e9a16780>('stage')
+E        +    where <built-in method count of list object at 0x7206e9a16780> = ['stage', 'stage', 'resume'].count
+E        +      where ['stage', 'stage', 'resume'] = <tests.test_replan_activation.MockStagedGateway object at 0x7206e8068f20>.calls
+
+tests/test_replan_activation.py:517: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_simultaneous_apply_claims_stage_once[False]
+FAILED tests/test_replan_activation.py::test_simultaneous_apply_claims_stage_once[True]
+2 failed, 37 deselected in 0.73s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k simultaneous
+Observed exit code: 1

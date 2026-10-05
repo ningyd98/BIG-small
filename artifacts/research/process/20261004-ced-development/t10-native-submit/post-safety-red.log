@@ -1,0 +1,120 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_post_safety_gate_cannot_recapture_and_reuse_old_safety_context ______
+
+    def test_post_safety_gate_cannot_recapture_and_reuse_old_safety_context():
+        from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
+        from cloud_edge_robot_arm.vision.execution import _EpisodeStopped, _VisualEpisode
+        online, contract, step = sample()
+        episode = _VisualEpisode.__new__(_VisualEpisode)
+        episode.policy = SimpleNamespace(device_pipeline="OPENCV",
+                                         role_binding=SimpleNamespace(bundle=SimpleNamespace(
+                                             digest=lambda: "role-bundle")))
+        episode.observation = online.observation
+        episode.robot = SimpleNamespace(get_state=lambda: online.robot_state)
+        episode.tracker = SimpleNamespace(facts=lambda *args: online.visual_facts)
+        episode.check_active = lambda: None
+        episode.validate_role_boundary = lambda: None
+        episode.records = []
+        routed = iter((DecisionAction.REOBSERVE, DecisionAction.STOP))
+        episode.route = lambda *args, **kwargs: next(routed)
+        touched = []
+        episode.backend = SimpleNamespace(step=lambda **kwargs: touched.append("physics"))
+        episode.recapture = lambda: touched.append("recapture")
+        with pytest.raises(_EpisodeStopped, match="POST_SAFETY"):
+>           episode.require_native_action_evidence(contract, step, boundary="PRE_SKILL")
+
+tests/test_native_action_submit.py:126: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.vision.execution._VisualEpisode object at 0x7f8d58d0dac0>
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 11, 22, 22, 68649...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+step = TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+
+    def require_native_action_evidence(
+        self, contract: TaskContract, step: TaskStep, *, boundary: str,
+    ) -> None:
+        """Apply T10 at action return/commit boundaries on actual current evidence."""
+        if self.policy.device_pipeline != "OPENCV":
+            return
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        while True:
+            self.check_active()
+            self.validate_role_boundary()
+            assert self.observation is not None and self.policy.role_binding is not None
+            online = OnlineEvidenceSnapshot(
+                self.observation, self.robot.get_state(),
+                self.tracker.facts(self.observation, self.robot.get_state())
+                if self.tracker is not None else {},
+                contract.plan_version, contract.command_seq,
+                self.policy.role_binding.bundle.digest(),
+            )
+            action = native_action_contract(online, contract, step)
+            now = datetime.now(UTC)
+            verdict = validate_evidence(
+                action, now, online.context_hash, self.observation.calibration_version or "",
+                online_evidence=online,
+            )
+            self.records.append({
+                "layer": "ACTION_EVIDENCE_GATE", "boundary": boundary,
+                "step_id": step.step_id, "status": verdict.status,
+                "reasons": list(verdict.reasons),
+                "bound_at_completion_m": verdict.bound_at_completion_m,
+                "observation_id": self.observation.observation_id,
+                "observation_hash": self.observation.checksum_sha256,
+                "captured_at": self.observation.captured_at.isoformat(),
+                "context_hash": online.context_hash,
+                "plan_version": action.plan_version, "command_seq": action.command_seq,
+                "expected_duration_s": action.expected_duration_s,
+                "allowed_error_m": action.allowed_error_m,
+                "geometry_bound_m": action.evidence.geometric_error_bound_m,
+                "motion_bound_m_s": action.evidence.motion_bound_m_s,
+                "physical_acceptance": False,
+            })
+            if verdict.status == "VALID":
+                return
+            status = (ConditionStatus.UNKNOWN if verdict.status == "UNKNOWN"
+                      else ConditionStatus.FAIL)
+            route = self.route([
+                ConditionVerdict(status, "action_submit_evidence", self.observation.observation_id,
+                                 reasons=verdict.reasons),
+            ], DecisionEventKind.EVIDENCE_INVALIDATED, {"boundary": boundary,
+                                                      "step_id": step.step_id})
+            if route != DecisionAction.REOBSERVE:
+>               raise _EpisodeStopped(f"ACTION_EVIDENCE_{verdict.status}")
+E               cloud_edge_robot_arm.vision.execution._EpisodeStopped: ACTION_EVIDENCE_UNKNOWN
+
+src/cloud_edge_robot_arm/vision/execution.py:1035: _EpisodeStopped
+
+During handling of the above exception, another exception occurred:
+
+    def test_post_safety_gate_cannot_recapture_and_reuse_old_safety_context():
+        from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
+        from cloud_edge_robot_arm.vision.execution import _EpisodeStopped, _VisualEpisode
+        online, contract, step = sample()
+        episode = _VisualEpisode.__new__(_VisualEpisode)
+        episode.policy = SimpleNamespace(device_pipeline="OPENCV",
+                                         role_binding=SimpleNamespace(bundle=SimpleNamespace(
+                                             digest=lambda: "role-bundle")))
+        episode.observation = online.observation
+        episode.robot = SimpleNamespace(get_state=lambda: online.robot_state)
+        episode.tracker = SimpleNamespace(facts=lambda *args: online.visual_facts)
+        episode.check_active = lambda: None
+        episode.validate_role_boundary = lambda: None
+        episode.records = []
+        routed = iter((DecisionAction.REOBSERVE, DecisionAction.STOP))
+        episode.route = lambda *args, **kwargs: next(routed)
+        touched = []
+        episode.backend = SimpleNamespace(step=lambda **kwargs: touched.append("physics"))
+        episode.recapture = lambda: touched.append("recapture")
+>       with pytest.raises(_EpisodeStopped, match="POST_SAFETY"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'POST_SAFETY'
+E        Input: 'ACTION_EVIDENCE_UNKNOWN'
+
+tests/test_native_action_submit.py:125: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_native_action_submit.py::test_post_safety_gate_cannot_recapture_and_reuse_old_safety_context
+1 failed, 9 deselected in 0.47s

@@ -1,0 +1,142 @@
+........FF..............FFFF.F.                                          [100%]
+=================================== FAILURES ===================================
+____________ test_unknown_cloud_identity_cannot_replace_new_capture ____________
+
+    def test_unknown_cloud_identity_cannot_replace_new_capture():
+        c, j, p = modules()
+        ctx = prepared_context()
+        supplied = contracts(ctx)
+        supplied = {action: replace(value, evidence=replace(value.evidence, identity_status="UNKNOWN"))
+                    for action, value in supplied.items()}
+        choices = c.build_candidates(ctx, action_contracts=supplied)
+>       assert not next(row for row in choices.candidates if row.action == DecisionAction.REQUEST_CLOUD).executable
+E       AssertionError: assert not True
+E        +  where True = ActionCandidate(candidate_id='request_cloud-2c58eae1180613d7f6c9ac03', action=<DecisionAction.REQUEST_CLOUD: 'REQUEST_...sor_requirements=('rgbd',)),), postconditions=(), plan_version=1, command_seq=1, context_hash='ctx', ordinary_ttl_s=5)).executable
+E        +    where ActionCandidate(candidate_id='request_cloud-2c58eae1180613d7f6c9ac03', action=<DecisionAction.REQUEST_CLOUD: 'REQUEST_...sor_requirements=('rgbd',)),), postconditions=(), plan_version=1, command_seq=1, context_hash='ctx', ordinary_ttl_s=5)) = next(<generator object test_unknown_cloud_identity_cannot_replace_new_capture.<locals>.<genexpr> at 0x796e7240d220>)
+
+tests/test_decision_judgment.py:125: AssertionError
+_ test_final_verification_failure_cannot_continue_even_with_old_pass_conditions _
+
+    def test_final_verification_failure_cannot_continue_even_with_old_pass_conditions():
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionStatus
+        c, j, p = modules()
+        ctx = prepared_context()
+        ctx = replace(ctx, event=replace(ctx.event, verification_status=ConditionStatus.FAIL))
+        choices = c.build_candidates(ctx, action_contracts=contracts(ctx))
+>       assert not next(row for row in choices.candidates if row.action == DecisionAction.CONTINUE).executable
+E       AssertionError: assert not True
+E        +  where True = ActionCandidate(candidate_id='continue-2c58eae1180613d7f6c9ac03', action=<DecisionAction.CONTINUE: 'CONTINUE'>, execut...sor_requirements=('rgbd',)),), postconditions=(), plan_version=1, command_seq=1, context_hash='ctx', ordinary_ttl_s=5)).executable
+E        +    where ActionCandidate(candidate_id='continue-2c58eae1180613d7f6c9ac03', action=<DecisionAction.CONTINUE: 'CONTINUE'>, execut...sor_requirements=('rgbd',)),), postconditions=(), plan_version=1, command_seq=1, context_hash='ctx', ordinary_ttl_s=5)) = next(<generator object test_final_verification_failure_cannot_continue_even_with_old_pass_conditions.<locals>.<genexpr> at 0x796e7240ea80>)
+
+tests/test_decision_judgment.py:134: AssertionError
+____________ test_hard_stop_never_calls_contract_or_judge_provider _____________
+
+    def test_hard_stop_never_calls_contract_or_judge_provider():
+        ctx = prepared_context()
+        ctx = replace(ctx, online_evidence=replace(ctx.online_evidence,
+            robot_state=ctx.online_evidence.robot_state.model_copy(update={"estop_engaged": True})))
+        chosen = policy()
+        def forbidden(_):
+            raise AssertionError("hard stop waited for ordinary provider")
+        chosen.contract_provider = forbidden
+>       assert chosen.decide(ctx) == DecisionAction.STOP
+               ^^^^^^^^^^^^^^^^^^
+
+tests/test_joint_visual_policy.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/auto_mode/joint_policy.py:318: in decide
+    for key, value in self.contract_provider(context).items()})
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_ = DecisionContext(task_id='task', episode_id='episode', mode=<ControlMode.PERIODIC_CLOUD_SUPERVISION: 'PERIODIC_CLOUD_SU...ss=2, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0), legacy_rule_evidence=None)
+
+    def forbidden(_):
+>       raise AssertionError("hard stop waited for ordinary provider")
+E       AssertionError: hard stop waited for ordinary provider
+
+tests/test_joint_visual_policy.py:154: AssertionError
+___ test_provider_failure_after_absolute_deadline_cannot_reserve_new_capture ___
+
+    def test_provider_failure_after_absolute_deadline_cannot_reserve_new_capture():
+        times = iter((NOW, NOW + timedelta(seconds=61)))
+        class SlowJudge:
+            def choose(self, context, candidates, estimates):
+                raise TimeoutError("late provider")
+        chosen = policy(judge=SlowJudge(), clock=lambda: next(times))
+        ctx = prepared_context()
+>       assert chosen.decide(ctx) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...: 'REOBSERVE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + REOBSERVE
+
+tests/test_joint_visual_policy.py:166: AssertionError
+________ test_arbitrary_provider_error_is_a_recorded_budgeted_fallback _________
+
+    def test_arbitrary_provider_error_is_a_recorded_budgeted_fallback():
+        class BrokenJudge:
+            def choose(self, context, candidates, estimates):
+                raise OSError("transport unavailable")
+        chosen = policy(judge=BrokenJudge())
+>       assert chosen.decide(prepared_context()) == DecisionAction.REOBSERVE
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_joint_visual_policy.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/auto_mode/joint_policy.py:356: in decide
+    result = self.judge.choose(context, candidates, estimates)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_joint_visual_policy.test_arbitrary_provider_error_is_a_recorded_budgeted_fallback.<locals>.BrokenJudge object at 0x796e9a1eb6e0>
+context = DecisionContext(task_id='task', episode_id='episode', mode=<ControlMode.PERIODIC_CLOUD_SUPERVISION: 'PERIODIC_CLOUD_SU...ss=2, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0), legacy_rule_evidence=None)
+candidates = CandidateSet(candidates=(ActionCandidate(candidate_id='continue-2c58eae1180613d7f6c9ac03', action=<DecisionAction.CONT..._reasons=(), evidence_contract=None)), content_hash='d47d7b1504d538e0ff1fea8099ea69c5102996b70a888029ba510036ab95b1b4')
+estimates = [ActionCostEstimate(action=<DecisionAction.CONTINUE: 'CONTINUE'>, failure_probability=0.1, failure_loss=10.0, inferenc...ion.STOP: 'STOP'>, failure_probability=None, failure_loss=20.0, inference_cost=0.0, network_cost=0.0, switch_cost=0.0)]
+
+    def choose(self, context, candidates, estimates):
+>       raise OSError("transport unavailable")
+E       OSError: transport unavailable
+
+tests/test_joint_visual_policy.py:174: OSError
+__________ test_provider_cannot_rebind_unavailable_recovery_candidate __________
+
+    def test_provider_cannot_rebind_unavailable_recovery_candidate():
+        module = import_module("cloud_edge_robot_arm.auto_mode.judgment")
+        class RebindingJudge:
+            def choose(self, context, candidates, estimates):
+                row = next(row for row in candidates.candidates if row.action == DecisionAction.LOCAL_RECOVER)
+                object.__setattr__(row, "executable", True)
+                return module.JudgmentResult(row.candidate_id, {}, None, None, "SELECTED", "tampering-provider", 0.)
+        chosen = policy(judge=RebindingJudge())
+>       assert chosen.decide(prepared_context()) == DecisionAction.REOBSERVE
+E       AssertionError: assert <DecisionActi...OCAL_RECOVER'> == <DecisionActi...: 'REOBSERVE'>
+E         
+E         - REOBSERVE
+E         + LOCAL_RECOVER
+
+tests/test_joint_visual_policy.py:189: AssertionError
+_______ test_repeated_reserved_capture_with_last_allowance_is_idempotent _______
+
+    def test_repeated_reserved_capture_with_last_allowance_is_idempotent():
+        chosen = policy()
+        chosen.contract_provider = None
+        ctx = prepared_context()
+        ctx.verification_budget.remaining_reobservations = 1
+        assert chosen.decide(ctx) == DecisionAction.REOBSERVE
+>       assert chosen.decide(ctx) == DecisionAction.REOBSERVE
+E       AssertionError: assert <DecisionAction.STOP: 'STOP'> == <DecisionActi...: 'REOBSERVE'>
+E         
+E         - REOBSERVE
+E         + STOP
+
+tests/test_joint_visual_policy.py:212: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_decision_judgment.py::test_unknown_cloud_identity_cannot_replace_new_capture
+FAILED tests/test_decision_judgment.py::test_final_verification_failure_cannot_continue_even_with_old_pass_conditions
+FAILED tests/test_joint_visual_policy.py::test_hard_stop_never_calls_contract_or_judge_provider
+FAILED tests/test_joint_visual_policy.py::test_provider_failure_after_absolute_deadline_cannot_reserve_new_capture
+FAILED tests/test_joint_visual_policy.py::test_arbitrary_provider_error_is_a_recorded_budgeted_fallback
+FAILED tests/test_joint_visual_policy.py::test_provider_cannot_rebind_unavailable_recovery_candidate
+FAILED tests/test_joint_visual_policy.py::test_repeated_reserved_capture_with_last_allowance_is_idempotent
+7 failed, 24 passed in 0.39s

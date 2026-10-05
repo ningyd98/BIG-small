@@ -1,0 +1,51 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_public_transition_save_cannot_forge_a_committed_transaction[False] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-524/test_public_transition_save_ca0')
+sqlite = False
+
+    @pytest.mark.parametrize('sqlite',[False,True])
+    def test_public_transition_save_cannot_forge_a_committed_transaction(tmp_path:Path,sqlite):
+        repo=SQLiteAutoModeRepository(tmp_path/'mode.db') if sqlite else InMemoryAutoModeRepository()
+        initialize(repo)
+        service=ModeTransitionService(repository=repo,clock=lambda:NOW)
+        prepared=service.prepare(request())
+        forged=prepared.model_copy(update={'status':AutoModeTransitionStatus.COMMITTED,'committed_at':NOW})
+>       with pytest.raises(ValueError,match='commit|terminal'):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_mode_transition_cas.py:222: Failed
+____ test_public_transition_save_cannot_forge_a_committed_transaction[True] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-524/test_public_transition_save_ca1')
+sqlite = True
+
+    @pytest.mark.parametrize('sqlite',[False,True])
+    def test_public_transition_save_cannot_forge_a_committed_transaction(tmp_path:Path,sqlite):
+        repo=SQLiteAutoModeRepository(tmp_path/'mode.db') if sqlite else InMemoryAutoModeRepository()
+        initialize(repo)
+        service=ModeTransitionService(repository=repo,clock=lambda:NOW)
+        prepared=service.prepare(request())
+        forged=prepared.model_copy(update={'status':AutoModeTransitionStatus.COMMITTED,'committed_at':NOW})
+>       with pytest.raises(ValueError,match='commit|terminal'):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_mode_transition_cas.py:222: Failed
+______ test_checkpoint_model_copy_cannot_bypass_strict_version_validation ______
+
+    def test_checkpoint_model_copy_cannot_bypass_strict_version_validation():
+        module=import_module('cloud_edge_robot_arm.auto_mode.models')
+        repo=InMemoryAutoModeRepository();initialize(repo)
+        service=ModeTransitionService(repository=repo,clock=lambda:NOW)
+        prepared=service.prepare(request())
+        checkpoint=module.ModeTransitionCheckpoint(task_id='task',checkpoint_id='cp',plan_version=1,command_seq=1,mode_version=1,atomic_action_active=False,persisted_at=NOW)
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_mode_transition_cas.py:234: Failed
+=========================== short test summary info ============================
+FAILED tests/test_mode_transition_cas.py::test_public_transition_save_cannot_forge_a_committed_transaction[False]
+FAILED tests/test_mode_transition_cas.py::test_public_transition_save_cannot_forge_a_committed_transaction[True]
+FAILED tests/test_mode_transition_cas.py::test_checkpoint_model_copy_cannot_bypass_strict_version_validation
+3 failed, 10 deselected in 0.28s

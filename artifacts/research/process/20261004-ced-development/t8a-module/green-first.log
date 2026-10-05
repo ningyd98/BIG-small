@@ -1,0 +1,36 @@
+.....FF....                                                              [100%]
+=================================== FAILURES ===================================
+____________ test_success_without_fault_cannot_prove_recoverability ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-434/test_success_without_fault_can0')
+
+    def test_success_without_fault_cannot_prove_recoverability(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [
+            str(recovery(tmp_path, row, injected=False))]
+        result = api().prepare_protocol_evidence(pools, tmp_path / "output")
+        assert result["recovery_proven"] == 0
+        attempts = json.loads((tmp_path / "output" / "generation-attempts.json").read_text())
+>       assert "injection" in attempts[0]["reason"]
+E       AssertionError: assert 'injection' in 'preregistered scene eligibility failed'
+
+tests/test_protocol_evidence_generation.py:159: AssertionError
+_________ test_success_requires_measured_defect_and_post_fault_teacher _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-434/test_success_requires_measured0')
+
+    def test_success_requires_measured_defect_and_post_fault_teacher(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+        result = api().prepare_protocol_evidence(pools, tmp_path / "output")
+>       assert result["recovery_proven"] == 1
+E       assert 0 == 1
+
+tests/test_protocol_evidence_generation.py:168: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_success_without_fault_cannot_prove_recoverability
+FAILED tests/test_protocol_evidence_generation.py::test_success_requires_measured_defect_and_post_fault_teacher
+2 failed, 9 passed in 0.78s

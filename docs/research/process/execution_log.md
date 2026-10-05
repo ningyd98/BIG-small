@@ -1,9 +1,21 @@
 # 执行日志
 
+## 整体计划更新（2026-10-04）
+
+用户要求“更新整体计划”，随后明确“边缘侧的模型后续再调整”。已建立[新设计](../../superpowers/specs/2026-10-04-cloud-edge-device-research-design.md)及[新执行计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)：优先Max和端侧证据，边缘provider可替换、型号后置。只读核查识别T8等待T11筛选和T13恢复的依赖问题，改为T8a独立前置证据/筛选，T8b新先导/初冻。保留原始实验及历史限定DONE，过程入口同步；未执行新模型或产品研发。本次文档验证见[阶段总结](continuation_20261004.md#整体计划更新2026-10-04)。
+
+## 2026-10-04 后续研发接续
+
+用户授权继续后续全部研发并逐步汇总；本轮在 `research/20261004-continuation` 分支保留之前未提交改动。已完成 T17a 数据/视觉工作台和真实 E2E。T8 接入真实账本、网络/时钟、周期监督，v1仅诊断；五项修复后v2互斥120例全部结束（退出4），5成功、静态4/40，物理/帧/成本独立复核一致。初次冻结退出3，NO_FEASIBLE_BASELINE，未发布协议。最后摘要标记修复先RED后GREEN，58项补测及CLI定向静态检查通过。T8保持IN_PROGRESS。每步的命令、结果、限制和产物在[阶段总结](continuation_20261004.md)汇总。
+
+新增候选讨论：用户提出云端Qwen3.8-Max、边缘Qwen3.5-4B、端侧OpenCV。本轮核对官方视觉接口并依据已有Max正常1/12、小模型正常0/40证据评估角色分工，尚未修改模型/协议主线。未提交、推送、外部发布或操作真实机器人。
+
 本日志只记已发生的授权和可核对的执行；最新任务状态见[阶段进度](phase_progress.md)。时间缺少可靠记录时不补造时分秒。
 
 | 日期 | 事件 | 实际状态与证据 |
 |---|---|---|
+| 2026-10-04 | 用户要求失败时依次尝试Qwen3-VL 8B Q8_0/Q6_K、Llama-3.2-Vision 11B Q5_K_M、InternVL2.5 8B，并使用归一化坐标。 | Qwen8实际Q8_0双图4/4探测通过，20例闭环正常2/12、缺失误操作1/4；Llama当前后端及双图契约阻塞，未测性能；InternVL原生8位实际筛选0/16，未进入独立闭环。新60场景×两Qwen模型共120例全部保留，Qwen3-VL 4B/8B 缺失目标误操作 16/20 与 11/20，正常成功 4/40 与 0/40；定位 P90 10.31/33.52 mm（覆盖 40/40 与 28/40），墙钟 P95 10.64/10.42 秒。 物理复核226,006样本/999帧/349动作，valid=true、errors=[]；所有配置normalized_1000。API费用0、总费用未测，不支持替换默认模型，不升级正式G1。详见[报告](../../../artifacts/research/process/20261004-t7-larger-vlm-candidates/acceptance.md)、[独立统计](../../../artifacts/research/process/20261004-t7-larger-vlm-candidates/comparison-summary.json)与[复核](../../../artifacts/research/process/20261004-t7-larger-vlm-candidates/independent-validation.json)。 |
+| 2026-10-04 | 用户要求先复测T7典型失败，再用独立测试集比较误操作、定位P90、成功率、延迟P95和费用；确认无机器计费单价。 | 历史20例状态/原因/动作/调用原样复现，独立复算valid=true；冻结60新场景×2本地模型，120/120完成，独立重放136,673样本、781帧、212动作，valid=true、errors=[]。Qwen3-VL/Qwen3.5缺失误操作17/20与0/20、正常成功6/40与0/40、定位P90 11.60/32.57 mm（覆盖40/40与7/40）、墙钟P95 11.64/8.44秒。API费用0、总费用未测；新增1例误完成。详见[本轮报告](../../../artifacts/research/process/20261004-t7-retest-comparison/acceptance.md)、[协议与原始数据](../../../artifacts/research/process/20261004-t7-retest-comparison/independent-60/)、[独立复算](../../../artifacts/research/process/20261004-t7-retest-comparison/independent-validation.json)。探索比较，不升级G1/T8，不改生产逻辑，不提交、不推送、不运行真实硬件。 |
 | 2026-10-03 | 用户授权分阶段启动代码实施，并重建全过程文档；首批 P1=T1/T2。本轮不提交、不推送、不启动真实硬件。 | 范围与原因见[决策记录](decisions_and_risks.md)。 |
 | 2026-10-03 | 现有工作区预检和基线记录已完成。 | [初始 Git 状态](../../../artifacts/research/process/20261003-phase1/initial-git-status.txt)、[初始 HEAD](../../../artifacts/research/process/20261003-phase1/initial-head.txt)、[来源哈希](../../../artifacts/research/process/20261003-phase1/initial-source-hashes.json)、[环境](../../../artifacts/research/process/20261003-phase1/environment.json)。基线结果见下文。 |
 | 2026-10-03 | 创建本过程文档入口及进度、验证、决策、变更、交接文档。 | 文档工作；不构成 T1/T2 软件或真实采集验收。 |

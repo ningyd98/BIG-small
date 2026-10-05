@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_precision_translation_oscillation_rejects_endpoint_consistency ______
+
+    def test_precision_translation_oscillation_rejects_endpoint_consistency():
+        initial = scene(resolution=10, source="mujoco_camera")
+        tracked = tracker(initial, depth_error_bound_m=0.000001)
+        for index in range(7):
+            time = 0.1 + index * 0.1
+            facts = tracked.facts(scene(str(index), time=time, x=10 + index % 2, lift=0.06,
+                                        resolution=10, source="mujoco_camera",
+                                        started=datetime.now(UTC) - timedelta(seconds=time)), held())
+            assert facts["target_visible"]["value"] is True
+        diagnostic = facts["object_stable"]["measured_values"]
+        assert facts["object_stable"]["value"] is None
+>       assert diagnostic["endpoint_window_consistent"] is False
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'endpoint_window_consistent'
+
+tests/test_visual_effect_evidence.py:269: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_visual_effect_evidence.py::test_precision_translation_oscillation_rejects_endpoint_consistency
+1 failed in 2.68s

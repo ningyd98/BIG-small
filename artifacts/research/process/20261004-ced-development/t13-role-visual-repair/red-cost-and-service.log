@@ -1,0 +1,60 @@
+F...F                                                                    [100%]
+=================================== FAILURES ===================================
+___________ test_missing_cost_accounting_rejects_before_paid_request ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-775/test_missing_cost_accounting_r0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7548919bbb00>
+
+    def test_missing_cost_accounting_rejects_before_paid_request(tmp_path, monkeypatch):
+        adapter, wire, planner, _, _, request, *_ = setup(tmp_path, monkeypatch)
+        planner.cost_ledger = None
+        result = adapter.replan(request)
+>       assert result.new_steps == [] and wire.requests == []
+E       AssertionError: assert ([TaskStep(ste...onditions=[])] == []
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:512: AssertionError
+_ test_existing_service_creates_candidate_only_without_ack_activation_or_execution _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-775/test_existing_service_creates_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7548663cfdd0>
+
+    def test_existing_service_creates_candidate_only_without_ack_activation_or_execution(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.cloud.replanning.service import LocalReplanningService
+        from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
+        from tests.test_replan_activation import setup_replan
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+        from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency
+        adapter, wire, _, _, source, _, *_ = setup(tmp_path, monkeypatch)
+        repo = InMemoryEventAutonomyRepository()
+        request, _ = setup_replan(repo)
+        active = repo.get_active_contract('task')
+        checkpoint = repo.get_latest_execution_checkpoint('task')
+        assert active is not None and checkpoint is not None
+        data = checkpoint.model_dump(mode='json'); data['checkpoint_hash'] = ''
+        online = replace(source.context.online_evidence, context_hash=replan_payload_hash(data))
+        context = replace(source.context, active_contract=active.contract, checkpoint=checkpoint,
+            online_evidence=online, dependencies=(StepDependency('approach',(),(),None,True),
+                StepDependency('grasp',('approach',),('lost',),'grasp-effect',False)),
+            completed_effect_conditions={})
+        proof = replace(source.action_evidence['grasp'],context_hash=replan_payload_hash(data))
+        actual_source = api().RoleVisualRepairSource(context, {'grasp':proof}, 'SOFTWARE_ONLY')
+        adapter.source_provider = lambda *_: actual_source
+        adapter.grounding_provider = lambda intent, original, observation, current, binding_hash: (
+            api().GroundedRepairStep(original, proof, binding_hash,replan_payload_hash(original)))
+        service = LocalReplanningService(adapter=adapter, repository=repo,
+            clock=lambda: NOW+timedelta(seconds=.2))
+        result = service.process(request, apply=True, dispatch=False)
+>       assert result.outcome == 'REPLANNED' and len(wire.requests)==1
+E       AssertionError: assert ('MORE_OBSERVATION_REQUIRED' == 'REPLANNED'
+E         
+E         - REPLANNED
+E         + MORE_OBSERVATION_REQUIRED)
+
+tests/test_role_visual_repair.py:574: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_missing_cost_accounting_rejects_before_paid_request
+FAILED tests/test_role_visual_repair.py::test_existing_service_creates_candidate_only_without_ack_activation_or_execution
+2 failed, 3 passed, 39 deselected in 0.59s

@@ -1,0 +1,141 @@
+--- a/src/cloud_edge_robot_arm/research/provider_usage.py
++++ b/src/cloud_edge_robot_arm/research/provider_usage.py
+@@ -198,6 +198,13 @@
+             for key in ("text_tokens", "image_tokens", "video_tokens", "audio_tokens", subset):
+                 if details.get(key) is not None and _integer(details[key]) > ceiling:
+                     raise ValueError("provider_token_subset_inconsistent")
++            modality_total = sum(
++                _integer(details[key])
++                for key in ("text_tokens", "image_tokens", "video_tokens", "audio_tokens")
++                if details.get(key) is not None
++            )
++            if modality_total > ceiling:
++                raise ValueError("provider_modality_subtotals_inconsistent")
+             if details.get(subset) is not None:
+                 value = _integer(details[subset])
+             if (
+@@ -312,7 +319,8 @@
+                         and model == role.model_id
+                         and (
+                             request.get("stream", False) is False
+-                            and response.get("object") != "chat.completion.chunk"
++                            and response.get("object") == "chat.completion"
++                            and "error" not in response
+                         )
+                     ):
+                         try:
+@@ -339,7 +347,10 @@
+                     )
+                 status = (
+                     "UNKNOWN"
+-                    if any(row.sent and row.input_tokens is None for row in attempts)
++                    if (
++                        not any(row.sent and row.input_tokens is not None for row in attempts)
++                        or any(row.sent and row.input_tokens is None for row in attempts)
++                    )
+                     else "OBSERVED"
+                 )
+                 reasons = (
+--- a/tests/test_provider_usage.py
++++ b/tests/test_provider_usage.py
+@@ -22,6 +22,62 @@
+     "src/cloud_edge_robot_arm/research/cost_ledger.py",
+     "src/cloud_edge_robot_arm/research/resource_plan.py",
+ )
++
++
++@pytest.mark.parametrize("object_type", [None, "error", "response", "chat.completion.chunk"])
++def test_only_supported_synchronous_chat_response_is_observed(tmp_path, object_type):
++    response = {
++        "id": "opaque",
++        "model": MODEL,
++        "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
++    }
++    if object_type is not None:
++        response["object"] = object_type
++    result = read(fixture(tmp_path, response=response)[0])
++    assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
++    assert result.original_attempts == result.sent_attempts == 1
++    assert result.monetary_cost is None
++
++
++def test_typed_chat_error_envelope_is_still_unsupported(tmp_path):
++    response = {
++        "object": "chat.completion",
++        "error": {"code": "software-fixture-error"},
++        "id": "opaque",
++        "model": MODEL,
++        "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
++    }
++    result = read(fixture(tmp_path, response=response, status="ERROR")[0])
++    assert result.status == "UNKNOWN" and result.original_attempts == 1
++
++
++@pytest.mark.parametrize("empty", [False, True])
++def test_zero_provider_usage_keeps_all_attempts_unknown(tmp_path, empty):
++    registration, evidence = fixture(tmp_path, status="ERROR")
++    ledger = json.loads((evidence / "ledger.json").read_text())
++    if empty:
++        ledger = []
++    else:
++        ledger[0].update(sent_at=None, serialized_sent_bytes=0, serialized_received_bytes=0)
++    (evidence / "ledger.json").write_text(json.dumps(ledger))
++    (evidence / "wire.json").write_text("[]")
++    result = read(rebound(registration, evidence))
++    assert result.status == "UNKNOWN"
++    assert result.original_attempts == (0 if empty else 1) and result.sent_attempts == 0
++    assert len(result.attempts) == (0 if empty else 1)
++    assert result.monetary_cost is None
++
++
++@pytest.mark.parametrize("side", ["input", "output"])
++def test_disjoint_modality_subtotals_cannot_exceed_parent(tmp_path, side):
++    usage = {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
++    if side == "input":
++        usage["prompt_tokens_details"] = {"text_tokens": 70, "image_tokens": 70}
++    else:
++        usage["completion_tokens_details"] = {"text_tokens": 40, "audio_tokens": 40}
++    response = {"object": "chat.completion", "id": "opaque", "model": MODEL, "usage": usage}
++    result = read(fixture(tmp_path, response=response)[0])
++    assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
+ 
+ 
+ def fixture(tmp_path: Path, *, response=None, status="SUCCESS"):
+@@ -50,6 +106,7 @@
+         response
+         if response is not None
+         else {
++            "object": "chat.completion",
+             "id": "chatcmpl-provider-7",
+             "model": MODEL,
+             "usage": {
+@@ -135,7 +192,12 @@
+     ],
+ )
+ def test_missing_or_invalid_usage_is_unknown_not_zero(tmp_path, usage):
+-    result = read(fixture(tmp_path, response={"id": "opaque", "model": MODEL, "usage": usage})[0])
++    result = read(
++        fixture(
++            tmp_path,
++            response={"object": "chat.completion", "id": "opaque", "model": MODEL, "usage": usage},
++        )[0]
++    )
+     assert result.status == "UNKNOWN" and result.attempts[0].input_tokens is None
+     assert result.monetary_cost is None and result.original_attempts == 1
+ 
+@@ -143,6 +205,7 @@
+ @pytest.mark.parametrize("details", [{"cached_tokens": 101}, {"cached_tokens": True}])
+ def test_cache_subsets_cannot_exceed_or_corrupt_input_total(tmp_path, details):
+     response = {
++        "object": "chat.completion",
+         "id": "opaque",
+         "model": MODEL,
+         "usage": {
+@@ -283,6 +346,7 @@
+ 
+ def test_reasoning_is_not_added_again_and_cannot_exceed_text_subset(tmp_path):
+     response = {
++        "object": "chat.completion",
+         "id": "opaque",
+         "model": MODEL,
+         "usage": {

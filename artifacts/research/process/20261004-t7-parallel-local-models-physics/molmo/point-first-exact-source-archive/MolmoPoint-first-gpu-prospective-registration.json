@@ -1,0 +1,212 @@
+{
+  "stage": "prospective before first MolmoPoint GPU load/inference; weights still downloading",
+  "model": "MolmoPoint-8B",
+  "official_repo": "allenai/MolmoPoint-8B",
+  "method": "molmo.native.rgbd.two_localization_plus_evidence.v2",
+  "prompt_order": "Complete unchanged Task instruction precedes each unchanged final target/destination/evidence role query. This is the current global v2 bridge ordering, adopted prospectively for Point before any Point inference; not the original Molmo2 v1 order.",
+  "bridge_sha256": "e8e7c66b31f452e4f95e1508ed5b97cfbb58bff90000211895287b152adf5a22",
+  "native_adapter_sha256": "dfac1fce8bd5ac469e5bce14abf8f36d33f6f13252db3dc022bb6eaacc894ff9",
+  "model_metadata_sha256": "f7c10320f265a244f15fbc0a74bb026e7014223d9b4a4a8d03af6fc3a69bfac2",
+  "dependency_metadata_sha256": "595423536a127fa94dc030b4a95ca0ce140f716350f9a80187429a0a1c83f2ab",
+  "environment_freeze_sha256": "d9c96a31ef371bbe5f5ce8dd5c2faf67f840cd871e14acb8b13b0b0881ee3aff",
+  "quantization": {
+    "implementation": "transformers4.57.1 BitsAndBytesConfig with read-only bitsandbytes0.45.2",
+    "load_in_8bit": true,
+    "llm_int8_threshold": 6.0,
+    "llm_int8_skip_modules": [
+      "lm_head"
+    ],
+    "remaining_dtype": "torch.bfloat16 explicit",
+    "device_map": {
+      "": 0
+    },
+    "attention": "sdpa",
+    "offload": false,
+    "BF16_fallback": false
+  },
+  "native_protocol": {
+    "images": "same user message actual synchronized RGB index0 + aligned depth index1; both320x240 PIL RGB",
+    "processor": "official AutoProcessor local-files-only with return_pointing_metadata=True",
+    "logits_processor": "model.build_logit_processor_from_inputs(inputs), including evidence call",
+    "raw_decode": "skip_special_tokens=False; raw generated token IDs retained",
+    "points_decoder": "model.extract_image_points using exact token_pooling/subpatch_mapping/image_sizes metadata",
+    "coordinate_conversion": "official zero-based image pixel floats -> normalized1000 round-half-up; no coordinate correction",
+    "absence": "exact ABSENT with no points; frozen parser also rejects any ABSENT substring plus native points, including possible label echoes",
+    "complete_contract": "third free-decoding call must provide actual label/presence/self-confidence/observed_scene/skills; no schema forced on native point generation; no fabricated constants or repaired skills"
+  },
+  "generation": {
+    "localization_max_new_tokens": 160,
+    "evidence_max_new_tokens": 256,
+    "do_sample": false,
+    "num_beams": 1,
+    "use_cache": true
+  },
+  "bank_manifest_sha256": "d68d3c96d732a512c632ade51646d7e91664e680940072f07e71e87305579015",
+  "allocation": [
+    {
+      "case_id": "fixed-s01-1",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "2416846a0bd13a436726bb3c6e652f14e664aae63dcb3f1b9cf952fd0690d56e"
+    },
+    {
+      "case_id": "fixed-s01-2",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "5838393b1c0311a4e5028b805327b5c30c4adf2c6c5ce3b473244f184ee4ea21"
+    },
+    {
+      "case_id": "fixed-s01-3",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "a8e19b443b8e9154f0e8fc5d18fae5608a64599e83de23582713c85a6d8e1955"
+    },
+    {
+      "case_id": "fixed-s01-4",
+      "instruction": "把图中的红色方块放到绿色方形目标区域。",
+      "transport_sha256": "529ad7950c3f4c273c33715e68bd8bbc06f2275a41e2787ace41921cf453682e"
+    },
+    {
+      "case_id": "positive-01",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "6aca1cd307f4cfe3a7a273445b16b7d872b2d6a06ae96a52c82c40d9deeaf160"
+    },
+    {
+      "case_id": "positive-02",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "dfed4649af498ae90bc338768647c491e22f5f4a990b7328af0f44cc4aed8535"
+    },
+    {
+      "case_id": "positive-03",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "2370e1191ffc7ca19aba5ae66daece8168fb3e8881fb126b825f55df39668050"
+    },
+    {
+      "case_id": "positive-04",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "065fa14b9ec99e63e9ed72a93af64936898a5ee62e63b3f7ae2814e05403ebe2"
+    },
+    {
+      "case_id": "positive-05",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "8bb877174291bd342351126aca33c9a0f9fdaa41adb8f888c0a2de7efbb36ee1"
+    },
+    {
+      "case_id": "positive-06",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "8e4c9eb4fc450c7b7a3bd6c3c0bc7e74dc0cdd7aa02a999cd229dae8d6dd917f"
+    },
+    {
+      "case_id": "positive-07",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "7d62d6d14b1569de9fba4ae7ff3aee5852e62bc4cc2d8b13cc475ee166fca05d"
+    },
+    {
+      "case_id": "positive-08",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "634a81064987b8c7f809cbb9492e9d9f47cf1c6a1362dc8fd05c8a7c07337b14"
+    },
+    {
+      "case_id": "positive-09",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "ec3e287d434ce18d9e590d7e068c6e1fa5a4e792300dd84a1c64bddede47cb55"
+    },
+    {
+      "case_id": "positive-10",
+      "instruction": "Pick up the red block and place it in the green region.",
+      "transport_sha256": "45e2f963b1f2da25c1002d4239bf2aad3742ce7d0aad72654291f2b7209b3322"
+    },
+    {
+      "case_id": "positive-11",
+      "instruction": "Pick up the blue block and place it in the green region.",
+      "transport_sha256": "a6ccec7deb33297a58d2d40300cbd2eb8ea72f734ddfe9a2a26111dde7fd53cc"
+    },
+    {
+      "case_id": "positive-12",
+      "instruction": "Pick up the yellow block and place it in the green region.",
+      "transport_sha256": "5ee85eb4ad09c272913240de5c31048b59e0c27f85fe3b9ca6c7f211731e7553"
+    },
+    {
+      "case_id": "negative_absent-01",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "810b374cad0e24d2ed3eb033ebdbd19f75169aac9a1f0b38275cbdaccf90b312"
+    },
+    {
+      "case_id": "negative_absent-02",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "a2e4380242a82c593d473c41f3baf444bd38fe048af49cc3ae8a56951e19ee0a"
+    },
+    {
+      "case_id": "negative_absent-03",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "0ccea36ce2e3c534f58f2da5b5a2a6b7e53b1fd87a08498f255c77d01a0a2a60"
+    },
+    {
+      "case_id": "negative_absent-04",
+      "instruction": "Pick up the purple block and place it in the green region.",
+      "transport_sha256": "8b129dced919492f230a119213e870d6a871463f171a73953bc2b6ecf328f2b8"
+    }
+  ],
+  "case_count": 20,
+  "planned_calls_per_case": 3,
+  "planned_total_calls": 60,
+  "first_run_is_full20": true,
+  "pinned_weight_files": [
+    {
+      "path": "model-00001-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 4974567112,
+      "sha256": "19ab63a529d72b101000396a03df34f2dc32e8d744b0c5cec50f0542eea6b8db"
+    },
+    {
+      "path": "model-00002-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 4630720272,
+      "sha256": "19fbea500ac2cb32175131e3009b4aebfc3c373e48b07ea51783b1049df34761"
+    },
+    {
+      "path": "model-00003-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 4630720296,
+      "sha256": "c66ec2e00cd832d67a5f24ace0e4330e13627b82444784986062df6a2a973ac4"
+    },
+    {
+      "path": "model-00004-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 4630720320,
+      "sha256": "20b4298b55a145d9ccdef463ffe3c344cbfd90e7fa67d0778d50f66688dacd27"
+    },
+    {
+      "path": "model-00005-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 4630720320,
+      "sha256": "eeac368f9670bad559e45aceea971ff78db86fafee604f17e28c1e58932a27de"
+    },
+    {
+      "path": "model-00006-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 4630720320,
+      "sha256": "3738d142536fdc8e9217e7a853240006aff3fe5c157d982cff3e52addb05f011"
+    },
+    {
+      "path": "model-00007-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 4091925052,
+      "sha256": "b0af4940b1b827e995397de33114310c838b8edece415819de119d4f403d420f"
+    },
+    {
+      "path": "model-00008-of-00008.safetensors",
+      "revision": "6823f4c0334525663513c434580d1dd701abc156",
+      "size": 2491416816,
+      "sha256": "b87b59f8beb9a114e4867e522e3ec5116d05442f199901b48b1beb4fda6962d1"
+    }
+  ],
+  "GPU_gate": "all8fullweightSHAverified + fresh explicit root serial lease + no external compute client; no GPU before this gate",
+  "GPU_feasibility": "untested",
+  "quality": "untested",
+  "ground_truth_used_online": false,
+  "physical_actions": 0,
+  "score_layers": [
+    "raw native proposals",
+    "frozen native parser",
+    "honest complete VisualDecision",
+    "independent offline geometry; no formal or closed-loop claims"
+  ]
+}

@@ -1,0 +1,427 @@
+--- baseline/src/cloud_edge_robot_arm/research/freeze_evidence.py
++++ review/src/cloud_edge_robot_arm/research/freeze_evidence.py
+@@ -448,6 +448,13 @@
+     return request, response
+ 
+ 
++def _ced_evaluation_start(header: Mapping[str, Any], raw_count: int) -> int:
++    start = header["evaluation_start_step"]
++    if type(start) is not int or start != 120 or raw_count <= 120:
++        raise ValueError("actual collector evaluation must retain the complete tail from step120")
++    return start
++
++
+ def _audit_ced_case(
+     case: Path, assignment: Mapping[str, Any], row: Mapping[str, Any], probe: Mapping[str, Any]
+ ) -> dict[str, Any]:
+@@ -495,9 +502,7 @@
+         )
+     ):
+         raise ValueError("actual episode policy differs from frozen B0/role/verification boundary")
+-    start = header["evaluation_start_step"]
+-    if type(start) is not int or not 0 <= start < len(raw):
+-        raise ValueError("independent evaluation start is outside full raw trajectory")
++    start = _ced_evaluation_start(header, len(raw))
+     criteria = CompletionCriteria("object", "target_region")
+     samples = [sample_physical_observation(item, criteria) for item in raw[start:]]
+     if content_digest([asdict(s) for s in samples]) != content_digest(
+@@ -675,6 +680,7 @@
+             )
+         result = {
+             "role_bundle_hash": probe["bundle_hash"],
++            "cloud_model_snapshot_hash": _model_evidence_hash(probe["request_settings"]),
+             "pools": pools,
+             "assignment_manifest_hash": content_digest(expected),
+             "cases": cases,
+@@ -711,7 +717,11 @@
+ def _initial_v2_spec(directory: Path) -> ProtocolSpec:
+     from cloud_edge_robot_arm.research.pilot import BUDGET_SELECTION_RULE
+     from cloud_edge_robot_arm.research.protocol_evidence import verify_protocol_evidence
+-
++    from cloud_edge_robot_arm.research.resource_plan import verify_resource_plan_receipt
++
++    if not _inside(directory, "resource-plan.json").is_file():
++        raise ValueError("initial resource acceptance requires independently compiled full budget")
++    resource = verify_resource_plan_receipt(directory)
+     foundation = audit_ced_pilot_stage(directory, "foundation")
+     if not foundation["available"]:
+         raise ValueError(f"foundation unavailable: {foundation['errors']}")
+@@ -736,15 +746,22 @@
+         or read_json(_inside(evidence_directory, "evidence-pools.json")) != foundation["pools"]
+     ):
+         raise ValueError("fixed opportunity/recovery evidence is incomplete or has different pools")
++    derived_tcap = derive_tcap([r["wall_duration_s"] for r in cases if r["success"]])
++    if (
++        resource["tcap_s"] != derived_tcap
++        or resource["role_bundle_hash"] != foundation["role_bundle_hash"]
++    ):
++        raise ValueError("resource plan differs from independently accepted foundation Tcap/roles")
+     return ProtocolSpec(
+         schema_version="ced.research.v2",
+-        tcap_s=derive_tcap([r["wall_duration_s"] for r in cases if r["success"]]),
++        tcap_s=derived_tcap,
+         pool_hashes={name: content_digest(rows) for name, rows in foundation["pools"].items()},
+         model_snapshot_hash=foundation["role_bundle_hash"],
+         role_bundle_hash=foundation["role_bundle_hash"],
+         selected_b0_period_s=selection["selected_period_s"],
+         selection_manifest_hash=selection["evidence_hash"],
+         budget_selection_rule_hash=content_digest(BUDGET_SELECTION_RULE),
++        resource_plan_hash=resource["content_hash"],
+         opportunity_hash=content_digest(
+             read_json(_inside(evidence_directory, "opportunities.json"))
+         ),
+--- baseline/src/cloud_edge_robot_arm/research/protocol.py
++++ review/src/cloud_edge_robot_arm/research/protocol.py
+@@ -61,6 +61,7 @@
+     selection_manifest_hash: str | None = None
+     selected_b0_period_s: float | None = None
+     budget_selection_rule_hash: str | None = None
++    resource_plan_hash: str | None = None
+ 
+     @model_serializer(mode="wrap")
+     def preserve_v1_shape(self, handler: Any) -> dict[str, Any]:
+@@ -71,6 +72,7 @@
+                 "selection_manifest_hash",
+                 "selected_b0_period_s",
+                 "budget_selection_rule_hash",
++                "resource_plan_hash",
+             ):
+                 payload.pop(name, None)
+         return payload
+@@ -93,6 +95,7 @@
+             self.selection_manifest_hash,
+             self.selected_b0_period_s,
+             self.budget_selection_rule_hash,
++            self.resource_plan_hash,
+         )
+         if self.schema_version == "rgbd.research.v1" and any(v is not None for v in v2_fields):
+             raise ValueError("role/stage bindings require explicit ced.research.v2")
+@@ -100,6 +103,7 @@
+             self.role_bundle_hash,
+             self.selection_manifest_hash,
+             self.budget_selection_rule_hash,
++            self.resource_plan_hash,
+         ):
+             if digest is not None and (
+                 len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest)
+@@ -149,6 +153,7 @@
+         "selection_manifest_hash",
+         "selected_b0_period_s",
+         "budget_selection_rule_hash",
++        "resource_plan_hash",
+     ):
+         if getattr(spec, name) != getattr(derived, name):
+             raise ValueError(f"protocol {name} differs from verified pilot evidence")
+@@ -187,6 +192,7 @@
+             frozen.spec.selection_manifest_hash,
+             frozen.spec.selected_b0_period_s,
+             frozen.spec.budget_selection_rule_hash,
++            frozen.spec.resource_plan_hash,
+         )
+     ):
+         raise ValueError("v2 protocol lacks role/selection/budget evidence bindings")
+--- baseline/scripts/run_rgbd_pilot.py
++++ review/scripts/run_rgbd_pilot.py
+@@ -322,11 +322,51 @@
+     return summary
+ 
+ 
++CED_EXCLUSION_INVENTORY = Path("configs/research/ced_exclusions.yaml")
++
++
++def _frozen_development_exclusions() -> set[str]:
++    inventory = yaml.safe_load(CED_EXCLUSION_INVENTORY.read_text())
++    if not isinstance(inventory, dict) or set(inventory) != {
++        "schema_version",
++        "scope",
++        "group_ids",
++        "sources",
++        "content_hash",
++    }:
++        raise ValueError("frozen development exclusion inventory must be complete")
++    payload = {key: value for key, value in inventory.items() if key != "content_hash"}
++    if inventory["schema_version"] != "ced.excluded-groups.v1" or (
++        inventory["scope"] != "DEVELOPMENT_USED"
++        or inventory["content_hash"] != content_digest(payload)
++        or not isinstance(inventory["group_ids"], list)
++        or not isinstance(inventory["sources"], list)
++    ):
++        raise ValueError("frozen development exclusion schema/content binding differs")
++    groups: set[str] = set()
++    for reference in inventory["sources"]:
++        if not isinstance(reference, dict) or set(reference) != {"path", "sha256", "kind"}:
++            raise ValueError("exclusion source requires exact original hash and type")
++        path = Path(reference["path"])
++        if path.is_symlink() or file_hash(path) != reference["sha256"]:
++            raise ValueError("frozen exclusion source drift")
++        if reference["kind"] == "assignment":
++            groups.add(json.loads(path.read_text())["scene"]["group_id"])
++        elif reference["kind"] == "samples_jsonl":
++            groups.update(json.loads(line)["group_id"] for line in path.read_text().splitlines())
++        else:
++            raise ValueError("unsupported exclusion source type")
++    if not groups or sorted(groups) != inventory["group_ids"]:
++        raise ValueError("exclusion groups do not reproduce from original development sources")
++    return groups
++
++
+ def _ced_pools(settings: Mapping[str, Any]) -> dict[str, Any]:
+     """Exclude every supplied historical source before freezing all six pools."""
+     from cloud_edge_robot_arm.research.pilot import validate_pilot_pools
+ 
+-    excluded = read_excluded_groups([Path(p) for p in settings["exclude_datasets"]])
++    excluded = _frozen_development_exclusions()
++    excluded.update(read_excluded_groups([Path(p) for p in settings["exclude_datasets"]]))
+     for previous in settings["exclude_pilots"]:
+         source = Path(previous)
+         rows = json.loads((source / "assignments.json").read_text())
+--- baseline/configs/research/ced_selection.yaml
++++ review/configs/research/ced_selection.yaml
+@@ -10,6 +10,7 @@
+ selection_evidence: null
+ protocol_evidence: null
+ exclude_datasets:
++  - datasets/rgbd-ced-dev-smoke-20261004
+   - datasets/rgbd-smoke-20261003
+   - datasets/rgbd-validation-20261003
+ exclude_pilots:
+--- baseline/configs/research/ced_foundation.yaml
++++ review/configs/research/ced_foundation.yaml
+@@ -11,6 +11,7 @@
+ selection_evidence: null
+ protocol_evidence: null
+ exclude_datasets:
++  - datasets/rgbd-ced-dev-smoke-20261004
+   - datasets/rgbd-smoke-20261003
+   - datasets/rgbd-validation-20261003
+ exclude_pilots:
+--- baseline/tests/test_ced_pilot_stages.py
++++ review/tests/test_ced_pilot_stages.py
+@@ -195,3 +195,33 @@
+     assert result["selected_period_s"] is None
+     rows = json.loads((tmp_path / "foundation/assignments.json").read_text())
+     assert len(rows) == 120 and all(row["period_s"] is None for row in rows)
++
++
++def test_frozen_development_exclusions_reject_external_supplied_pool(pools, tmp_path, monkeypatch):
++    import scripts.run_rgbd_pilot as script
++    import yaml
++
++    from cloud_edge_robot_arm.research.protocol import file_hash
++
++    row = pools["foundation"][0]
++    source = tmp_path / "used-assignment.json"
++    source.write_text(json.dumps(row))
++    payload = {
++        "schema_version": "ced.excluded-groups.v1",
++        "scope": "DEVELOPMENT_USED",
++        "group_ids": [row["scene"]["group_id"]],
++        "sources": [{"path": str(source), "sha256": file_hash(source), "kind": "assignment"}],
++    }
++    inventory = tmp_path / "exclusions.yaml"
++    inventory.write_text(yaml.safe_dump({**payload, "content_hash": content_digest(payload)}))
++    monkeypatch.setattr(script, "CED_EXCLUSION_INVENTORY", inventory, raising=False)
++    supplied = tmp_path / "pools.json"
++    supplied.write_text(json.dumps(pools))
++    settings = {
++        "exclude_datasets": [],
++        "exclude_pilots": [],
++        "pools_path": str(supplied),
++        "seed": 981301,
++    }
++    with pytest.raises(ValueError, match="previously used"):
++        script._ced_pools(settings)
+--- baseline/tests/test_ced_initial_freeze.py
++++ review/tests/test_ced_initial_freeze.py
+@@ -23,6 +23,7 @@
+         selection_manifest_hash="c" * 64,
+         selected_b0_period_s=2.0,
+         budget_selection_rule_hash="d" * 64,
++        resource_plan_hash="0" * 64,
+         opportunity_hash="e" * 64,
+         recovery_fault_manifest_hash="f" * 64,
+     )
+@@ -95,6 +96,7 @@
+         "selection_manifest_hash",
+         "selected_b0_period_s",
+         "budget_selection_rule_hash",
++        "resource_plan_hash",
+     ):
+         with pytest.raises(ValueError, match="override"):
+             apply_settings(ProtocolSpec(tcap_s=120), {field: "a" * 64})
+@@ -104,6 +106,7 @@
+     spec = ProtocolSpec(tcap_s=120)
+     assert "role_bundle_hash" not in spec.model_dump(mode="json")
+     assert "selection_manifest_hash" not in spec.model_dump(mode="json")
++    assert "resource_plan_hash" not in spec.model_dump(mode="json")
+     assert ProtocolSpec.model_validate(spec.model_dump()) == spec
+ 
+ 
+@@ -317,3 +320,52 @@
+     else:
+         with pytest.raises(ValueError):
+             api()._case_wire_payloads(tmp_path, entry)
++
++
++def test_initial_cannot_omit_resource_acceptance_after_other_source_gates(tmp_path, monkeypatch):
++    from cloud_edge_robot_arm.research import protocol_evidence
++
++    module = api()
++    pools = {"SOFTWARE_ONLY": []}
++    cases = [
++        {
++            "stratum_id": "STATIC" if i < 40 else "SENSOR",
++            "success": True,
++            "safety_violation": False,
++            "wall_duration_s": 20,
++        }
++        for i in range(120)
++    ]
++    audit = {
++        "available": True,
++        "cases": cases,
++        "pools": pools,
++        "role_bundle_hash": "a" * 64,
++        "selected_period_s": 2.0,
++        "evidence_hash": "b" * 64,
++    }
++    monkeypatch.setattr(module, "audit_ced_pilot_stage", lambda *args: audit)
++    monkeypatch.setattr(
++        protocol_evidence, "verify_protocol_evidence", lambda *args: {"valid": True}
++    )
++    monkeypatch.setattr(
++        module,
++        "read_json",
++        lambda path: pools if path.name == "evidence-pools.json" else [{"scope": "SOFTWARE_ONLY"}],
++    )
++    with pytest.raises(ValueError, match="resource"):
++        module._initial_v2_spec(tmp_path)
++    assert not (tmp_path / "protocol.json").exists()
++
++
++@pytest.mark.parametrize("start", [0, 119, 120, 121, 180])
++def test_actual_evaluation_start_cannot_hide_later_prefix_safety_events(start):
++    # The actual collector always starts evaluation after exactly 120 settling steps.
++    # A safety violation at121 must remain in the evaluated full original tail.
++    raw = [{"physics_step": i, "safety_violation": i == 121} for i in range(201)]
++    if start == 120:
++        chosen = api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
++        assert any(r["safety_violation"] for r in raw[chosen:])
++    else:
++        with pytest.raises(ValueError):
++            api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+--- /dev/null
++++ review/configs/research/ced_exclusions.yaml
+@@ -0,0 +1,112 @@
++content_hash: 73f56ef0c285da5a3d910f0e51008bd0683d3490d27964add11700ae5a1da9b5
++group_ids:
++- g-00890dc6888d07fb7c3586389693dbe3
++- g-00b59447af57a0fa84eab286993f16c0
++- g-02dac2e0f52409d1b1a11be8f5ca0679
++- g-037c05b2bda5eea01e0bcccc19b8e552
++- g-047da280411733993d7516bb7036c722
++- g-07e2d81978bb6d8f817b688e38e5336d
++- g-119a6203871d0a1c62e99042007c5394
++- g-12117751ed4c08fc068ce035dc613c2a
++- g-1a9127a6365ee9b63e35d4f36022d82a
++- g-1cff08736ad09ddffe02cd55b6f8bef3
++- g-1d044f188979517184fbaf65b1fd7841
++- g-1e2300b0ae2c2882bfe828b771d5d26a
++- g-1fd25e237def4378b6b2d80167d42b69
++- g-2177da788d867bcc5589e732192ff4b3
++- g-2abbf617488fb42fa818151bfff1da03
++- g-2c1d30b6abeabc10ff4bbb49a683dbae
++- g-30bf7bfa37d924e6e7015807ea9d7e2c
++- g-3315b39e58f98dd81b3047cf1c9d1f96
++- g-33b506ee43f45dc4853b036f43e92739
++- g-3433c5ead935e7628f92c48c6ba09af2
++- g-34557f323d366bb589f418e0831a3140
++- g-392b23cf5a24e69f2d7e67e8e318e67c
++- g-3c82bf90ccf220e2feed226fbe02fd22
++- g-3e150676373c4626ea3ddfd386746f15
++- g-4383d6dc5da246e8a13145247850af25
++- g-438d329f350384c6b4a8394c5eaa4bb2
++- g-4454b9a7a160e8bd1dd8244340fe8371
++- g-451dcfa4057f1bd664490c6a4ea59aa0
++- g-4639c83d95c9c5d5fdb017a6f09ce90d
++- g-478239eefed512ae3cd748a0e6809db9
++- g-4829536aa8da2301958820ad735d3b7a
++- g-4a385eec74746b9cb05ce3f2e3fcc418
++- g-4d8a8d9bad7027773d65579cac5bfd92
++- g-504aa878c40bdc8ddb0f6ba2d7d59840
++- g-53b3abc61724883766bcef66c705ed9b
++- g-55d1f1d44431483eea7703bad79feec5
++- g-5f6d3b4327b08ccda8d67672d63cac97
++- g-62718113bbfdc04b02d5636e92b97903
++- g-6d2074456e4ac55aba13d16f9d90ba90
++- g-6e887346b605e3fcd49f601ffe9d7846
++- g-71a7d987dde2ad6787497c76ee661a8c
++- g-75439c4a919ebab09d404c68b2a5d63a
++- g-75ea15dbcaa6f9026efd285f583220d9
++- g-76829a355d00f15ab9de225c1ae20d6e
++- g-7a92a1c7eba9932d257c916c311dac32
++- g-7d7f11ea902bbc832149ac2f6a941df3
++- g-805e2e9f4898e343bbb81f016375823d
++- g-810f95d1620838df77ec1e92d1b59f24
++- g-83d183aad2ad16026b399bb216dd34ee
++- g-894119f1ef8d66875520374b71381b3b
++- g-8a6fb10f2b68616d188baa66c40e4908
++- g-8b539f57471eecb365248c9dc77bc430
++- g-8e6ff25e191020378fedabe7df3401b2
++- g-917f3a22fb0b2cd205282d0a85b6fc5e
++- g-93102698b4348237241ab24f1e48dcc0
++- g-934a02031ea77c1331c00fc0c299b36b
++- g-97eaf7c8feee40e60194b144a757339c
++- g-9a97baaf5068a0d9839023ebc8d05951
++- g-9d21e0916ba2625e2374df98788131fc
++- g-9f6fad68ba4a1b371fb146da467f353a
++- g-a21bef015138ac02aa65e027508b5d2a
++- g-a284404790db4929de508cf5098daa02
++- g-a4c940b0eb3f6bdc03608a85ad9aedae
++- g-a5c76a38837ec9e99373c040c269c0e2
++- g-a7da1ab85dd3f991ce41bcad0931054b
++- g-aa4fe0dec21344ee93e15842580decaa
++- g-ab666306bbdca985e89d2d10707b45b0
++- g-ae9ba1f08868cfefe727ddd0cc189f41
++- g-b1d92cf51c19281687786bdd258dd6e0
++- g-b5c050eaad3b86539df2065da588fe32
++- g-b5d2929386430217492054d68c6b2aa4
++- g-b79c638af2ac79b202b034543f92d10b
++- g-c0ff962763a4a1f07c40fb5e587c0275
++- g-c18a051172013452bcae27b32a781077
++- g-c2171f32283484f9067105a6be11dfda
++- g-c5e18fde1da3b0e80d2fd32d87e86cde
++- g-c6c494b98ac4497e4978ec22e6741dce
++- g-cc008f1c25f7b65f22ce37b7f303847b
++- g-cd46787a00b758212bf24a4852b30f4c
++- g-cd9477b1b51c88b83e9412be5bf9f5ac
++- g-cdbda8930db402f0ec2341b574117013
++- g-ce68ad68a419f9172c9443f06c6b65e9
++- g-d488cef220816b544f4b38a36edec1f0
++- g-d83c3d34a0464c4e031f016da7424639
++- g-d87c616ef359629b969b9fb7e51c5ba8
++- g-d887611ba68039d1ab7e08d2b4550008
++- g-daa277d2ed3db933a7839c5ec7fd232f
++- g-deef5ea4cce4297f4315fdd0f7794681
++- g-def077fb364c2aaa058417a43d0f0870
++- g-e3dbf2dac154902f5cc30807aafd5973
++- g-e4a35a2ba04b9bfbfffd7394547ade93
++- g-e9d0b57b6972f95908295ffbe4f2b0b0
++- g-eef6d91a6790d5987db5f09f1adeeee7
++- g-efc8c13567a0e153e96fbbb13c1e5c89
++- g-f0346f2d259e5d60fdef825910b0ac98
++- g-f53b09399e4896f3dc57acff92386a5b
++- g-f65902ea29f707abc9b3b5a940ac53f0
++- g-f82415b7f827d19dc5f3d4bcc2d1a38d
++- g-fab644049065149354ff4d751cea412e
++- g-fbe3026f4177823480317c16968f97c6
++- g-fdea3c622ca9c7c5f91fd78ad648e755
++schema_version: ced.excluded-groups.v1
++scope: DEVELOPMENT_USED
++sources:
++- kind: samples_jsonl
++  path: datasets/rgbd-ced-dev-smoke-20261004/samples.jsonl
++  sha256: 595c3ee953e5169e16739ae0960c1abd821f548577dd15b82d99d83d7c2bf655
++- kind: assignment
++  path: artifacts/research/process/20261004-ced-development/t8-real-raw-development/assignment.json
++  sha256: 005219649a30ba5df0eb5a6b79caee881a91c1b712afd90fdfec55204c5cd9b0

@@ -1,0 +1,52 @@
+.......................FF.........                                       [100%]
+=================================== FAILURES ===================================
+_________ test_camera_calibration_numeric_boolean_is_not_a_measurement _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-897/test_camera_calibration_numeri0')
+
+    def test_camera_calibration_numeric_boolean_is_not_a_measurement(tmp_path: Path):
+        registration, _, measurements, _ = registered_fixture(tmp_path)
+        payload = json.loads((measurements / "calibration.json").read_bytes())
+        payload["camera_domain"]["camera_to_world"][-1] = True
+        json_file(measurements / "calibration.json", payload)
+        measured = replace(
+            registration.diagnostic_measurements, original_file_hashes=hashes(measurements)
+        )
+        result = audit(replace(registration, diagnostic_measurements=measured))
+>       assert result.diagnostic_status == "INVALID"
+E       AssertionError: assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_supervision.py:323: AssertionError
+__ test_point_error_recomputed_from_registered_asset_and_raw_not_online_truth __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-897/test_point_error_recomputed_fr0')
+
+    def test_point_error_recomputed_from_registered_asset_and_raw_not_online_truth(tmp_path: Path):
+        import math
+    
+        registration, directory, _, _ = registered_fixture(tmp_path)
+        result = audit(registration)
+        raw = json.loads((directory / "raw-physics.jsonl").read_text().splitlines()[120])
+        local = (0, 0, 0.03505)  # top surface of the independently hash-bound color-v2 cells
+        rotation = raw["object_geom_rotation_row_major"]
+        truth = tuple(
+            raw["object_geom_position_m"][i] + sum(rotation[3 * i + j] * local[j] for j in range(3))
+            for i in range(3)
+        )
+        expected = math.dist((0, 0, 2.5), truth)
+>       assert result.rows[0]["offline_labels"]["geometric_error_m"] == pytest.approx(expected)
+E       assert 0.6168807036210486 == 2.4634004551635527 ± 2.5e-06
+E         
+E         comparison failed
+E         Obtained: 0.6168807036210486
+E         Expected: 2.4634004551635527 ± 2.5e-06
+
+tests/test_research_risk_supervision.py:340: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_supervision.py::test_camera_calibration_numeric_boolean_is_not_a_measurement
+FAILED tests/test_research_risk_supervision.py::test_point_error_recomputed_from_registered_asset_and_raw_not_online_truth
+2 failed, 32 passed in 12.42s

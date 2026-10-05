@@ -1,0 +1,87 @@
+--- baseline/src/cloud_edge_robot_arm/vision/tracking.py
++++ current/src/cloud_edge_robot_arm/vision/tracking.py
+@@ -236,18 +236,6 @@
+         valid = np.frombuffer(observation.valid_mask_bytes(), dtype=np.uint8).reshape(mask.shape)
+         if not np.all((depth[ys, xs] > 0) & np.isfinite(depth[ys, xs]) & (valid[ys, xs] > 0)):
+             return None, "target_depth_incomplete"
+-        if target:
+-            # Even a compact rectangle can be the surviving portion of an occluded
+-            # top. A nearer adjacent surface prevents certifying its outer boundary.
+-            ring = cv2.dilate(selected.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+-            ring &= ~selected
+-            bound = self.depth_error_bound_m or 0.0
+-            if not np.all(
+-                (valid[ring] > 0)
+-                & np.isfinite(depth[ring])
+-                & (depth[ring] - bound > float(depth[ys, xs].max()) + bound)
+-            ):
+-                return None, "target_outer_boundary_depth_unresolved"
+         points = self._points(observation, xs, ys, depth[ys, xs])
+         top_selector = np.ones(len(points), dtype=bool)
+         plane_interval = None
+@@ -255,6 +243,20 @@
+             top_selector, plane_interval, reason = self._top_support(points, selected, ys, xs)
+             if reason:
+                 return None, reason
++            # RGB antialias pixels can sample the table rather than the block.
++            # Retain them in the conservative measured silhouette; compare the
++            # adjacent depth against the observed top, not those background samples.
++            # Nearer/coplanar or invalid neighbors still cannot prove a complete top.
++            ring = cv2.dilate(selected.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
++            ring &= ~selected
++            bound = self.depth_error_bound_m or 0.0
++            top_depth_max = float(depth[ys[top_selector], xs[top_selector]].max())
++            if not np.all(
++                (valid[ring] > 0)
++                & np.isfinite(depth[ring])
++                & (depth[ring] - bound > top_depth_max + bound)
++            ):
++                return None, "target_outer_boundary_depth_unresolved"
+         elif self.depth_error_bound_m is not None:
+             bound = self.depth_error_bound_m
+             plane_interval = [
+--- baseline/tests/test_opencv_target_evidence.py
++++ current/tests/test_opencv_target_evidence.py
+@@ -447,3 +447,42 @@
+     region = tracker(acquisition).destination
+     assert not region["mask"][20, 45]
+     assert region["inside_pixel_rectangle"] == [46, 21, 59, 34]
++
++
++def test_saved_clean_yellow_antialias_table_pixels_do_not_hide_visible_top(monkeypatch):
++    directory = Path(__file__).resolve().parents[1] / (
++        "artifacts/research/process/20261004-ced-development/t7b-real-clean-capture-2/initial"
++    )
++    hashes = {
++        "observation-full.json": "1ac9f0705cfb860489d47f1fda982ed8ae3ad4ff4e7b25dd5ab72feb24bd6ce4",
++        "rgb.png": "a87945eec4571770e86e5ae12842e1907c888b427de285a3a09bb7897b81d982",
++        "depth.f32": "c3fabbb8ab1a9f50a1a9536b9c189a2f893648dcdb58ed75165dce11b5619582",
++    }
++    for name, expected in hashes.items():
++        assert hashlib.sha256((directory / name).read_bytes()).hexdigest() == expected
++    acquisition = RGBDObservation.model_validate_json(
++        (directory / "observation-full.json").read_text())
++
++    class ReplayClock(datetime):
++        @classmethod
++        def now(cls, tz=None):
++            return acquisition.captured_at + timedelta(seconds=1)
++
++    module = import_module("cloud_edge_robot_arm.vision.tracking")
++    monkeypatch.setattr(module, "datetime", ReplayClock)
++    tracked = module.OpenCVTargetTracker(acquisition, {
++        "original_pixel_target": [159, 119],
++        "original_pixel_destination": [128, 67],
++        "top_grasp_support_height_m": -9.536743172944284e-08,
++    })
++    facts = tracked.facts(acquisition)
++    measured = facts["target_visible"]["measured_values"]
++    assert facts["target_visible"]["value"] is True
++    assert measured["top_pixels"] < measured["visible_pixels"]
++    assert measured["observed_body_min"][2] < 0.001
++    assert measured["observed_top_min"][2] > 0.06
++    assert measured["extent_complete"] is False
++    assert measured["conservative_full_extent_min"] is None
++    for condition, fact in facts.items():
++        if condition != "target_visible":
++            assert fact["value"] is None

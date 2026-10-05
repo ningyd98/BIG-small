@@ -1,0 +1,58 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_executed_payload_and_original_absolute_deadlines_cannot_be_replaced ___
+
+    def test_executed_payload_and_original_absolute_deadlines_cannot_be_replaced():
+        envelope, records = fixture()
+        altered = records.actions[0].original_plan.requirements["move"].original_step.model_dump(mode="json")
+        altered["parameters"] = {"object_id": "decoy"}
+        bad = replace(records, actions=(replace(records.actions[0], executed_step_payload=altered),))
+        view = api().validate_raw_episode_v3(envelope, bad)
+>       assert view.status == "INVALID" and "executor_payload_original_binding_mismatch" in view.reasons
+E       AssertionError: assert ('COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE)
+
+tests/test_raw_episode_v3.py:429: AssertionError
+_____ test_retry_attempt_and_return_step_count_are_strict_original_policy ______
+
+    def test_retry_attempt_and_return_step_count_are_strict_original_policy():
+        envelope, records = fixture()
+        retry = replace(records, actions=(replace(records.actions[0], attempt=2),))
+        view = api().validate_raw_episode_v3(envelope, retry)
+>       assert view.status == "INVALID" and "original_retry_policy_or_attempt_order_mismatch" in view.reasons
+E       AssertionError: assert ('COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE)
+
+tests/test_raw_episode_v3.py:439: AssertionError
+_____ test_missing_executed_arguments_is_incomplete_without_losing_attempt _____
+
+    def test_missing_executed_arguments_is_incomplete_without_losing_attempt():
+        envelope, records = fixture()
+        altered = replace(records, actions=(replace(records.actions[0], executed_step_payload=None),))
+        view = api().validate_raw_episode_v3(envelope, altered)
+>       assert view.status == "INCOMPLETE" and view.counts["allocated_actions"] == 1
+E       AssertionError: assert ('COMPLETE' == 'INCOMPLETE'
+E         
+E         - INCOMPLETE
+E         ? --
+E         + COMPLETE)
+
+tests/test_raw_episode_v3.py:450: AssertionError
+____ test_derived_source_transform_requires_exact_schema_and_policy_sources ____
+
+    def test_derived_source_transform_requires_exact_schema_and_policy_sources():
+        envelope, records = fixture()
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_raw_episode_v3.py:455: Failed
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_executed_payload_and_original_absolute_deadlines_cannot_be_replaced
+FAILED tests/test_raw_episode_v3.py::test_retry_attempt_and_return_step_count_are_strict_original_policy
+FAILED tests/test_raw_episode_v3.py::test_missing_executed_arguments_is_incomplete_without_losing_attempt
+FAILED tests/test_raw_episode_v3.py::test_derived_source_transform_requires_exact_schema_and_policy_sources
+4 failed, 38 deselected in 1.75s

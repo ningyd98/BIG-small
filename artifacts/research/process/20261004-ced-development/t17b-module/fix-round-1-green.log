@@ -1,0 +1,460 @@
+...............FFFFFFFFFF                                                [100%]
+=================================== FAILURES ===================================
+__ test_rehashed_malformed_raw_tables_return_conflict[assignments.json-None] ___
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e6567c1280>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta0')
+artifact = 'assignments.json', value = None
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+_ test_rehashed_malformed_raw_tables_return_conflict[assignments.json-value1] __
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e6569d36e0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta1')
+artifact = 'assignments.json', value = []
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+_ test_rehashed_malformed_raw_tables_return_conflict[assignments.json-value2] __
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e656a33230>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta2')
+artifact = 'assignments.json', value = {'assignments': [None]}
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+_____ test_rehashed_malformed_raw_tables_return_conflict[pools.json-None] ______
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e656b06de0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta3')
+artifact = 'pools.json', value = None
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+____ test_rehashed_malformed_raw_tables_return_conflict[pools.json-value4] _____
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e6610cecc0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta4')
+artifact = 'pools.json', value = []
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+____ test_rehashed_malformed_raw_tables_return_conflict[pools.json-value5] _____
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e6572bfa10>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta5')
+artifact = 'pools.json', value = {'formal': None}
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+____ test_rehashed_malformed_raw_tables_return_conflict[pools.json-value6] _____
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e6577b9df0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta6')
+artifact = 'pools.json', value = {'formal': [None]}
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+____ test_rehashed_malformed_raw_tables_return_conflict[records.jsonl-None] ____
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e6567679e0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta7')
+artifact = 'records.jsonl', value = None
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+___ test_rehashed_malformed_raw_tables_return_conflict[records.jsonl-value8] ___
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e65c1dcda0>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta8')
+artifact = 'records.jsonl', value = []
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+___ test_rehashed_malformed_raw_tables_return_conflict[records.jsonl-value9] ___
+
+prepared_sources = (PosixPath('/tmp/pytest-of-ningyd/pytest-672/research-results0'), '8610a3e1f61195db2e0a0d11bb50515b954570aede0014f78172b18254a3729c')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77e66238ba40>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-672/test_rehashed_malformed_raw_ta9')
+artifact = 'records.jsonl', value = {'assignment': None}
+
+    @pytest.mark.parametrize(
+        "artifact,value",
+        [
+            ("assignments.json", None),
+            ("assignments.json", []),
+            ("assignments.json", {"assignments": [None]}),
+            ("pools.json", None),
+            ("pools.json", []),
+            ("pools.json", {"formal": None}),
+            ("pools.json", {"formal": [None]}),
+            ("records.jsonl", None),
+            ("records.jsonl", []),
+            ("records.jsonl", {"assignment": None}),
+        ],
+    )
+    def test_rehashed_malformed_raw_tables_return_conflict(
+        prepared_sources, monkeypatch, tmp_path, artifact, value
+    ):
+        import hashlib
+    
+        original, _ = prepared_sources
+        root = tmp_path / "artifacts"
+        shutil.copytree(original, root)
+        source = root / "run-1/runs" / artifact
+        source.write_text(json.dumps(value) + "\n")
+        report = root / "run-1/analysis/report.json"
+        payload = json.loads(report.read_text())
+        name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
+        payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
+        report.write_text(json.dumps(payload))
+        response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+        assert response.status_code == 409
+>       assert response.json()["detail"] == "research_artifact_invalid"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'detail'
+
+tests/test_research_results_api.py:220: KeyError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:45
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[assignments.json-None]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[assignments.json-value1]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[assignments.json-value2]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[pools.json-None]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[pools.json-value4]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[pools.json-value5]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[pools.json-value6]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[records.jsonl-None]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[records.jsonl-value8]
+FAILED tests/test_research_results_api.py::test_rehashed_malformed_raw_tables_return_conflict[records.jsonl-value9]
+10 failed, 15 passed, 1 warning in 15.29s

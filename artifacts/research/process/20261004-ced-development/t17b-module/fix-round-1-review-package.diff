@@ -1,0 +1,80 @@
+--- released/src/cloud_edge_robot_arm/cloud/api/research_results.py
++++ fixed/src/cloud_edge_robot_arm/cloud/api/research_results.py
+@@ -231,6 +231,11 @@
+         if report.get("scope") not in {"SOFTWARE_ONLY", "UNVERIFIED"}:
+             raise ValueError("research report scope unsupported")
+         manifest = json.loads(source_bytes["assignments"])
++        if not isinstance(manifest, dict) or (
++            not isinstance(manifest.get("assignments"), list)
++            or any(not isinstance(raw, Mapping) for raw in manifest["assignments"])
++        ):
++            raise ValueError("research assignment manifest must contain an array of objects")
+         expected_hash = manifest.pop("content_hash", None)
+         if manifest.get("schema_version") != "ced.assignments.v1" or (
+             expected_hash != content_digest(manifest)
+@@ -239,13 +244,20 @@
+             raise ValueError("research assignment hash/protocol mismatch")
+         assignments = [EpisodeAssignment(**raw) for raw in manifest["assignments"]]
+         pools = json.loads(source_bytes["pools"])
++        if not isinstance(pools, Mapping) or (
++            not isinstance(pools.get("formal"), list)
++            or any(not isinstance(raw, Mapping) for raw in pools["formal"])
++        ):
++            raise ValueError("research formal pool must contain an array of scene objects")
+         rebuilt = build_assignments(frozen, CORE_METHODS, scene_pool=pools["formal"])
+         if assignments != rebuilt:
+             raise ValueError("research coverage differs from all frozen methods/scenes/strata")
+-        rows = [
+-            episode_record_from_payload(json.loads(line), protocol=frozen)
+-            for line in source_bytes["records"].splitlines()
+-        ]
++        raw_rows = [json.loads(line) for line in source_bytes["records"].splitlines()]
++        if any(not isinstance(raw, Mapping) or (
++            not isinstance(raw.get("assignment"), Mapping)
++        ) for raw in raw_rows):
++            raise ValueError("research record lines must contain assignment objects")
++        rows = [episode_record_from_payload(raw, protocol=frozen) for raw in raw_rows]
+         actual = {row.assignment.assignment_id: row for row in rows}
+         if (
+             len(actual) != len(rows)
+--- released/tests/test_research_results_api.py
++++ fixed/tests/test_research_results_api.py
+@@ -183,3 +183,38 @@
+     (root / "run-1/analysis" / artifact).write_text("null\n")
+     response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
+     assert response.status_code == 409
++
++
++@pytest.mark.parametrize(
++    "artifact,value",
++    [
++        ("assignments.json", None),
++        ("assignments.json", []),
++        ("assignments.json", {"assignments": [None]}),
++        ("pools.json", None),
++        ("pools.json", []),
++        ("pools.json", {"formal": None}),
++        ("pools.json", {"formal": [None]}),
++        ("records.jsonl", None),
++        ("records.jsonl", []),
++        ("records.jsonl", {"assignment": None}),
++    ],
++)
++def test_rehashed_malformed_raw_tables_return_conflict(
++    prepared_sources, monkeypatch, tmp_path, artifact, value
++):
++    import hashlib
++
++    original, _ = prepared_sources
++    root = tmp_path / "artifacts"
++    shutil.copytree(original, root)
++    source = root / "run-1/runs" / artifact
++    source.write_text(json.dumps(value) + "\n")
++    report = root / "run-1/analysis/report.json"
++    payload = json.loads(report.read_text())
++    name = {"assignments.json": "assignments", "pools.json": "pools", "records.jsonl": "records"}
++    payload["source_hashes"][name[artifact]] = hashlib.sha256(source.read_bytes()).hexdigest()
++    report.write_text(json.dumps(payload))
++    response = browser(monkeypatch, root).get("/api/v1/research/runs/run-1/evidence")
++    assert response.status_code == 409
++    assert response.json()["error"] == "research_artifact_invalid"

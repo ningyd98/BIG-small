@@ -1,0 +1,54 @@
+...............F......                                                   [100%]
+=================================== FAILURES ===================================
+________________ test_cloud_plan_uses_real_two_image_transport _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x734802fa4560>
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-436/test_cloud_plan_uses_real_two_0')
+
+    def test_cloud_plan_uses_real_two_image_transport(monkeypatch, tmp_path):
+        # Only the external HTTP operation is replaced. Production message construction,
+        # compatible serialization, _post and strict parsing execute. No model was queried.
+        import io
+        import urllib.request
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
+        from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
+        from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
+        from cloud_edge_robot_arm.model_control.service import ModelControlService
+        from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+        from tests.test_rgbd_observations import observation_payload
+    
+        module = roles()
+        service = ModelControlService(repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+                                      secret_store=InMemorySecretStore())
+        profile = service.create_profile(display_name="max", provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+                                         model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com")
+        adapter, snapshot = module.resolve_cloud_role(service, profile.profile_id,
+                                                     source_hashes={"messages.py": "b" * 64}, allow_paid=True)
+        payloads = []
+    
+        class ExternalBoundary:
+            def open(self, request, timeout):
+                payloads.append(json.loads(request.data))
+                return io.BytesIO(json.dumps({"choices": [{"message": {"content": json.dumps({
+                    "target_pixel": None, "destination_pixel": None, "target_label": "missing",
+                    "reported_confidence": 0, "skills": [], "reason": "target absent",
+                })}}]}).encode())
+    
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
+        observation = RGBDObservation.model_validate(observation_payload())
+        draft = adapter.plan(InitialPlanningRequest(user_instruction="pick missing target",
+>                                                 scene=SceneSummary(), observation=observation))
+                                                        ^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for SceneSummary
+E       scene_version
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+E       updated_at
+E         Field required [type=missing, input_value={}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_rgbd_role_models.py:151: ValidationError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_cloud_plan_uses_real_two_image_transport
+1 failed, 21 passed in 0.48s

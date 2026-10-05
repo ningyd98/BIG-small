@@ -1,0 +1,5 @@
+# Recovery-aware completion check
+
+Reuse CompletionEvaluator check 8 and the actual event-autonomy repository; add no success authority. Every unresolved recovery, regardless of event severity or terminal failure state, blocks completion. A historical CRITICAL event can stop blocking only when its corresponding recovery was VERIFIED_RESOLVED through the lifecycle repository producer. Critical events without that proof remain blocking. Missing/erroring lifecycle queries fail closed when a repository is configured. Preserve legacy no-repository behavior explicitly; that path provides no RGB-D research acceptance.
+
+Read detached records only through repository list_recoveries/list_unresolved_recoveries; never accept a caller-supplied resolved flag. The lifecycle module separately rejects initialized terminal records and recomputes canonical effects after actual completion. Unit fixtures test reader/filter behavior, not physical resolution. Follow with real memory/SQLite DETECTED integration and lifecycle transition fixtures once that release is stable.

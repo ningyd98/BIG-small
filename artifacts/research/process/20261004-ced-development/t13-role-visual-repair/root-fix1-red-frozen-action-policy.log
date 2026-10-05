@@ -1,0 +1,172 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[error_tolerance] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-798/test_grounder_preserves_frozen0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b71b63be7b0>
+changed = 'error_tolerance'
+
+    @pytest.mark.parametrize(
+        "changed", ["error_tolerance", "required_sensors", "ttl", "duration"]
+    )
+    def test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid(
+        tmp_path, monkeypatch, changed
+    ):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+    
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+    
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            proof = source.action_evidence[original.step_id]
+            if changed == "error_tolerance":
+                proof = replace(
+                    proof,
+                    allowed_error_m=0.1,
+                    evidence=replace(proof.evidence, geometric_error_bound_m=0.05),
+                )
+            elif changed == "required_sensors":
+                proof = replace(proof, sensor_requirements=())
+            elif changed == "ttl":
+                proof = replace(proof, ordinary_ttl_s=proof.ordinary_ttl_s * 2)
+            else:
+                proof = replace(proof, expected_duration_s=proof.expected_duration_s + 1)
+            return api().GroundedRepairStep(original, proof, binding_hash, replan_payload_hash(original))
+    
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+        assert len(wire.requests) == 1
+>       assert result.outcome != "REPLANNED" and result.new_steps == []
+E       AssertionError: assert ('REPLANNED' != 'REPLANNED')
+E        +  where 'REPLANNED' = LocalReplanningResponse(request_id='request', outcome='REPLANNED', reason='source_bound_candidate_requires_submit_reva..._at=datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc), correlation_id='', response_hash='').outcome
+
+tests/test_role_visual_repair.py:485: AssertionError
+_ test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[required_sensors] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-798/test_grounder_preserves_frozen1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b718aafe930>
+changed = 'required_sensors'
+
+    @pytest.mark.parametrize(
+        "changed", ["error_tolerance", "required_sensors", "ttl", "duration"]
+    )
+    def test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid(
+        tmp_path, monkeypatch, changed
+    ):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+    
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+    
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            proof = source.action_evidence[original.step_id]
+            if changed == "error_tolerance":
+                proof = replace(
+                    proof,
+                    allowed_error_m=0.1,
+                    evidence=replace(proof.evidence, geometric_error_bound_m=0.05),
+                )
+            elif changed == "required_sensors":
+                proof = replace(proof, sensor_requirements=())
+            elif changed == "ttl":
+                proof = replace(proof, ordinary_ttl_s=proof.ordinary_ttl_s * 2)
+            else:
+                proof = replace(proof, expected_duration_s=proof.expected_duration_s + 1)
+            return api().GroundedRepairStep(original, proof, binding_hash, replan_payload_hash(original))
+    
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+        assert len(wire.requests) == 1
+>       assert result.outcome != "REPLANNED" and result.new_steps == []
+E       AssertionError: assert ('REPLANNED' != 'REPLANNED')
+E        +  where 'REPLANNED' = LocalReplanningResponse(request_id='request', outcome='REPLANNED', reason='source_bound_candidate_requires_submit_reva..._at=datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc), correlation_id='', response_hash='').outcome
+
+tests/test_role_visual_repair.py:485: AssertionError
+_ test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[ttl] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-798/test_grounder_preserves_frozen2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b718aaff470>
+changed = 'ttl'
+
+    @pytest.mark.parametrize(
+        "changed", ["error_tolerance", "required_sensors", "ttl", "duration"]
+    )
+    def test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid(
+        tmp_path, monkeypatch, changed
+    ):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+    
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+    
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            proof = source.action_evidence[original.step_id]
+            if changed == "error_tolerance":
+                proof = replace(
+                    proof,
+                    allowed_error_m=0.1,
+                    evidence=replace(proof.evidence, geometric_error_bound_m=0.05),
+                )
+            elif changed == "required_sensors":
+                proof = replace(proof, sensor_requirements=())
+            elif changed == "ttl":
+                proof = replace(proof, ordinary_ttl_s=proof.ordinary_ttl_s * 2)
+            else:
+                proof = replace(proof, expected_duration_s=proof.expected_duration_s + 1)
+            return api().GroundedRepairStep(original, proof, binding_hash, replan_payload_hash(original))
+    
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+        assert len(wire.requests) == 1
+>       assert result.outcome != "REPLANNED" and result.new_steps == []
+E       AssertionError: assert ('REPLANNED' != 'REPLANNED')
+E        +  where 'REPLANNED' = LocalReplanningResponse(request_id='request', outcome='REPLANNED', reason='source_bound_candidate_requires_submit_reva..._at=datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc), correlation_id='', response_hash='').outcome
+
+tests/test_role_visual_repair.py:485: AssertionError
+_ test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[duration] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-798/test_grounder_preserves_frozen3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b71b70cc5c0>
+changed = 'duration'
+
+    @pytest.mark.parametrize(
+        "changed", ["error_tolerance", "required_sensors", "ttl", "duration"]
+    )
+    def test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid(
+        tmp_path, monkeypatch, changed
+    ):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+    
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+    
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            proof = source.action_evidence[original.step_id]
+            if changed == "error_tolerance":
+                proof = replace(
+                    proof,
+                    allowed_error_m=0.1,
+                    evidence=replace(proof.evidence, geometric_error_bound_m=0.05),
+                )
+            elif changed == "required_sensors":
+                proof = replace(proof, sensor_requirements=())
+            elif changed == "ttl":
+                proof = replace(proof, ordinary_ttl_s=proof.ordinary_ttl_s * 2)
+            else:
+                proof = replace(proof, expected_duration_s=proof.expected_duration_s + 1)
+            return api().GroundedRepairStep(original, proof, binding_hash, replan_payload_hash(original))
+    
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+        assert len(wire.requests) == 1
+>       assert result.outcome != "REPLANNED" and result.new_steps == []
+E       AssertionError: assert ('REPLANNED' != 'REPLANNED')
+E        +  where 'REPLANNED' = LocalReplanningResponse(request_id='request', outcome='REPLANNED', reason='source_bound_candidate_requires_submit_reva..._at=datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc), correlation_id='', response_hash='').outcome
+
+tests/test_role_visual_repair.py:485: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[error_tolerance]
+FAILED tests/test_role_visual_repair.py::test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[required_sensors]
+FAILED tests/test_role_visual_repair.py::test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[ttl]
+FAILED tests/test_role_visual_repair.py::test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid[duration]
+4 failed, 51 deselected in 0.65s

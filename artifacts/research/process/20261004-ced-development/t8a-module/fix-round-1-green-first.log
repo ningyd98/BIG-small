@@ -1,0 +1,1494 @@
+FFFFFFFF.FFFFFFF.FFFFFFFFFFFF..                                          [100%]
+=================================== FAILURES ===================================
+____ test_absent_physics_preserves_full_denominator_and_reports_incomplete _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_absent_physics_preserves_0')
+
+    def test_absent_physics_preserves_full_denominator_and_reports_incomplete(tmp_path):
+        pools = inputs(tmp_path)
+>       result = api().prepare_protocol_evidence(pools, tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_absent_p..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+____________ test_opportunity_label_is_recomputed_from_raw_evidence ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_opportunity_label_is_reco0')
+
+    def test_opportunity_label_is_recomputed_from_raw_evidence(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["formal"][0]
+        pools["_evidence"]["opportunity_sources"][row["assignment_id"]] = str(
+            opportunity(tmp_path, row)
+        )
+>       api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:208: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_opportun..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+______ test_labels_follow_actual_sensor_geometry_and_time[depth-UNKNOWN] _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_labels_follow_actual_sens0')
+alteration = 'depth', want = 'UNKNOWN'
+
+    @pytest.mark.parametrize(
+        "alteration,want", [("depth", "UNKNOWN"), ("expiry", "INVALID"), ("workspace", "INVALID")]
+    )
+    def test_labels_follow_actual_sensor_geometry_and_time(tmp_path, alteration, want):
+        pools = inputs(tmp_path)
+        row = pools["formal"][0]
+        source = opportunity(tmp_path, row)
+        capture = json.loads((source / "capture.json").read_text())
+        if alteration == "depth":
+            np.save(source / "depth.npy", np.zeros((8, 8)))
+        elif alteration == "expiry":
+            capture["submitted_at_s"] = 2.0
+        else:
+            capture["action_spec"]["target_position_m"] = [2.0, 0, 0.2]
+        write_json(source / "capture.json", capture)
+        pools["_evidence"]["opportunity_sources"][row["assignment_id"]] = str(source)
+>       api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:236: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_labels_f..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+______ test_labels_follow_actual_sensor_geometry_and_time[expiry-INVALID] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_labels_follow_actual_sens1')
+alteration = 'expiry', want = 'INVALID'
+
+    @pytest.mark.parametrize(
+        "alteration,want", [("depth", "UNKNOWN"), ("expiry", "INVALID"), ("workspace", "INVALID")]
+    )
+    def test_labels_follow_actual_sensor_geometry_and_time(tmp_path, alteration, want):
+        pools = inputs(tmp_path)
+        row = pools["formal"][0]
+        source = opportunity(tmp_path, row)
+        capture = json.loads((source / "capture.json").read_text())
+        if alteration == "depth":
+            np.save(source / "depth.npy", np.zeros((8, 8)))
+        elif alteration == "expiry":
+            capture["submitted_at_s"] = 2.0
+        else:
+            capture["action_spec"]["target_position_m"] = [2.0, 0, 0.2]
+        write_json(source / "capture.json", capture)
+        pools["_evidence"]["opportunity_sources"][row["assignment_id"]] = str(source)
+>       api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:236: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_labels_f..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+____ test_labels_follow_actual_sensor_geometry_and_time[workspace-INVALID] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_labels_follow_actual_sens2')
+alteration = 'workspace', want = 'INVALID'
+
+    @pytest.mark.parametrize(
+        "alteration,want", [("depth", "UNKNOWN"), ("expiry", "INVALID"), ("workspace", "INVALID")]
+    )
+    def test_labels_follow_actual_sensor_geometry_and_time(tmp_path, alteration, want):
+        pools = inputs(tmp_path)
+        row = pools["formal"][0]
+        source = opportunity(tmp_path, row)
+        capture = json.loads((source / "capture.json").read_text())
+        if alteration == "depth":
+            np.save(source / "depth.npy", np.zeros((8, 8)))
+        elif alteration == "expiry":
+            capture["submitted_at_s"] = 2.0
+        else:
+            capture["action_spec"]["target_position_m"] = [2.0, 0, 0.2]
+        write_json(source / "capture.json", capture)
+        pools["_evidence"]["opportunity_sources"][row["assignment_id"]] = str(source)
+>       api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:236: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_labels_f..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+____________ test_success_without_fault_cannot_prove_recoverability ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_success_without_fault_can0')
+
+    def test_success_without_fault_cannot_prove_recoverability(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [
+            str(recovery(tmp_path, row, injected=False))
+        ]
+>       result = api().prepare_protocol_evidence(pools, tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_success_..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_________ test_success_requires_measured_defect_and_post_fault_teacher _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_success_requires_measured0')
+
+    def test_success_requires_measured_defect_and_post_fault_teacher(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       result = api().prepare_protocol_evidence(pools, tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:258: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_success_..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+____________ test_development_cannot_read_formal_opportunity_labels ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_development_cannot_read_f0')
+
+    def test_development_cannot_read_formal_opportunity_labels(tmp_path):
+        pools = inputs(tmp_path)
+>       api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_developm..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+___________ test_repeated_attempts_cannot_exceed_preregistered_bound ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_repeated_attempts_cannot_0')
+
+    def test_repeated_attempts_cannot_exceed_preregistered_bound(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)] * 6
+        with pytest.raises(ValueError, match="bound"):
+>           api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:290: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_repeated..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_repeated_attempts_cannot_0')
+
+    def test_repeated_attempts_cannot_exceed_preregistered_bound(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)] * 6
+>       with pytest.raises(ValueError, match="bound"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'bound'
+E        Input: 'assignment identity/stratum differs from locked ordinal'
+
+tests/test_protocol_evidence_generation.py:289: AssertionError
+________ test_cli_denies_development_and_returns_nonzero_for_incomplete ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_cli_denies_development_an0')
+
+    def test_cli_denies_development_and_returns_nonzero_for_incomplete(tmp_path):
+        pools = inputs(tmp_path)
+        input_path = tmp_path / "pools.json"
+        write_json(input_path, pools)
+        script = Path(__file__).resolve().parents[1] / "scripts" / "prepare_rgbd_protocol_evidence.py"
+        command = [
+            str(Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"),
+            str(script),
+            "--pools",
+            str(input_path),
+            "--output",
+            str(tmp_path / "output"),
+        ]
+        completed = subprocess.run(command, capture_output=True, text=True)
+        assert completed.returncode == 3
+>       assert json.loads(completed.stdout)["status"] == "INCOMPLETE"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:308: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/json/__init__.py:346: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/decoder.py:337: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.decoder.JSONDecoder object at 0x723c9bebb6b0>, s = '', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+/usr/lib/python3.12/json/decoder.py:355: JSONDecodeError
+_ test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[no_motion] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_recorded_markers_do_not_r0')
+change = 'no_motion'
+
+    @pytest.mark.parametrize("change", ["no_motion", "teacher_before_fault", "unsafe", "nonfinite"])
+    def test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        if change == "no_motion":
+            for item in observations:
+                item["object_position_m"][1] = 0.0
+        elif change == "teacher_before_fault":
+            write_json(
+                source / "teacher-actions.json",
+                [
+                    {
+                        "source": "GROUND_TRUTH_TEACHER",
+                        "action_type": "PICK_PLACE",
+                        "start_step": 1,
+                        "end_step": 1401,
+                    }
+                ],
+            )
+        elif change == "unsafe":
+            observations[600]["joint_velocities_rad_s"][0] = 100.0
+        else:
+            observations[600]["joint_velocities_rad_s"][0] = float("nan")
+        write_json(source / "physical-observations.json", observations)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       report = api().prepare_protocol_evidence(pools, tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:338: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_recorded..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_ test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[teacher_before_fault] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_recorded_markers_do_not_r1')
+change = 'teacher_before_fault'
+
+    @pytest.mark.parametrize("change", ["no_motion", "teacher_before_fault", "unsafe", "nonfinite"])
+    def test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        if change == "no_motion":
+            for item in observations:
+                item["object_position_m"][1] = 0.0
+        elif change == "teacher_before_fault":
+            write_json(
+                source / "teacher-actions.json",
+                [
+                    {
+                        "source": "GROUND_TRUTH_TEACHER",
+                        "action_type": "PICK_PLACE",
+                        "start_step": 1,
+                        "end_step": 1401,
+                    }
+                ],
+            )
+        elif change == "unsafe":
+            observations[600]["joint_velocities_rad_s"][0] = 100.0
+        else:
+            observations[600]["joint_velocities_rad_s"][0] = float("nan")
+        write_json(source / "physical-observations.json", observations)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       report = api().prepare_protocol_evidence(pools, tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:338: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_recorded..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_ test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[unsafe] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_recorded_markers_do_not_r2')
+change = 'unsafe'
+
+    @pytest.mark.parametrize("change", ["no_motion", "teacher_before_fault", "unsafe", "nonfinite"])
+    def test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        if change == "no_motion":
+            for item in observations:
+                item["object_position_m"][1] = 0.0
+        elif change == "teacher_before_fault":
+            write_json(
+                source / "teacher-actions.json",
+                [
+                    {
+                        "source": "GROUND_TRUTH_TEACHER",
+                        "action_type": "PICK_PLACE",
+                        "start_step": 1,
+                        "end_step": 1401,
+                    }
+                ],
+            )
+        elif change == "unsafe":
+            observations[600]["joint_velocities_rad_s"][0] = 100.0
+        else:
+            observations[600]["joint_velocities_rad_s"][0] = float("nan")
+        write_json(source / "physical-observations.json", observations)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       report = api().prepare_protocol_evidence(pools, tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:338: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_recorded..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_ test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[nonfinite] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_recorded_markers_do_not_r3')
+change = 'nonfinite'
+
+    @pytest.mark.parametrize("change", ["no_motion", "teacher_before_fault", "unsafe", "nonfinite"])
+    def test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        if change == "no_motion":
+            for item in observations:
+                item["object_position_m"][1] = 0.0
+        elif change == "teacher_before_fault":
+            write_json(
+                source / "teacher-actions.json",
+                [
+                    {
+                        "source": "GROUND_TRUTH_TEACHER",
+                        "action_type": "PICK_PLACE",
+                        "start_step": 1,
+                        "end_step": 1401,
+                    }
+                ],
+            )
+        elif change == "unsafe":
+            observations[600]["joint_velocities_rad_s"][0] = 100.0
+        else:
+            observations[600]["joint_velocities_rad_s"][0] = float("nan")
+        write_json(source / "physical-observations.json", observations)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       report = api().prepare_protocol_evidence(pools, tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:338: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_recorded..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+________ test_manifest_cannot_drop_failed_attempt_or_replace_its_scene _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_manifest_cannot_drop_fail0')
+
+    def test_manifest_cannot_drop_failed_attempt_or_replace_its_scene(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row, injected=False)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:347: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_manifest..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+____ test_recovery_source_cannot_relabel_foreign_geometry_as_assigned_scene ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_recovery_source_cannot_re0')
+
+    def test_recovery_source_cannot_relabel_foreign_geometry_as_assigned_scene(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        observations[0]["object_position_m"][0] = 0.7
+        write_json(source / "physical-observations.json", observations)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:380: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_recovery..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_____ test_review_partial_pool_has_explicit_incomplete_locked_v2_topology ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_partial_pool_has_e0')
+
+    def test_review_partial_pool_has_explicit_incomplete_locked_v2_topology(tmp_path):
+>       report = api().prepare_protocol_evidence(inputs(tmp_path), tmp_path / "output")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:394: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_p..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+___________ test_review_unbound_small_capture_cannot_be_formal_valid ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_unbound_small_capt0')
+
+    def test_review_unbound_small_capture_cannot_be_formal_valid(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["formal"][0]
+        pools["_evidence"]["opportunity_sources"][row["assignment_id"]] = str(opportunity(tmp_path, row))
+>       api().prepare_protocol_evidence(pools, tmp_path / "output")
+
+tests/test_protocol_evidence_generation.py:404: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_u..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_____ test_review_incomplete_or_unjoined_recovery_cannot_count[trim_reset] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_incomplete_or_unjo0')
+change = 'trim_reset'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_i..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_____ test_review_incomplete_or_unjoined_recovery_cannot_count[trim_tail] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_incomplete_or_unjo1')
+change = 'trim_tail'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_i..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+______ test_review_incomplete_or_unjoined_recovery_cannot_count[nan_time] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_incomplete_or_unjo2')
+change = 'nan_time'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_i..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+____ test_review_incomplete_or_unjoined_recovery_cannot_count[fake_teacher] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_incomplete_or_unjo3')
+change = 'fake_teacher'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_i..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_ test_review_incomplete_or_unjoined_recovery_cannot_count[false_finger_contact] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_incomplete_or_unjo4')
+change = 'false_finger_contact'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_protocol_evidence_generation.py:431: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_i..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_ test_review_resealed_manifest_still_checks_semantics_and_coverage[duplicate] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_resealed_manifest_0')
+change = 'duplicate'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+>       api().prepare_protocol_evidence(pools, output)
+
+tests/test_protocol_evidence_generation.py:438: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_r..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+__ test_review_resealed_manifest_still_checks_semantics_and_coverage[foreign] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_resealed_manifest_1')
+change = 'foreign'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+>       api().prepare_protocol_evidence(pools, output)
+
+tests/test_protocol_evidence_generation.py:438: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_r..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_ test_review_resealed_manifest_still_checks_semantics_and_coverage[omitted_hash] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_resealed_manifest_2')
+change = 'omitted_hash'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+>       api().prepare_protocol_evidence(pools, output)
+
+tests/test_protocol_evidence_generation.py:438: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_r..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+_ test_review_resealed_manifest_still_checks_semantics_and_coverage[changed_assignment] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-476/test_review_resealed_manifest_3')
+change = 'changed_assignment'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+>       api().prepare_protocol_evidence(pools, output)
+
+tests/test_protocol_evidence_generation.py:438: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/protocol_evidence.py:762: in prepare_protocol_evidence
+    _pool_check(pools, excluded)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+pools = {'_evidence': {'excluded_groups': ['previous-used'], 'history_roots': ['/tmp/pytest-of-ningyd/pytest-476/test_review_r..._version': 'rgbd.dataset.v1', ...}, 'scene_hash': 'cb41774164211bd3c1d62573a499d244ef4e1fd255c864889d64dc5a7746c92a'}]}
+excluded = {'previous-used'}
+
+    def _pool_check(pools: dict, excluded: set[str]) -> None:
+        seen = set(excluded)
+        ids = set()
+        for name, rows in pools.items():
+            if name.startswith("_"):
+                continue
+            if not isinstance(rows, list):
+                raise ValueError("protocol pools must be assignment lists")
+            for row in rows:
+                scene = _scene(row)
+                if scene.group_id in seen:
+                    raise ValueError("previous/excluded group or cross-pool group leakage")
+                if row["assignment_id"] in ids:
+                    raise ValueError("duplicate pool assignment identity")
+                if not isinstance(row["assignment_id"], str) or not SAFE_ID.fullmatch(
+                    row["assignment_id"]
+                ):
+                    raise ValueError("unsafe assignment identity")
+                ordinal = len([identity for identity in ids if identity.startswith(name + "-")])
+                if (row["assignment_id"] != f"{name}-{ordinal + 1:04d}"
+                        or row.get("stratum_id") != STRATA[ordinal % len(STRATA)]):
+>                   raise ValueError("assignment identity/stratum differs from locked ordinal")
+E                   ValueError: assignment identity/stratum differs from locked ordinal
+
+src/cloud_edge_robot_arm/research/protocol_evidence.py:181: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_absent_physics_preserves_full_denominator_and_reports_incomplete
+FAILED tests/test_protocol_evidence_generation.py::test_opportunity_label_is_recomputed_from_raw_evidence
+FAILED tests/test_protocol_evidence_generation.py::test_labels_follow_actual_sensor_geometry_and_time[depth-UNKNOWN]
+FAILED tests/test_protocol_evidence_generation.py::test_labels_follow_actual_sensor_geometry_and_time[expiry-INVALID]
+FAILED tests/test_protocol_evidence_generation.py::test_labels_follow_actual_sensor_geometry_and_time[workspace-INVALID]
+FAILED tests/test_protocol_evidence_generation.py::test_success_without_fault_cannot_prove_recoverability
+FAILED tests/test_protocol_evidence_generation.py::test_success_requires_measured_defect_and_post_fault_teacher
+FAILED tests/test_protocol_evidence_generation.py::test_development_cannot_read_formal_opportunity_labels
+FAILED tests/test_protocol_evidence_generation.py::test_repeated_attempts_cannot_exceed_preregistered_bound
+FAILED tests/test_protocol_evidence_generation.py::test_cli_denies_development_and_returns_nonzero_for_incomplete
+FAILED tests/test_protocol_evidence_generation.py::test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[no_motion]
+FAILED tests/test_protocol_evidence_generation.py::test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[teacher_before_fault]
+FAILED tests/test_protocol_evidence_generation.py::test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[unsafe]
+FAILED tests/test_protocol_evidence_generation.py::test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[nonfinite]
+FAILED tests/test_protocol_evidence_generation.py::test_manifest_cannot_drop_failed_attempt_or_replace_its_scene
+FAILED tests/test_protocol_evidence_generation.py::test_recovery_source_cannot_relabel_foreign_geometry_as_assigned_scene
+FAILED tests/test_protocol_evidence_generation.py::test_review_partial_pool_has_explicit_incomplete_locked_v2_topology
+FAILED tests/test_protocol_evidence_generation.py::test_review_unbound_small_capture_cannot_be_formal_valid
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[trim_reset]
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[trim_tail]
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[nan_time]
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[fake_teacher]
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[false_finger_contact]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[duplicate]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[foreign]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[omitted_hash]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[changed_assignment]
+27 failed, 4 passed in 2.18s

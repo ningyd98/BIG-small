@@ -1,0 +1,376 @@
+FFF..FFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+_ test_zero_byte_or_absent_response_never_skips_original_sha[empty_stale_hash] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_zero_byte_or_absent_respo0')
+damage = 'empty_stale_hash'
+
+    @pytest.mark.parametrize("damage", ["empty_stale_hash", "absent_stale_hash", "absent_unmarked"])
+    def test_zero_byte_or_absent_response_never_skips_original_sha(tmp_path, damage):
+        import json
+    
+        rows, wire = request_fixture(tmp_path)
+        rows[1]["serialized_received_bytes"] = 0
+        if damage == "empty_stale_hash":
+            (tmp_path / wire[1]["response_path"]).write_bytes(b"")
+        else:
+            wire[1]["response_path"] = None
+            if damage == "absent_stale_hash":
+                wire[1]["response_present"] = False
+            else:
+                wire[1]["response_sha256"] = None
+        (tmp_path / "requests.json").write_text(json.dumps(rows))
+        (tmp_path / "wire.json").write_text(json.dumps(wire))
+>       with pytest.raises(ValueError, match="response|wire"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_resource_plan.py:238: Failed
+_ test_zero_byte_or_absent_response_never_skips_original_sha[absent_stale_hash] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_zero_byte_or_absent_respo1')
+damage = 'absent_stale_hash'
+
+    @pytest.mark.parametrize("damage", ["empty_stale_hash", "absent_stale_hash", "absent_unmarked"])
+    def test_zero_byte_or_absent_response_never_skips_original_sha(tmp_path, damage):
+        import json
+    
+        rows, wire = request_fixture(tmp_path)
+        rows[1]["serialized_received_bytes"] = 0
+        if damage == "empty_stale_hash":
+            (tmp_path / wire[1]["response_path"]).write_bytes(b"")
+        else:
+            wire[1]["response_path"] = None
+            if damage == "absent_stale_hash":
+                wire[1]["response_present"] = False
+            else:
+                wire[1]["response_sha256"] = None
+        (tmp_path / "requests.json").write_text(json.dumps(rows))
+        (tmp_path / "wire.json").write_text(json.dumps(wire))
+>       with pytest.raises(ValueError, match="response|wire"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_resource_plan.py:238: Failed
+_ test_zero_byte_or_absent_response_never_skips_original_sha[absent_unmarked] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_zero_byte_or_absent_respo2')
+damage = 'absent_unmarked'
+
+    @pytest.mark.parametrize("damage", ["empty_stale_hash", "absent_stale_hash", "absent_unmarked"])
+    def test_zero_byte_or_absent_response_never_skips_original_sha(tmp_path, damage):
+        import json
+    
+        rows, wire = request_fixture(tmp_path)
+        rows[1]["serialized_received_bytes"] = 0
+        if damage == "empty_stale_hash":
+            (tmp_path / wire[1]["response_path"]).write_bytes(b"")
+        else:
+            wire[1]["response_path"] = None
+            if damage == "absent_stale_hash":
+                wire[1]["response_present"] = False
+            else:
+                wire[1]["response_sha256"] = None
+        (tmp_path / "requests.json").write_text(json.dumps(rows))
+        (tmp_path / "wire.json").write_text(json.dumps(wire))
+>       with pytest.raises(ValueError, match="response|wire"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_resource_plan.py:238: Failed
+__________ test_case_empty_response_cannot_keep_a_stale_nonempty_hash __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_case_empty_response_canno0')
+
+    def test_case_empty_response_cannot_keep_a_stale_nonempty_hash(tmp_path):
+        import hashlib
+    
+        (tmp_path / "request.raw").write_bytes(b"request")
+        (tmp_path / "response.raw").write_bytes(b"")
+        entry = {
+            "request_path": "request.raw",
+            "response_path": "response.raw",
+            "request_sha256": hashlib.sha256(b"request").hexdigest(),
+            "response_sha256": hashlib.sha256(b"original response").hexdigest(),
+            "serialized_sent_bytes": 7,
+            "serialized_received_bytes": 0,
+        }
+>       with pytest.raises(ValueError, match="wire"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_ced_initial_freeze.py:338: Failed
+____ test_b0_costs_join_planner_and_supervisor_to_each_original_wire[None] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_b0_costs_join_planner_and0')
+damage = None
+
+    @pytest.mark.parametrize("damage", [None, "role", "request_id", "duplicate", "body_role"])
+    def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, damage):
+        import hashlib
+    
+        from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+    
+        roles = ("PLANNER", "SUPERVISOR")
+        prefixes = (
+            "Inspect image 1 (RGB) to identify the requested object and destination. ",
+            "You supervise a running robot using only the paired current RGB and depth images ",
+        )
+        rows, wire = [], []
+        for index, (role, prefix) in enumerate(zip(roles, prefixes, strict=True)):
+            request = json.dumps({"messages": [{"role": "system", "content": prefix}]}).encode()
+            request_path = f"request-{index}.raw"
+            (tmp_path / request_path).write_bytes(request)
+            rows.append(RequestCost(
+                request_id=f"r{index}", sent_at="2026-10-04T00:00:00Z",
+                finished_at="2026-10-04T00:00:01Z", is_cloud_model=True, model_role=role,
+                deployment="CLOUD", provider_location="REMOTE_SERVICE", provider_version="a" * 64,
+                status="TIMEOUT", serialized_sent_bytes=len(request), serialized_received_bytes=0,
+            ))
+            wire.append({
+                "request_id": f"r{index}", "model_role": role, "provider_version": "a" * 64,
+                "request_path": request_path, "request_sha256": hashlib.sha256(request).hexdigest(),
+                "serialized_sent_bytes": len(request), "serialized_received_bytes": 0,
+                "response_present": False, "response_path": None, "response_sha256": None,
+            })
+        if damage == "role":
+            wire[1]["model_role"] = "REPLANNER"
+        elif damage == "request_id":
+            wire[1]["request_id"] = "foreign"
+        elif damage == "duplicate":
+            wire[1]["request_id"] = "r0"
+        elif damage == "body_role":
+            rows[1] = rows[1].model_copy(update={"model_role": "PLANNER"})
+            wire[1]["model_role"] = "PLANNER"
+        if damage is None:
+>           joined = api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_join_b0_cost_wire'
+
+tests/test_ced_initial_freeze.py:380: AttributeError
+____ test_b0_costs_join_planner_and_supervisor_to_each_original_wire[role] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_b0_costs_join_planner_and1')
+damage = 'role'
+
+    @pytest.mark.parametrize("damage", [None, "role", "request_id", "duplicate", "body_role"])
+    def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, damage):
+        import hashlib
+    
+        from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+    
+        roles = ("PLANNER", "SUPERVISOR")
+        prefixes = (
+            "Inspect image 1 (RGB) to identify the requested object and destination. ",
+            "You supervise a running robot using only the paired current RGB and depth images ",
+        )
+        rows, wire = [], []
+        for index, (role, prefix) in enumerate(zip(roles, prefixes, strict=True)):
+            request = json.dumps({"messages": [{"role": "system", "content": prefix}]}).encode()
+            request_path = f"request-{index}.raw"
+            (tmp_path / request_path).write_bytes(request)
+            rows.append(RequestCost(
+                request_id=f"r{index}", sent_at="2026-10-04T00:00:00Z",
+                finished_at="2026-10-04T00:00:01Z", is_cloud_model=True, model_role=role,
+                deployment="CLOUD", provider_location="REMOTE_SERVICE", provider_version="a" * 64,
+                status="TIMEOUT", serialized_sent_bytes=len(request), serialized_received_bytes=0,
+            ))
+            wire.append({
+                "request_id": f"r{index}", "model_role": role, "provider_version": "a" * 64,
+                "request_path": request_path, "request_sha256": hashlib.sha256(request).hexdigest(),
+                "serialized_sent_bytes": len(request), "serialized_received_bytes": 0,
+                "response_present": False, "response_path": None, "response_sha256": None,
+            })
+        if damage == "role":
+            wire[1]["model_role"] = "REPLANNER"
+        elif damage == "request_id":
+            wire[1]["request_id"] = "foreign"
+        elif damage == "duplicate":
+            wire[1]["request_id"] = "r0"
+        elif damage == "body_role":
+            rows[1] = rows[1].model_copy(update={"model_role": "PLANNER"})
+            wire[1]["model_role"] = "PLANNER"
+        if damage is None:
+            joined = api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+            assert [row.model_role for _, row in joined] == ["PLANNER", "SUPERVISOR"]
+        else:
+            with pytest.raises(ValueError):
+>               api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_join_b0_cost_wire'
+
+tests/test_ced_initial_freeze.py:384: AttributeError
+_ test_b0_costs_join_planner_and_supervisor_to_each_original_wire[request_id] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_b0_costs_join_planner_and2')
+damage = 'request_id'
+
+    @pytest.mark.parametrize("damage", [None, "role", "request_id", "duplicate", "body_role"])
+    def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, damage):
+        import hashlib
+    
+        from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+    
+        roles = ("PLANNER", "SUPERVISOR")
+        prefixes = (
+            "Inspect image 1 (RGB) to identify the requested object and destination. ",
+            "You supervise a running robot using only the paired current RGB and depth images ",
+        )
+        rows, wire = [], []
+        for index, (role, prefix) in enumerate(zip(roles, prefixes, strict=True)):
+            request = json.dumps({"messages": [{"role": "system", "content": prefix}]}).encode()
+            request_path = f"request-{index}.raw"
+            (tmp_path / request_path).write_bytes(request)
+            rows.append(RequestCost(
+                request_id=f"r{index}", sent_at="2026-10-04T00:00:00Z",
+                finished_at="2026-10-04T00:00:01Z", is_cloud_model=True, model_role=role,
+                deployment="CLOUD", provider_location="REMOTE_SERVICE", provider_version="a" * 64,
+                status="TIMEOUT", serialized_sent_bytes=len(request), serialized_received_bytes=0,
+            ))
+            wire.append({
+                "request_id": f"r{index}", "model_role": role, "provider_version": "a" * 64,
+                "request_path": request_path, "request_sha256": hashlib.sha256(request).hexdigest(),
+                "serialized_sent_bytes": len(request), "serialized_received_bytes": 0,
+                "response_present": False, "response_path": None, "response_sha256": None,
+            })
+        if damage == "role":
+            wire[1]["model_role"] = "REPLANNER"
+        elif damage == "request_id":
+            wire[1]["request_id"] = "foreign"
+        elif damage == "duplicate":
+            wire[1]["request_id"] = "r0"
+        elif damage == "body_role":
+            rows[1] = rows[1].model_copy(update={"model_role": "PLANNER"})
+            wire[1]["model_role"] = "PLANNER"
+        if damage is None:
+            joined = api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+            assert [row.model_role for _, row in joined] == ["PLANNER", "SUPERVISOR"]
+        else:
+            with pytest.raises(ValueError):
+>               api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_join_b0_cost_wire'
+
+tests/test_ced_initial_freeze.py:384: AttributeError
+__ test_b0_costs_join_planner_and_supervisor_to_each_original_wire[duplicate] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_b0_costs_join_planner_and3')
+damage = 'duplicate'
+
+    @pytest.mark.parametrize("damage", [None, "role", "request_id", "duplicate", "body_role"])
+    def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, damage):
+        import hashlib
+    
+        from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+    
+        roles = ("PLANNER", "SUPERVISOR")
+        prefixes = (
+            "Inspect image 1 (RGB) to identify the requested object and destination. ",
+            "You supervise a running robot using only the paired current RGB and depth images ",
+        )
+        rows, wire = [], []
+        for index, (role, prefix) in enumerate(zip(roles, prefixes, strict=True)):
+            request = json.dumps({"messages": [{"role": "system", "content": prefix}]}).encode()
+            request_path = f"request-{index}.raw"
+            (tmp_path / request_path).write_bytes(request)
+            rows.append(RequestCost(
+                request_id=f"r{index}", sent_at="2026-10-04T00:00:00Z",
+                finished_at="2026-10-04T00:00:01Z", is_cloud_model=True, model_role=role,
+                deployment="CLOUD", provider_location="REMOTE_SERVICE", provider_version="a" * 64,
+                status="TIMEOUT", serialized_sent_bytes=len(request), serialized_received_bytes=0,
+            ))
+            wire.append({
+                "request_id": f"r{index}", "model_role": role, "provider_version": "a" * 64,
+                "request_path": request_path, "request_sha256": hashlib.sha256(request).hexdigest(),
+                "serialized_sent_bytes": len(request), "serialized_received_bytes": 0,
+                "response_present": False, "response_path": None, "response_sha256": None,
+            })
+        if damage == "role":
+            wire[1]["model_role"] = "REPLANNER"
+        elif damage == "request_id":
+            wire[1]["request_id"] = "foreign"
+        elif damage == "duplicate":
+            wire[1]["request_id"] = "r0"
+        elif damage == "body_role":
+            rows[1] = rows[1].model_copy(update={"model_role": "PLANNER"})
+            wire[1]["model_role"] = "PLANNER"
+        if damage is None:
+            joined = api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+            assert [row.model_role for _, row in joined] == ["PLANNER", "SUPERVISOR"]
+        else:
+            with pytest.raises(ValueError):
+>               api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_join_b0_cost_wire'
+
+tests/test_ced_initial_freeze.py:384: AttributeError
+__ test_b0_costs_join_planner_and_supervisor_to_each_original_wire[body_role] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_b0_costs_join_planner_and4')
+damage = 'body_role'
+
+    @pytest.mark.parametrize("damage", [None, "role", "request_id", "duplicate", "body_role"])
+    def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, damage):
+        import hashlib
+    
+        from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+    
+        roles = ("PLANNER", "SUPERVISOR")
+        prefixes = (
+            "Inspect image 1 (RGB) to identify the requested object and destination. ",
+            "You supervise a running robot using only the paired current RGB and depth images ",
+        )
+        rows, wire = [], []
+        for index, (role, prefix) in enumerate(zip(roles, prefixes, strict=True)):
+            request = json.dumps({"messages": [{"role": "system", "content": prefix}]}).encode()
+            request_path = f"request-{index}.raw"
+            (tmp_path / request_path).write_bytes(request)
+            rows.append(RequestCost(
+                request_id=f"r{index}", sent_at="2026-10-04T00:00:00Z",
+                finished_at="2026-10-04T00:00:01Z", is_cloud_model=True, model_role=role,
+                deployment="CLOUD", provider_location="REMOTE_SERVICE", provider_version="a" * 64,
+                status="TIMEOUT", serialized_sent_bytes=len(request), serialized_received_bytes=0,
+            ))
+            wire.append({
+                "request_id": f"r{index}", "model_role": role, "provider_version": "a" * 64,
+                "request_path": request_path, "request_sha256": hashlib.sha256(request).hexdigest(),
+                "serialized_sent_bytes": len(request), "serialized_received_bytes": 0,
+                "response_present": False, "response_path": None, "response_sha256": None,
+            })
+        if damage == "role":
+            wire[1]["model_role"] = "REPLANNER"
+        elif damage == "request_id":
+            wire[1]["request_id"] = "foreign"
+        elif damage == "duplicate":
+            wire[1]["request_id"] = "r0"
+        elif damage == "body_role":
+            rows[1] = rows[1].model_copy(update={"model_role": "PLANNER"})
+            wire[1]["model_role"] = "PLANNER"
+        if damage is None:
+            joined = api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+            assert [row.model_role for _, row in joined] == ["PLANNER", "SUPERVISOR"]
+        else:
+            with pytest.raises(ValueError):
+>               api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_join_b0_cost_wire'
+
+tests/test_ced_initial_freeze.py:384: AttributeError
+_ test_actual_pilot_wire_collector_binds_each_ledger_id_role_and_absent_response _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-789/test_actual_pilot_wire_collect0')
+
+    def test_actual_pilot_wire_collector_binds_each_ledger_id_role_and_absent_response(tmp_path):
+        from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+>       from scripts.run_rgbd_pilot import _PilotWireCollector
+E       ImportError: cannot import name '_PilotWireCollector' from 'scripts.run_rgbd_pilot' (/home/ningyd/文档/ChatGPT/BIGsmall/scripts/run_rgbd_pilot.py)
+
+tests/test_ced_pilot_stages.py:20: ImportError
+=========================== short test summary info ============================
+FAILED tests/test_research_resource_plan.py::test_zero_byte_or_absent_response_never_skips_original_sha[empty_stale_hash]
+FAILED tests/test_research_resource_plan.py::test_zero_byte_or_absent_response_never_skips_original_sha[absent_stale_hash]
+FAILED tests/test_research_resource_plan.py::test_zero_byte_or_absent_response_never_skips_original_sha[absent_unmarked]
+FAILED tests/test_ced_initial_freeze.py::test_case_empty_response_cannot_keep_a_stale_nonempty_hash
+FAILED tests/test_ced_initial_freeze.py::test_b0_costs_join_planner_and_supervisor_to_each_original_wire[None]
+FAILED tests/test_ced_initial_freeze.py::test_b0_costs_join_planner_and_supervisor_to_each_original_wire[role]
+FAILED tests/test_ced_initial_freeze.py::test_b0_costs_join_planner_and_supervisor_to_each_original_wire[request_id]
+FAILED tests/test_ced_initial_freeze.py::test_b0_costs_join_planner_and_supervisor_to_each_original_wire[duplicate]
+FAILED tests/test_ced_initial_freeze.py::test_b0_costs_join_planner_and_supervisor_to_each_original_wire[body_role]
+FAILED tests/test_ced_pilot_stages.py::test_actual_pilot_wire_collector_binds_each_ledger_id_role_and_absent_response
+10 failed, 2 passed, 78 deselected in 0.50s

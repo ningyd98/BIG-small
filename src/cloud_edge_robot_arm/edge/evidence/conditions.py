@@ -71,6 +71,8 @@ _VISUAL_CONDITIONS = frozenset(
         "object_attached",
         "object_lifted",
         "object_stable",
+        "placement_stable",
+        "object_placed",
     }
 )
 _ROBOT_CONDITIONS = frozenset(
@@ -91,10 +93,22 @@ _ROBOT_CONDITIONS = frozenset(
 def evaluate_conditions(
     conditions: Sequence[ConditionSpec],
     evidence: OnlineEvidenceSnapshot,
+    *,
+    now: datetime | None = None,
 ) -> list[ConditionVerdict]:
     """Evaluate without reading a simulator, evaluator, model or implicit truth store."""
-    now = datetime.now(UTC)
-    return [_evaluate(condition, evidence, now) for condition in conditions]
+    acquired_now = now if now is not None else datetime.now(UTC)
+    if acquired_now.tzinfo is None or acquired_now.utcoffset() is None:
+        return [
+            ConditionVerdict(
+                ConditionStatus.UNKNOWN,
+                condition.name,
+                evidence.observation.observation_id,
+                reasons=("evaluation_timestamp_naive",),
+            )
+            for condition in conditions
+        ]
+    return [_evaluate(condition, evidence, acquired_now) for condition in conditions]
 
 
 def _evaluate(
@@ -157,6 +171,23 @@ def _evaluate(
             observation_id,
             {"in_region": placed.status.value, "released": released.status.value},
             (*placed.reasons, *released.reasons),
+        )
+    if condition.name == "object_held" and condition.tolerances.get("holding_feedback_required"):
+        visual = _visual_verdict(condition, evidence)
+        holding = _evaluate(replace(condition, name="gripper_holding"), evidence, now)
+        status = (
+            ConditionStatus.UNKNOWN
+            if ConditionStatus.UNKNOWN in (visual.status, holding.status)
+            else ConditionStatus.PASS
+            if visual.status == holding.status == ConditionStatus.PASS
+            else ConditionStatus.FAIL
+        )
+        return ConditionVerdict(
+            status,
+            condition.name,
+            observation_id,
+            {"visual": visual.status.value, "holding": holding.status.value},
+            (*visual.reasons, *holding.reasons),
         )
     if condition.name in _VISUAL_CONDITIONS:
         return _visual_verdict(condition, evidence)

@@ -1,0 +1,385 @@
+--- a/scripts/probe_rgbd_roles.py
++++ b/scripts/probe_rgbd_roles.py
+@@ -11,6 +11,7 @@
+ import hashlib
+ import json
+ import os
++import re
+ import sys
+ import time
+ from collections.abc import Mapping
+@@ -48,6 +49,67 @@
+     with path.open("xb") as stream:
+         stream.write(raw)
+     return _sha(raw)
++
++
++_JSON_ESCAPE = re.compile(
++    r"\\u[dD][89abAB][0-9a-fA-F]{2}\\u[dD][cdefCDEF][0-9a-fA-F]{2}"
++    r'|\\u[0-9a-fA-F]{4}|\\["\\/bfnrt]'
++)
++
++
++def _text_contains_credential(text: str, secret: str) -> bool:
++    """Inspect equivalent JSON escapes in JSON strings and non-JSON error text.
++
++    At most eight decoding passes are allowed. Remaining valid escapes after that
++    bound are conservatively withheld rather than risking opaque nested encoding.
++    No transformed text becomes a wire artifact or a wire hash input.
++    """
++    for _ in range(8):
++        if secret in text:
++            return True
++        decoded = _JSON_ESCAPE.sub(lambda match: json.loads('"' + match.group(0) + '"'), text)
++        if decoded == text:
++            return False
++        text = decoded
++    return secret in text or _JSON_ESCAPE.search(text) is not None
++
++
++def _contains_credential(value: object, secret: str) -> bool:
++    """Inspect all decoded keys/values without recursive Python stack growth."""
++    if not secret:
++        return False
++    pending = [value]
++    while pending:
++        current = pending.pop()
++        if isinstance(current, str):
++            if _text_contains_credential(current, secret):
++                return True
++        elif isinstance(current, dict):
++            pending.extend(current.keys())
++            pending.extend(current.values())
++        elif isinstance(current, (list, tuple)):
++            pending.extend(current)
++    return False
++
++
++def _safe_attempt_record(record: dict[str, Any], secret: str) -> dict[str, Any]:
++    """Withhold sensitive derived/error details; expose only status/count/hash."""
++    if not _contains_credential(record, secret):
++        return record
++    raw_details = json.dumps(record, sort_keys=True, ensure_ascii=True, allow_nan=False).encode()
++    return {
++        "status": "BLOCKED",
++        "wire_artifact_suppressed": True,
++        "details_suppressed": True,
++        "suppressed_details_sha256": _sha(raw_details),
++        "serialized_sent_bytes": record.get("serialized_sent_bytes", 0)
++        if type(record.get("serialized_sent_bytes")) is int and record["serialized_sent_bytes"] >= 0
++        else None,
++        "serialized_received_bytes": record.get("serialized_received_bytes", 0)
++        if type(record.get("serialized_received_bytes")) is int
++        and record["serialized_received_bytes"] >= 0
++        else None,
++    }
+ 
+ 
+ def summarize_role_request(body: Mapping[str, Any]) -> dict[str, Any]:
+@@ -317,6 +379,7 @@
+         "pure_inference_duration_s": None,
+         "planned_attempt_count": config["probe"]["warm_runs"] + 1,
+     }
++    artifact_secret = ""
+     try:
+         selected = profile_id or config["cloud"]["profile_id"]
+         if not execute:
+@@ -328,6 +391,7 @@
+         else:
+             if not service.secret_store.has_secret(selected):
+                 raise ValueError("selected cloud profile secret is unavailable")
++            artifact_secret = service.secret_store.get_secret(selected) or ""
+             cloud_config, edge_config = config["cloud"], config["edge"]
+             planner, cloud = resolve_cloud_role(
+                 service,
+@@ -422,9 +486,19 @@
+             report["status"] = "PASS" if can_accept_role_probe(report) else "FAIL"
+     except Exception as exc:
+         # Endpoint, HTTP errors and credential-bearing exception text are never persisted.
+-        report.update(status="BLOCKED", blocked_reason=type(exc).__name__)
++        if artifact_secret:
++            report.update(status="BLOCKED", blocked_reason=type(exc).__name__)
++        else:
++            # An unavailable SecretStore cannot supply a key for comparison.
++            # Keep arbitrary exception class names opaque as well as messages.
++            report.update(
++                status="BLOCKED",
++                blocked_reason="PROBE_FAILED",
++                failure_class_sha256=_sha(type(exc).__name__.encode()),
++            )
+     report["unexecuted_attempt_count"] = report["planned_attempt_count"] - len(report["attempts"])
+     report["finished_at"] = datetime.now(UTC).isoformat()
++    report = _safe_attempt_record(report, artifact_secret)
+     digest = _write(output / "role-probe-report.json", report)
+     (output / "role-probe-report.sha256").write_text(digest + "\n")
+     if report["status"] == "PASS":
+@@ -479,16 +553,20 @@
+         actual[f"{label}_sha256"] = _sha(raw)
+         actual[f"serialized_{'sent' if phase == 'REQUEST' else 'received'}_bytes"] = len(raw)
+         secret = planner._api_key
+-        patterns = (secret.encode(), json.dumps(secret)[1:-1].encode()) if secret else ()
+-        if any(pattern and pattern in raw for pattern in patterns):
++        try:
++            parsed = json.loads(raw)
++        except (ValueError, UnicodeDecodeError, RecursionError):
++            parsed = None
++        # Hash/count above bind exact bytes. Decode only for inspection, before
++        # writing either raw or convenience artifacts or exposing derived fields.
++        decoded_text = raw.decode(json.detect_encoding(raw), errors="replace")
++        if secret and (
++            _text_contains_credential(decoded_text, secret) or _contains_credential(parsed, secret)
++        ):
+             actual["wire_artifact_suppressed"] = True
+             raise ValueError("credential-bearing body withheld")
+         with (directory / f"{label}.raw").open("xb") as stream:
+             stream.write(raw)
+-        try:
+-            parsed = json.loads(raw)
+-        except (ValueError, UnicodeDecodeError):
+-            parsed = None
+         if parsed is not None:
+             actual[f"{label}_parsed_sha256"] = _write(directory / f"{label}.json", parsed)
+         if phase == "REQUEST":
+@@ -519,6 +597,7 @@
+             ),
+             serialized_sent_bytes=sum(row.serialized_sent_bytes for row in ledger.requests()),
+         )
++        actual = _safe_attempt_record(actual, planner._api_key)
+         _write(directory / "attempt.json", actual)
+         return actual
+     finally:
+@@ -554,6 +633,7 @@
+         "parse_error": draft.parse_error,
+         "parsed_json": draft.parsed_json,
+     }
++    attempt = _safe_attempt_record(attempt, planner._api_key)
+     _write(directory / "attempt.json", attempt)
+     return attempt
+ 
+--- a/tests/test_rgbd_role_models.py
++++ b/tests/test_rgbd_role_models.py
+@@ -607,7 +607,9 @@
+     assert probe.can_accept_role_probe(report) is False
+ 
+ 
+-@pytest.mark.parametrize("response_kind", ["whitespace_json", "non_json", "http_error"])
++@pytest.mark.parametrize(
++    "response_kind", ["whitespace_json", "benign_escaped_json", "non_json", "http_error"]
++)
+ def test_probe_preserves_exact_wire_response_and_error_body(tmp_path, monkeypatch, response_kind):
+     import io
+     import urllib.error
+@@ -626,6 +628,7 @@
+ 
+     raw = {
+         "whitespace_json": b'  {"choices": []}  \n',
++        "benign_escaped_json": b'{"choices":[],"info":"\\u006eot-secret"}',
+         "non_json": b"not-json\x00\r\n",
+         "http_error": b"error response\r\n",
+     }[response_kind]
+@@ -847,3 +850,205 @@
+         for path in tmp_path.rglob("*")
+         if path.is_file()
+     )
++
++
++@pytest.mark.parametrize(
++    "raw,secret,http_error",
++    [
++        (b'{"error":"\\u0063redential-marker"}', "credential-marker", False),
++        (
++            b'{"outer":[{"inner":"prefix \\u0063redential-marker suffix"}]}',
++            "credential-marker",
++            False,
++        ),
++        (b'{"\\u0063redential-marker":{"ordinary":"value"}}', "credential-marker", False),
++        (b'{"error":"slash\\/credential"}', "slash/credential", False),
++        (b'{"error":"quote\\u0022credential"}', 'quote"credential', False),
++        (b'{"error":"backslash\\u005ccredential"}', "backslash\\credential", False),
++        (b'{"error":"\\ud83d\\ude80-token"}', "🚀-token", False),
++        (b"not JSON: \\u0063redential-marker\x00\r\n", "credential-marker", False),
++        (b"not JSON: slash\\/credential\r\n", "slash/credential", False),
++        (b'{"error":"\\u0063redential-marker"}', "credential-marker", True),
++        (b'{"outer":[{"\\u0063redential-marker":"bad"}]}', "credential-marker", True),
++        (b"HTTP error: \\u0063redential-marker\r\n", "credential-marker", True),
++        (b'{"error":"\\\\u0063redential-marker"}', "credential-marker", False),
++        ("HTTP error: \\u0063redential-marker".encode("utf-16"), "credential-marker", True),
++    ],
++)
++def test_alternate_escaped_credential_echo_withholds_all_artifacts(
++    tmp_path, monkeypatch, raw, secret, http_error
++):
++    import io
++    import urllib.error
++    import urllib.request
++
++    from scripts.probe_rgbd_roles import _attempt
++
++    from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
++    from cloud_edge_robot_arm.vision.capture import CapturedFrame
++    from cloud_edge_robot_arm.vision.model_resolver import (
++        ModelConfigSnapshot,
++        resolve_visual_planner,
++    )
++    from cloud_edge_robot_arm.vision.observations import RGBDObservation
++    from tests.test_rgbd_observations import observation_payload
++
++    class ExternalBoundary:
++        def open(self, request, timeout):
++            if http_error:
++                raise urllib.error.HTTPError(request.full_url, 503, secret, {}, io.BytesIO(raw))
++            return io.BytesIO(raw)
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
++    model = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="qwen3.8-max",
++        endpoint="https://dashscope.aliyuncs.com",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        generation_parameters={"temperature": 0, "num_predict": 512},
++        timeout_s=30,
++    )
++    planner = resolve_visual_planner(model, api_key=secret, allow_paid=True)
++    observation = RGBDObservation.model_validate(observation_payload())
++    frame = CapturedFrame(
++        observation,
++        (0, 11, 12, -1),
++        {0: "table", 11: "object_geom", 12: "target_region_geom"},
++        "fixture",
++        ("fixture",) * 3,
++    )
++    request = InitialPlanningRequest(
++        request_id="software-escaped-secret",
++        user_instruction="pick red cube",
++        scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
++        observation=observation,
++    )
++    attempt = _attempt(planner, request, frame, tmp_path, 0, cloud())
++    assert attempt.get("wire_artifact_suppressed") is True
++    assert attempt["status"] == "BLOCKED"
++    assert attempt["response_sha256"] == hashlib.sha256(raw).hexdigest()
++    assert attempt["serialized_received_bytes"] == len(raw)
++    assert not (tmp_path / "attempt-00" / "response.raw").exists()
++    assert not (tmp_path / "attempt-00" / "response.json").exists()
++    assert "parsed_json" not in attempt
++    assert "observation_evidence" not in attempt
++    assert secret not in json.dumps(attempt, ensure_ascii=False)
++    assert all(
++        secret.encode() not in path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()
++    )
++
++
++@pytest.mark.parametrize(
++    "detail",
++    [
++        {"failure_type": "credential-marker"},
++        {"parse_error": {"nested": ["\\u0063redential-marker"]}},
++        {"credential-marker": "innocent"},
++    ],
++)
++def test_sensitive_readable_failure_details_are_hash_only(detail):
++    from scripts.probe_rgbd_roles import _safe_attempt_record
++
++    record = detail | {"serialized_sent_bytes": 7, "serialized_received_bytes": 9}
++    safe = _safe_attempt_record(record, "credential-marker")
++    assert safe["status"] == "BLOCKED"
++    assert safe["details_suppressed"] is True
++    assert safe["serialized_sent_bytes"] == 7
++    assert safe["serialized_received_bytes"] == 9
++    assert len(safe["suppressed_details_sha256"]) == 64
++    assert "credential-marker" not in json.dumps(safe)
++    assert not (set(detail) & set(safe))
++
++
++def test_sensitive_malformed_failure_count_cannot_escape_suppression():
++    from scripts.probe_rgbd_roles import _safe_attempt_record
++
++    safe = _safe_attempt_record(
++        {"serialized_sent_bytes": "credential-marker", "serialized_received_bytes": 9},
++        "credential-marker",
++    )
++    assert "credential-marker" not in json.dumps(safe)
++    assert safe["serialized_sent_bytes"] is None
++    assert safe["serialized_received_bytes"] == 9
++
++
++def test_profile_failure_name_containing_credential_is_never_persisted(tmp_path, monkeypatch):
++    from pathlib import Path
++
++    from scripts.probe_rgbd_roles import run_probe
++
++    from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
++    from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
++    from cloud_edge_robot_arm.model_control.service import ModelControlService
++    from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
++
++    secret = "credential-marker"
++    service = ModelControlService(
++        repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
++        secret_store=InMemorySecretStore(),
++    )
++    profile = service.create_profile(
++        display_name="max",
++        provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
++        model_name="qwen3.8-max",
++        base_url="https://dashscope.aliyuncs.com",
++        api_key=secret,
++    )
++    failure = type(secret, (RuntimeError,), {})
++
++    def failed_profile(_):
++        raise failure(secret)
++
++    monkeypatch.setattr(service, "get_profile", failed_profile)
++    output = tmp_path / "blocked-profile"
++    report = run_probe(
++        Path("configs/research/ced_roles.yaml"),
++        output,
++        service=service,
++        profile_id=profile.profile_id,
++        execute=True,
++        allow_paid=True,
++    )
++    assert report["status"] == "BLOCKED"
++    assert report.get("details_suppressed") is True
++    assert secret not in json.dumps(report, ensure_ascii=False)
++    assert all(
++        secret.encode() not in path.read_bytes() for path in output.rglob("*") if path.is_file()
++    )
++
++
++def test_secret_store_failure_name_is_opaque_before_key_can_be_read(tmp_path):
++    from pathlib import Path
++
++    from scripts.probe_rgbd_roles import run_probe
++
++    from cloud_edge_robot_arm.model_control.service import ModelControlService
++    from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
++
++    secret = "credential-marker"
++    failure = type(secret, (RuntimeError,), {})
++
++    class FailedSecretStore:
++        def has_secret(self, _):
++            raise failure(secret)
++
++    service = ModelControlService(
++        repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
++        secret_store=FailedSecretStore(),
++    )
++    output = tmp_path / "blocked-secret-store"
++    report = run_probe(
++        Path("configs/research/ced_roles.yaml"),
++        output,
++        service=service,
++        profile_id="unavailable-profile",
++        execute=True,
++        allow_paid=True,
++    )
++    assert report["status"] == "BLOCKED"
++    assert secret not in json.dumps(report, ensure_ascii=False)
++    assert all(
++        secret.encode() not in path.read_bytes() for path in output.rglob("*") if path.is_file()
++    )

@@ -1,0 +1,53 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+________ test_cli_missing_final_writes_not_run_without_model_or_physics ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-530/test_cli_missing_final_writes_0')
+
+    def test_cli_missing_final_writes_not_run_without_model_or_physics(tmp_path):
+        import subprocess
+        import sys
+        import json
+        result = subprocess.run([sys.executable, "scripts/run_rgbd_research.py", "--protocol",
+            str(tmp_path / "absent"), "--output", str(tmp_path / "out")], capture_output=True,
+            text=True, check=False)
+>       assert result.returncode == 3
+E       assert 2 == 3
+E        +  where 2 = CompletedProcess(args=['/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python', 'scripts/run_rgbd_research.py', '--protoco...an't open file '/home/ningyd/文档/ChatGPT/BIGsmall/scripts/run_rgbd_research.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_research_runner.py:166: AssertionError
+_______________ test_record_roundtrip_detects_content_tampering ________________
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_record_roundtrip_detects_content_tampering(scene_pool):
+        module = assignment_api()
+        original = record(assignment(scene_pool), "STOP")
+        payload = original.to_payload()
+>       restored = module.episode_record_from_payload(payload)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'cloud_edge_robot_arm.research.assignments' has no attribute 'episode_record_from_payload'
+
+tests/test_research_runner.py:176: AttributeError
+___ test_gate_cli_requires_explicit_software_fixture_without_accepted_final ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-530/test_gate_cli_requires_explici0')
+
+    def test_gate_cli_requires_explicit_software_fixture_without_accepted_final(tmp_path):
+        import subprocess
+        import sys
+        import json
+        result = subprocess.run([sys.executable, "scripts/run_rgbd_gate_replay.py", "--protocol",
+            str(tmp_path / "absent"), "--opportunities", str(tmp_path / "absent.json"),
+            "--method", "JOINT", "--output", str(tmp_path / "out")], capture_output=True,
+            text=True, check=False)
+>       assert result.returncode == 3
+E       assert 2 == 3
+E        +  where 2 = CompletedProcess(args=['/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python', 'scripts/run_rgbd_gate_replay.py', '--prot...t open file '/home/ningyd/文档/ChatGPT/BIGsmall/scripts/run_rgbd_gate_replay.py': [Errno 2] No such file or directory\n").returncode
+
+tests/test_research_runner.py:191: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_runner.py::test_cli_missing_final_writes_not_run_without_model_or_physics
+FAILED tests/test_research_runner.py::test_record_roundtrip_detects_content_tampering
+FAILED tests/test_research_runner.py::test_gate_cli_requires_explicit_software_fixture_without_accepted_final
+3 failed, 13 deselected in 0.46s

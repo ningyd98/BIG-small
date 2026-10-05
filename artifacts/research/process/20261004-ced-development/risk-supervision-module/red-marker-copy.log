@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_nested_marker_registration_is_copied_before_caller_mutation _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-902/test_nested_marker_registratio0')
+
+    def test_nested_marker_registration_is_copied_before_caller_mutation(tmp_path: Path):
+        registration, _, _, _ = registered_fixture(tmp_path)
+        auditor = api().RiskSupervisionAuditor({"source": registration})
+        caller_marker = registration.raw_registration.cases[0].marker_registration
+        original = caller_marker.marker_size_m
+        try:
+            object.__setattr__(caller_marker, "marker_size_m", 0.2)
+            result = auditor.audit("source")
+>           assert result.diagnostic_status == "VALID", result.reasons
+E           AssertionError: ('sw-case:invalid:marker decoder result does not reproduce', 'raw_v3_clock_publisher_unavailable', 'independent_calibr...e', 'derived_risk_commits_unavailable', 'risk_selection_replay_unavailable', 'initial_source_registration_unavailable')
+E           assert 'INVALID' == 'VALID'
+E             
+E             - VALID
+E             + INVALID
+E             ? ++
+
+tests/test_research_risk_supervision.py:550: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_supervision.py::test_nested_marker_registration_is_copied_before_caller_mutation
+1 failed, 35 deselected in 0.54s

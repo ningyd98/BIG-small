@@ -1,0 +1,70 @@
+"""按直接相关回归范围整理物理证据，不把未完成全套写成通过。"""
+
+from __future__ import annotations
+
+from collections import Counter
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+
+from restore_private_git_context import PHYSICS, digest, verify_source
+
+
+def main() -> None:
+    output = PHYSICS / "relevant-regression-paired-comparison.json"
+    report_file = PHYSICS / "physics-report.txt"
+    evidence_file = PHYSICS / "physics-evidence-manifest.json"
+    if any(file.exists() for file in (output, report_file, evidence_file)):
+        raise FileExistsError("Exclusive final physics review output already exists")
+    results = {role: json.loads((PHYSICS / f"relevant-private-context-{role}-result.json").read_text()) for role in ("baseline", "h3")}
+    for role, result in results.items():
+        if not result["all_assigned_nodeids_scored"]:
+            raise RuntimeError(f"Unscored assigned nodes: {role}")
+        if digest(Path(result["log"])) != result["log_sha256"]:
+            raise RuntimeError(f"Log hash mismatch: {role}")
+        verify_source(PHYSICS / f"workspace-{role}", role)
+    baseline = results["baseline"]["node_statuses"]
+    h3 = results["h3"]["node_statuses"]
+    common = sorted(set(baseline) & set(h3))
+    if len(common) != 129 or len(set(h3) - set(baseline)) != 5:
+        raise RuntimeError("Invalid paired node allocation")
+    pairs = [{"nodeid": node, "baseline": baseline[node], "h3": h3[node], "same_status": baseline[node] == h3[node]} for node in common]
+    comparison = {"created_at": datetime.now(timezone.utc).isoformat(), "scope": "RELEVANT_RESEARCH_PHYSICS_PATCH_REGRESSION_ONLY", "full_suite_completed": False, "common_nodeids": 129, "baseline_status_counts": dict(Counter(baseline.values())), "h3_status_counts": dict(Counter(h3.values())), "common_status_pairs": pairs, "changed_statuses": [pair for pair in pairs if not pair["same_status"]], "h3_only_tdd_nodes": {node: h3[node] for node in sorted(set(h3) - set(baseline))}, "result_file_sha256": {role: digest(PHYSICS / f"relevant-private-context-{role}-result.json") for role in results}, "source_patch_sha256": digest(PHYSICS / "final-h3-review.patch"), "formal_g1": False}
+    output.write_text(json.dumps(comparison, ensure_ascii=False, indent=2) + "\n")
+    text = f"""物理抓取/抬升/保持诊断与隔离研究候选，2026-10-04
+
+本结果是离线教师物理执行和独立评分；视觉模型闭环、真实硬件和正式 G1 均未验收，补丁没有应用到主工作区。
+
+根因限定为教师预定 top-down 抓取朝向下的直立方块：原指腹闭合最小间隙64 mm，使部分60–70 mm方块夹持与预载不足；原40 mm开爪指令还会在compliant slide上限产生小幅超限。只测试三种假设，全部保留。原资产开发20例7成功/1安全事件；H1 16成功/3安全事件、H2 17成功/0安全事件均拒绝；H3 19成功/0安全事件，负对照仍失败。最终中心±9 mm，指令39 mm，闭合2 mm/指令开口80 mm/物理限位开口82 mm；关节限位和独立物理成功门槛均未放宽。
+
+冻结补丁后新40随机场景加2控制配对执行：随机成功2/40→38/40，36改善、0退化；全部42中3→39成功，9→0安全事件。修复版剩余914014 PLACE超时和914037 APPROACH超时照常计失败，没有据此再调参。
+
+必须单列预登记偏差：40个H3随机场景的派生asset_family/group_id/scene_hash误写为基线绑定。原预登记及SHA原样保留；字面场景、种子、case/order、顶层H3资产SHA已预先冻结且未改变。仅确定性重算派生身份用于核验，实际42个manifest全部匹配。因此38/40是探索性教师验证，不提升正式G1，也不能写成VLM在线成功率。
+
+直接相关回归范围已经预先登记，正确PATH/privateGit/原环境只读、每套全新MODEL_CONTROL_DB：
+baseline: {results['baseline']['summary']}
+H3: {results['h3']['summary']}
+共同129 nodeid逐项状态、5个H3新增反例节点与源/日志SHA保存在relevant-regression-paired-comparison.json。新增反例的历史baseline/H1/H2 red→H3 green日志继续保留。历史86通过日志未记录完整argv，此次134项具有完整命令和节点分母登记。
+
+资源顺序另有明确修订：原registration中的execute_only_after_root_point_gpu_release=true及预启动runtime-binding中的execution_started=false原样保留，它们是预案快照，不是当前状态。实际随后根代理授权ROOT_AUTH_RELEVANT_REGRESSION_POINT_NOT_STARTED_20261004_0619，在Point尚未开始推理/P95测量、等待另一Qwen任务idle期间先执行相关回归；科学配置、nodeid、评分、源码和补丁未变。实际完成状态以两份result和render-release为准；此修订仅涉及资源调度，不声称回归期间GPU无外来模型。
+
+全套未完成。此前三次全套尝试分别因混合源码、空Git来源上下文、克隆PATH无python而中止，完整原日志保留、不得计为通过或失败。旧progress-state.json是这些尝试期间的历史状态；最终状态以final-physics-state.json及本报告为准。此次验证限定在134项直接相关检查，不宣称全仓库1730/1735通过。37项中文注释测试两边35通过/2共享原有失败（auto_mode三个公共类缺中文docstring；70个output tracked审计文件不在默认路径），没有修改这些源码或断言。PATH缺口仅增加原.venv/bin后复测Linux隔离用例，两边都通过，无需环境安装或.venv链接。
+
+静态检查基线/H3共有27 Ruff findings及相同3 mypy errors，无新H3 Ruff finding。旧online calibration资产SHA守卫不变，对新H3资产仍在渲染/模型调用前明确拒绝；后续视觉闭环须建立显式新标定版本。物理教师不含API/model调用，费用账单为0；电费/折旧无单价，不给出虚构总费用。
+
+冻结审查补丁SHA: {comparison['source_patch_sha256']}
+审查文件：final-h3-review.patch、patch-file-manifest.json、paired-development-report.json、fresh-paired-teacher-report.json、fresh-preregistration-metadata-audit.json、independent-fresh-audit.json、source-scope-audit.json、relevant-regression-registration.json、relevant-regression-paired-comparison.json、corrected-context-smoke-report.json、physics-evidence-manifest.json。
+"""
+    report_file.write_text(text)
+    included = []
+    for file in sorted(PHYSICS.iterdir()):
+        if file.is_file() and file.suffix in {".json", ".patch", ".csv", ".yaml", ".sha256", ".txt", ".py"}:
+            included.append(file)
+    included += [file for file in sorted((PHYSICS / "logs").iterdir()) if file.is_file()]
+    manifest = {"created_at": datetime.now(timezone.utc).isoformat(), "scope": "REVIEW_ENTRYPOINTS_LOGS_AND_PROTOCOLS; raw datasets retain their own manifests and independently verified blob SHA; frozen source/context manifests bind full copies", "source_patch_sha256": comparison["source_patch_sha256"], "full_suite_completed": False, "entries": {str(file.relative_to(PHYSICS)): {"sha256": digest(file), "bytes": file.stat().st_size} for file in included}}
+    evidence_file.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    print(json.dumps({"baseline": comparison["baseline_status_counts"], "h3": comparison["h3_status_counts"], "common_changed": len(comparison["changed_statuses"]), "evidence_entries": len(manifest["entries"]), "full_suite_completed": False}, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

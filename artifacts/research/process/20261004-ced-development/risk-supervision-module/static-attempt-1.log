@@ -1,0 +1,412 @@
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:234:101
+    |
+232 | def _clock(payload: Any, cases: Mapping[str, tuple[Any, list[RGBDObservation]]]) -> None:
+233 |     data = _shape(payload, {"schema_version", "source_scope", "cases"}, "clock")
+234 |     if data["schema_version"] != "risk.clock-diagnostic.v1" or data["source_scope"] != "SOFTWARE_ONLY":
+    |                                                                                                     ^^^
+235 |         raise ValueError("only explicit SOFTWARE_ONLY diagnostic clock supported")
+236 |     if not isinstance(data["cases"], dict) or set(data["cases"]) != set(cases):
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:246:101
+    |
+244 |         for index, row in enumerate(rows):
+245 |             _shape(row, {"physics_step", "sim_time_s", "monotonic_s", "utc"}, "clock row")
+246 |             sim, mono, utc = _number(row["sim_time_s"]), _number(row["monotonic_s"]), _utc(row["utc"])
+    |                                                                                                     ^^
+247 |             if _integer(row["physics_step"]) != index or abs(sim - raw[index].sim_time_s) > 1e-9:
+248 |                 raise ValueError("clock step/simulation identity differs")
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:270:101
+    |
+268 |         raise ValueError("only SOFTWARE_ONLY marker-center calibration diagnostics supported")
+269 |     identities, pairs = data["observation_ids"], data["pairs_m"]
+270 |     if (not isinstance(identities, list) or not identities or any(type(item) is not str for item in identities)
+    |                                                                                                     ^^^^^^^^^^^
+271 |             or len(set(identities)) != len(identities)
+272 |             or set(identities) & {frame.observation_id for frame in frames}
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:290:101
+    |
+290 | def _marker_point(registration: RiskSourceRegistration, case: RawCaseRegistration) -> tuple[float, ...]:
+    |                                                                                                     ^^^^
+291 |     marker = case.marker_registration
+292 |     if marker is None:
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:309:101
+    |
+307 |     sizes = [_array([float(v) for v in geom.attrib["size"].split()], (3,)) for geom in cells]
+308 |     if any(geom.get("type") != "box" for geom in cells) or any(
+309 |         abs(size[0] * 12 - marker.marker_size_m) > 1e-9 or abs(size[1] * 12 - marker.marker_size_m) > 1e-9
+    |                                                                                                     ^^^^^^
+310 |         or abs(position[2] - positions[0][2]) > 1e-9 or abs(size[2] - sizes[0][2]) > 1e-9
+311 |         for position, size in zip(positions, sizes, strict=True)
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:320:101
+    |
+318 | def _truth_point(raw: Any, local: Sequence[float]) -> tuple[float, ...]:
+319 |     rotation, origin = raw.object_geom_rotation_row_major, raw.object_geom_position_m
+320 |     return tuple(origin[i] + sum(rotation[i * 3 + j] * local[j] for j in range(3)) for i in range(3))
+    |                                                                                                     ^
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:326:101
+    |
+324 |                         frames: Mapping[str, list[RGBDObservation]]) -> None:
+325 |     allocations = registration.allocations
+326 |     expected = {(case_id, frame.observation_id) for case_id, items in frames.items() for frame in items}
+    |                                                                                                     ^^^^
+327 |     actual = {(item.case_id, item.observation_id) for item in allocations}
+328 |     if (len({item.sample_id for item in allocations}) != len(allocations)
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:338:101
+    |
+336 |             if current.previous_sample_id != (previous.sample_id if previous else None):
+337 |                 raise ValueError("previous sample must be the adjacent earlier original frame")
+338 |             if previous and (previous.split != current.split or items[index - 1].sim_time_s >= frame.sim_time_s):
+    |                                                                                                     ^^^^^^^^^^^^^
+339 |                 raise ValueError("previous original frame split/time differs")
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:344:101
+    |
+342 | def _histories(registration: RiskSupervisionRegistration,
+343 |                cases: Mapping[str, tuple[Any, list[RGBDObservation]]]) -> bool:
+344 |     groups = {case.case_id: _reset(cases[case.case_id][0], case) for case in registration.raw_registration.cases}
+    |                                                                                                     ^^^^^^^^^^^^^
+345 |     history = {item.group_id: tuple(item.used_purposes) for item in registration.histories}
+346 |     if len(history) != len(registration.histories) or set(history) != {scene.group_id for scene in groups.values()}:
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:346:101
+    |
+344 |     groups = {case.case_id: _reset(cases[case.case_id][0], case) for case in registration.raw_registration.cases}
+345 |     history = {item.group_id: tuple(item.used_purposes) for item in registration.histories}
+346 |     if len(history) != len(registration.histories) or set(history) != {scene.group_id for scene in groups.values()}:
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+347 |         raise ValueError("history must retain every original source component")
+348 |     missing = False
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:357:101
+    |
+355 |         elif item.split != "train" and purposes != ("UNVIEWED",):
+356 |             raise ValueError("original usage history cannot become an independent holdout")
+357 |         frame = next(frame for frame in cases[item.case_id][1] if frame.observation_id == item.observation_id)
+    |                                                                                                     ^^^^^^^^^^
+358 |         physical = {key: value for key, value in scene.scene_parameters.items()
+359 |                     if key not in {"camera", "light_intensity", "depth_noise_m", "invalid_depth_fraction"}}
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:359:101
+    |
+357 |         frame = next(frame for frame in cases[item.case_id][1] if frame.observation_id == item.observation_id)
+358 |         physical = {key: value for key, value in scene.scene_parameters.items()
+359 |                     if key not in {"camera", "light_intensity", "depth_noise_m", "invalid_depth_fraction"}}
+    |                                                                                                     ^^^^^^^
+360 |         entries.append((item, scene, frame, content_digest({"parameters": _plain(physical),
+361 |                         "asset_family_hash": scene.asset_family_hash}), perceptual_signature(frame)))
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:361:101
+    |
+359 |                     if key not in {"camera", "light_intensity", "depth_noise_m", "invalid_depth_fraction"}}
+360 |         entries.append((item, scene, frame, content_digest({"parameters": _plain(physical),
+361 |                         "asset_family_hash": scene.asset_family_hash}), perceptual_signature(frame)))
+    |                                                                                                     ^
+362 |     for i, (left, scene, frame, source, signature) in enumerate(entries):
+363 |         for right, other_scene, other, other_source, other_signature in entries[:i]:
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:364:101
+    |
+362 |     for i, (left, scene, frame, source, signature) in enumerate(entries):
+363 |         for right, other_scene, other, other_source, other_signature in entries[:i]:
+364 |             connected = (scene.group_id == other_scene.group_id or frame.episode_id == other.episode_id
+    |                                                                                                     ^^^
+365 |                          or source == other_source or scene.scene_hash == other_scene.scene_hash
+366 |                          or frame.checksum_sha256 == other.checksum_sha256
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:369:101
+    |
+367 |                          or _near_duplicate(signature, other_signature))
+368 |             if connected and left.split != right.split:
+369 |                 raise ValueError("connected original source/derivative observations span purpose splits")
+    |                                                                                                     ^^^^^
+370 |     return missing
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:393:101
+    |
+391 |         raw_registration = registration.raw_registration
+392 |         counts["assigned_attempts"] = len(raw_registration.cases)
+393 |         counts["allocated_observations"] = sum(case.expected_counts["frames"] for case in raw_registration.cases)
+    |                                                                                                     ^^^^^^^^^^^^^
+394 |         counts["missing_observations"] = counts["allocated_observations"]
+395 |         raw_audit = RiskSourceAuditor({"raw": raw_registration}).audit("raw", scope="RAW_EXECUTION")
+    |
+
+E501 Line too long (120 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:399:101
+    |
+397 |         measured = registration.diagnostic_measurements
+398 |         if measured:
+399 |             originals.update({f"measurements/{name}": digest for name, digest in measured.original_file_hashes.items()})
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+400 |         reasons = list(raw_audit.reasons) + list(_MISSING)
+401 |         diagnostic: Status = raw_audit.status
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:422:101
+    |
+420 |                 baseline = initial.current_role_binding
+421 |                 if (binding.bundle.cloud_snapshot != baseline.bundle.cloud_snapshot
+422 |                         or dict(binding.device_source_hashes) != dict(baseline.device_source_hashes)):
+    |                                                                                                     ^^
+423 |                     actual = "INVALID"
+424 |                     reasons.append("raw_initial_common_role_source_binding_mismatch")
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:431:101
+    |
+429 |                 for case in raw_registration.cases:
+430 |                     directory = _safe(raw_registration.artifact_root, case.relative_directory)
+431 |                     before[case.case_id] = _inventory(directory, case.original_file_hashes, complete=True)
+    |                                                                                                     ^^^^^^
+432 |                     physics = _physics(_json(directory / "physical-observations.json") if
+433 |                         case.layout == "CED_PILOT_RAW_V2" else _rows(directory / "raw-physics.jsonl"), case)
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:433:101
+    |
+431 |                     before[case.case_id] = _inventory(directory, case.original_file_hashes, complete=True)
+432 |                     physics = _physics(_json(directory / "physical-observations.json") if
+433 |                         case.layout == "CED_PILOT_RAW_V2" else _rows(directory / "raw-physics.jsonl"), case)
+    |                                                                                                     ^^^^^^^^
+434 |                     cases[case.case_id] = (physics, _raw_frames(directory))
+435 |                 _allocation_closure(registration, {key: value[1] for key, value in cases.items()})
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:444:101
+    |
+442 |                 if measured is None:
+443 |                     diagnostic = "UNKNOWN"
+444 |                     reasons.extend(("diagnostic_clock_unavailable", "diagnostic_calibration_unavailable"))
+    |                                                                                                     ^^^^^^
+445 |                 else:
+446 |                     measurement_before = _inventory(measured.artifact_root, measured.original_file_hashes, complete=True)
+    |
+
+E501 Line too long (121 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:446:101
+    |
+444 |                     reasons.extend(("diagnostic_clock_unavailable", "diagnostic_calibration_unavailable"))
+445 |                 else:
+446 |                     measurement_before = _inventory(measured.artifact_root, measured.original_file_hashes, complete=True)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+447 |                     if measured.clock_path is None:
+448 |                         diagnostic = "UNKNOWN"
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:456:101
+    |
+454 |                         reasons.append("diagnostic_calibration_unavailable")
+455 |                     else:
+456 |                         residuals = _calibration(_json(_safe(measured.artifact_root, measured.calibration_path)),
+    |                                                                                                     ^^^^^^^^^^^^^
+457 |                             [frame for _, frames in cases.values() for frame in frames])
+458 |                 allocations = {(item.case_id, item.observation_id): item for item in registration.allocations}
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:458:101
+    |
+456 |                         residuals = _calibration(_json(_safe(measured.artifact_root, measured.calibration_path)),
+457 |                             [frame for _, frames in cases.values() for frame in frames])
+458 |                 allocations = {(item.case_id, item.observation_id): item for item in registration.allocations}
+    |                                                                                                     ^^^^^^^^^^
+459 |                 outcomes = {item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results}
+460 |                 histories = {item.group_id: tuple(item.used_purposes) for item in registration.histories}
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:459:101
+    |
+457 |                             [frame for _, frames in cases.values() for frame in frames])
+458 |                 allocations = {(item.case_id, item.observation_id): item for item in registration.allocations}
+459 |                 outcomes = {item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results}
+    |                                                                                                     ^^^^^
+460 |                 histories = {item.group_id: tuple(item.used_purposes) for item in registration.histories}
+461 |                 for case in raw_registration.cases:
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:460:101
+    |
+458 |                 allocations = {(item.case_id, item.observation_id): item for item in registration.allocations}
+459 |                 outcomes = {item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results}
+460 |                 histories = {item.group_id: tuple(item.used_purposes) for item in registration.histories}
+    |                                                                                                     ^^^^^
+461 |                 for case in raw_registration.cases:
+462 |                     physics, frames = cases[case.case_id]
+    |
+
+E501 Line too long (156 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:473:101
+    |
+471 | …, frame.observation_id)]
+472 | …else None
+473 | …, previous, residuals) if residuals is not None and measured and measured.clock_path else None
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+474 | …
+475 | …egistration is not None:
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:478:101
+    |
+476 | …                     estimate = detect_pose_marker(frame, case.marker_registration)
+477 | …                     if estimate.status == "OBSERVED":
+478 | …                         sample = next(item for item in physics if abs(item.sim_time_s - frame.sim_time_s) <= 1e-9)
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^^^
+479 | …                         point_error = math.dist(estimate.mean_world[:3], _truth_point(sample, local))
+480 | …                         counts["geometric_labels"] += 1
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:479:101
+    |
+477 | …                     if estimate.status == "OBSERVED":
+478 | …                         sample = next(item for item in physics if abs(item.sim_time_s - frame.sim_time_s) <= 1e-9)
+479 | …                         point_error = math.dist(estimate.mean_world[:3], _truth_point(sample, local))
+    |                                                                                               ^^^^^^^^^
+480 | …                         counts["geometric_labels"] += 1
+481 | …                     else:
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:488:101
+    |
+486 | …                     "observation_id": frame.observation_id, "split": allocation.split,
+487 | …                     "source_kind": case.source_kind, "group_id": scene.group_id,
+488 | …                     "scene_hash": scene.scene_hash, "used_purposes": histories[scene.group_id],
+    |                                                                                               ^^^
+489 | …                     "geometry_scope": "MARKER_CENTER_TRANSLATION",
+490 | …                     "online_features": {key: value.value for key, value in features.values.items()} if features else None,
+    |
+
+E501 Line too long (130 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:490:101
+    |
+488 | …                     "scene_hash": scene.scene_hash, "used_purposes": histories[scene.group_id],
+489 | …                     "geometry_scope": "MARKER_CENTER_TRANSLATION",
+490 | …                     "online_features": {key: value.value for key, value in features.values.items()} if features else None,
+    |                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+491 | …                     "offline_labels": {"failure": not outcomes[case.case_id]["success"],
+492 | …                         "geometric_error_m": point_error, "motion_residual_m_s": None},
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:499:101
+    |
+497 | …     for case in raw_registration.cases:
+498 | …         directory = _safe(raw_registration.artifact_root, case.relative_directory)
+499 | …         if _inventory(directory, case.original_file_hashes, complete=True) != before[case.case_id]:
+    |                                                                                           ^^^^^^^^^^^
+500 | …             raise ValueError("original source changed during supervision reconstruction")
+501 | …     if measured and measurement_before != _inventory(measured.artifact_root, measured.original_file_hashes, complete=True):
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:500:101
+    |
+498 | …         directory = _safe(raw_registration.artifact_root, case.relative_directory)
+499 | …         if _inventory(directory, case.original_file_hashes, complete=True) != before[case.case_id]:
+500 | …             raise ValueError("original source changed during supervision reconstruction")
+    |                                                                                           ^
+501 | …     if measured and measurement_before != _inventory(measured.artifact_root, measured.original_file_hashes, complete=True):
+502 | …         raise ValueError("diagnostic measurement changed during reconstruction")
+    |
+
+E501 Line too long (135 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:501:101
+    |
+499 | …         if _inventory(directory, case.original_file_hashes, complete=True) != before[case.case_id]:
+500 | …             raise ValueError("original source changed during supervision reconstruction")
+501 | …     if measured and measurement_before != _inventory(measured.artifact_root, measured.original_file_hashes, complete=True):
+    |                                                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+502 | …         raise ValueError("diagnostic measurement changed during reconstruction")
+503 | …     if _inventory(raw_registration.source_root, raw_registration.current_source_hashes, complete=False) != dict(raw_audit.current_s…
+    |
+
+E501 Line too long (157 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:503:101
+    |
+501 | …y(measured.artifact_root, measured.original_file_hashes, complete=True):
+502 | …anged during reconstruction")
+503 | …_registration.current_source_hashes, complete=False) != dict(raw_audit.current_source_hashes):
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+504 | …rce changed during reconstruction")
+505 | …ted_observations"] - len(rows)
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/risk_supervision.py:520:101
+    |
+518 |         if diagnostic == "INVALID":
+519 |             actual = "INVALID"
+520 |         return RiskSupervisionAudit(actual, diagnostic, actual, tuple(dict.fromkeys(reasons)), counts,
+    |                                                                                                     ^^
+521 |                                     tuple(rows), originals, raw_audit.current_source_hashes, scope)
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_research_risk_supervision.py:204:101
+    |
+202 |         payload["source_accepted"] = True
+203 |     json_file(measurements / "clock.json", payload)
+204 |     measured = replace(registration.diagnostic_measurements, original_file_hashes=hashes(measurements))
+    |                                                                                                     ^^^
+205 |     result = audit(replace(registration, diagnostic_measurements=measured))
+206 |     assert result.diagnostic_status == "INVALID"
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_research_risk_supervision.py:225:101
+    |
+223 |         payload["pairs_m"][0]["reference"][0] = False
+224 |     json_file(measurements / "calibration.json", payload)
+225 |     measured = replace(registration.diagnostic_measurements, original_file_hashes=hashes(measurements))
+    |                                                                                                     ^^^
+226 |     result = audit(replace(registration, diagnostic_measurements=measured))
+227 |     assert result.diagnostic_status == "INVALID"
+    |
+
+Found 40 errors (2 fixed, 38 remaining).

@@ -1,0 +1,182 @@
+FFFFFFF                                                                  [100%]
+=================================== FAILURES ===================================
+___________ test_missing_cost_accounting_rejects_before_paid_request ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-778/test_missing_cost_accounting_r0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74041c5061b0>
+
+    def test_missing_cost_accounting_rejects_before_paid_request(tmp_path, monkeypatch):
+        adapter, wire, planner, _, _, request, *_ = setup(tmp_path, monkeypatch)
+        planner.cost_ledger = None
+        result = adapter.replan(request)
+>       assert result.new_steps == [] and wire.requests == []
+E       AssertionError: assert ([TaskStep(ste...onditions=[])] == []
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:512: AssertionError
+__ test_grounding_cannot_embed_execution_or_safety_override[joint_positions] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-778/test_grounding_cannot_embed_ex0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7403ef40c860>
+key = 'joint_positions'
+
+    @pytest.mark.parametrize('key', ['joint_positions','trajectory','disable_safety','bypass_safety','ignore_collision'])
+    def test_grounding_cannot_embed_execution_or_safety_override(tmp_path, monkeypatch, key):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            step = original.model_copy(update={'parameters': {'nested': [{key: True}]}})
+            return api().GroundedRepairStep(step,source.action_evidence[original.step_id],binding_hash,
+                replan_payload_hash(step))
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+>       assert len(wire.requests) == 1 and result.new_steps == [] and result.outcome != 'REPLANNED'
+E       assert (1 == 1 and [TaskStep(ste...onditions=[])] == []
+E        +  where 1 = len([b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'])
+E        +    where [b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'] = <tests.test_role_visual_repair.MockTransport object at 0x7403ef40ce60>.requests
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'nested': [{'joint_positions': True}]}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:594: AssertionError
+_____ test_grounding_cannot_embed_execution_or_safety_override[trajectory] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-778/test_grounding_cannot_embed_ex1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7403ef40cfb0>
+key = 'trajectory'
+
+    @pytest.mark.parametrize('key', ['joint_positions','trajectory','disable_safety','bypass_safety','ignore_collision'])
+    def test_grounding_cannot_embed_execution_or_safety_override(tmp_path, monkeypatch, key):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            step = original.model_copy(update={'parameters': {'nested': [{key: True}]}})
+            return api().GroundedRepairStep(step,source.action_evidence[original.step_id],binding_hash,
+                replan_payload_hash(step))
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+>       assert len(wire.requests) == 1 and result.new_steps == [] and result.outcome != 'REPLANNED'
+E       assert (1 == 1 and [TaskStep(ste...onditions=[])] == []
+E        +  where 1 = len([b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'])
+E        +    where [b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'] = <tests.test_role_visual_repair.MockTransport object at 0x7403ef40eb40>.requests
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'nested': [{'trajectory': True}]}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:594: AssertionError
+___ test_grounding_cannot_embed_execution_or_safety_override[disable_safety] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-778/test_grounding_cannot_embed_ex2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7403ef40faa0>
+key = 'disable_safety'
+
+    @pytest.mark.parametrize('key', ['joint_positions','trajectory','disable_safety','bypass_safety','ignore_collision'])
+    def test_grounding_cannot_embed_execution_or_safety_override(tmp_path, monkeypatch, key):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            step = original.model_copy(update={'parameters': {'nested': [{key: True}]}})
+            return api().GroundedRepairStep(step,source.action_evidence[original.step_id],binding_hash,
+                replan_payload_hash(step))
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+>       assert len(wire.requests) == 1 and result.new_steps == [] and result.outcome != 'REPLANNED'
+E       assert (1 == 1 and [TaskStep(ste...onditions=[])] == []
+E        +  where 1 = len([b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'])
+E        +    where [b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'] = <tests.test_role_visual_repair.MockTransport object at 0x7403ef46c080>.requests
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'nested': [{'disable_safety': True}]}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:594: AssertionError
+___ test_grounding_cannot_embed_execution_or_safety_override[bypass_safety] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-778/test_grounding_cannot_embed_ex3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74041bbc3a40>
+key = 'bypass_safety'
+
+    @pytest.mark.parametrize('key', ['joint_positions','trajectory','disable_safety','bypass_safety','ignore_collision'])
+    def test_grounding_cannot_embed_execution_or_safety_override(tmp_path, monkeypatch, key):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            step = original.model_copy(update={'parameters': {'nested': [{key: True}]}})
+            return api().GroundedRepairStep(step,source.action_evidence[original.step_id],binding_hash,
+                replan_payload_hash(step))
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+>       assert len(wire.requests) == 1 and result.new_steps == [] and result.outcome != 'REPLANNED'
+E       assert (1 == 1 and [TaskStep(ste...onditions=[])] == []
+E        +  where 1 = len([b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'])
+E        +    where [b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'] = <tests.test_role_visual_repair.MockTransport object at 0x74041b9aa360>.requests
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'nested': [{'bypass_safety': True}]}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:594: AssertionError
+__ test_grounding_cannot_embed_execution_or_safety_override[ignore_collision] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-778/test_grounding_cannot_embed_ex4')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74041b9efaa0>
+key = 'ignore_collision'
+
+    @pytest.mark.parametrize('key', ['joint_positions','trajectory','disable_safety','bypass_safety','ignore_collision'])
+    def test_grounding_cannot_embed_execution_or_safety_override(tmp_path, monkeypatch, key):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation, context
+            step = original.model_copy(update={'parameters': {'nested': [{key: True}]}})
+            return api().GroundedRepairStep(step,source.action_evidence[original.step_id],binding_hash,
+                replan_payload_hash(step))
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+>       assert len(wire.requests) == 1 and result.new_steps == [] and result.outcome != 'REPLANNED'
+E       assert (1 == 1 and [TaskStep(ste...onditions=[])] == []
+E        +  where 1 = len([b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'])
+E        +    where [b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'] = <tests.test_role_visual_repair.MockTransport object at 0x74041b9ef980>.requests
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'nested': [{'ignore_collision': True}]}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:594: AssertionError
+______ test_grounder_mutation_of_supplied_context_cannot_become_candidate ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-778/test_grounder_mutation_of_supp0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74041ba034d0>
+
+    def test_grounder_mutation_of_supplied_context_cannot_become_candidate(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        before = source.source_hash
+        def grounding(intent, original, observation, context, binding_hash):
+            del intent, observation
+            context.active_contract.steps.clear()
+            return api().GroundedRepairStep(original,source.action_evidence[original.step_id],binding_hash,
+                replan_payload_hash(original))
+        adapter.grounding_provider = grounding
+        result = adapter.replan(request)
+>       assert len(wire.requests) == 1 and result.new_steps == [] and result.outcome != 'REPLANNED'
+E       assert (1 == 1 and [TaskStep(ste...onditions=[])] == []
+E        +  where 1 = len([b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'])
+E        +    where [b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth ...AABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'] = <tests.test_role_visual_repair.MockTransport object at 0x74041ba28260>.requests
+E         
+E         Left contains 2 more items, first extra item: TaskStep(step_id='grasp', skill=<SkillName.GRASP: 'GRASP'>, parameters={'object_id': 'obj-1'}, expected_duration_ms=1000, timeout_ms=3000, retry_limit=1, preconditions=[], success_conditions=[])
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:608: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_missing_cost_accounting_rejects_before_paid_request
+FAILED tests/test_role_visual_repair.py::test_grounding_cannot_embed_execution_or_safety_override[joint_positions]
+FAILED tests/test_role_visual_repair.py::test_grounding_cannot_embed_execution_or_safety_override[trajectory]
+FAILED tests/test_role_visual_repair.py::test_grounding_cannot_embed_execution_or_safety_override[disable_safety]
+FAILED tests/test_role_visual_repair.py::test_grounding_cannot_embed_execution_or_safety_override[bypass_safety]
+FAILED tests/test_role_visual_repair.py::test_grounding_cannot_embed_execution_or_safety_override[ignore_collision]
+FAILED tests/test_role_visual_repair.py::test_grounder_mutation_of_supplied_context_cannot_become_candidate
+7 failed, 43 deselected in 0.73s

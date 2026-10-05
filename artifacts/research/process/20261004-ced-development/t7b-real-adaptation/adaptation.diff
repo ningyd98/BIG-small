@@ -1,0 +1,327 @@
+--- artifacts/research/process/20261004-ced-development/t7b-real-adaptation/baseline/tracking.py
++++ src/cloud_edge_robot_arm/vision/tracking.py
+@@ -133,6 +133,44 @@
+         transform = np.asarray(observation.camera_to_world).reshape(4, 4)
+         return cast(np.ndarray, camera @ transform[:3, :3].T + transform[:3, 3])
+ 
++    def _top_support(
++        self,
++        points: np.ndarray,
++        selected: np.ndarray,
++        ys: np.ndarray,
++        xs: np.ndarray,
++    ) -> tuple[np.ndarray, list[float] | None, str | None]:
++        """Separate a measured dominant horizontal top from boundary-only sides.
++
++        Otsu supplies a data-derived candidate split, not a metric tolerance or
++        calibration. Only source-supplied depth intervals can validate its plane.
++        The lower mode must occur exclusively on the complete silhouette boundary;
++        interior anomalies cannot be relabelled as cuboid sides.
++        """
++        heights = points[:, 2]
++        top = np.ones(len(heights), dtype=bool)
++        bound = self.depth_error_bound_m
++        full_plane_possible = bound is not None and float(np.ptp(heights)) <= 2 * bound
++        if not full_plane_possible and np.ptp(heights) > 0:
++            normalized = np.rint((heights - heights.min()) / np.ptp(heights) * 255).astype(np.uint8)
++            split, _ = cv2.threshold(normalized, 0, 255, cv2.THRESH_OTSU)
++            candidate = normalized > split
++            boundary = cv2.erode(selected.astype(np.uint8), np.ones((3, 3), np.uint8)) == 0
++            if (
++                int(candidate.sum()) >= 8
++                and np.all(boundary[ys[~candidate], xs[~candidate]])
++                and np.all(heights[~candidate] >= self.support_z - (bound or 0.0))
++            ):
++                top = candidate
++        if bound is None:
++            return top, None, None
++        interval = [float((heights[top] - bound).max()), float((heights[top] + bound).min())]
++        if interval[0] > interval[1]:
++            return top, None, "top_plane_depth_intervals_do_not_overlap"
++        if np.any(heights[~top] - bound > interval[1]):
++            return top, None, "side_depth_not_below_observed_top"
++        return top, interval, None
++
+     def _geometry(
+         self,
+         observation: RGBDObservation,
+@@ -152,6 +190,7 @@
+             return None, "target_missing" if not candidates else "color_identity_ambiguous"
+         selected = labels == candidates[0]
+         topology = selected.copy()
++        inside_pixel_rectangle = None
+         if not target and occlusion_geometry is not None:
+             # Only the currently complete, independently depth-verified block can
+             # account for missing region color. Arbitrary holes remain unsupported.
+@@ -159,8 +198,19 @@
+             topology |= occlusion_geometry["mask"] & reference_region
+         if not target:
+             ty, tx = np.nonzero(topology)
+-            if not topology[ty.min() : ty.max() + 1, tx.min() : tx.max() + 1].all():
++            left, top, right, bottom = (
++                int(tx.min()) + 1,
++                int(ty.min()) + 1,
++                int(tx.max()) - 1,
++                int(ty.max()) - 1,
++            )
++            if (
++                left >= right
++                or top >= bottom
++                or not topology[top : bottom + 1, left : right + 1].all()
++            ):
+                 return None, "region_topology_not_supported_axis_aligned_rectangle"
++            inside_pixel_rectangle = [left, top, right, bottom]
+         ys, xs = np.nonzero(selected)
+         if (
+             xs.min() == 0
+@@ -199,25 +249,21 @@
+             ):
+                 return None, "target_outer_boundary_depth_unresolved"
+         points = self._points(observation, xs, ys, depth[ys, xs])
+-        if float(np.ptp(points[:, 2])) > 0.012:
+-            return None, "depth_surface_not_scoped_upright_top"
+-        # This v2 rectangle interior is supported only by a directly observed
+-        # level plane (float32 rounding tolerance). Noisy/nonplanar boundaries
+-        # need a separately validated polygon estimator rather than AABB proof.
+-        if not target and float(np.ptp(points[:, 2])) > 1e-7:
+-            return None, "region_plane_depth_unresolved"
+-        center = np.median(points, axis=0)
+-        if not target:
+-            corner_x = np.array([xs.min(), xs.max(), xs.max(), xs.min()])
+-            corner_y = np.array([ys.min(), ys.min(), ys.max(), ys.max()])
+-            if not np.all(selected[corner_y, corner_x]):
+-                return None, "region_corner_depth_not_observed"
+-            rectangle = self._points(observation, corner_x, corner_y, depth[corner_y, corner_x])[
+-                :, :2
++        top_selector = np.ones(len(points), dtype=bool)
++        plane_interval = None
++        if target:
++            top_selector, plane_interval, reason = self._top_support(points, selected, ys, xs)
++            if reason:
++                return None, reason
++        elif self.depth_error_bound_m is not None:
++            bound = self.depth_error_bound_m
++            plane_interval = [
++                float((points[:, 2] - bound).max()),
++                float((points[:, 2] + bound).min()),
+             ]
+-            edges = np.roll(rectangle, -1, axis=0) - rectangle
+-            if np.any(np.min(np.abs(edges), axis=1) > 1e-7):
+-                return None, "region_world_orientation_not_supported"
++            if plane_interval[0] > plane_interval[1]:
++                return None, "region_plane_depth_unresolved"
++        center = np.median(points[top_selector], axis=0)
+         bound = self.depth_error_bound_m or 0.0
+         corners = [
+             self._points(observation, xs + dx, ys + dy, depth[ys, xs] + dz)
+@@ -232,8 +278,43 @@
+         uncertainty = np.max(np.abs(np.stack(corners) - points), axis=(0, 1))
+         inner_min = points.min(axis=0) + uncertainty
+         inner_max = points.max(axis=0) - uncertainty
+-        nearest = int(np.argmin(np.linalg.norm(points - center, axis=1)))
+-        _, rectangle_size, angle = cv2.minAreaRect(points[:, :2].astype(np.float32))
++        if not target:
++            assert inside_pixel_rectangle is not None
++            left, top, right, bottom = inside_pixel_rectangle
++            corner_x = np.array([left, right, right, left])
++            corner_y = np.array([top, top, bottom, bottom])
++            if not np.all(selected[corner_y, corner_x]):
++                return None, "region_inside_corner_depth_not_observed"
++            if plane_interval is not None:
++                # A horizontal plane validated by every observed depth interval
++                # intersects these inside rays at one common height. Intersect the
++                # possible rectangles over its height interval; never fill color.
++                camera_z = observation.camera_to_world[11]
++                inner_rectangles = [
++                    self._points(
++                        observation,
++                        corner_x + np.array([0.5, -0.5, -0.5, 0.5]),
++                        corner_y + np.array([0.5, 0.5, -0.5, -0.5]),
++                        np.full(4, camera_z - height),
++                    )
++                    for height in plane_interval
++                ]
++                inner_min = np.maximum.reduce(
++                    [rectangle.min(axis=0) for rectangle in inner_rectangles]
++                )
++                inner_max = np.minimum.reduce(
++                    [rectangle.max(axis=0) for rectangle in inner_rectangles]
++                )
++            else:
++                observed_corners = self._points(
++                    observation, corner_x, corner_y, depth[corner_y, corner_x]
++                )
++                inner_min = observed_corners.min(axis=0) + uncertainty
++                inner_max = observed_corners.max(axis=0) - uncertainty
++        nearest = int(np.argmin(np.linalg.norm(points[top_selector] - center, axis=1)))
++        top_indices = np.flatnonzero(top_selector)
++        nearest = int(top_indices[nearest])
++        _, rectangle_size, angle = cv2.minAreaRect(points[top_selector, :2].astype(np.float32))
+         diagonal = float(np.linalg.norm(rectangle_size))
+         orientation_error = math.atan2(
+             2 * float(np.linalg.norm(uncertainty[:2])), max(diagonal, 1e-12)
+@@ -249,7 +330,19 @@
+             "orientation_rad": math.radians(angle) % (math.pi / 2),
+             "orientation_error_rad": orientation_error,
+             "visible_pixels": int(len(xs)),
+-            "extent_complete": True,
++            "silhouette_complete": True,
++            "extent_complete": plane_interval is not None,
++            "top_pixels": int(top_selector.sum()),
++            "side_pixels": int((~top_selector).sum()),
++            "observed_body_min": points.min(axis=0).tolist(),
++            "observed_body_max": points.max(axis=0).tolist(),
++            "observed_top_min": points[top_selector].min(axis=0).tolist(),
++            "observed_top_max": points[top_selector].max(axis=0).tolist(),
++            "top_plane_height_interval_m": plane_interval,
++            "top_plane_status": "CALIBRATED_DEPTH_INTERVAL"
++            if plane_interval is not None
++            else "UNVALIDATED_DEPTH_ERROR_BOUND",
++            "inside_pixel_rectangle": inside_pixel_rectangle,
+             "depth_error_bound_m": self.depth_error_bound_m,
+             "pixel_footprint_half_width_px": 0.5,
+             "mask": selected,
+@@ -279,7 +372,7 @@
+             "observation_sha256": observation.checksum_sha256,
+             "identity_confirmed": geometry is not None,
+             "pixel": geometry["pixel"] if geometry else None,
+-            "extent_complete": geometry is not None,
++            "extent_complete": geometry is not None and geometry["extent_complete"],
+             "reasons": [reason] if reason else [],
+         }
+ 
+@@ -489,9 +582,21 @@
+         # top-to-support height. Full xy bounds retain top silhouette uncertainty.
+         body_height = max(0.0, self.initial["center"][2] - self.support_z)
+         public["full_extent_min"] = list(public["min"])
+-        public["full_extent_min"][2] -= body_height + self.initial["uncertainty_m"][2]
++        public["full_extent_min"][2] = min(
++            public["min"][2],
++            public["center"][2]
++            - body_height
++            - self.initial["uncertainty_m"][2]
++            - target["uncertainty_m"][2],
++        )
+         public["full_extent_max"] = list(public["max"])
+         public["extent_source"] = "unique_complete_rgbd_top_and_initial_upright_support_height"
++        public["conservative_full_extent_min"] = (
++            public["full_extent_min"] if target["extent_complete"] else None
++        )
++        public["conservative_full_extent_max"] = (
++            public["full_extent_max"] if target["extent_complete"] else None
++        )
+         result = {
+             name: {
+                 **envelope,
+@@ -513,6 +618,8 @@
+             "measured_values": {"stationary_support": stationary},
+         }
+         if self.depth_error_bound_m is None:
++            result["target_reachable"]["value"] = None
++            result["target_reachable"]["reasons"] = ["calibrated_depth_error_bound_missing"]
+             for name in _CONDITIONS[2:]:
+                 result[name]["reasons"] = ["calibrated_depth_error_bound_missing"]
+             return result
+--- artifacts/research/process/20261004-ced-development/t7b-real-adaptation/baseline/test_opencv_target_evidence.py
++++ tests/test_opencv_target_evidence.py
+@@ -3,9 +3,12 @@
+ from __future__ import annotations
+ 
+ import base64
++import hashlib
+ import io
++import json
+ from datetime import UTC, datetime, timedelta
+ from importlib import import_module
++from pathlib import Path
+ 
+ import numpy as np
+ import pytest
+@@ -360,3 +363,87 @@
+     acquisition = image_variant(scene(), deform_region)
+     with pytest.raises(ValueError, match="region_plane_depth_unresolved"):
+         tracker(acquisition, depth_error_bound_m=0.000001)
++
++
++def saved_development_capture(monkeypatch):
++    """Replay immutable development pixels under their original acquisition clock."""
++    directory = Path(__file__).resolve().parents[1] / (
++        "artifacts/research/process/20261004-ced-development/t7b-real-capture-v2/initial"
++    )
++    hashes = {
++        "observation-full.json": "937f1044ee36332db0bc23598c026fcd67a226ece2e0225787f71cc25b2376e3",
++        "rgb.png": "419cab290f50df585986df994273154f5aafa10d50c9b72cd8edac65f6a1c77c",
++        "depth.f32": "3b6561d8de1b196dbac5dbc4fff466c09bfbaebd19a5062d568abd19da355481",
++    }
++    for filename, expected in hashes.items():
++        assert hashlib.sha256((directory / filename).read_bytes()).hexdigest() == expected
++    acquisition = RGBDObservation.model_validate(
++        json.loads((directory / "observation-full.json").read_text())
++    )
++
++    class ReplayClock(datetime):
++        @classmethod
++        def now(cls, tz=None):
++            return acquisition.captured_at + timedelta(seconds=1)
++
++    module = import_module("cloud_edge_robot_arm.vision.tracking")
++    monkeypatch.setattr(module, "datetime", ReplayClock)
++    return acquisition
++
++
++def real_capture_tracker(observation):
++    module = import_module("cloud_edge_robot_arm.vision.tracking")
++    return module.OpenCVTargetTracker(
++        observation,
++        {
++            "original_pixel_target": [179, 120],
++            "original_pixel_destination": [132, 74],
++            "top_grasp_support_height_m": 4.758834838858306e-05,
++        },
++    )
++
++
++def test_saved_development_cube_separates_top_from_visible_sides_without_fake_bound(monkeypatch):
++    acquisition = saved_development_capture(monkeypatch)
++    tracked = real_capture_tracker(acquisition)
++    facts = tracked.facts(acquisition)
++    observed = facts["target_visible"]["measured_values"]
++    assert facts["target_visible"]["value"] is True
++    assert observed["silhouette_complete"] is True
++    assert observed["top_pixels"] < observed["visible_pixels"]
++    assert observed["side_pixels"] > 0
++    assert 0.067 < observed["center"][2] < 0.073
++    assert observed["observed_body_min"][2] < 0.05
++    assert observed["top_plane_status"] == "UNVALIDATED_DEPTH_ERROR_BOUND"
++    assert observed["extent_complete"] is False
++    assert observed["conservative_full_extent_min"] is None
++    for condition in (
++        "target_reachable",
++        "object_lifted",
++        "object_inside_target_region",
++        "object_stable",
++        "placement_stable",
++        "object_placed",
++    ):
++        assert facts[condition]["value"] is None
++
++
++def test_saved_antialias_region_uses_observed_inside_rectangle_without_filling_corner(monkeypatch):
++    acquisition = saved_development_capture(monkeypatch)
++    region = real_capture_tracker(acquisition).destination
++    left, top, right, bottom = region["inside_pixel_rectangle"]
++    assert left > 117 and right < 146
++    assert top > 59 and bottom < 88
++    assert region["mask"][top : bottom + 1, left : right + 1].all()
++    assert not region["mask"][59, 117]
++    assert region["top_plane_status"] == "UNVALIDATED_DEPTH_ERROR_BOUND"
++
++
++def test_supported_inside_rectangle_does_not_fill_antialias_corner():
++    def missing_corner(rgb, depth):
++        rgb[20, 45] = 100
++
++    acquisition = image_variant(scene(), missing_corner)
++    region = tracker(acquisition).destination
++    assert not region["mask"][20, 45]
++    assert region["inside_pixel_rectangle"] == [46, 21, 59, 34]

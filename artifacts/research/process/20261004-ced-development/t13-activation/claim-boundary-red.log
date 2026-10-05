@@ -1,0 +1,151 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_change_during_durable_stage_claim_is_rechecked_before_gateway[memory-cancel] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77217ac32d20>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77217af922a0>
+change = 'cancel'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint"])
+    def test_change_during_durable_stage_claim_is_rechecked_before_gateway(replan_repo, monkeypatch, change):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        original_update = replan_repo.update_replan_apply_record_if_current
+        def claim_then_change(record, *, expected_status):
+            result = original_update(record, expected_status=expected_status)
+            if result is not None and record.status == "PREPARED":
+                if change == "cancel":
+                    replan_repo.save_state("task", "CANCELLED", "MOCK cancellation after claim")
+                else:
+                    checkpoint = replan_repo.get_latest_execution_checkpoint("task")
+                    replan_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                        "checkpoint_id": "changed-during-claim", "checkpoint_hash": "",
+                    }))
+            return result
+        monkeypatch.setattr(replan_repo, "update_replan_apply_record_if_current", claim_then_change)
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not False and ['stage'] == []
+E        +  where False = ReplanApplyResult(applied=False, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='tas...59ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['activation guard/checkpoint/version/cancellation conflict']).applied
+E         
+E         Left contains one more item: 'stage'
+E         Use -v to get more diff)
+
+tests/test_replan_activation.py:1061: AssertionError
+_ test_change_during_durable_stage_claim_is_rechecked_before_gateway[memory-checkpoint] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77217653fa40>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77217653f620>
+change = 'checkpoint'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint"])
+    def test_change_during_durable_stage_claim_is_rechecked_before_gateway(replan_repo, monkeypatch, change):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        original_update = replan_repo.update_replan_apply_record_if_current
+        def claim_then_change(record, *, expected_status):
+            result = original_update(record, expected_status=expected_status)
+            if result is not None and record.status == "PREPARED":
+                if change == "cancel":
+                    replan_repo.save_state("task", "CANCELLED", "MOCK cancellation after claim")
+                else:
+                    checkpoint = replan_repo.get_latest_execution_checkpoint("task")
+                    replan_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                        "checkpoint_id": "changed-during-claim", "checkpoint_hash": "",
+                    }))
+            return result
+        monkeypatch.setattr(replan_repo, "update_replan_apply_record_if_current", claim_then_change)
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not False and ['stage'] == []
+E        +  where False = ReplanApplyResult(applied=False, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='tas...59ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['activation guard/checkpoint/version/cancellation conflict']).applied
+E         
+E         Left contains one more item: 'stage'
+E         Use -v to get more diff)
+
+tests/test_replan_activation.py:1061: AssertionError
+_ test_change_during_durable_stage_claim_is_rechecked_before_gateway[sqlite-cancel] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77217af908c0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772179201340>
+change = 'cancel'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint"])
+    def test_change_during_durable_stage_claim_is_rechecked_before_gateway(replan_repo, monkeypatch, change):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        original_update = replan_repo.update_replan_apply_record_if_current
+        def claim_then_change(record, *, expected_status):
+            result = original_update(record, expected_status=expected_status)
+            if result is not None and record.status == "PREPARED":
+                if change == "cancel":
+                    replan_repo.save_state("task", "CANCELLED", "MOCK cancellation after claim")
+                else:
+                    checkpoint = replan_repo.get_latest_execution_checkpoint("task")
+                    replan_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                        "checkpoint_id": "changed-during-claim", "checkpoint_hash": "",
+                    }))
+            return result
+        monkeypatch.setattr(replan_repo, "update_replan_apply_record_if_current", claim_then_change)
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not False and ['stage'] == []
+E        +  where False = ReplanApplyResult(applied=False, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='tas...59ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['activation guard/checkpoint/version/cancellation conflict']).applied
+E         
+E         Left contains one more item: 'stage'
+E         Use -v to get more diff)
+
+tests/test_replan_activation.py:1061: AssertionError
+_ test_change_during_durable_stage_claim_is_rechecked_before_gateway[sqlite-checkpoint] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7721765a5070>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7721765a5730>
+change = 'checkpoint'
+
+    @pytest.mark.parametrize("change", ["cancel", "checkpoint"])
+    def test_change_during_durable_stage_claim_is_rechecked_before_gateway(replan_repo, monkeypatch, change):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        original_update = replan_repo.update_replan_apply_record_if_current
+        def claim_then_change(record, *, expected_status):
+            result = original_update(record, expected_status=expected_status)
+            if result is not None and record.status == "PREPARED":
+                if change == "cancel":
+                    replan_repo.save_state("task", "CANCELLED", "MOCK cancellation after claim")
+                else:
+                    checkpoint = replan_repo.get_latest_execution_checkpoint("task")
+                    replan_repo.save_execution_checkpoint(checkpoint.model_copy(update={
+                        "checkpoint_id": "changed-during-claim", "checkpoint_hash": "",
+                    }))
+            return result
+        monkeypatch.setattr(replan_repo, "update_replan_apply_record_if_current", claim_then_change)
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not False and ['stage'] == []
+E        +  where False = ReplanApplyResult(applied=False, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='tas...59ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['activation guard/checkpoint/version/cancellation conflict']).applied
+E         
+E         Left contains one more item: 'stage'
+E         Use -v to get more diff)
+
+tests/test_replan_activation.py:1061: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_change_during_durable_stage_claim_is_rechecked_before_gateway[memory-cancel]
+FAILED tests/test_replan_activation.py::test_change_during_durable_stage_claim_is_rechecked_before_gateway[memory-checkpoint]
+FAILED tests/test_replan_activation.py::test_change_during_durable_stage_claim_is_rechecked_before_gateway[sqlite-cancel]
+FAILED tests/test_replan_activation.py::test_change_during_durable_stage_claim_is_rechecked_before_gateway[sqlite-checkpoint]
+4 failed, 68 deselected in 1.05s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k during_durable_stage_claim
+Observed exit code: 1

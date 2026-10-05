@@ -1,0 +1,188 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_oversized_integer_returns_typed_invalid_with_complete_inventory[actuator-1] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-870/test_oversized_integer_returns0')
+sign = 1, location = 'actuator'
+
+    @pytest.mark.parametrize("sign", [1, -1])
+    @pytest.mark.parametrize("location", ["actuator", "dt"])
+    def test_oversized_integer_returns_typed_invalid_with_complete_inventory(
+        tmp_path: Path, sign: int, location: str
+    ) -> None:
+        case, directory = fixture_case(tmp_path)
+        value = sign * 10**500
+        if location == "actuator":
+            path = directory / "raw-actuators.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["pre_gravity_bias_nm"][0] = value
+            rewrite_jsonl(path, rows)
+            case = replace(case, original_file_hashes=hashes(directory))
+        else:
+            case = replace(case, context={**plain(case.context), "physics_dt_s": value})
+>       result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_sources.py:764: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/risk_sources.py:841: in audit
+    result = _case(directory, case, registration)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:741: in _case
+    _controls(commands, controls, raw, case, basis)
+src/cloud_edge_robot_arm/research/risk_sources.py:518: in _controls
+    bias = _array(control["pre_gravity_bias_nm"], (7,))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:285: in _array
+    return np.asarray([_number(item) for item in value], dtype=float)
+                       ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = 100000000000000000...0000000000000000000
+
+    def _number(value: Any) -> float:
+>       if type(value) not in {int, float} or not math.isfinite(value):
+                                                  ^^^^^^^^^^^^^^^^^^^^
+E       OverflowError: int too large to convert to float
+
+src/cloud_edge_robot_arm/research/risk_sources.py:275: OverflowError
+_ test_oversized_integer_returns_typed_invalid_with_complete_inventory[actuator--1] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-870/test_oversized_integer_returns1')
+sign = -1, location = 'actuator'
+
+    @pytest.mark.parametrize("sign", [1, -1])
+    @pytest.mark.parametrize("location", ["actuator", "dt"])
+    def test_oversized_integer_returns_typed_invalid_with_complete_inventory(
+        tmp_path: Path, sign: int, location: str
+    ) -> None:
+        case, directory = fixture_case(tmp_path)
+        value = sign * 10**500
+        if location == "actuator":
+            path = directory / "raw-actuators.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["pre_gravity_bias_nm"][0] = value
+            rewrite_jsonl(path, rows)
+            case = replace(case, original_file_hashes=hashes(directory))
+        else:
+            case = replace(case, context={**plain(case.context), "physics_dt_s": value})
+>       result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_sources.py:764: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/risk_sources.py:841: in audit
+    result = _case(directory, case, registration)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:741: in _case
+    _controls(commands, controls, raw, case, basis)
+src/cloud_edge_robot_arm/research/risk_sources.py:518: in _controls
+    bias = _array(control["pre_gravity_bias_nm"], (7,))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:285: in _array
+    return np.asarray([_number(item) for item in value], dtype=float)
+                       ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = -10000000000000000...0000000000000000000
+
+    def _number(value: Any) -> float:
+>       if type(value) not in {int, float} or not math.isfinite(value):
+                                                  ^^^^^^^^^^^^^^^^^^^^
+E       OverflowError: int too large to convert to float
+
+src/cloud_edge_robot_arm/research/risk_sources.py:275: OverflowError
+__ test_oversized_integer_returns_typed_invalid_with_complete_inventory[dt-1] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-870/test_oversized_integer_returns2')
+sign = 1, location = 'dt'
+
+    @pytest.mark.parametrize("sign", [1, -1])
+    @pytest.mark.parametrize("location", ["actuator", "dt"])
+    def test_oversized_integer_returns_typed_invalid_with_complete_inventory(
+        tmp_path: Path, sign: int, location: str
+    ) -> None:
+        case, directory = fixture_case(tmp_path)
+        value = sign * 10**500
+        if location == "actuator":
+            path = directory / "raw-actuators.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["pre_gravity_bias_nm"][0] = value
+            rewrite_jsonl(path, rows)
+            case = replace(case, original_file_hashes=hashes(directory))
+        else:
+            case = replace(case, context={**plain(case.context), "physics_dt_s": value})
+>       result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_sources.py:764: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/risk_sources.py:841: in audit
+    result = _case(directory, case, registration)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:697: in _case
+    raw = _physics(_rows(directory / "raw-physics.jsonl"), case)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:296: in _physics
+    dt = _number(case.context["physics_dt_s"])
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = 100000000000000000...0000000000000000000
+
+    def _number(value: Any) -> float:
+>       if type(value) not in {int, float} or not math.isfinite(value):
+                                                  ^^^^^^^^^^^^^^^^^^^^
+E       OverflowError: int too large to convert to float
+
+src/cloud_edge_robot_arm/research/risk_sources.py:275: OverflowError
+_ test_oversized_integer_returns_typed_invalid_with_complete_inventory[dt--1] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-870/test_oversized_integer_returns3')
+sign = -1, location = 'dt'
+
+    @pytest.mark.parametrize("sign", [1, -1])
+    @pytest.mark.parametrize("location", ["actuator", "dt"])
+    def test_oversized_integer_returns_typed_invalid_with_complete_inventory(
+        tmp_path: Path, sign: int, location: str
+    ) -> None:
+        case, directory = fixture_case(tmp_path)
+        value = sign * 10**500
+        if location == "actuator":
+            path = directory / "raw-actuators.jsonl"
+            rows = [json.loads(line) for line in path.read_bytes().splitlines()]
+            rows[5]["pre_gravity_bias_nm"][0] = value
+            rewrite_jsonl(path, rows)
+            case = replace(case, original_file_hashes=hashes(directory))
+        else:
+            case = replace(case, context={**plain(case.context), "physics_dt_s": value})
+>       result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_sources.py:764: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/risk_sources.py:841: in audit
+    result = _case(directory, case, registration)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:697: in _case
+    raw = _physics(_rows(directory / "raw-physics.jsonl"), case)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:296: in _physics
+    dt = _number(case.context["physics_dt_s"])
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = -10000000000000000...0000000000000000000
+
+    def _number(value: Any) -> float:
+>       if type(value) not in {int, float} or not math.isfinite(value):
+                                                  ^^^^^^^^^^^^^^^^^^^^
+E       OverflowError: int too large to convert to float
+
+src/cloud_edge_robot_arm/research/risk_sources.py:275: OverflowError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_oversized_integer_returns_typed_invalid_with_complete_inventory[actuator-1]
+FAILED tests/test_research_risk_sources.py::test_oversized_integer_returns_typed_invalid_with_complete_inventory[actuator--1]
+FAILED tests/test_research_risk_sources.py::test_oversized_integer_returns_typed_invalid_with_complete_inventory[dt-1]
+FAILED tests/test_research_risk_sources.py::test_oversized_integer_returns_typed_invalid_with_complete_inventory[dt--1]
+4 failed, 52 deselected in 0.67s

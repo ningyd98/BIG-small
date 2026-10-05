@@ -1,0 +1,1346 @@
+--- /dev/null
++++ review/src/cloud_edge_robot_arm/research/resource_plan.py
+@@ -0,0 +1,769 @@
++"""Source-bound v2 resource planning; forecasts never accept physical research."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++from collections import Counter
++from collections.abc import Mapping, Sequence
++from pathlib import Path
++from typing import Any, cast
++
++import numpy as np
++
++from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++from cloud_edge_robot_arm.research.cost_ledger import RequestCost
++from cloud_edge_robot_arm.research.pilot import derive_tcap, stage_source_paths
++from cloud_edge_robot_arm.research.protocol import file_hash
++
++METHOD_IDS = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY", "NO_TIME_VALIDITY", "NO_LOCAL_REPAIR")
++AUXILIARY_PHASES = (
++    "g3_rules",
++    "source_verification",
++    "reproduction",
++    "calibration",
++    "data_source",
++    "source_generation",
++)
++QUANTITIES = (
++    "wall_s",
++    "storage_bytes",
++    "cloud_model_requests",
++    "application_bytes",
++    "monetary_cost",
++)
++CEILING_KEYS = ("wall_s", "storage_bytes", "cloud_model_requests", "monetary_cost")
++RESERVE_RULE: dict[str, Any] = {
++    "schema_version": "ced.resource-reserve.v1",
++    "fraction": 0.2,
++    "scope": "future_reference_terms",
++    "kind": "PLANNING_RULE",
++}
++LOCAL_OPERATIONS = {
++    "g3_rules": ("src/cloud_edge_robot_arm/edge/evidence/opportunities.py", "replay_opportunities"),
++    "source_verification": (
++        "src/cloud_edge_robot_arm/research/protocol_evidence.py",
++        "verify_protocol_evidence",
++    ),
++    "reproduction": ("src/cloud_edge_robot_arm/research/reproducibility.py", "rebuild_analysis"),
++    "calibration": ("src/cloud_edge_robot_arm/vision/risk/calibration.py", "calibrate_risk"),
++    "data_source": ("src/cloud_edge_robot_arm/datasets/rgbd/generator.py", "generate_dataset"),
++    "source_generation": (
++        "src/cloud_edge_robot_arm/research/protocol_evidence.py",
++        "prepare_protocol_evidence",
++    ),
++}
++
++
++def _number(value: Any, *, integer: bool = False) -> float | int:
++    if type(value) not in {int, float} or not math.isfinite(value) or value < 0:
++        raise ValueError("resource quantities require finite nonnegative numbers")
++    if integer and type(value) is not int:
++        raise ValueError("resource counts and actual bytes require integers")
++    return cast(float | int, value)
++
++
++def _amount(value: Mapping[str, Any]) -> dict[str, float | int | None]:
++    if set(value) != set(QUANTITIES):
++        raise ValueError("resource amount requires all quantities, including unknown fees")
++    return {
++        key: None
++        if value[key] is None
++        else _number(
++            value[key],
++            integer=key in {"storage_bytes", "cloud_model_requests", "application_bytes"},
++        )
++        for key in QUANTITIES
++    }
++
++
++def _sum(values: Sequence[Mapping[str, Any]]) -> dict[str, float | int | None]:
++    return {
++        key: None if any(row[key] is None for row in values) else sum(row[key] for row in values)
++        for key in QUANTITIES
++    }
++
++
++def _scale(value: Mapping[str, Any], count: float) -> dict[str, float | int | None]:
++    return {
++        key: None
++        if value[key] is None
++        else (
++            math.ceil(value[key] * count)
++            if key in {"storage_bytes", "cloud_model_requests", "application_bytes"}
++            else value[key] * count
++        )
++        for key in QUANTITIES
++    }
++
++
++def estimate_resource_terms(
++    measurements: Mapping[str, Any],
++    *,
++    formal_n: int | None = None,
++    declared_ceilings: Mapping[str, Any] | None = None,
++) -> dict[str, Any]:
++    """Pure SOFTWARE_ONLY math; no caller-supplied measurements acquire source acceptance."""
++    if formal_n is not None and formal_n not in (600, 1200, 1800, 2400):
++        raise ValueError("formal N must be a fixed candidate and cannot be selected here")
++    walls = measurements["successful_wall_s"]
++    if not isinstance(walls, list) or not walls:
++        raise ValueError("resource forecasts require independently successful complete paths")
++    if any(_number(value) <= 0 for value in walls):
++        raise ValueError("successful complete-path wall time must be positive")
++    names = (
++        "successful_storage_bytes",
++        "successful_requests",
++        "successful_application_bytes",
++        "successful_monetary_costs",
++    )
++    if any(len(measurements[name]) != len(walls) for name in names):
++        raise ValueError("successful complete-path costs must retain every successful original")
++    tcap = derive_tcap(walls)
++    unit: dict[str, Any] = {"wall_s": tcap}
++    for key, name in zip(QUANTITIES[1:], names, strict=True):
++        values = measurements[name]
++        if any(value is None for value in values):
++            unit[key] = None
++        else:
++            numbers = [_number(value, integer=key != "monetary_cost") for value in values]
++            p99 = float(np.quantile(numbers, 0.99))
++            unit[key] = p99 if key == "monetary_cost" else math.ceil(p99)
++    unknown = []
++    if not measurements.get("initialization_in_complete_path"):
++        unknown.append("initialization")
++    if any(value is None for value in unit.values()):
++        unknown.append("successful_complete_path_costs")
++    auxiliary = measurements["auxiliary"]
++    terms: dict[str, Any] = {
++        "initialization": {
++            "included_in": "complete_success",
++            "additional_amount": dict.fromkeys(QUANTITIES, 0),
++        },
++        "complete_success": {
++            "successful_originals": len(walls),
++            "amount": unit,
++            "kind": "B0_CONDITIONAL_REFERENCE; wall uses frozen Tcap",
++        },
++        "selection_sunk": {"episodes": 480, "amount": _amount(measurements["selection_sunk"])},
++        "foundation_sunk": {"episodes": 120, "amount": _amount(measurements["foundation_sunk"])},
++        "power": {
++            "episodes": 120 * len(METHOD_IDS),
++            "methods": list(METHOD_IDS),
++            "amount": _scale(unit, 120 * len(METHOD_IDS)),
++        },
++        "formal_chosen": None
++        if formal_n is None
++        else {
++            "episodes": formal_n * len(METHOD_IDS),
++            "amount": _scale(unit, formal_n * len(METHOD_IDS)),
++        },
++        "formal_worst": {
++            "episodes": 2400 * len(METHOD_IDS),
++            "amount": _scale(unit, 2400 * len(METHOD_IDS)),
++        },
++        "g4": {
++            "groups": 200,
++            "episodes": 400,
++            "amount": {**_scale(unit, 400), "wall_s": 400 * 60},
++            "wall_basis": "fixed Rcap60; other costs remain B0 conditional references",
++        },
++    }
++    count = measurements["opportunity_count"]
++    if type(count) is not int or count <= 0:
++        raise ValueError("all fixed opportunities/actions require an exact positive count")
++    for phase in AUXILIARY_PHASES:
++        if phase not in auxiliary:
++            unknown.append(phase)
++            measured = dict.fromkeys(QUANTITIES)
++        else:
++            measured = _amount(auxiliary[phase])
++            if any(v is None for v in measured.values()):
++                unknown.append(phase)
++        terms[phase] = {"amount": measured, "kind": "MEASURED_FULL_PHASE_REFERENCE"}
++    terms["g3_rules"].update(opportunities=count, methods=["JOINT", "B3"], rule_passes=count * 2)
++    disk = measurements["current_disk"]
++    current_bytes = _number(disk["total_bytes"], integer=True)
++    if any(
++        terms[name]["amount"][key] is None
++        for name in ("selection_sunk", "foundation_sunk")
++        for key in QUANTITIES
++    ):
++        unknown.append("sunk_costs")
++    totals: dict[str, Any] = {}
++    checks: dict[str, Any] = {}
++    for scenario in ("chosen", "worst"):
++        formal = terms["formal_" + scenario]
++        if formal is None:
++            totals[scenario] = checks[scenario] = None
++            continue
++        future = _sum(
++            [
++                terms["power"]["amount"],
++                formal["amount"],
++                terms["g4"]["amount"],
++                *(terms[name]["amount"] for name in AUXILIARY_PHASES),
++            ]
++        )
++        reserve = _scale(future, RESERVE_RULE["fraction"])
++        terms["rerun_reserve_" + scenario] = {"amount": reserve, "rule": RESERVE_RULE}
++        sunk = _sum([terms["selection_sunk"]["amount"], terms["foundation_sunk"]["amount"]])
++        sunk["storage_bytes"] = (
++            current_bytes  # The complete current tree already contains sunk files.
++        )
++        totals[scenario] = _sum([sunk, future, reserve])
++    if declared_ceilings is not None:
++        if set(declared_ceilings) != set(CEILING_KEYS):
++            raise ValueError("declare actual wall/storage/request/monetary limits explicitly")
++        limits = {
++            key: _number(
++                declared_ceilings[key], integer=key in {"storage_bytes", "cloud_model_requests"}
++            )
++            for key in CEILING_KEYS
++        }
++        for scenario, total in totals.items():
++            checks[scenario] = (
++                None
++                if total is None
++                else {
++                    key: None if total[key] is None else total[key] <= limits[key]
++                    for key in CEILING_KEYS
++                }
++            )
++    else:
++        limits = None
++    status = (
++        "UNAVAILABLE"
++        if limits is None
++        else "INCOMPLETE"
++        if unknown
++        else (
++            "WITHIN_DECLARED_CEILINGS"
++            if all(checks["worst"].values())
++            else "EXCEEDS_DECLARED_CEILINGS"
++        )
++    )
++    return {
++        "schema_version": "ced.resource-plan.v1",
++        "scope": "SOFTWARE_ONLY",
++        "available": False,
++        "actual_research_status": "NOT_RUN",
++        "physical_acceptance": False,
++        "budget_status": status,
++        "formal_n": formal_n,
++        "methods": list(METHOD_IDS),
++        "successful_p99_wall_s": float(np.quantile(walls, 0.99)),
++        "tcap_s": tcap,
++        "rcap_s": 60,
++        "terms": terms,
++        "reserve_rule": RESERVE_RULE,
++        "current_disk": dict(disk),
++        "totals": totals,
++        "declared_ceilings": limits,
++        "ceiling_checks": checks,
++        "unknown_components": sorted(set(unknown)),
++        "assumptions": [
++            "Conditional B0-based cost references do not guarantee method upper bounds.",
++            "Forecasts include all assigned formal/method episodes and failed penalties.",
++            "Current raw/archive storage is enumerated, not inferred from failed means.",
++        ],
++    }
++
++
++def compile_resource_plan(
++    foundation: Path,
++    *,
++    formal_n: int | None = None,
++    declared_ceilings: Mapping[str, Any] | None = None,
++    auxiliary_cost_evidence: Path | None = None,
++) -> dict[str, Any]:
++    """Recompute actual raw inputs; unavailable sources cannot become a resource acceptance."""
++    from cloud_edge_robot_arm.research.freeze_evidence import audit_ced_pilot_stage
++
++    result: dict[str, Any] = {
++        "schema_version": "ced.resource-plan.v1",
++        "available": False,
++        "scope": "SOURCE_RESOURCE_DIAGNOSTIC",
++        "budget_status": "UNAVAILABLE",
++        "actual_research_status": "NOT_RUN",
++        "physical_acceptance": False,
++        "errors": [],
++    }
++    audit = audit_ced_pilot_stage(foundation, "foundation")
++    if not audit["available"]:
++        result["errors"] = [
++            "independent successful foundation sources unavailable",
++            *audit["errors"],
++        ]
++        return result
++    # The source reader is implemented below; no summary/YAML acceptance flag is consumed.
++    try:
++        return _compile_sources(
++            foundation, audit, formal_n, declared_ceilings, auxiliary_cost_evidence
++        )
++    except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
++        result["errors"] = [f"resource source unavailable: {type(error).__name__}: {error}"]
++        return result
++
++
++def _path(root: Path, relative: str) -> Path:
++    from cloud_edge_robot_arm.research.freeze_evidence import _inside
++
++    return _inside(root, relative)
++
++
++def _json(root: Path, relative: str) -> Any:
++    return json.loads(_path(root, relative).read_bytes())
++
++
++def _tree_sizes(root: Path) -> dict[str, Any]:
++    root = root.absolute()
++    if root.resolve() != root or root.is_symlink() or not root.is_dir():
++        raise ValueError("resource source tree must be a real non-symlink directory")
++    inventory, hashes = {}, {}
++    raw_bytes = archive_bytes = allocated_bytes = 0
++    for path in sorted(root.rglob("*")):
++        if path.is_symlink():
++            raise ValueError("resource source tree cannot contain symlinks")
++        if not path.is_file() or path == root / "resource-plan.json":
++            continue
++        relative = str(path.relative_to(root))
++        size = path.stat().st_size
++        inventory[relative] = size
++        hashes[relative] = file_hash(path)
++        allocated_bytes += path.stat().st_blocks * 512
++        parts = path.relative_to(root).parts
++        if "source" in parts or path.suffix in {".zip", ".tar"}:
++            archive_bytes += size
++        elif set(parts) & {"raw", "raw-frames", "cases", "frames", "supervision-frames", "wire"}:
++            raw_bytes += size
++    return {
++        "total_bytes": sum(inventory.values()),
++        "raw_bytes": raw_bytes,
++        "archive_bytes": archive_bytes,
++        "allocated_bytes": allocated_bytes,
++        "file_sizes": inventory,
++        "file_hashes": hashes,
++        "scope": "whole current tree; own resource-plan.json receipt excluded",
++    }
++
++
++def _read_request_costs(
++    root: Path,
++    requests_path: str,
++    wire_path: str,
++    *,
++    zero_request_proven: bool = False,
++    require_request_ids: bool = True,
++    expected_provider_version: str | None = None,
++) -> dict[str, Any]:
++    payload = _json(root, requests_path)
++    if isinstance(payload, dict):
++        payload = payload["requests"]
++    if not isinstance(payload, list):
++        raise ValueError("raw request ledger must retain all original rows")
++    requests = [RequestCost.model_validate(row) for row in payload]
++    if len({row.request_id for row in requests}) != len(requests) or any(
++        row.status == "IN_FLIGHT" for row in requests
++    ):
++        raise ValueError("request costs require unique fully settled original attempts")
++    sent = [row for row in requests if row.sent_at is not None]
++    if expected_provider_version is not None and any(
++        row.provider_location == "REMOTE_SERVICE"
++        and row.provider_version != expected_provider_version
++        for row in sent
++    ):
++        raise ValueError("actual cloud cost provider version differs from the frozen role")
++    wire = _json(root, wire_path)
++    if not isinstance(wire, list) or len(wire) != len(sent):
++        raise ValueError("complete actual request/wire attempt denominator differs")
++    by_id = {row.request_id: row for row in sent}
++    seen, actual_lengths = set(), []
++    for entry in wire:
++        if not isinstance(entry, dict):
++            raise ValueError("actual wire index rows must be objects")
++        request = _path(root, entry["request_path"]).read_bytes()
++        response = (
++            _path(root, entry["response_path"]).read_bytes() if entry.get("response_path") else b""
++        )
++        if hashlib.sha256(request).hexdigest() != entry["request_sha256"] or (
++            response and hashlib.sha256(response).hexdigest() != entry["response_sha256"]
++        ):
++            raise ValueError("original request/response wire hash differs")
++        actual_lengths.append((len(request), len(response)))
++        if require_request_ids:
++            identity = entry.get("request_id")
++            if identity not in by_id or identity in seen:
++                raise ValueError("actual request IDs do not join each original wire attempt")
++            seen.add(identity)
++            row = by_id[identity]
++            if (row.serialized_sent_bytes, row.serialized_received_bytes) != actual_lengths[-1]:
++                raise ValueError("actual original wire lengths differ from request costs")
++    if sorted(actual_lengths) != sorted(
++        (row.serialized_sent_bytes, row.serialized_received_bytes) for row in sent
++    ):
++        raise ValueError("actual serialized wire bytes differ from full settled request ledger")
++    fees = [row.monetary_cost for row in sent]
++    proven = bool(sent) or zero_request_proven
++    return {
++        "model_requests": len(sent) if proven else None,
++        "cloud_model_requests": sum(r.provider_location == "REMOTE_SERVICE" for r in sent)
++        if proven
++        else None,
++        "local_model_requests": sum(r.provider_location == "LOCAL_HOST" for r in sent)
++        if proven
++        else None,
++        "requests_by_role": dict(Counter(r.model_role for r in sent)),
++        "application_bytes": sum(a + b for a, b in actual_lengths),
++        "monetary_cost": None if not proven or any(f is None for f in fees) else sum(fees),
++        "original_attempts": len(requests),
++        "source_bound_wire_attempts": len(sent),
++    }
++
++
++def _local_request_proof(root: Path, record: Mapping[str, Any], opportunity_ids: list[str]) -> bool:
++    proof = record["local_execution_proof"]
++    if proof is None:
++        return False
++    if not isinstance(proof, dict) or proof.get("schema_version") != "ced.local-cost-proof.v1":
++        raise ValueError("zero-model costs require typed original closed local execution proof")
++    events = _json(root, proof["events_path"])
++    if (
++        not isinstance(events, list)
++        or len(events) < 3
++        or (
++            events[0].get("event") != "START"
++            or events[-1].get("event") != "FINISH"
++            or any(event.get("run_id") != record["run_id"] for event in events)
++        )
++    ):
++        raise ValueError("local request proof must include original whole execution boundaries")
++    if any(event.get("event") not in {"START", "FINISH", "LOCAL_OPERATION"} for event in events):
++        raise ValueError("local request proof contains an unaccounted model/network operation")
++    clock = _json(root, record["clock_path"])
++    if events[0] != clock[0] or events[-1] != clock[-1]:
++        raise ValueError("local no-model execution proof must join the exact whole raw clock span")
++    operations = events[1:-1]
++    expected_path, expected_function = LOCAL_OPERATIONS[record["phase"]]
++    if any(
++        operation["phase"] != record["phase"]
++        or operation["source_path"] not in record["source_hashes"]
++        or operation["source_sha256"] != record["source_hashes"][operation["source_path"]]
++        or operation["source_path"] != expected_path
++        or operation.get("function") != expected_function
++        or not clock[0]["monotonic_s"]
++        <= _number(operation["monotonic_s"])
++        <= clock[-1]["monotonic_s"]
++        for operation in operations
++    ):
++        raise ValueError("local operation trace does not bind the exact actual source path")
++    if record["phase"] == "g3_rules":
++        from dataclasses import asdict
++
++        from scripts.run_rgbd_gate_replay import _opportunity
++
++        from cloud_edge_robot_arm.research.runner import run_gate_replay
++
++        payload = _json(root, proof["opportunities_path"])
++        raw = payload["opportunities"]
++        if payload.get("schema_version") != "ced.opportunity-set.v1" or (
++            payload["content_hash"] != content_digest(raw)
++        ):
++            raise ValueError("local replay proof requires untouched fixed opportunity payloads")
++        values = [_opportunity(row) for row in raw]
++        if sorted(v.opportunity_id for v in values) != sorted(opportunity_ids):
++            raise ValueError("zero-model replay proof omitted an assigned fixed opportunity")
++        original = _json(root, proof["records_path"])
++        expected = [
++            asdict(row) for method in ("JOINT", "B3") for row in run_gate_replay(values, method)
++        ]
++        if content_digest(original) != content_digest(expected):
++            raise ValueError(
++                "local JOINT/B3 rule result does not reproduce from fixed online facts"
++            )
++        pairs = [(row["opportunity_id"], row["method_id"]) for row in operations]
++        if Counter(pairs) != Counter(
++            (identity, method) for identity in opportunity_ids for method in ("JOINT", "B3")
++        ):
++            raise ValueError("closed local trace does not cover every original JOINT/B3 rule pass")
++    else:
++        # These source-qualified cost operations never declare physical acceptance.
++        # The complete raw trace and current archived implementation bind the no-model path.
++        if any(operation.get("operation") != "LOCAL_SOURCE_PROCESSING" for operation in operations):
++            raise ValueError("unrecognized local source processing cost proof")
++        for operation in operations:
++            references = operation["input_refs"]
++            if (
++                not isinstance(references, dict)
++                or not references
++                or any(
++                    file_hash(_path(root, name)) != digest for name, digest in references.items()
++                )
++            ):
++                raise ValueError("local source operation raw input references are unavailable")
++    return True
++
++
++def _read_resource_phase(
++    root: Path,
++    phase: str,
++    role_bundle_hash: str,
++    opportunity_ids: list[str],
++    *,
++    expected_provider_version: str | None = None,
++) -> dict[str, Any]:
++    record = _json(root, "phase.json")
++    if not isinstance(record, dict) or (
++        record.get("schema_version") != "ced.resource-phase.v1"
++        or record.get("scope") != "REAL_RUNTIME"
++        or record.get("phase") != phase
++        or record.get("role_bundle_hash") != role_bundle_hash
++        or not isinstance(record.get("run_id"), str)
++        or not record["run_id"]
++    ):
++        raise ValueError("resource phase requires exact actual role/source/phase identities")
++    hashes = record["source_hashes"]
++    if not isinstance(hashes, dict) or set(hashes) != {str(path) for path in stage_source_paths()}:
++        raise ValueError("resource phase cannot narrow the actual implementation source inventory")
++    for name, expected in hashes.items():
++        if (
++            file_hash(Path(name)) != expected
++            or file_hash(_path(root, "source/" + name)) != expected
++        ):
++            raise ValueError("resource phase current/archive source hash drift")
++    clock = _json(root, record["clock_path"])
++    if (
++        not isinstance(clock, list)
++        or len(clock) != 2
++        or (
++            [row["event"] for row in clock] != ["START", "FINISH"]
++            or any(row["run_id"] != record["run_id"] for row in clock)
++        )
++    ):
++        raise ValueError("resource phase requires original start-to-finish raw clock records")
++    start, finish = (_number(row["monotonic_s"]) for row in clock)
++    if finish <= start:
++        raise ValueError("resource phase raw wall clock interval is invalid")
++    coverage = record["coverage"]
++    if phase in {"g3_rules", "source_verification", "reproduction"}:
++        if sorted(coverage["opportunity_ids"]) != sorted(opportunity_ids):
++            raise ValueError("resource phase must retain all fixed opportunities and actions")
++        if phase == "g3_rules" and coverage.get("methods") != ["JOINT", "B3"]:
++            raise ValueError("G3 requires both JOINT and B3 rule passes")
++    elif (
++        not isinstance(coverage.get("group_ids"), list)
++        or not coverage["group_ids"]
++        or (len(set(coverage["group_ids"])) != len(coverage["group_ids"]))
++    ):
++        raise ValueError("source/calibration/data cost coverage requires original group identities")
++    proven = _local_request_proof(root, record, opportunity_ids)
++    costs = _read_request_costs(
++        root,
++        record["requests_path"],
++        record["wire_path"],
++        zero_request_proven=proven,
++        expected_provider_version=expected_provider_version,
++    )
++    if proven and costs["source_bound_wire_attempts"]:
++        raise ValueError("no-model local proof conflicts with actual recorded model requests")
++    size = _tree_sizes(root)
++    return {
++        "wall_s": finish - start,
++        "storage_bytes": size["total_bytes"],
++        "cloud_model_requests": costs["cloud_model_requests"],
++        "application_bytes": costs["application_bytes"],
++        "monetary_cost": costs["monetary_cost"],
++        "coverage": coverage,
++        "request_costs": costs,
++        "disk": size,
++    }
++
++
++def _case_measurement(
++    root: Path, row: Mapping[str, Any], *, expected_provider_version: str
++) -> dict[str, Any]:
++    case = _path(root, "cases/" + row["assignment_id"])
++    # Strict stage audit already binds this collector's request/wire originals.
++    # Its observer predates request IDs; verify the complete byte-pair multiset,
++    # retaining all billed IDs rather than inventing per-attempt wire identities.
++    costs = _read_request_costs(
++        case,
++        "costs.json",
++        "wire-index.json",
++        require_request_ids=False,
++        expected_provider_version=expected_provider_version,
++    )
++    return {
++        "wall_s": _number(row["wall_duration_s"]),
++        "storage_bytes": _tree_sizes(case)["total_bytes"],
++        "cloud_model_requests": costs["cloud_model_requests"],
++        "application_bytes": costs["application_bytes"],
++        "monetary_cost": costs["monetary_cost"],
++        "requests_by_role": costs["requests_by_role"],
++    }
++
++
++def _compile_sources(
++    foundation: Path,
++    audit: Mapping[str, Any],
++    formal_n: int | None,
++    ceilings: Mapping[str, Any] | None,
++    auxiliary: Path | None,
++) -> dict[str, Any]:
++    from cloud_edge_robot_arm.research.freeze_evidence import audit_ced_pilot_stage
++
++    selection_root = _path(foundation, "selection-evidence")
++    selection = audit_ced_pilot_stage(selection_root, "selection")
++    if not selection["available"] or any(
++        audit[name] != selection[name]
++        for name in ("pools", "role_bundle_hash", "selected_period_s")
++    ):
++        raise ValueError("resource selection/foundation roles, pools and selected period differ")
++    if (
++        len(audit["cases"]) != 120
++        or len(selection["cases"]) != 480
++        or any(row.get("scope") != "REAL_RUNTIME" for row in [*audit["cases"], *selection["cases"]])
++    ):
++        raise ValueError(
++            "resource planning retains all real selection/foundation original outcomes"
++        )
++    success_rows = [row for row in audit["cases"] if row["success"] is True]
++    if not success_rows:
++        raise ValueError("no independently successful complete B0 path; failed means are forbidden")
++    provider = audit["cloud_model_snapshot_hash"]
++    if provider != selection["cloud_model_snapshot_hash"]:
++        raise ValueError("selection/foundation actual model cost versions differ")
++    foundation_costs = [
++        _case_measurement(foundation, row, expected_provider_version=provider)
++        for row in audit["cases"]
++    ]
++    selection_costs = [
++        _case_measurement(selection_root, row, expected_provider_version=provider)
++        for row in selection["cases"]
++    ]
++    successful = [
++        measured
++        for row, measured in zip(audit["cases"], foundation_costs, strict=True)
++        if row["success"] is True
++    ]
++    disk = _tree_sizes(foundation)
++    opportunities = _json(foundation, "protocol-evidence/opportunities.json")
++    if not isinstance(opportunities, list) or not opportunities:
++        raise ValueError("budget requires the whole fixed opportunity source set")
++    identities = [row["seed"]["opportunity_id"] for row in opportunities]
++    if len(set(identities)) != len(identities):
++        raise ValueError("fixed resource opportunity identities must remain unique")
++    auxiliary_costs, auxiliary_details, auxiliary_errors = {}, {}, {}
++    all_groups = {row["scene"]["group_id"] for pool in audit["pools"].values() for row in pool}
++    if auxiliary is not None:
++        auxiliary = auxiliary.absolute()
++        for phase in AUXILIARY_PHASES:
++            directory = _path(auxiliary, phase)
++            if not directory.is_dir():
++                continue
++            try:
++                measured = _read_resource_phase(
++                    directory,
++                    phase,
++                    audit["role_bundle_hash"],
++                    identities,
++                    expected_provider_version=provider,
++                )
++                if phase in {"calibration", "data_source"} and (
++                    set(measured["coverage"]["group_ids"]) & all_groups
++                ):
++                    raise ValueError(
++                        "calibration/development source costs reuse a frozen research pool"
++                    )
++                auxiliary_costs[phase] = {key: measured[key] for key in QUANTITIES}
++                auxiliary_details[phase] = measured
++            except (OSError, ValueError, KeyError, TypeError, IndexError) as error:
++                auxiliary_errors[phase] = f"{type(error).__name__}: {error}"
++        if not auxiliary.is_relative_to(foundation.absolute()):
++            extra = _tree_sizes(auxiliary)
++            for key in ("total_bytes", "raw_bytes", "archive_bytes", "allocated_bytes"):
++                disk[key] += extra[key]
++            disk["external_auxiliary_disk"] = extra
++    data = {
++        "successful_wall_s": [row["wall_s"] for row in successful],
++        "successful_storage_bytes": [row["storage_bytes"] for row in successful],
++        "successful_requests": [row["cloud_model_requests"] for row in successful],
++        "successful_application_bytes": [row["application_bytes"] for row in successful],
++        "successful_monetary_costs": [row["monetary_cost"] for row in successful],
++        "selection_sunk": _sum(selection_costs),
++        "foundation_sunk": _sum(foundation_costs),
++        "current_disk": disk,
++        "auxiliary": auxiliary_costs,
++        "opportunity_count": len(identities),
++        "initialization_in_complete_path": True,
++    }
++    plan = estimate_resource_terms(data, formal_n=formal_n, declared_ceilings=ceilings)
++    plan.update(
++        scope="SOURCE_RESOURCE_DIAGNOSTIC",
++        available=plan["budget_status"] == "WITHIN_DECLARED_CEILINGS",
++        role_bundle_hash=audit["role_bundle_hash"],
++        selection_evidence_hash=selection["evidence_hash"],
++        foundation_evidence_hash=audit["evidence_hash"],
++        original_denominators={"selection": 480, "foundation": 120},
++        successful_originals=len(successful),
++        auxiliary_details=auxiliary_details,
++        auxiliary_errors=auxiliary_errors,
++        sunk_requests_by_role=dict(
++            Counter(
++                role
++                for row in [*foundation_costs, *selection_costs]
++                for role, count in row["requests_by_role"].items()
++                for _ in range(count)
++            )
++        ),
++        source_hashes={str(path): file_hash(path) for path in stage_source_paths()},
++    )
++    plan["content_hash"] = content_digest(plan)
++    return plan
++
++
++def verify_resource_plan_receipt(foundation: Path) -> dict[str, Any]:
++    """INITIAL admission uses a fresh raw recompilation, never persisted flags."""
++    settings = _json(foundation, "resource-inputs.json")
++    if (
++        not isinstance(settings, dict)
++        or set(settings) != {"schema_version", "formal_n", "declared_ceilings"}
++        or settings["schema_version"] != "ced.resource-inputs.v1"
++        or settings["formal_n"] is not None
++    ):
++        raise ValueError(
++            "initial resource inputs require explicit ceilings and no selected formal N"
++        )
++    receipt = _json(foundation, "resource-plan.json")
++    if (
++        not isinstance(receipt, dict)
++        or set(receipt) != {"schema_version", "plan", "content_hash"}
++        or receipt["schema_version"] != "ced.resource-plan-receipt.v1"
++    ):
++        raise ValueError("unsupported initial resource receipt")
++    plan = receipt["plan"]
++    if not isinstance(plan, dict) or receipt["content_hash"] != content_digest(plan):
++        raise ValueError("resource receipt content differs")
++    if plan.get("content_hash") != content_digest(
++        {key: value for key, value in plan.items() if key != "content_hash"}
++    ):
++        raise ValueError("resource plan source/content hash differs")
++    auxiliary = _path(foundation, "resource-evidence")
++    recomputed = compile_resource_plan(
++        foundation,
++        formal_n=None,
++        declared_ceilings=settings["declared_ceilings"],
++        auxiliary_cost_evidence=auxiliary if auxiliary.is_dir() else None,
++    )
++    if recomputed != plan or (
++        recomputed.get("scope") != "SOURCE_RESOURCE_DIAGNOSTIC"
++        or recomputed.get("available") is not True
++        or recomputed.get("budget_status") != "WITHIN_DECLARED_CEILINGS"
++        or recomputed.get("physical_acceptance") is not False
++        or recomputed.get("actual_research_status") != "NOT_RUN"
++    ):
++        raise ValueError(
++            "initial resource budget is unavailable, incomplete, exceeded or unreproducible"
++        )
++    return recomputed
+--- /dev/null
++++ review/tests/test_research_resource_plan.py
+@@ -0,0 +1,571 @@
++"""Synthetic resource math never supplies real pilot or physical acceptance."""
++
++from __future__ import annotations
++
++import importlib
++
++import pytest
++
++
++def api():
++    return importlib.import_module("cloud_edge_robot_arm.research.resource_plan")
++
++
++def amount(wall=10.0, storage=100, requests=1, money=0.2):
++    return {
++        "wall_s": wall,
++        "storage_bytes": storage,
++        "cloud_model_requests": requests,
++        "application_bytes": 20,
++        "monetary_cost": money,
++    }
++
++
++def measurements():
++    return {
++        "successful_wall_s": [10.0, 100.0],
++        "successful_storage_bytes": [100, 1000],
++        "successful_requests": [1, 10],
++        "successful_application_bytes": [20, 200],
++        "successful_monetary_costs": [0.2, 2.0],
++        "selection_sunk": amount(4800, 48000, 480, 96),
++        "foundation_sunk": amount(12000, 12000, 120, 24),
++        "current_disk": {"total_bytes": 65000, "raw_bytes": 60000, "archive_bytes": 5000},
++        "auxiliary": {key: amount() for key in api().AUXILIARY_PHASES},
++        "opportunity_count": 3000,
++        "initialization_in_complete_path": True,
++    }
++
++
++def ceilings():
++    return {
++        "wall_s": 1.0e10,
++        "storage_bytes": 10**15,
++        "cloud_model_requests": 10**9,
++        "monetary_cost": 1.0e9,
++    }
++
++
++def test_complete_success_p99_drives_tcap_and_fixed_full_method_terms():
++    plan = api().estimate_resource_terms(measurements(), formal_n=600, declared_ceilings=ceilings())
++    assert plan["scope"] == "SOFTWARE_ONLY" and plan["available"] is False
++    assert plan["actual_research_status"] == "NOT_RUN" and plan["physical_acceptance"] is False
++    assert plan["successful_p99_wall_s"] == pytest.approx(99.1)
++    assert plan["tcap_s"] == 200 and plan["rcap_s"] == 60
++    assert plan["terms"]["power"]["episodes"] == 120 * 7
++    assert plan["terms"]["formal_chosen"]["episodes"] == 600 * 7
++    assert plan["terms"]["formal_worst"]["episodes"] == 2400 * 7
++    assert plan["terms"]["g4"]["episodes"] == 200 * 2
++    assert plan["terms"]["g4"]["amount"]["wall_s"] == 200 * 2 * 60
++    assert plan["terms"]["g3_rules"]["opportunities"] == 3000
++    assert plan["terms"]["g3_rules"]["rule_passes"] == 6000
++    assert plan["reserve_rule"]["fraction"] == 0.2
++
++
++def test_failed_shortcuts_and_missing_success_cannot_compile_resource_plan():
++    data = measurements()
++    data["successful_wall_s"] = []
++    with pytest.raises(ValueError, match="successful"):
++        api().estimate_resource_terms(data, declared_ceilings=ceilings())
++    data = measurements()
++    data["successful_wall_s"] = [float("nan")]
++    with pytest.raises(ValueError):
++        api().estimate_resource_terms(data, declared_ceilings=ceilings())
++
++
++@pytest.mark.parametrize("durations,expected", [([1.0], 120), ([61.0], 130), ([1000.0], 600)])
++def test_successful_tcap_clamps_and_ceiling(durations, expected):
++    data = measurements()
++    data.update(
++        successful_wall_s=durations,
++        successful_storage_bytes=[100],
++        successful_requests=[1],
++        successful_application_bytes=[20],
++        successful_monetary_costs=[0.2],
++    )
++    assert api().estimate_resource_terms(data, declared_ceilings=ceilings())["tcap_s"] == expected
++
++
++def test_unknown_calibration_or_fees_remain_incomplete():
++    data = measurements()
++    data["auxiliary"].pop("calibration")
++    data["successful_monetary_costs"][0] = None
++    plan = api().estimate_resource_terms(data, declared_ceilings=ceilings())
++    assert plan["budget_status"] == "INCOMPLETE"
++    assert "calibration" in plan["unknown_components"]
++    assert plan["totals"]["worst"]["monetary_cost"] is None
++
++
++def test_absent_ceiling_unavailable_and_exceeded_quota_explicit():
++    data = measurements()
++    assert api().estimate_resource_terms(data)["budget_status"] == "UNAVAILABLE"
++    limits = ceilings()
++    limits["cloud_model_requests"] = 1
++    plan = api().estimate_resource_terms(data, declared_ceilings=limits)
++    assert plan["budget_status"] == "EXCEEDS_DECLARED_CEILINGS"
++    assert plan["ceiling_checks"]["worst"]["cloud_model_requests"] is False
++
++
++def test_unknown_formal_n_never_selects_n_and_worst_scenario_keeps_current_storage():
++    plan = api().estimate_resource_terms(measurements(), declared_ceilings=ceilings())
++    assert plan["formal_n"] is None and plan["terms"]["formal_chosen"] is None
++    assert plan["totals"]["chosen"] is None
++    assert plan["totals"]["worst"]["storage_bytes"] > 65000
++    assert plan["totals"]["worst"]["wall_s"] >= 2400 * 7 * 200
++
++
++def test_strict_reader_missing_actual_source_is_unavailable(tmp_path):
++    result = api().compile_resource_plan(tmp_path, declared_ceilings=ceilings())
++    assert result["available"] is False and result["budget_status"] == "UNAVAILABLE"
++    assert result["actual_research_status"] == "NOT_RUN" and result["physical_acceptance"] is False
++
++
++def request_fixture(tmp_path, missing_fee=False):
++    import hashlib
++    import json
++
++    rows, wire = [], []
++    for index, (role, status) in enumerate(
++        zip(
++            ("PLANNER", "SUPERVISOR", "REPLANNER", "JUDGE"),
++            ("SUCCESS", "ERROR", "TIMEOUT", "CANCELLED"),
++            strict=True,
++        )
++    ):
++        request, response = f"SOFTWARE_ONLY-request-{index}".encode(), b"response"
++        sent, received = f"request-{index}.raw", f"response-{index}.raw"
++        (tmp_path / sent).write_bytes(request)
++        (tmp_path / received).write_bytes(response)
++        rows.append(
++            {
++                "request_id": f"r{index}",
++                "sent_at": "2026-10-04T00:00:00Z",
++                "finished_at": "2026-10-04T00:00:01Z",
++                "is_cloud_model": True,
++                "model_role": role,
++                "deployment": "CLOUD",
++                "provider_location": "REMOTE_SERVICE",
++                "provider_version": "a" * 64,
++                "status": status,
++                "serialized_sent_bytes": len(request),
++                "serialized_received_bytes": len(response),
++                "monetary_cost": None if missing_fee and index == 0 else 0.5,
++            }
++        )
++        wire.append(
++            {
++                "request_id": f"r{index}",
++                "request_path": sent,
++                "response_path": received,
++                "request_sha256": hashlib.sha256(request).hexdigest(),
++                "response_sha256": hashlib.sha256(response).hexdigest(),
++            }
++        )
++    (tmp_path / "requests.json").write_text(json.dumps(rows))
++    (tmp_path / "wire.json").write_text(json.dumps(wire))
++    return rows, wire
++
++
++def test_all_roles_retries_errors_and_actual_wire_are_counted(tmp_path):
++    rows, _ = request_fixture(tmp_path)
++    result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++    assert result["cloud_model_requests"] == 4 and result["model_requests"] == 4
++    assert result["requests_by_role"] == dict.fromkeys(
++        ("PLANNER", "SUPERVISOR", "REPLANNER", "JUDGE"), 1
++    )
++    assert result["application_bytes"] == sum(
++        row["serialized_sent_bytes"] + row["serialized_received_bytes"] for row in rows
++    )
++    assert result["monetary_cost"] == 2.0
++
++
++@pytest.mark.parametrize("damage", ["wire", "identity", "missing", "inflight"])
++def test_cost_reader_rejects_rehashed_actual_count_and_wire_drift(tmp_path, damage):
++    import json
++
++    rows, wire = request_fixture(tmp_path)
++    if damage == "wire":
++        (tmp_path / "request-0.raw").write_bytes(b"truncated")
++    elif damage == "identity":
++        wire[0]["request_id"] = "foreign"
++    elif damage == "missing":
++        wire.pop()
++    else:
++        rows[0].update(status="IN_FLIGHT", finished_at=None)
++    (tmp_path / "requests.json").write_text(json.dumps(rows))
++    (tmp_path / "wire.json").write_text(json.dumps(wire))
++    with pytest.raises(ValueError):
++        api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++
++
++def test_missing_billing_remains_unknown_and_empty_requests_need_proof(tmp_path):
++    import json
++
++    request_fixture(tmp_path, missing_fee=True)
++    assert (
++        api()._read_request_costs(tmp_path, "requests.json", "wire.json")["monetary_cost"] is None
++    )
++    (tmp_path / "requests.json").write_text(json.dumps([]))
++    (tmp_path / "wire.json").write_text(json.dumps([]))
++    result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
++    assert result["cloud_model_requests"] is None and result["monetary_cost"] is None
++
++
++def test_current_cloud_resource_costs_cannot_use_another_provider_version(tmp_path):
++    request_fixture(tmp_path)
++    with pytest.raises(ValueError, match="provider"):
++        api()._read_request_costs(
++            tmp_path, "requests.json", "wire.json", expected_provider_version="b" * 64
++        )
++
++
++def test_whole_tree_measures_raw_archives_and_rejects_symlinks(tmp_path):
++    (tmp_path / "raw").mkdir()
++    (tmp_path / "source").mkdir()
++    (tmp_path / "raw/data.bin").write_bytes(b"12345")
++    (tmp_path / "source/code.py").write_bytes(b"123")
++    (tmp_path / "other.json").write_bytes(b"{}")
++    (tmp_path / "resource-plan.json").write_bytes(b"compiler receipt excluded from own inputs")
++    result = api()._tree_sizes(tmp_path)
++    assert result["total_bytes"] == 10 and result["raw_bytes"] == 5 and result["archive_bytes"] == 3
++    (tmp_path / "raw/link").symlink_to(tmp_path / "other.json")
++    with pytest.raises(ValueError):
++        api()._tree_sizes(tmp_path)
++
++
++def phase_fixture(tmp_path, monkeypatch):
++    import hashlib
++    import json
++    from pathlib import Path
++
++    monkeypatch.chdir(tmp_path)
++    source = Path("collector.py")
++    source.write_text("# SOFTWARE_ONLY fixture for source-cost parser verification")
++    monkeypatch.setattr(api(), "stage_source_paths", lambda: [source])
++    root = tmp_path / "phase"
++    (root / "source").mkdir(parents=True)
++    (root / "source/collector.py").write_bytes(source.read_bytes())
++    rows, _ = request_fixture(root)
++    clocks = [
++        {"event": "START", "run_id": "fixture", "monotonic_s": 1.0},
++        {"event": "FINISH", "run_id": "fixture", "monotonic_s": 4.0},
++    ]
++    (root / "clock.json").write_text(json.dumps(clocks))
++    (root / "phase.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.resource-phase.v1",
++                "scope": "REAL_RUNTIME",
++                "phase": "g3_rules",
++                "role_bundle_hash": "b" * 64,
++                "run_id": "fixture",
++                "source_hashes": {"collector.py": hashlib.sha256(source.read_bytes()).hexdigest()},
++                "clock_path": "clock.json",
++                "requests_path": "requests.json",
++                "wire_path": "wire.json",
++                "coverage": {"opportunity_ids": ["o1", "o2"], "methods": ["JOINT", "B3"]},
++                "local_execution_proof": None,
++            }
++        )
++    )
++    return root, rows
++
++
++def test_source_qualified_phase_recomputes_clock_bytes_and_full_opportunity_coverage(
++    tmp_path, monkeypatch
++):
++    root, _ = phase_fixture(tmp_path, monkeypatch)
++    result = api()._read_resource_phase(root, "g3_rules", "b" * 64, ["o1", "o2"])
++    assert result["wall_s"] == 3.0 and result["cloud_model_requests"] == 4
++    assert result["storage_bytes"] > 0
++
++
++@pytest.mark.parametrize("damage", ["source", "clock", "coverage", "role", "software"])
++def test_auxiliary_phase_cannot_relabel_or_drop_raw_sources(tmp_path, monkeypatch, damage):
++    import json
++
++    root, _ = phase_fixture(tmp_path, monkeypatch)
++    payload = json.loads((root / "phase.json").read_text())
++    if damage == "source":
++        payload["source_hashes"] = {}
++    elif damage == "clock":
++        (root / "clock.json").write_text(
++            json.dumps(
++                [
++                    {"event": "START", "run_id": "fixture", "monotonic_s": 5.0},
++                    {"event": "FINISH", "run_id": "fixture", "monotonic_s": 4.0},
++                ]
++            )
++        )
++    elif damage == "coverage":
++        payload["coverage"]["opportunity_ids"] = ["o1"]
++    elif damage == "role":
++        payload["role_bundle_hash"] = "c" * 64
++    else:
++        payload["scope"] = "SOFTWARE_ONLY"
++    (root / "phase.json").write_text(json.dumps(payload))
++    with pytest.raises(ValueError):
++        api()._read_resource_phase(root, "g3_rules", "b" * 64, ["o1", "o2"])
++
++
++def test_empty_auxiliary_requests_without_local_execution_proof_remain_unknown(
++    tmp_path, monkeypatch
++):
++    root, _ = phase_fixture(tmp_path, monkeypatch)
++    (root / "requests.json").write_text("[]")
++    (root / "wire.json").write_text("[]")
++    result = api()._read_resource_phase(root, "g3_rules", "b" * 64, ["o1", "o2"])
++    assert result["cloud_model_requests"] is None and result["monetary_cost"] is None
++
++
++def test_bare_local_trace_cannot_claim_no_model_path_from_arbitrary_source(tmp_path, monkeypatch):
++    import json
++
++    root, _ = phase_fixture(tmp_path, monkeypatch)
++    record = json.loads((root / "phase.json").read_text())
++    record.update(
++        phase="source_verification",
++        local_execution_proof={
++            "schema_version": "ced.local-cost-proof.v1",
++            "events_path": "local.json",
++        },
++    )
++    events = [
++        {"event": "START", "run_id": "fixture"},
++        {
++            "event": "LOCAL_OPERATION",
++            "run_id": "fixture",
++            "phase": "source_verification",
++            "source_path": "collector.py",
++            "source_sha256": record["source_hashes"]["collector.py"],
++            "operation": "LOCAL_SOURCE_PROCESSING",
++        },
++        {"event": "FINISH", "run_id": "fixture"},
++    ]
++    (root / "local.json").write_text(json.dumps(events))
++    (root / "phase.json").write_text(json.dumps(record))
++    (root / "requests.json").write_text("[]")
++    (root / "wire.json").write_text("[]")
++    with pytest.raises(ValueError, match="local|source|clock"):
++        api()._read_resource_phase(root, "source_verification", "b" * 64, ["o1", "o2"])
++
++
++def test_zero_request_rule_proof_recomputes_full_fixed_clocks_and_both_methods(tmp_path):
++    import json
++    from dataclasses import asdict
++    from pathlib import Path
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++    from cloud_edge_robot_arm.research.assignments import _json
++    from cloud_edge_robot_arm.research.protocol import file_hash
++    from cloud_edge_robot_arm.research.runner import run_gate_replay
++    from tests.test_fixed_opportunity_replay import opportunities
++
++    values = opportunities()
++    ids = [value.opportunity_id for value in values]
++    raw = [_json(value) for value in values]
++    (tmp_path / "opportunities.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.opportunity-set.v1",
++                "opportunities": raw,
++                "content_hash": content_digest(raw),
++            }
++        )
++    )
++    records = [asdict(row) for method in ("JOINT", "B3") for row in run_gate_replay(values, method)]
++    (tmp_path / "records.json").write_text(json.dumps(records))
++    source = "src/cloud_edge_robot_arm/edge/evidence/opportunities.py"
++    clock = [
++        {"event": "START", "run_id": "SOFTWARE_ONLY", "monotonic_s": 1.0},
++        {"event": "FINISH", "run_id": "SOFTWARE_ONLY", "monotonic_s": 4.0},
++    ]
++    events = [
++        clock[0],
++        *[
++            {
++                "event": "LOCAL_OPERATION",
++                "run_id": "SOFTWARE_ONLY",
++                "phase": "g3_rules",
++                "source_path": source,
++                "source_sha256": file_hash(Path(source)),
++                "function": "replay_opportunities",
++                "monotonic_s": 2.0,
++                "opportunity_id": identity,
++                "method_id": method,
++            }
++            for identity in ids
++            for method in ("JOINT", "B3")
++        ],
++        clock[-1],
++    ]
++    (tmp_path / "clock.json").write_text(json.dumps(clock))
++    (tmp_path / "events.json").write_text(json.dumps(events))
++    record = {
++        "phase": "g3_rules",
++        "run_id": "SOFTWARE_ONLY",
++        "clock_path": "clock.json",
++        "source_hashes": {source: file_hash(Path(source))},
++        "local_execution_proof": {
++            "schema_version": "ced.local-cost-proof.v1",
++            "events_path": "events.json",
++            "opportunities_path": "opportunities.json",
++            "records_path": "records.json",
++        },
++    }
++    assert api()._local_request_proof(tmp_path, record, ids) is True
++    with pytest.raises(ValueError):
++        api()._local_request_proof(tmp_path, record, ids[:-1])
++
++
++def test_persisted_resource_flag_cannot_replace_independent_recompilation(tmp_path, monkeypatch):
++    import json
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++    plan = {
++        "scope": "SOURCE_RESOURCE_DIAGNOSTIC",
++        "available": True,
++        "budget_status": "WITHIN_DECLARED_CEILINGS",
++        "physical_acceptance": False,
++        "actual_research_status": "NOT_RUN",
++        "tcap_s": 120,
++    }
++    plan["content_hash"] = content_digest(plan)
++    (tmp_path / "resource-inputs.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.resource-inputs.v1",
++                "formal_n": None,
++                "declared_ceilings": ceilings(),
++            }
++        )
++    )
++    (tmp_path / "resource-plan.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.resource-plan-receipt.v1",
++                "plan": plan,
++                "content_hash": content_digest(plan),
++            }
++        )
++    )
++    monkeypatch.setattr(
++        api(),
++        "compile_resource_plan",
++        lambda *a, **k: {
++            "available": False,
++            "budget_status": "UNAVAILABLE",
++            "scope": "SOURCE_RESOURCE_DIAGNOSTIC",
++        },
++    )
++    with pytest.raises(ValueError, match="resource"):
++        api().verify_resource_plan_receipt(tmp_path)
++
++
++def test_software_only_budget_math_cannot_become_initial_resource_receipt(tmp_path, monkeypatch):
++    import json
++
++    from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++
++    plan = api().estimate_resource_terms(measurements(), declared_ceilings=ceilings())
++    plan["content_hash"] = content_digest(plan)
++    (tmp_path / "resource-inputs.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.resource-inputs.v1",
++                "formal_n": None,
++                "declared_ceilings": ceilings(),
++            }
++        )
++    )
++    (tmp_path / "resource-plan.json").write_text(
++        json.dumps(
++            {
++                "schema_version": "ced.resource-plan-receipt.v1",
++                "plan": plan,
++                "content_hash": content_digest(plan),
++            }
++        )
++    )
++    monkeypatch.setattr(api(), "compile_resource_plan", lambda *a, **k: plan)
++    with pytest.raises(ValueError):
++        api().verify_resource_plan_receipt(tmp_path)
++
++
++def test_compiler_seam_retains_all_sunk_failures_but_uses_complete_success_costs(
++    tmp_path, monkeypatch
++):
++    # Only numerical orchestration is verified: the independent physical auditor
++    # and already-tested cost readers are explicitly replaced. No real source passed.
++    import json
++
++    from cloud_edge_robot_arm.research import freeze_evidence
++
++    pools = {"foundation": [{"scene": {"group_id": "SOFTWARE_ONLY-research"}}]}
++    base = {
++        "available": True,
++        "errors": [],
++        "pools": pools,
++        "role_bundle_hash": "b" * 64,
++        "cloud_model_snapshot_hash": "a" * 64,
++        "selected_period_s": 2.0,
++        "evidence_hash": "c" * 64,
++    }
++    foundation_rows = [
++        {
++            "assignment_id": f"foundation-{i}",
++            "scope": "REAL_RUNTIME",
++            "success": i == 0,
++            "wall_duration_s": 100.0 if i == 0 else 0.001,
++        }
++        for i in range(120)
++    ]
++    selection_rows = [
++        {
++            "assignment_id": f"selection-{i}",
++            "scope": "REAL_RUNTIME",
++            "success": False,
++            "wall_duration_s": 0.001,
++        }
++        for i in range(480)
++    ]
++    monkeypatch.setattr(
++        freeze_evidence,
++        "audit_ced_pilot_stage",
++        lambda root, stage: {
++            **base,
++            "cases": foundation_rows if stage == "foundation" else selection_rows,
++        },
++    )
++    monkeypatch.setattr(
++        api(),
++        "_case_measurement",
++        lambda root, row, **kwargs: {
++            **amount(row["wall_duration_s"]),
++            "requests_by_role": {"PLANNER": 1},
++        },
++    )
++    monkeypatch.setattr(
++        api(),
++        "_read_resource_phase",
++        lambda *args, **kwargs: {**amount(), "coverage": {"group_ids": ["SOFTWARE_ONLY-aux"]}},
++    )
++    (tmp_path / "selection-evidence").mkdir()
++    (tmp_path / "protocol-evidence").mkdir()
++    ids = [f"o{i}" for i in range(3001)]
++    (tmp_path / "protocol-evidence/opportunities.json").write_text(
++        json.dumps([{"seed": {"opportunity_id": identity}} for identity in ids])
++    )
++    auxiliary = tmp_path / "resource-evidence"
++    for phase in api().AUXILIARY_PHASES:
++        (auxiliary / phase).mkdir(parents=True)
++    result = api().compile_resource_plan(
++        tmp_path, declared_ceilings=ceilings(), auxiliary_cost_evidence=auxiliary
++    )
++    assert result["budget_status"] == "WITHIN_DECLARED_CEILINGS" and result["available"] is True
++    assert result["actual_research_status"] == "NOT_RUN" and result["physical_acceptance"] is False
++    assert result["tcap_s"] == 200 and result["successful_originals"] == 1
++    assert result["original_denominators"] == {"selection": 480, "foundation": 120}
++    assert result["terms"]["foundation_sunk"]["amount"]["wall_s"] == pytest.approx(100.119)
++    assert result["terms"]["g3_rules"]["opportunities"] == 3001

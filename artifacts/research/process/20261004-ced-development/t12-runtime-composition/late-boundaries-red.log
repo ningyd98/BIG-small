@@ -1,0 +1,40 @@
+........................FF..                                             [100%]
+=================================== FAILURES ===================================
+___ test_late_exception_reports_fresh_absolute_deadline_without_quota_charge ___
+
+    def test_late_exception_reports_fresh_absolute_deadline_without_quota_charge():
+        snap = snapshot()
+        clock = [NOW + timedelta(seconds=.2)]
+        adapter, selected = software_adapter(snap, clock=lambda: clock[0])
+        def late_failure(ctx):
+            clock[0] = NOW + timedelta(seconds=61)
+            raise TimeoutError("late software callback")
+        selected.decide = late_failure
+        result = adapter.evaluate(event(snap))
+        assert result.action == DecisionAction.STOP
+>       assert result.evaluated_at == NOW + timedelta(seconds=61)
+E       AssertionError: assert datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc) == (datetime.datetime(2026, 10, 4, 0, 0, tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=61))
+E        +  where datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc) = RuntimeCompositionResult(action=<DecisionAction.STOP: 'STOP'>, scope='SOFTWARE_ONLY', reasons=('policy_failed_or_conte...one, source_verdict=EvidenceVerdict(status='UNKNOWN', reasons=('source_binding_missing',), bound_at_completion_m=None)).evaluated_at
+E        +  and   datetime.timedelta(seconds=61) = timedelta(seconds=61)
+
+tests/test_runtime_composition.py:291: AssertionError
+___ test_late_snapshot_exception_does_not_report_the_old_callback_timestamp ____
+
+    def test_late_snapshot_exception_does_not_report_the_old_callback_timestamp():
+        snap = snapshot()
+        clock = [NOW + timedelta(seconds=.2)]
+        def late_read():
+            clock[0] = NOW + timedelta(seconds=61)
+            raise OSError("late reader unavailable")
+        result = api().RuntimeCompositionAdapter(late_read, clock=lambda: clock[0]).evaluate(event(snap))
+        assert result.action == DecisionAction.STOP and result.context is None
+>       assert result.evaluated_at == NOW + timedelta(seconds=61)
+E       AssertionError: assert datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc) == (datetime.datetime(2026, 10, 4, 0, 0, tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=61))
+E        +  where datetime.datetime(2026, 10, 4, 0, 0, 0, 200000, tzinfo=datetime.timezone.utc) = RuntimeCompositionResult(action=<DecisionAction.STOP: 'STOP'>, scope='NOT_ADMITTED', reasons=('snapshot_identity_inval...one, source_verdict=EvidenceVerdict(status='UNKNOWN', reasons=('source_binding_missing',), bound_at_completion_m=None)).evaluated_at
+E        +  and   datetime.timedelta(seconds=61) = timedelta(seconds=61)
+
+tests/test_runtime_composition.py:304: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_runtime_composition.py::test_late_exception_reports_fresh_absolute_deadline_without_quota_charge
+FAILED tests/test_runtime_composition.py::test_late_snapshot_exception_does_not_report_the_old_callback_timestamp
+2 failed, 26 passed in 0.71s

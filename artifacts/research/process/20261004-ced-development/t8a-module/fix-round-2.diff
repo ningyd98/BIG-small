@@ -1,0 +1,86 @@
+--- a/src/cloud_edge_robot_arm/research/protocol_evidence.py
++++ b/src/cloud_edge_robot_arm/research/protocol_evidence.py
+@@ -26,6 +26,9 @@
+ Raw physics must cover reset step/time0 through the separately bound terminal,
+ with every step present. Typed actual action results/command-sequence ranges join
+ original backend dispatch records and targets to every pre-step actuator output.
++The complete reset-terminal dispatch sequence starts at1; an omitted prefix or
++renumbered action ranges cannot establish an execution proof. Pre-action dispatches
++are unsupported until their full prefix has an explicit validated contract.
+ Actual motion fault start/end and measured displacement precede the supported T5
+ teacher sequence. Independent success and scoped safety are reconstructed, never
+ inferred from action markers. ``write_recovery_source`` adapts detached parent
+@@ -628,8 +631,14 @@
+         raise ValueError("actuator provenance has foreign episode identity")
+     action_by_id = {}
+     previous_end = start_step
+-    first_sequence = commands[0].get("backend_record", {}).get("command_seq", 1) if commands else 1
+-    sequence_cursor = _integer(first_sequence)
++    # Backend reset starts the episode audit at1. Deriving this boundary from
++    # caller-supplied records would allow an omitted dispatch prefix. Both
++    # supported contracts (T5 recovery and bounded MOVE_TCP) require commands.
++    if not commands:
++        raise IncompleteEvidence("reset-terminal execution has no backend dispatch history")
++    if commands[0].get("backend_record", {}).get("command_seq") != 1:
++        raise ValueError("reset-terminal backend command sequence must begin at1")
++    sequence_cursor = 1
+     for action in actions:
+         identity = action.get("action_id")
+         if (
+@@ -766,7 +775,7 @@
+             raise ValueError("actual command sequence is outside its action dispatch range")
+         command_by_id[identity] = command
+     if [command["backend_record"]["command_seq"] for command in commands] != list(
+-        range(first_sequence, sequence_cursor)
++        range(1, sequence_cursor)
+     ):
+         raise ValueError("actual backend command sequence has a missing or unassigned dispatch")
+     for action in actions:
+--- a/tests/test_protocol_evidence_generation.py
++++ b/tests/test_protocol_evidence_generation.py
+@@ -1060,3 +1060,45 @@
+     manifest = json.loads((tmp_path / "output" / "opportunities.json").read_text())
+     assert manifest[0]["seed"]["oracle_label"] == "UNKNOWN"
+     assert manifest[0]["independent_label_evidence"]["geometry_applicable"] is True
++
++
++@pytest.mark.parametrize("change", ["shifted", "omitted_first", "empty"])
++def test_reset_complete_command_history_cannot_omit_its_first_dispatch(tmp_path, change):
++    pools = inputs(tmp_path)
++    row = pools["recovery"][0]
++    source = recovery(tmp_path, row)
++    commands = json.loads((source / "commands.json").read_text())
++    actions = json.loads((source / "teacher-actions.json").read_text())
++    pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
++    if change == "empty":
++        commands = []
++        for action in actions:
++            action["command_seq_start"] = action["command_seq_end"] = 1
++    else:
++        for command in commands:
++            command["backend_record"]["command_seq"] += 1
++        for action in actions:
++            action["command_seq_start"] += 1
++            action["command_seq_end"] += 1
++        if change == "omitted_first":
++            # Two actual same-step dispatches apply identical targets. The retained
++            # second command accounts for every control row, so actuator matching
++            # alone cannot expose removal of the first command from episode history.
++            omitted = json.loads(json.dumps(commands[0]))
++            omitted["command_id"] = "omitted-first-dispatch"
++            omitted["backend_record"]["command_seq"] = 1
++            actions[0]["command_seq_start"] = 1
++            write_json(source / "commands.json", [omitted, *commands])
++            write_json(source / "teacher-actions.json", actions)
++            assert api().prepare_protocol_evidence(pools, tmp_path / "complete-history")[
++                "recovery_proven"
++            ] == 1
++            # Remove actual command1 and consistently shift only its first action
++            # range start. Physical steps/controls and all other ranges stay exact.
++            actions[0]["command_seq_start"] = 2
++    write_json(source / "commands.json", commands)
++    write_json(source / "teacher-actions.json", actions)
++    report = api().prepare_protocol_evidence(pools, tmp_path / "output")
++    assert report["recovery_proven"] == 0
++    attempts = json.loads((tmp_path / "output" / "generation-attempts.json").read_text())
++    assert attempts[0]["status"] != "PROVEN"

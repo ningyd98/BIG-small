@@ -1,0 +1,82 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_______ test_authorization_conditions_cannot_select_decoy_target[memory] _______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x784f70a30f20>
+
+    def test_authorization_conditions_cannot_select_decoy_target(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        proposal = detected_record(lifecycle_repo)
+        proposal = replace(proposal, conditions=(ConditionSpec("object_held", target_id="decoy"),))
+        saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
+        actual = atomic_authorize(lifecycle_repo, saved)
+>       assert not actual.authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='54dc3cc23e1890f70d954eb43b34215af33a7b77ccab47b24319a3fea46a5b92'), reasons=()).authorized
+
+tests/test_recovery_lifecycle_module.py:867: AssertionError
+_______ test_authorization_conditions_cannot_select_decoy_target[sqlite] _______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x784f70c6c620>
+
+    def test_authorization_conditions_cannot_select_decoy_target(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        proposal = detected_record(lifecycle_repo)
+        proposal = replace(proposal, conditions=(ConditionSpec("object_held", target_id="decoy"),))
+        saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
+        actual = atomic_authorize(lifecycle_repo, saved)
+>       assert not actual.authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='7c817a5f19fc8e4021976b8780258c2879be168fa2859d7668a943d5666e7250'), reasons=()).authorized
+
+tests/test_recovery_lifecycle_module.py:867: AssertionError
+________ test_nested_condition_bindings_are_not_mutable_aliases[memory] ________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x784f70c6cbf0>
+
+    def test_nested_condition_bindings_are_not_mutable_aliases(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        tolerances = {"nested": {"margin": [1, 2]}}
+        proposal = replace(detected_record(lifecycle_repo),
+                           conditions=(ConditionSpec("object_held", "obj-1", tolerances),))
+        saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
+        tolerances["nested"]["margin"][0] = 99
+        assert lifecycle_repo.get_recovery(saved.recovery_id) == saved
+>       with pytest.raises(TypeError):
+E       Failed: DID NOT RAISE <class 'TypeError'>
+
+tests/test_recovery_lifecycle_module.py:880: Failed
+________ test_nested_condition_bindings_are_not_mutable_aliases[sqlite] ________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x784f70ccfb90>
+
+    def test_nested_condition_bindings_are_not_mutable_aliases(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        tolerances = {"nested": {"margin": [1, 2]}}
+        proposal = replace(detected_record(lifecycle_repo),
+                           conditions=(ConditionSpec("object_held", "obj-1", tolerances),))
+        saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
+        tolerances["nested"]["margin"][0] = 99
+>       assert lifecycle_repo.get_recovery(saved.recovery_id) == saved
+E       AssertionError: assert RecoveryRecor...rized_at=None) == RecoveryRecor...rized_at=None)
+E         
+E         Omitting 31 identical items, use -vv to show
+E         Differing attributes:
+E         ['conditions']
+E         
+E         Drill down into differing attribute conditions:
+E           conditions: (ConditionSpec(name='object_held', target_id='obj-1', tolerances=mappingproxy({'nested': {'margin': [1, 2]}}), sensor_requirements=('rgbd',)),) != (ConditionSpec(name='object_held', target_id='obj-1', tolerances=mappingproxy({'nested': {'margin': [99, 2]}}), sensor_requirements=('rgbd',)),)...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests/test_recovery_lifecycle_module.py:879: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_conditions_cannot_select_decoy_target[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_conditions_cannot_select_decoy_target[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_nested_condition_bindings_are_not_mutable_aliases[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_nested_condition_bindings_are_not_mutable_aliases[sqlite]
+4 failed, 112 deselected in 1.10s

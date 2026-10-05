@@ -1,0 +1,9 @@
+# Independent activation review: PASS within software scope
+
+The original receipt/result and object-versus-region condition binding defects are closed. Root then reproduced a further temporal-order defect: a start receipt before actual stage/resume ACK time was accepted. That original counterexample is retained in root-start-order-counterexample.log. Fix round 2 rejects that exact counterexample and preserves ACTIVATED without an invented start; root-fix2-counterexample-result.json records the result.
+
+All 21 frozen source files match both their archived bytes and the reviewed live inputs (manifest SHA256 739e15206cff9e49872b302c2ae3db9973606265009198f7cf6b8160ce2e59a1). Canonical durable validators and service checks enforce resume-after-stage and start-after-stage/recorded-resume on memory/SQLite, including rehashed transition attempts. Lost resume ACK stays absent; only a separately supplied, correctly bound actual start receipt can establish start. ACK is never physical success.
+
+Fresh selected regression: 206 passed in 14.94s, including 170 activation/related cases and 36 root dependency/visual-candidate cases (overlapping software scopes; not a project full-suite count). The earlier root command used nonexistent test names and ran no tests; root-independent-green.log preserves that command error. The corrected first review ran 152 tests, but the newly discovered ordering counterexample meant that release was not accepted. The final reviewed release uses root-independent-fix2-green.log.
+
+Actual stage/resume integration, verified recovery lifecycle, calibrated native evidence, genuine cloud credentials and physical acceptance remain separate work. This PASS authorizes lifecycle repository implementation under the existing approved plan; LOCAL_RECOVER remains disabled.

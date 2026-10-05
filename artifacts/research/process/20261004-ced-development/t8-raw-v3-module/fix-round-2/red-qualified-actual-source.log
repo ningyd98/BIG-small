@@ -1,0 +1,227 @@
+FF...FF..F.                                                              [100%]
+=================================== FAILURES ===================================
+_ test_original_control_replay_uses_real_displacement_limit_before_bias_and_range[1.0-0.0-20.0-bounds0-0.1-COMPLETE] _
+
+target = 1.0, bias = 0.0, gain = 20.0, bounds = (-3.0, 3.0), output = 0.1
+want = 'COMPLETE'
+
+    @pytest.mark.parametrize(
+        "target,bias,gain,bounds,output,want",
+        [
+            (1.0, 0.0, 20.0, (-3.0, 3.0), 0.10, "COMPLETE"),
+            (-1.0, 0.0, 20.0, (-3.0, 3.0), -0.10, "COMPLETE"),
+            (0.04, 0.0, 20.0, (-3.0, 3.0), 0.04, "COMPLETE"),
+            (1.0, 4.0, 20.0, (-0.25, 0.25), 0.25, "COMPLETE"),
+            (-1.0, -4.0, 20.0, (-0.25, 0.25), -0.25, "COMPLETE"),
+            (1.0, 0.0, 20.0, (-3.0, 3.0), 1.0, "INVALID"),
+        ],
+    )
+    def test_original_control_replay_uses_real_displacement_limit_before_bias_and_range(
+        target, bias, gain, bounds, output, want
+    ):
+        envelope, records = fixture()
+        command = replace(
+            records.commands[0],
+            command_payload={
+                **dict(records.commands[0].command_payload),
+                "target_positions_rad": [target] * 7,
+                "applied_target_positions_rad": [target] * 7,
+            },
+        )
+        final = records.physics[-1]
+        actual_control = {
+            **dict(final.control_payload),
+            "applied_joint_targets_rad": [target] * 7,
+            "pre_gravity_bias_nm": [bias] * 7,
+            "actuator_gains": [gain] * 7,
+            "actuator_ctrl_ranges": [bounds] * 7,
+            "control_rad": [output] * 7,
+        }
+        view = api().validate_raw_episode_v3(
+            envelope,
+            replace(
+                records,
+                commands=(command,),
+                physics=(*records.physics[:-1], replace(final, control_payload=actual_control)),
+            ),
+        )
+>       assert view.status == want, view.reasons
+E       AssertionError: ('recorded_control_equation_mismatch',)
+E       assert 'INVALID' == 'COMPLETE'
+E         
+E         - COMPLETE
+E         + INVALID
+
+tests/test_raw_episode_v3.py:1332: AssertionError
+_ test_original_control_replay_uses_real_displacement_limit_before_bias_and_range[-1.0-0.0-20.0-bounds1--0.1-COMPLETE] _
+
+target = -1.0, bias = 0.0, gain = 20.0, bounds = (-3.0, 3.0), output = -0.1
+want = 'COMPLETE'
+
+    @pytest.mark.parametrize(
+        "target,bias,gain,bounds,output,want",
+        [
+            (1.0, 0.0, 20.0, (-3.0, 3.0), 0.10, "COMPLETE"),
+            (-1.0, 0.0, 20.0, (-3.0, 3.0), -0.10, "COMPLETE"),
+            (0.04, 0.0, 20.0, (-3.0, 3.0), 0.04, "COMPLETE"),
+            (1.0, 4.0, 20.0, (-0.25, 0.25), 0.25, "COMPLETE"),
+            (-1.0, -4.0, 20.0, (-0.25, 0.25), -0.25, "COMPLETE"),
+            (1.0, 0.0, 20.0, (-3.0, 3.0), 1.0, "INVALID"),
+        ],
+    )
+    def test_original_control_replay_uses_real_displacement_limit_before_bias_and_range(
+        target, bias, gain, bounds, output, want
+    ):
+        envelope, records = fixture()
+        command = replace(
+            records.commands[0],
+            command_payload={
+                **dict(records.commands[0].command_payload),
+                "target_positions_rad": [target] * 7,
+                "applied_target_positions_rad": [target] * 7,
+            },
+        )
+        final = records.physics[-1]
+        actual_control = {
+            **dict(final.control_payload),
+            "applied_joint_targets_rad": [target] * 7,
+            "pre_gravity_bias_nm": [bias] * 7,
+            "actuator_gains": [gain] * 7,
+            "actuator_ctrl_ranges": [bounds] * 7,
+            "control_rad": [output] * 7,
+        }
+        view = api().validate_raw_episode_v3(
+            envelope,
+            replace(
+                records,
+                commands=(command,),
+                physics=(*records.physics[:-1], replace(final, control_payload=actual_control)),
+            ),
+        )
+>       assert view.status == want, view.reasons
+E       AssertionError: ('recorded_control_equation_mismatch',)
+E       assert 'INVALID' == 'COMPLETE'
+E         
+E         - COMPLETE
+E         + INVALID
+
+tests/test_raw_episode_v3.py:1332: AssertionError
+_ test_original_control_replay_uses_real_displacement_limit_before_bias_and_range[1.0-0.0-20.0-bounds5-1.0-INVALID] _
+
+target = 1.0, bias = 0.0, gain = 20.0, bounds = (-3.0, 3.0), output = 1.0
+want = 'INVALID'
+
+    @pytest.mark.parametrize(
+        "target,bias,gain,bounds,output,want",
+        [
+            (1.0, 0.0, 20.0, (-3.0, 3.0), 0.10, "COMPLETE"),
+            (-1.0, 0.0, 20.0, (-3.0, 3.0), -0.10, "COMPLETE"),
+            (0.04, 0.0, 20.0, (-3.0, 3.0), 0.04, "COMPLETE"),
+            (1.0, 4.0, 20.0, (-0.25, 0.25), 0.25, "COMPLETE"),
+            (-1.0, -4.0, 20.0, (-0.25, 0.25), -0.25, "COMPLETE"),
+            (1.0, 0.0, 20.0, (-3.0, 3.0), 1.0, "INVALID"),
+        ],
+    )
+    def test_original_control_replay_uses_real_displacement_limit_before_bias_and_range(
+        target, bias, gain, bounds, output, want
+    ):
+        envelope, records = fixture()
+        command = replace(
+            records.commands[0],
+            command_payload={
+                **dict(records.commands[0].command_payload),
+                "target_positions_rad": [target] * 7,
+                "applied_target_positions_rad": [target] * 7,
+            },
+        )
+        final = records.physics[-1]
+        actual_control = {
+            **dict(final.control_payload),
+            "applied_joint_targets_rad": [target] * 7,
+            "pre_gravity_bias_nm": [bias] * 7,
+            "actuator_gains": [gain] * 7,
+            "actuator_ctrl_ranges": [bounds] * 7,
+            "control_rad": [output] * 7,
+        }
+        view = api().validate_raw_episode_v3(
+            envelope,
+            replace(
+                records,
+                commands=(command,),
+                physics=(*records.physics[:-1], replace(final, control_payload=actual_control)),
+            ),
+        )
+>       assert view.status == want, view.reasons
+E       AssertionError: ()
+E       assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:1332: AssertionError
+_ test_actual_camera_timestamp_is_inside_the_original_acquisition_bracket[10-COMPLETE] _
+
+offset_us = 10, want = 'COMPLETE'
+
+    @pytest.mark.parametrize("offset_us,want", [(10, "COMPLETE"), (-1, "INVALID"), (1001, "INVALID")])
+    def test_actual_camera_timestamp_is_inside_the_original_acquisition_bracket(offset_us, want):
+        envelope, records = fixture()
+        frame = records.frames[0]
+        payload = dict(frame.observation_payload)
+        payload["captured_at"] = (
+            RGBDObservation.model_validate(payload).captured_at + timedelta(microseconds=offset_us)
+        ).isoformat()
+        payload["checksum_sha256"] = ""
+        observation = RGBDObservation.model_validate(payload)
+        updated_frame = replace(frame, observation_payload=observation.model_dump(mode="json"))
+        joins = tuple(
+            replace(row, checksum_sha256=observation.checksum_sha256)
+            if row.acquisition_id == frame.acquisition_id
+            else row
+            for row in records.joins
+        )
+        view = api().validate_raw_episode_v3(
+            envelope, replace(records, frames=(updated_frame, *records.frames[1:]), joins=joins)
+        )
+>       assert view.status == want, view.reasons
+E       AssertionError: ('frame_acquisition_time_join_mismatch',)
+E       assert 'INVALID' == 'COMPLETE'
+E         
+E         - COMPLETE
+E         + INVALID
+
+tests/test_raw_episode_v3.py:1357: AssertionError
+_ test_camera_original_missing_end_boundary_is_incomplete_without_inventing_a_return _
+
+    def test_camera_original_missing_end_boundary_is_incomplete_without_inventing_a_return():
+        envelope, records = fixture()
+        frame = records.frames[0]
+        intervals = tuple(
+            replace(
+                interval,
+                end=None,
+                end_step=None,
+                end_sim_time_s=None,
+                disposition="PARTIAL",
+                error="acquisition-return-not-recorded",
+            )
+            if interval.interval_id == frame.interval_id
+            else interval
+            for interval in records.intervals
+        )
+        view = api().validate_raw_episode_v3(envelope, replace(records, intervals=intervals))
+>       assert view.status == "INCOMPLETE", view.reasons
+E       AssertionError: ('partial_original_interval', 'acquisition_crossed_physics_state', 'before_frame_not_fresh_action_boundary')
+E       assert 'INVALID' == 'INCOMPLETE'
+E         
+E         - INCOMPLETE
+E         + INVALID
+
+tests/test_raw_episode_v3.py:1382: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_original_control_replay_uses_real_displacement_limit_before_bias_and_range[1.0-0.0-20.0-bounds0-0.1-COMPLETE]
+FAILED tests/test_raw_episode_v3.py::test_original_control_replay_uses_real_displacement_limit_before_bias_and_range[-1.0-0.0-20.0-bounds1--0.1-COMPLETE]
+FAILED tests/test_raw_episode_v3.py::test_original_control_replay_uses_real_displacement_limit_before_bias_and_range[1.0-0.0-20.0-bounds5-1.0-INVALID]
+FAILED tests/test_raw_episode_v3.py::test_actual_camera_timestamp_is_inside_the_original_acquisition_bracket[10-COMPLETE]
+FAILED tests/test_raw_episode_v3.py::test_camera_original_missing_end_boundary_is_incomplete_without_inventing_a_return
+5 failed, 6 passed, 61 deselected in 4.32s

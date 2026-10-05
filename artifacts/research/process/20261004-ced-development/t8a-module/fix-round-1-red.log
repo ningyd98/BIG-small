@@ -1,0 +1,325 @@
+..................FFF.FFFFFFFFF                                          [100%]
+=================================== FAILURES ===================================
+_____ test_review_partial_pool_has_explicit_incomplete_locked_v2_topology ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_partial_pool_has_e0')
+
+    def test_review_partial_pool_has_explicit_incomplete_locked_v2_topology(tmp_path):
+        report = api().prepare_protocol_evidence(inputs(tmp_path), tmp_path / "output")
+>       assert report.get("protocol_version") == "ced.research.v2"
+E       AssertionError: assert None == 'ced.research.v2'
+E        +  where None = <built-in method get of dict object at 0x7c32d7917000>('protocol_version')
+E        +    where <built-in method get of dict object at 0x7c32d7917000> = {'errors': [], 'g4_measured': False, 'integrity_valid': True, 'offline_only': True, ...}.get
+
+tests/test_protocol_evidence_generation.py:395: AssertionError
+___________ test_review_unbound_small_capture_cannot_be_formal_valid ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_unbound_small_capt0')
+
+    def test_review_unbound_small_capture_cannot_be_formal_valid(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["formal"][0]
+        pools["_evidence"]["opportunity_sources"][row["assignment_id"]] = str(opportunity(tmp_path, row))
+        api().prepare_protocol_evidence(pools, tmp_path / "output")
+        manifest = json.loads((tmp_path / "output" / "opportunities.json").read_text())
+>       assert manifest[0]["seed"]["oracle_label"] == "UNKNOWN"
+E       AssertionError: assert 'VALID' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + VALID
+
+tests/test_protocol_evidence_generation.py:406: AssertionError
+_____ test_review_incomplete_or_unjoined_recovery_cannot_count[trim_reset] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_incomplete_or_unjo0')
+change = 'trim_reset'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:431: AssertionError
+______ test_review_incomplete_or_unjoined_recovery_cannot_count[nan_time] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_incomplete_or_unjo2')
+change = 'nan_time'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:431: AssertionError
+____ test_review_incomplete_or_unjoined_recovery_cannot_count[fake_teacher] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_incomplete_or_unjo3')
+change = 'fake_teacher'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:431: AssertionError
+_ test_review_incomplete_or_unjoined_recovery_cannot_count[false_finger_contact] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_incomplete_or_unjo4')
+change = 'false_finger_contact'
+
+    @pytest.mark.parametrize("change", ["trim_reset", "trim_tail", "nan_time", "fake_teacher",
+                                        "false_finger_contact"])
+    def test_review_incomplete_or_unjoined_recovery_cannot_count(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        events = json.loads((source / "fault-events.json").read_text())
+        if change == "trim_reset":
+            observations = observations[20:]
+        elif change == "trim_tail":
+            observations = observations[:-20]
+        elif change == "nan_time":
+            events[0]["sim_time_s"] = float("nan")
+        elif change == "false_finger_contact":
+            events[-1]["reason"] = "finger_contact"
+        else:
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "NOOP", "start_step": 900, "end_step": 901}])
+        write_json(source / "physical-observations.json", observations)
+        write_json(source / "fault-events.json", events)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:431: AssertionError
+_ test_review_resealed_manifest_still_checks_semantics_and_coverage[duplicate] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_resealed_manifest_0')
+change = 'duplicate'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+        api().prepare_protocol_evidence(pools, output)
+        if change in {"duplicate", "foreign"}:
+            entries = json.loads((output / "generation-attempts.json").read_text())
+            extra = dict(entries[0])
+            if change == "foreign":
+                extra["assignment_id"] = "foreign"
+            entries.append(extra)
+            write_json(output / "generation-attempts.json", entries)
+        elif change == "changed_assignment":
+            rows = json.loads((output / "evidence-pools.json").read_text())
+            rows["formal"][0]["stratum_id"] = "UNREGISTERED"
+            write_json(output / "evidence-pools.json", rows)
+        reseal(output)
+        if change == "omitted_hash":
+            manifest = json.loads((output / "protocol-evidence.json").read_text())
+            manifest["payload_hashes"].pop("evidence-pools.json")
+            write_json(output / "protocol-evidence.json", manifest)
+>       assert api().verify_protocol_evidence(output)["status"] == "INVALID"
+E       AssertionError: assert 'INCOMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + INCOMPLETE
+
+tests/test_protocol_evidence_generation.py:455: AssertionError
+__ test_review_resealed_manifest_still_checks_semantics_and_coverage[foreign] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_resealed_manifest_1')
+change = 'foreign'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+        api().prepare_protocol_evidence(pools, output)
+        if change in {"duplicate", "foreign"}:
+            entries = json.loads((output / "generation-attempts.json").read_text())
+            extra = dict(entries[0])
+            if change == "foreign":
+                extra["assignment_id"] = "foreign"
+            entries.append(extra)
+            write_json(output / "generation-attempts.json", entries)
+        elif change == "changed_assignment":
+            rows = json.loads((output / "evidence-pools.json").read_text())
+            rows["formal"][0]["stratum_id"] = "UNREGISTERED"
+            write_json(output / "evidence-pools.json", rows)
+        reseal(output)
+        if change == "omitted_hash":
+            manifest = json.loads((output / "protocol-evidence.json").read_text())
+            manifest["payload_hashes"].pop("evidence-pools.json")
+            write_json(output / "protocol-evidence.json", manifest)
+>       assert api().verify_protocol_evidence(output)["status"] == "INVALID"
+E       AssertionError: assert 'INCOMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + INCOMPLETE
+
+tests/test_protocol_evidence_generation.py:455: AssertionError
+_ test_review_resealed_manifest_still_checks_semantics_and_coverage[omitted_hash] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_resealed_manifest_2')
+change = 'omitted_hash'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+        api().prepare_protocol_evidence(pools, output)
+        if change in {"duplicate", "foreign"}:
+            entries = json.loads((output / "generation-attempts.json").read_text())
+            extra = dict(entries[0])
+            if change == "foreign":
+                extra["assignment_id"] = "foreign"
+            entries.append(extra)
+            write_json(output / "generation-attempts.json", entries)
+        elif change == "changed_assignment":
+            rows = json.loads((output / "evidence-pools.json").read_text())
+            rows["formal"][0]["stratum_id"] = "UNREGISTERED"
+            write_json(output / "evidence-pools.json", rows)
+        reseal(output)
+        if change == "omitted_hash":
+            manifest = json.loads((output / "protocol-evidence.json").read_text())
+            manifest["payload_hashes"].pop("evidence-pools.json")
+            write_json(output / "protocol-evidence.json", manifest)
+>       assert api().verify_protocol_evidence(output)["status"] == "INVALID"
+E       AssertionError: assert 'INCOMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + INCOMPLETE
+
+tests/test_protocol_evidence_generation.py:455: AssertionError
+_ test_review_resealed_manifest_still_checks_semantics_and_coverage[changed_assignment] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_resealed_manifest_3')
+change = 'changed_assignment'
+
+    @pytest.mark.parametrize("change", ["duplicate", "foreign", "omitted_hash", "changed_assignment"])
+    def test_review_resealed_manifest_still_checks_semantics_and_coverage(tmp_path, change):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+        api().prepare_protocol_evidence(pools, output)
+        if change in {"duplicate", "foreign"}:
+            entries = json.loads((output / "generation-attempts.json").read_text())
+            extra = dict(entries[0])
+            if change == "foreign":
+                extra["assignment_id"] = "foreign"
+            entries.append(extra)
+            write_json(output / "generation-attempts.json", entries)
+        elif change == "changed_assignment":
+            rows = json.loads((output / "evidence-pools.json").read_text())
+            rows["formal"][0]["stratum_id"] = "UNREGISTERED"
+            write_json(output / "evidence-pools.json", rows)
+        reseal(output)
+        if change == "omitted_hash":
+            manifest = json.loads((output / "protocol-evidence.json").read_text())
+            manifest["payload_hashes"].pop("evidence-pools.json")
+            write_json(output / "protocol-evidence.json", manifest)
+>       assert api().verify_protocol_evidence(output)["status"] == "INVALID"
+E       AssertionError: assert 'INCOMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + INCOMPLETE
+
+tests/test_protocol_evidence_generation.py:455: AssertionError
+_________ test_review_existing_destination_is_rejected_before_writing __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_existing_destinati0')
+
+    def test_review_existing_destination_is_rejected_before_writing(tmp_path):
+        pools = inputs(tmp_path)
+        output = tmp_path / "output"
+        output.mkdir()
+        (output / "unrelated").write_text("preserve")
+>       with pytest.raises((ValueError, FileExistsError)):
+E       Failed: DID NOT RAISE any of (<class 'ValueError'>, <class 'FileExistsError'>)
+
+tests/test_protocol_evidence_generation.py:463: Failed
+__________________ test_review_dot_assignment_id_is_rejected ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-467/test_review_dot_assignment_id_0')
+
+    def test_review_dot_assignment_id_is_rejected(tmp_path):
+        pools = inputs(tmp_path)
+        pools["formal"][0]["assignment_id"] = ".."
+>       with pytest.raises(ValueError, match="identity"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_protocol_evidence_generation.py:471: Failed
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_review_partial_pool_has_explicit_incomplete_locked_v2_topology
+FAILED tests/test_protocol_evidence_generation.py::test_review_unbound_small_capture_cannot_be_formal_valid
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[trim_reset]
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[nan_time]
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[fake_teacher]
+FAILED tests/test_protocol_evidence_generation.py::test_review_incomplete_or_unjoined_recovery_cannot_count[false_finger_contact]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[duplicate]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[foreign]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[omitted_hash]
+FAILED tests/test_protocol_evidence_generation.py::test_review_resealed_manifest_still_checks_semantics_and_coverage[changed_assignment]
+FAILED tests/test_protocol_evidence_generation.py::test_review_existing_destination_is_rejected_before_writing
+FAILED tests/test_protocol_evidence_generation.py::test_review_dot_assignment_id_is_rejected
+12 failed, 19 passed in 6.35s

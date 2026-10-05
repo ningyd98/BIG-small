@@ -1,0 +1,60 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____________ test_ced_raw_layout_recomputes_failed_no_action_source ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-833/test_ced_raw_layout_recomputes0')
+
+    def test_ced_raw_layout_recomputes_failed_no_action_source(tmp_path: Path) -> None:
+        marker, directory = fixture_case(tmp_path)
+        physics = [
+            json.loads(row) for row in (directory / "raw-physics.jsonl").read_text().splitlines()
+        ]
+        controls = [
+            json.loads(row) for row in (directory / "raw-actuators.jsonl").read_text().splitlines()
+        ]
+        json_file(directory / "physical-observations.json", physics)
+        json_file(directory / "actuator-steps.json", controls)
+        assignment = {"scene": plain(marker.assignment)}
+        context = {
+            **plain(marker.context),
+            "schema_version": "rgbd.raw-episode.v2",
+            "reset_step": 0,
+            "reset_sim_time_s": 0,
+            "terminal_step": 121,
+            "terminal_sim_time_s": physics[-1]["sim_time_s"],
+            "reset_observation_hash": hashlib.sha256(
+                json.dumps(physics[0], sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+            "terminal_observation_hash": hashlib.sha256(
+                json.dumps(physics[-1], sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+        }
+        context.update(
+            assignment_hash=content_digest(assignment),
+            group_id=assignment["scene"]["group_id"],
+            scene_hash=SceneSpec.model_validate(assignment["scene"]).scene_hash,
+        )
+        json_file(directory / "context.json", context)
+        case = replace(
+            marker,
+            layout="CED_PILOT_RAW_V2",
+            assignment=assignment,
+            context=context,
+            original_file_hashes=hashes(directory),
+        )
+        assert registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION").status == "VALID"
+        paired = {"base_assignment": assignment, "period_s": 2.0, "stratum_id": "STATIC_RTT50"}
+        context["pilot_assignment_hash"] = content_digest(paired)
+        json_file(directory / "context.json", context)
+        case = replace(case, assignment=paired, context=context, original_file_hashes=hashes(directory))
+>       assert registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION").status == "VALID"
+E       AssertionError: assert 'INVALID' == 'VALID'
+E         
+E         - VALID
+E         + INVALID
+E         ? ++
+
+tests/test_research_risk_sources.py:356: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_ced_raw_layout_recomputes_failed_no_action_source
+1 failed, 29 deselected in 0.38s

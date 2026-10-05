@@ -1,0 +1,126 @@
+........................................................................ [ 29%]
+........................................................................ [ 59%]
+.........F.............................................................. [ 89%]
+..........................                                               [100%]
+=================================== FAILURES ===================================
+_____ test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges _____
+
+    def test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges():
+        from cloud_edge_robot_arm.datasets.rgbd.teacher import EpisodeRecorder, run_teacher_episode
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+        from tests.test_rgbd_teacher_smoke import _fixed_scene
+    
+        observed, actions, controls = [], [], []
+>       with MuJoCoCaptureSession(SimulatorConfig(camera_width=64, camera_height=64)) as session:
+
+tests/test_protocol_raw_observers.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/capture.py:57: in __enter__
+    self._backend.reset(
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:279: in reset
+    self._update_sensor_frame()
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:740: in _update_sensor_frame
+    self._camera = MuJoCoRGBDCamera(
+src/cloud_edge_robot_arm/simulation/mujoco/camera.py:27: in __init__
+    self._renderer = mujoco.Renderer(model, height=height, width=width)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <mujoco.renderer.Renderer object at 0x788555f258e0>
+model = <mujoco._structs.MjModel object at 0x788555bbaf30>, height = 64
+width = 64, max_geom = 10000, font_scale = <mjtFontScale.mjFONTSCALE_150: 150>
+
+      def __init__(
+          self,
+          model: _structs.MjModel,
+          height: int = 240,
+          width: int = 320,
+          max_geom: int = 10000,
+          font_scale: _enums.mjtFontScale = _enums.mjtFontScale.mjFONTSCALE_150,
+      ) -> None:
+        """Initializes a new `Renderer`.
+    
+        Args:
+          model: an MjModel instance.
+          height: image height in pixels.
+          width: image width in pixels.
+          max_geom: Optional integer specifying the maximum number of geoms that can
+            be rendered in the same scene. If None this will be chosen automatically
+            based on the estimated maximum number of renderable geoms in the model.
+          font_scale: Optional enum specifying the font scale for text.
+    
+        Raises:
+          ValueError: If `camera_id` is outside the valid range, or if `width` or
+            `height` exceed the dimensions of MuJoCo's offscreen framebuffer.
+        """
+        buffer_width = model.vis.global_.offwidth
+        buffer_height = model.vis.global_.offheight
+        if width > buffer_width:
+          raise ValueError(f"""
+    Image width {width} > framebuffer width {buffer_width}. Either reduce the image
+    width or specify a larger offscreen framebuffer in the model XML using the
+    clause:
+    <visual>
+      <global offwidth="my_width"/>
+    </visual>""".lstrip())
+    
+        if height > buffer_height:
+          raise ValueError(f"""
+    Image height {height} > framebuffer height {buffer_height}. Either reduce the
+    image height or specify a larger offscreen framebuffer in the model XML using
+    the clause:
+    <visual>
+      <global offheight="my_height"/>
+    </visual>""".lstrip())
+    
+        self._width = width
+        self._height = height
+        self._model = model
+    
+        self._scene = _structs.MjvScene(model=model, maxgeom=max_geom)
+        self._scene_option = _structs.MjvOption()
+    
+        self._rect = _render.MjrRect(0, 0, self._width, self._height)
+    
+        # Create render contexts.
+        # TODO(nimrod): Figure out why pytype doesn't like gl_context.GLContext
+        self._gl_context = None  # type: ignore
+        if gl_context.GLContext is not None:
+          self._gl_context = gl_context.GLContext(width, height)
+        if self._gl_context:
+          self._gl_context.make_current()
+>       self._mjr_context = _render.MjrContext(model, font_scale.value)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       mujoco.FatalError: an OpenGL platform library has not been loaded into this process, this most likely means that a valid OpenGL context has not been created before mjr_makeContext was called
+
+.venv/lib/python3.12/site-packages/mujoco/renderer.py:89: FatalError
+=============================== warnings summary ===============================
+tests/test_protocol_raw_observers.py::test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/glfw/__init__.py:917: GLFWError: (65550) b'X11: The DISPLAY environment variable is missing'
+    warnings.warn(message, GLFWError)
+
+tests/test_protocol_raw_observers.py::test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/glfw/__init__.py:917: GLFWError: (65537) b'The GLFW library is not initialized'
+    warnings.warn(message, GLFWError)
+
+tests/test_ced_runtime_binding.py::test_opencv_factory_preserves_native_unknown_in_canonical_conditions
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/_pytest/unraisableexception.py:67: PytestUnraisableExceptionWarning: Exception ignored in: <function Renderer.__del__ at 0x78855cd52c00>
+  
+  Traceback (most recent call last):
+    File "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/mujoco/renderer.py", line 340, in __del__
+      self.close()
+    File "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/mujoco/renderer.py", line 328, in close
+      if self._mjr_context:
+         ^^^^^^^^^^^^^^^^^
+  AttributeError: 'Renderer' object has no attribute '_mjr_context'. Did you mean: '_gl_context'?
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_protocol_raw_observers.py::test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges
+1 failed, 241 passed, 3 warnings in 63.65s (0:01:03)

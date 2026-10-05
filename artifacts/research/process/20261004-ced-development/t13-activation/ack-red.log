@@ -1,0 +1,187 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_actual_negative_mock_ack_is_preserved_without_claiming_execution[memory-stage] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d60295b00b0>
+boundary = 'stage'
+
+    @pytest.mark.parametrize("boundary", ["stage", "resume"])
+    def test_actual_negative_mock_ack_is_preserved_without_claiming_execution(replan_repo, boundary):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        class NegativeGateway(MockStagedGateway):
+            def stage(self, contract, repair_id):
+                ack = super().stage(contract, repair_id)
+                if boundary == "stage":
+                    self.stage_ack = ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+                return self.stage_ack
+            def resume(self, repair_id, activation_token):
+                ack = super().resume(repair_id, activation_token)
+                return ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+        gateway = NegativeGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+        assert result.record.start_receipt is None and result.record.executing_plan_version is None
+        if boundary == "stage":
+>           assert result.record.status == "REJECTED" and result.record.stage_ack == gateway.stage_ack
+E           AssertionError: assert ('PREPARED' == 'REJECTED'
+E             
+E             - REJECTED
+E             + PREPARED)
+
+tests/test_replan_activation.py:637: AssertionError
+_ test_actual_negative_mock_ack_is_preserved_without_claiming_execution[memory-resume] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d6025d31f40>
+boundary = 'resume'
+
+    @pytest.mark.parametrize("boundary", ["stage", "resume"])
+    def test_actual_negative_mock_ack_is_preserved_without_claiming_execution(replan_repo, boundary):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        class NegativeGateway(MockStagedGateway):
+            def stage(self, contract, repair_id):
+                ack = super().stage(contract, repair_id)
+                if boundary == "stage":
+                    self.stage_ack = ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+                return self.stage_ack
+            def resume(self, repair_id, activation_token):
+                ack = super().resume(repair_id, activation_token)
+                return ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+        gateway = NegativeGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+        assert result.record.start_receipt is None and result.record.executing_plan_version is None
+        if boundary == "stage":
+            assert result.record.status == "REJECTED" and result.record.stage_ack == gateway.stage_ack
+            assert result.record.activation_token == "" and result.record.accepted_plan_version is None
+            assert replan_repo.get_active_contract("task").plan_version == 1
+        else:
+            assert result.record.status == "ACTIVATED"
+>           assert result.record.resume_ack is not None and not result.record.resume_ack.accepted
+E           AssertionError: assert (None is not None)
+E            +  where None = ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task', plan_id='plan', robot_id='robot', pr...yload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), resume_ack=None, start_receipt=None).resume_ack
+E            +    where ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task', plan_id='plan', robot_id='robot', pr...yload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), resume_ack=None, start_receipt=None) = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task...0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['stage/resume acknowledgement identity mismatch']).record
+
+tests/test_replan_activation.py:642: AssertionError
+_ test_actual_negative_mock_ack_is_preserved_without_claiming_execution[sqlite-stage] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d6025d316a0>
+boundary = 'stage'
+
+    @pytest.mark.parametrize("boundary", ["stage", "resume"])
+    def test_actual_negative_mock_ack_is_preserved_without_claiming_execution(replan_repo, boundary):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        class NegativeGateway(MockStagedGateway):
+            def stage(self, contract, repair_id):
+                ack = super().stage(contract, repair_id)
+                if boundary == "stage":
+                    self.stage_ack = ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+                return self.stage_ack
+            def resume(self, repair_id, activation_token):
+                ack = super().resume(repair_id, activation_token)
+                return ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+        gateway = NegativeGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+        assert result.record.start_receipt is None and result.record.executing_plan_version is None
+        if boundary == "stage":
+>           assert result.record.status == "REJECTED" and result.record.stage_ack == gateway.stage_ack
+E           AssertionError: assert ('PREPARED' == 'REJECTED'
+E             
+E             - REJECTED
+E             + PREPARED)
+
+tests/test_replan_activation.py:637: AssertionError
+_ test_actual_negative_mock_ack_is_preserved_without_claiming_execution[sqlite-resume] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d6025d317f0>
+boundary = 'resume'
+
+    @pytest.mark.parametrize("boundary", ["stage", "resume"])
+    def test_actual_negative_mock_ack_is_preserved_without_claiming_execution(replan_repo, boundary):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        class NegativeGateway(MockStagedGateway):
+            def stage(self, contract, repair_id):
+                ack = super().stage(contract, repair_id)
+                if boundary == "stage":
+                    self.stage_ack = ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+                return self.stage_ack
+            def resume(self, repair_id, activation_token):
+                ack = super().resume(repair_id, activation_token)
+                return ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
+        gateway = NegativeGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+        assert result.record.start_receipt is None and result.record.executing_plan_version is None
+        if boundary == "stage":
+            assert result.record.status == "REJECTED" and result.record.stage_ack == gateway.stage_ack
+            assert result.record.activation_token == "" and result.record.accepted_plan_version is None
+            assert replan_repo.get_active_contract("task").plan_version == 1
+        else:
+            assert result.record.status == "ACTIVATED"
+>           assert result.record.resume_ack is not None and not result.record.resume_ack.accepted
+E           AssertionError: assert (None is not None)
+E            +  where None = ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task', plan_id='plan', robot_id='robot', pr...yload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), resume_ack=None, start_receipt=None).resume_ack
+E            +    where ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task', plan_id='plan', robot_id='robot', pr...yload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), resume_ack=None, start_receipt=None) = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task...0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=['stage/resume acknowledgement identity mismatch']).record
+
+tests/test_replan_activation.py:642: AssertionError
+__________ test_gateway_ancient_or_future_ack_cannot_activate[memory] __________
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d6025d33d70>
+
+    def test_gateway_ancient_or_future_ack_cannot_activate(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        class AncientGateway(MockStagedGateway):
+            def stage(self, contract, repair_id):
+                ack = super().stage(contract, repair_id)
+                self.stage_ack = ack.model_copy(update={"timestamp": NOW - timedelta(days=1)})
+                return self.stage_ack
+        gateway = AncientGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and replan_repo.get_active_contract("task").plan_version == 1
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:658: AssertionError
+__________ test_gateway_ancient_or_future_ack_cannot_activate[sqlite] __________
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d6025de84d0>
+
+    def test_gateway_ancient_or_future_ack_cannot_activate(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        class AncientGateway(MockStagedGateway):
+            def stage(self, contract, repair_id):
+                ack = super().stage(contract, repair_id)
+                self.stage_ack = ack.model_copy(update={"timestamp": NOW - timedelta(days=1)})
+                return self.stage_ack
+        gateway = AncientGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and replan_repo.get_active_contract("task").plan_version == 1
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:658: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_actual_negative_mock_ack_is_preserved_without_claiming_execution[memory-stage]
+FAILED tests/test_replan_activation.py::test_actual_negative_mock_ack_is_preserved_without_claiming_execution[memory-resume]
+FAILED tests/test_replan_activation.py::test_actual_negative_mock_ack_is_preserved_without_claiming_execution[sqlite-stage]
+FAILED tests/test_replan_activation.py::test_actual_negative_mock_ack_is_preserved_without_claiming_execution[sqlite-resume]
+FAILED tests/test_replan_activation.py::test_gateway_ancient_or_future_ack_cannot_activate[memory]
+FAILED tests/test_replan_activation.py::test_gateway_ancient_or_future_ack_cannot_activate[sqlite]
+6 failed, 39 deselected in 1.23s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k "negative_mock or ancient"
+Observed exit code: 1

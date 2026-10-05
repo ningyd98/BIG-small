@@ -1,0 +1,164 @@
+--- fix-round-2-baseline/source/src/cloud_edge_robot_arm/contracts/models.py
++++ source/src/cloud_edge_robot_arm/contracts/models.py
+@@ -691,6 +691,11 @@
+             or (token is not None and ack.details["activation_token"] != token)
+             or ack.timestamp.tzinfo is None
+             or ack.timestamp < self.created_at
++            or (
++                token is not None
++                and self.stage_ack is not None
++                and ack.timestamp < self.stage_ack.timestamp
++            )
+         ):
+             raise ValueError("stage/resume acknowledgement identity mismatch")
+ 
+@@ -765,6 +770,12 @@
+                 or receipt.command_seq != candidate.command_seq
+                 or receipt.activation_token != self.activation_token
+                 or receipt.payload_hash != self.payload_hash
++                or self.stage_ack is None
++                or receipt.started_at < self.stage_ack.timestamp
++                or (
++                    self.resume_ack is not None
++                    and receipt.started_at < self.resume_ack.timestamp
++                )
+                 or self.executing_plan_version != candidate.plan_version
+                 or self.executing_command_seq != candidate.command_seq
+                 or self.status != "EXECUTION_STARTED"
+--- fix-round-2-baseline/source/src/cloud_edge_robot_arm/cloud/replanning/apply_service.py
++++ source/src/cloud_edge_robot_arm/cloud/replanning/apply_service.py
+@@ -577,6 +577,9 @@
+             record.status != "ACTIVATED"
+             or receipt.started_at < record.created_at
+             or receipt.started_at > self._clock()
++            or record.stage_ack is None
++            or receipt.started_at < record.stage_ack.timestamp
++            or (record.resume_ack is not None and receipt.started_at < record.resume_ack.timestamp)
+         ):
+             raise ValueError("execution receipt is not current activated start")
+         started = self._transition(
+--- fix-round-2-baseline/source/tests/test_replan_activation.py
++++ source/tests/test_replan_activation.py
+@@ -1152,3 +1152,122 @@
+     assert bool(gateway.calls) is expected_staged
+     assert result.applied is expected_staged
+     assert replan_repo.get_active_contract("task").plan_version == (2 if expected_staged else 1)
++
++
++class MockTemporalGateway(MockStagedGateway):
++    """Software source-clock fixture; never invokes a real edge or robot."""
++
++    def __init__(self, clock_state, *, resume_offset=.75, resume_accepted=True, timeout=False):
++        super().__init__(resume_timeout=timeout)
++        self.clock_state = clock_state
++        self.resume_offset = resume_offset
++        self.resume_accepted = resume_accepted
++
++    def stage(self, contract, repair_id):
++        ack = super().stage(contract, repair_id)
++        self.clock_state["now"] = NOW + timedelta(seconds=.5)
++        self.stage_ack = ack.model_copy(update={"timestamp": self.clock_state["now"]}, deep=True)
++        return self.stage_ack
++
++    def resume(self, repair_id, activation_token):
++        self.clock_state["now"] = NOW + timedelta(seconds=1)
++        ack = super().resume(repair_id, activation_token)
++        return ack.model_copy(update={
++            "timestamp": NOW + timedelta(seconds=self.resume_offset),
++            "accepted": self.resume_accepted,
++            "status": "ACCEPTED" if self.resume_accepted else "REJECTED",
++        }, deep=True)
++
++
++def temporal_activation(repo, **gateway_options):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(repo)
++    clock_state = {"now": NOW}
++    service = ReplanApplyService(
++        repository=repo, dispatcher=MockTemporalGateway(clock_state, **gateway_options),
++        submit_guard=submit_proof, clock=lambda: clock_state["now"],
++    )
++    return service, service.apply(request=request, response=response)
++
++
++def temporal_receipt(record, offset):
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++
++    return ReplanExecutionReceipt(
++        repair_id=record.repair_id, task_id="task", plan_version=2, command_seq=2,
++        activation_token=record.activation_token, payload_hash=record.payload_hash,
++        event_id="MOCK-source-time-start", started_at=NOW + timedelta(seconds=offset),
++    )
++
++
++@pytest.mark.parametrize("start_offset", [0., .6])
++def test_start_cannot_precede_actual_stage_or_resume_ack(replan_repo, start_offset):
++    service, result = temporal_activation(replan_repo)
++    assert result.record.status == "ACTIVATED"
++    with pytest.raises(ValueError):
++        service.confirm_execution_started(temporal_receipt(result.record, start_offset))
++    saved = replan_repo.get_replan_apply_record(result.record.apply_id)
++    assert saved.status == "ACTIVATED" and saved.start_receipt is None
++    assert saved.stage_ack.timestamp == NOW + timedelta(seconds=.5)
++    assert saved.resume_ack.timestamp == NOW + timedelta(seconds=.75)
++
++
++@pytest.mark.parametrize("resume_accepted", [False, True])
++def test_actual_resume_ack_cannot_precede_stage_ack(replan_repo, resume_accepted):
++    _, result = temporal_activation(replan_repo, resume_offset=0.,
++                                    resume_accepted=resume_accepted)
++    assert result.applied and result.record.status == "ACTIVATED"
++    assert result.errors and result.record.resume_ack is None
++    assert replan_repo.get_active_contract("task").plan_version == 2
++    assert replan_repo.get_replan_apply_record(result.record.apply_id).resume_ack is None
++
++
++@pytest.mark.parametrize("start_offset", [0., .6])
++def test_repository_cannot_accept_rehashed_start_before_ack(replan_repo, start_offset):
++    _, result = temporal_activation(replan_repo)
++    record = result.record.model_copy(update={
++        "status": "EXECUTION_STARTED",
++        "start_receipt": temporal_receipt(result.record, start_offset),
++        "executing_plan_version": 2, "executing_command_seq": 2, "apply_hash": "",
++    }, deep=True)
++    record = record.model_copy(update={"apply_hash": record.content_hash()}, deep=True)
++    with pytest.raises(ValueError):
++        replan_repo.update_replan_apply_record_if_current(record, expected_status="ACTIVATED")
++    assert replan_repo.get_replan_apply_record(record.apply_id).status == "ACTIVATED"
++
++
++def test_repository_cannot_accept_rehashed_resume_before_stage(replan_repo):
++    _, result = temporal_activation(replan_repo, timeout=True)
++    assert result.record.resume_ack is None
++    record = result.record.model_copy(update={
++        "resume_ack": result.record.stage_ack.model_copy(update={"timestamp": NOW}),
++        "apply_hash": "",
++    }, deep=True)
++    record = record.model_copy(update={"apply_hash": record.content_hash()}, deep=True)
++    with pytest.raises(ValueError):
++        replan_repo.update_replan_apply_record_if_current(record, expected_status="ACTIVATED")
++    assert replan_repo.get_replan_apply_record(record.apply_id).resume_ack is None
++
++
++def test_start_at_actual_resume_time_remains_idempotent(replan_repo):
++    service, result = temporal_activation(replan_repo)
++    receipt = temporal_receipt(result.record, .75)
++    started = service.confirm_execution_started(receipt)
++    assert started.record.status == "EXECUTION_STARTED"
++    assert started.record.start_receipt.started_at == result.record.resume_ack.timestamp
++    assert service.confirm_execution_started(receipt) == started
++
++
++def test_resume_timeout_does_not_fabricate_ack_or_start_time(replan_repo):
++    service, result = temporal_activation(replan_repo, timeout=True)
++    saved = replan_repo.get_replan_apply_record(result.record.apply_id)
++    assert saved.status == "ACTIVATED" and saved.resume_ack is None and saved.start_receipt is None
++    with pytest.raises(ValueError):
++        service.confirm_execution_started(temporal_receipt(saved, 0.))
++    assert replan_repo.get_replan_apply_record(saved.apply_id).start_receipt is None
++    # An explicitly received MOCK source receipt after staging is evidence of
++    # start even if a transport lost the resume ACK; no timestamp is invented.
++    receipt = temporal_receipt(saved, .6)
++    started = service.confirm_execution_started(receipt)
++    assert started.record.start_receipt == receipt and started.record.resume_ack is None

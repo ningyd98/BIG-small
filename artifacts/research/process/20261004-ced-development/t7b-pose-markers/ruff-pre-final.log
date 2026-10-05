@@ -1,0 +1,45 @@
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_pose_marker_evidence.py:264:47
+    |
+262 | def test_positive_depth_with_zero_mask_is_already_rejected_by_registered_pair_validator():
+263 |     current=observation()
+264 |     mask=bytearray(current.valid_mask_bytes());mask[56*160+56]=0
+    |                                               ^
+265 |     altered=current.model_copy(update={'valid_mask_base64':base64.b64encode(mask).decode()})
+266 |     with pytest.raises(ValueError,match='valid mask must match positive finite depth'):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_pose_marker_evidence.py:284:42
+    |
+282 | def test_nonplanar_center_depth_cannot_produce_ordered_metric_pose():
+283 |     current=observation()
+284 |     depths=np.ones((160,160),dtype='<f4');depths[79:82,79:82]=1.2
+    |                                          ^
+285 |     current=RGBDObservation.model_validate({**current.model_dump(),
+286 |         'depth_float32_base64':base64.b64encode(depths.tobytes()).decode(),'checksum_sha256':''})
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_pose_marker_evidence.py:295:20
+    |
+293 |     asset=BASE.with_name('scene_pose_marker_v1.xml')
+294 |     registered=api().PoseMarkerRegistration(7,.0525,hashlib.sha256(asset.read_bytes()).hexdigest())
+295 |     observations=[];estimates=[]
+    |                    ^
+296 |     for directory in ('actual-capture-1','actual-capture-640'):
+297 |         data=json.loads((root/directory/'frame/observation-full.json').read_text())
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_pose_marker_evidence.py:299:37
+    |
+297 |         data=json.loads((root/directory/'frame/observation-full.json').read_text())
+298 |         current=RGBDObservation.model_validate(data)
+299 |         observations.append(current);estimates.append(api().detect_pose_marker(current,registered))
+    |                                     ^
+300 |     assert [(item.width,item.height) for item in observations]==[(320,240),(640,480)]
+301 |     assert observations[0].calibration_version!=observations[1].calibration_version
+    |
+
+Found 4 errors.

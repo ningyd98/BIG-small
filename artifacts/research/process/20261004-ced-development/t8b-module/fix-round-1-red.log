@@ -1,0 +1,123 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+____ test_initial_cannot_omit_resource_acceptance_after_other_source_gates _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-725/test_initial_cannot_omit_resou0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7170199b3800>
+
+    def test_initial_cannot_omit_resource_acceptance_after_other_source_gates(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.research import protocol_evidence
+    
+        module = api()
+        pools = {"SOFTWARE_ONLY": []}
+        cases = [{"stratum_id": "STATIC" if i < 40 else "SENSOR", "success": True,
+                  "safety_violation": False, "wall_duration_s": 20} for i in range(120)]
+        audit = {"available": True, "cases": cases, "pools": pools,
+                 "role_bundle_hash": "a" * 64, "selected_period_s": 2., "evidence_hash": "b" * 64}
+        monkeypatch.setattr(module, "audit_ced_pilot_stage", lambda *args: audit)
+        monkeypatch.setattr(protocol_evidence, "verify_protocol_evidence", lambda *args: {"valid": True})
+        monkeypatch.setattr(module, "read_json", lambda path: pools if path.name == "evidence-pools.json"
+                            else [{"scope": "SOFTWARE_ONLY"}])
+>       with pytest.raises(ValueError, match="resource"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_ced_initial_freeze.py:335: Failed
+____ test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[0] ____
+
+start = 0
+
+    @pytest.mark.parametrize("start", [0, 119, 120, 121, 180])
+    def test_actual_evaluation_start_cannot_hide_later_prefix_safety_events(start):
+        # The actual collector always starts evaluation after exactly 120 settling steps.
+        # A safety violation at121 must remain in the evaluated full original tail.
+        raw = [{"physics_step": i, "safety_violation": i == 121} for i in range(201)]
+        if start == 120:
+            chosen = api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+            assert any(r["safety_violation"] for r in raw[chosen:])
+        else:
+            with pytest.raises(ValueError):
+>               api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_ced_evaluation_start'
+
+tests/test_ced_initial_freeze.py:350: AttributeError
+___ test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[119] ___
+
+start = 119
+
+    @pytest.mark.parametrize("start", [0, 119, 120, 121, 180])
+    def test_actual_evaluation_start_cannot_hide_later_prefix_safety_events(start):
+        # The actual collector always starts evaluation after exactly 120 settling steps.
+        # A safety violation at121 must remain in the evaluated full original tail.
+        raw = [{"physics_step": i, "safety_violation": i == 121} for i in range(201)]
+        if start == 120:
+            chosen = api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+            assert any(r["safety_violation"] for r in raw[chosen:])
+        else:
+            with pytest.raises(ValueError):
+>               api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_ced_evaluation_start'
+
+tests/test_ced_initial_freeze.py:350: AttributeError
+___ test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[120] ___
+
+start = 120
+
+    @pytest.mark.parametrize("start", [0, 119, 120, 121, 180])
+    def test_actual_evaluation_start_cannot_hide_later_prefix_safety_events(start):
+        # The actual collector always starts evaluation after exactly 120 settling steps.
+        # A safety violation at121 must remain in the evaluated full original tail.
+        raw = [{"physics_step": i, "safety_violation": i == 121} for i in range(201)]
+        if start == 120:
+>           chosen = api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_ced_evaluation_start'
+
+tests/test_ced_initial_freeze.py:346: AttributeError
+___ test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[121] ___
+
+start = 121
+
+    @pytest.mark.parametrize("start", [0, 119, 120, 121, 180])
+    def test_actual_evaluation_start_cannot_hide_later_prefix_safety_events(start):
+        # The actual collector always starts evaluation after exactly 120 settling steps.
+        # A safety violation at121 must remain in the evaluated full original tail.
+        raw = [{"physics_step": i, "safety_violation": i == 121} for i in range(201)]
+        if start == 120:
+            chosen = api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+            assert any(r["safety_violation"] for r in raw[chosen:])
+        else:
+            with pytest.raises(ValueError):
+>               api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_ced_evaluation_start'
+
+tests/test_ced_initial_freeze.py:350: AttributeError
+___ test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[180] ___
+
+start = 180
+
+    @pytest.mark.parametrize("start", [0, 119, 120, 121, 180])
+    def test_actual_evaluation_start_cannot_hide_later_prefix_safety_events(start):
+        # The actual collector always starts evaluation after exactly 120 settling steps.
+        # A safety violation at121 must remain in the evaluated full original tail.
+        raw = [{"physics_step": i, "safety_violation": i == 121} for i in range(201)]
+        if start == 120:
+            chosen = api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+            assert any(r["safety_violation"] for r in raw[chosen:])
+        else:
+            with pytest.raises(ValueError):
+>               api()._ced_evaluation_start({"evaluation_start_step": start}, len(raw))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_ced_evaluation_start'
+
+tests/test_ced_initial_freeze.py:350: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_ced_initial_freeze.py::test_initial_cannot_omit_resource_acceptance_after_other_source_gates
+FAILED tests/test_ced_initial_freeze.py::test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[0]
+FAILED tests/test_ced_initial_freeze.py::test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[119]
+FAILED tests/test_ced_initial_freeze.py::test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[120]
+FAILED tests/test_ced_initial_freeze.py::test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[121]
+FAILED tests/test_ced_initial_freeze.py::test_actual_evaluation_start_cannot_hide_later_prefix_safety_events[180]
+6 failed, 26 deselected in 0.29s

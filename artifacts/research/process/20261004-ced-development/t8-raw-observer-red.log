@@ -1,0 +1,60 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+______ test_command_records_bind_actual_episode_step_and_requested_target ______
+
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x707c6fdf5040>
+
+    def test_command_records_bind_actual_episode_step_and_requested_target(backend):
+        backend.apply_joint_targets(JointCommand(positions=[3.] * 7))
+        backend.apply_gripper_command(GripperCommand(open=False))
+        commands = backend.command_records
+>       assert [row["command_seq"] for row in commands] == [1, 2]
+                ^^^^^^^^^^^^^^^^^^
+E       KeyError: 'command_seq'
+
+tests/test_protocol_raw_observers.py:15: KeyError
+________ test_actuator_observer_reads_pre_step_values_and_cannot_mutate ________
+
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x707c4771f8c0>
+
+    def test_actuator_observer_reads_pre_step_values_and_cannot_mutate(backend):
+        actual = []
+        model, data = backend._model, backend._data
+    
+        def observe(row):
+            actual.append(row)
+            assert row.physics_step == backend.total_physics_steps + 1
+            assert row.sim_time_s == backend.get_sim_time()
+            assert row.pre_joint_positions_rad == pytest.approx(data.qpos[:7])
+            assert row.pre_gravity_bias_nm == pytest.approx(data.qfrc_bias[:7])
+            assert row.control_rad == pytest.approx(data.ctrl[:7])
+            assert row.finger_control_targets_m == pytest.approx(data.ctrl[7:9])
+            assert row.actuator_gains == pytest.approx(model.actuator_gainprm[:7, 0])
+            with pytest.raises(RuntimeError, match="observer callback"):
+                backend.apply_joint_targets(JointCommand(positions=[0.] * 7))
+            with pytest.raises(FrozenInstanceError):
+                row.physics_step = 99
+    
+>       with backend.observe_actuator_steps(observe):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MuJoCoPhysicsBackend' object has no attribute 'observe_actuator_steps'
+
+tests/test_protocol_raw_observers.py:43: AttributeError
+_________ test_passive_step_and_actuator_observers_coexist_and_cleanup _________
+
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x707c46512180>
+
+    def test_passive_step_and_actuator_observers_coexist_and_cleanup(backend):
+        controls, observations = [], []
+>       with backend.observe_actuator_steps(controls.append), backend.observe_physics_steps(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            observations.append
+        ):
+E       AttributeError: 'MuJoCoPhysicsBackend' object has no attribute 'observe_actuator_steps'
+
+tests/test_protocol_raw_observers.py:51: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_raw_observers.py::test_command_records_bind_actual_episode_step_and_requested_target
+FAILED tests/test_protocol_raw_observers.py::test_actuator_observer_reads_pre_step_values_and_cannot_mutate
+FAILED tests/test_protocol_raw_observers.py::test_passive_step_and_actuator_observers_coexist_and_cleanup
+3 failed in 0.26s

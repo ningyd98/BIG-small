@@ -1,0 +1,1025 @@
+"""Phase 12 验收检查。
+
+验证逻辑按 smoke/validation/full 分层，确保 smoke 不会输出 full accepted 或项目最终封板。
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from collections import Counter
+from csv import DictReader
+from pathlib import Path
+from typing import Any
+
+from cloud_edge_robot_arm.final_evaluation.models import ACTUAL_RUN_COUNT_SEMANTICS, Phase12Profile
+from cloud_edge_robot_arm.final_evaluation.registry import (
+    PHASE12_EXPERIMENT_IDS,
+    build_experiment_plan,
+    final_experiment_registry,
+)
+
+SMOKE_STATUS = "PHASE12_EXPERIMENT_SUITE_READY"
+VALIDATION_STATUS = "PHASE12_VALIDATION_EXPERIMENTS_ACCEPTED"
+FULL_STATUS = "PHASE12_FINAL_EVALUATION_ACCEPTED"
+THESIS_STATUS = "PHASE12_THESIS_EVIDENCE_PACKAGE_ACCEPTED"
+THESIS_PIPELINE_STATUS = "PHASE12_THESIS_ASSET_PIPELINE_READY"
+VALIDATION_THESIS_STATUS = "PHASE12_VALIDATION_ANALYSIS_PACKAGE_ACCEPTED"
+VALIDATION_GAP_STATUS = "PHASE12_VALIDATION_PIPELINE_ACCEPTED_WITH_RUNTIME_EVIDENCE_GAPS"
+FULL_READY_STATUS = "PHASE12_FULL_PROFILE_READY"
+FULL_PREREQUISITES_READY_STATUS = "PHASE12_FULL_PROFILE_PREREQUISITES_READY"
+PROJECT_STATUS = "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED"
+REJECTED_STATUS = "PHASE12_REJECTED"
+
+
+def verify_phase12(
+    *,
+    profile: Phase12Profile,
+    artifact_root: Path,
+    output_dir: Path,
+    require_full: bool = False,
+) -> dict[str, Any]:
+    """检查 Phase 12 artifact 完整性、安全边界和状态声明。"""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    registry = final_experiment_registry()
+    plan = build_experiment_plan(profile)
+    raw_runs = _normalize_rows_for_profile(
+        profile, _read_jsonl(artifact_root / "runs/raw_runs.jsonl")
+    )
+    aggregate = _read_json(artifact_root / "aggregates/phase12_aggregate.json")
+    stats = _read_json(artifact_root / "statistics/phase12_statistics.json")
+    provenance = _read_json(artifact_root / "manifests/provenance.json")
+    synthetic_sample_count = sum(
+        1 for row in raw_runs if row.get("execution_source") == "SYNTHETIC_PIPELINE_SAMPLE"
+    )
+    actual_run_count = sum(1 for row in raw_runs if row.get("runtime_invoked") is True)
+    adapter_attempt_count = sum(1 for row in raw_runs if row.get("adapter_attempted") is True)
+    runtime_invocation_count = sum(1 for row in raw_runs if row.get("runtime_invoked") is True)
+    runtime_completion_count = sum(1 for row in raw_runs if row.get("runtime_completed") is True)
+    blocked_before_runtime_count = sum(
+        1
+        for row in raw_runs
+        if row.get("status") == "BLOCKED_BY_ENV"
+        and row.get("environment_check_completed") is True
+        and row.get("runtime_invoked") is not True
+    )
+    authoritative_count = sum(1 for row in raw_runs if row.get("authoritative_for_thesis") is True)
+    actual_backend_counts = dict(
+        Counter(str(row.get("backend")) for row in raw_runs if row.get("runtime_invoked"))
+    )
+    adapter_backend_counts = dict(
+        Counter(str(row.get("backend")) for row in raw_runs if row.get("adapter_attempted"))
+    )
+    runtime_backend_counts = dict(
+        Counter(str(row.get("backend")) for row in raw_runs if row.get("runtime_invoked"))
+    )
+    blocked_breakdown = dict(
+        Counter(
+            str(row.get("execution_source"))
+            for row in raw_runs
+            if row.get("status") == "BLOCKED_BY_ENV"
+        )
+    )
+    hardware_write_operations = _hardware_write_operations(raw_runs)
+    sqlite_binary_present_locally = _phase11_sqlite_binary_present_locally(artifact_root, raw_runs)
+    sqlite_local_hash_valid = _phase11_sqlite_local_hash_valid(artifact_root, raw_runs)
+    checks = {
+        "registry_complete": [item.experiment_id for item in registry] == PHASE12_EXPERIMENT_IDS,
+        "no_hardware_runner": not any(
+            "HARDWARE" in item.runner_kind or "REAL_ROBOT" in item.runner_kind for item in registry
+        ),
+        "raw_runs_exist": len(raw_runs) > 0,
+        "aggregate_exists": bool(aggregate),
+        "statistics_exists": bool(stats),
+        "plots_exist": (artifact_root / "plots/png/success_rate_comparison.png").exists()
+        and (artifact_root / "plots/svg/success_rate_comparison.svg").exists(),
+        "plot_index_semantics_valid": _plot_index_semantics_valid(artifact_root),
+        "tables_exist": (artifact_root / "tables/csv/t2_mode_baseline.csv").exists()
+        and (artifact_root / "tables/latex/t2_mode_baseline.tex").exists(),
+        "capability_table_semantics_valid": _capability_table_semantics_valid(
+            artifact_root,
+            aggregate,
+        ),
+        "thesis_docs_exist": (artifact_root / "thesis/experiment_results.md").exists(),
+        "demo_bundle_exists": (artifact_root / "demo_bundle/demo_summary.json").exists(),
+        "demo_summary_semantics_valid": _demo_summary_semantics_valid(
+            artifact_root,
+            profile,
+            aggregate,
+            authoritative_count,
+        ),
+        "thesis_docs_semantics_valid": _thesis_docs_semantics_valid(artifact_root, profile),
+        "failed_or_blocked_not_deleted": _failed_or_blocked_counts_match(raw_runs, aggregate),
+        "unsafe_command_execution_zero": aggregate.get("unsafe_command_execution_count") == 0,
+        "real_controller_contacted_false": _all_false(raw_runs, "real_controller_contacted"),
+        "hardware_motion_observed_false": _all_false(raw_runs, "hardware_motion_observed"),
+        "hardware_write_operations_empty": _all_empty(raw_runs, "hardware_write_operations"),
+        "no_sensitive_artifacts": not _contains_sensitive_text(artifact_root),
+        "source_tree_provenance_present": bool(provenance.get("source_tree_hash"))
+        and provenance.get("worktree_clean") is True,
+        "adapter_attempts_verified": _adapter_attempts_verified(profile, raw_runs),
+        "source_artifact_hash_verified": _source_artifact_hash_verified(artifact_root, raw_runs),
+        "sample_policy_satisfied": _sample_policy_satisfied(profile, raw_runs, plan),
+        "paired_run_completeness": _paired_run_completeness(raw_runs),
+        "paired_backend_acceptance_status_correct": _paired_acceptance_status_correct(
+            profile,
+            _paired_payload(artifact_root),
+        ),
+        "stress_task_count_satisfied": _stress_task_count_satisfied(profile, raw_runs),
+        "blocked_rows_runtime_invoked_false": _blocked_rows_runtime_invoked_false(raw_runs),
+        "runtime_receipt_exists": _runtime_receipts_exist(artifact_root, raw_runs),
+        "runtime_receipt_hash_valid": _runtime_receipt_hash_valid(artifact_root, raw_runs),
+        "phase11_sqlite_evidence_exists": _phase11_sqlite_evidence_exists(artifact_root, raw_runs),
+        "worker_lease_evidence_exists": _worker_lease_evidence_exists(artifact_root, raw_runs),
+        "terminal_artifact_paths_valid": _terminal_artifact_paths_valid_for_rows(
+            artifact_root, raw_runs
+        ),
+        "recovery_evidence_valid": _recovery_evidence_valid_for_rows(artifact_root, raw_runs),
+        "duplicate_competition_evidence_exists": _duplicate_competition_evidence_exists(
+            artifact_root, raw_runs
+        ),
+        "runner_invocation_count_exactly_one": _runner_invocation_count_exactly_one(
+            artifact_root, raw_runs
+        ),
+        "metric_provenance_complete": _metric_provenance_complete(raw_runs),
+        "placeholder_metrics_excluded": _placeholder_metrics_excluded(stats),
+    }
+    full_ready = (
+        profile == Phase12Profile.FULL
+        and len(raw_runs) >= plan.run_count
+        and bool(provenance.get("worktree_clean"))
+        and synthetic_sample_count == 0
+        and authoritative_count > 0
+        and all(checks.values())
+    )
+    validation_ready = (
+        profile == Phase12Profile.VALIDATION
+        and synthetic_sample_count == 0
+        and adapter_attempt_count == len(raw_runs)
+        and runtime_invocation_count < adapter_attempt_count
+        and runtime_completion_count > 0
+        and blocked_before_runtime_count > 0
+        and authoritative_count > 0
+        and all(checks.values())
+    )
+    smoke_ready = (
+        profile == Phase12Profile.SMOKE
+        and synthetic_sample_count == len(raw_runs)
+        and actual_run_count == 0
+        and checks["registry_complete"]
+        and checks["no_hardware_runner"]
+        and checks["raw_runs_exist"]
+        and checks["aggregate_exists"]
+        and checks["statistics_exists"]
+        and checks["plots_exist"]
+        and checks["plot_index_semantics_valid"]
+        and checks["tables_exist"]
+        and checks["capability_table_semantics_valid"]
+        and checks["demo_summary_semantics_valid"]
+        and checks["thesis_docs_semantics_valid"]
+        and checks["unsafe_command_execution_zero"]
+        and checks["real_controller_contacted_false"]
+        and checks["hardware_motion_observed_false"]
+        and checks["hardware_write_operations_empty"]
+        and checks["no_sensitive_artifacts"]
+    )
+    if require_full:
+        status = FULL_STATUS if full_ready else REJECTED_STATUS
+    elif validation_ready:
+        status = VALIDATION_STATUS
+    elif profile == Phase12Profile.VALIDATION and synthetic_sample_count == 0:
+        status = VALIDATION_GAP_STATUS
+    elif smoke_ready:
+        status = SMOKE_STATUS
+    else:
+        status = REJECTED_STATUS
+    thesis_ready = (
+        checks["thesis_docs_exist"]
+        and checks["thesis_docs_semantics_valid"]
+        and checks["demo_bundle_exists"]
+        and checks["demo_summary_semantics_valid"]
+        and checks["plots_exist"]
+        and checks["plot_index_semantics_valid"]
+        and checks["tables_exist"]
+        and checks["capability_table_semantics_valid"]
+    )
+    thesis_status = (
+        THESIS_STATUS
+        if full_ready and thesis_ready
+        else VALIDATION_THESIS_STATUS
+        if validation_ready and thesis_ready
+        else THESIS_PIPELINE_STATUS
+        if smoke_ready and thesis_ready
+        else "THESIS_PACKAGE_INCOMPLETE"
+    )
+    verifier_gated_authoritative_count = (
+        authoritative_count if thesis_status in {THESIS_STATUS, VALIDATION_THESIS_STATUS} else 0
+    )
+    # 中文说明：validation accepted 只代表 full profile 的前置证据语义已就绪，
+    # 并不表示 full profile 已执行或最终论文 evidence 已接受。这里拆分
+    # readiness 和 execution 字段，避免把 validation 结果误读成 full 结果。
+    full_profile_readiness_status = (
+        FULL_READY_STATUS
+        if full_ready
+        else FULL_PREREQUISITES_READY_STATUS
+        if validation_ready
+        else "PHASE12_FULL_PROFILE_NOT_READY"
+    )
+    full_profile_execution_status = (
+        "ACCEPTED" if full_ready else "REJECTED" if require_full else "NOT_RUN"
+    )
+    payload: dict[str, Any] = {
+        "status": status,
+        "project_status": PROJECT_STATUS if full_ready and thesis_ready else "NOT_CLOSED",
+        "thesis_status": thesis_status,
+        "profile": profile.value,
+        "checks": checks,
+        "run_count": len(raw_runs),
+        "expected_run_count": plan.run_count,
+        "seed_count": plan.seed_count,
+        "repetitions": plan.repetitions,
+        "registry_count": len(registry),
+        "full_profile_claimed": status == FULL_STATUS,
+        "synthetic_sample_count": synthetic_sample_count,
+        "actual_run_count_semantics": ACTUAL_RUN_COUNT_SEMANTICS,
+        "actual_run_count": actual_run_count,
+        "adapter_attempt_count": adapter_attempt_count,
+        "runtime_invocation_count": runtime_invocation_count,
+        "runtime_completion_count": runtime_completion_count,
+        "blocked_before_runtime_count": blocked_before_runtime_count,
+        "phase11_sqlite_binary_present_locally": sqlite_binary_present_locally,
+        "phase11_sqlite_local_hash_valid": sqlite_local_hash_valid,
+        "authoritative_thesis_run_count": authoritative_count,
+        "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
+        "actual_backend_counts": actual_backend_counts,
+        "adapter_backend_counts": adapter_backend_counts,
+        "runtime_backend_counts": runtime_backend_counts,
+        "adapter_attempts_verified": checks["adapter_attempts_verified"],
+        "source_artifact_hash_verified": checks["source_artifact_hash_verified"],
+        "sample_policy_satisfied": checks["sample_policy_satisfied"],
+        "paired_run_completeness": checks["paired_run_completeness"],
+        "paired_backend_experiment_accepted": _paired_payload(artifact_root).get(
+            "paired_backend_experiment_accepted", False
+        ),
+        "usable_authoritative_pair_count": _paired_payload(artifact_root).get(
+            "usable_authoritative_pair_count", 0
+        ),
+        "blocked_pair_count": _paired_payload(artifact_root).get("blocked_pair_count", 0),
+        "full_profile_readiness_status": full_profile_readiness_status,
+        "full_profile_execution_status": full_profile_execution_status,
+        "stress_task_count": sum(
+            1 for row in raw_runs if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"
+        ),
+        "blocked_environment_breakdown": blocked_breakdown,
+        # 中文说明：summary 顶层安全字段必须来自 raw runs 聚合，不能固定写安全值。
+        # 这样一旦上游 evidence 出现真实控制器接触或硬件写操作，最终报告会如实暴露。
+        "real_controller_contacted": _any_true(raw_runs, "real_controller_contacted"),
+        "hardware_motion_observed": _any_true(raw_runs, "hardware_motion_observed"),
+        "hardware_write_operations": hardware_write_operations,
+        "highest_real_hardware_acceptance_level": _highest_hardware_level(raw_runs),
+        "unsafe_command_execution_count": aggregate.get("unsafe_command_execution_count", 0),
+        "blocked_by_env_count": aggregate.get("blocked_by_env_count", 0),
+        "environment_blockers": ["ISAAC_SIM", "OLLAMA_RUNTIME"]
+        if aggregate.get("blocked_by_env_count", 0)
+        else [],
+    }
+    _write_json(
+        output_dir / "experiment_registry_verification.json",
+        {"registry_count": len(registry), "ids": PHASE12_EXPERIMENT_IDS},
+    )
+    _write_json(
+        output_dir / "run_integrity_verification.json",
+        {
+            "run_count": len(raw_runs),
+            "synthetic_sample_count": synthetic_sample_count,
+            "actual_run_count_semantics": ACTUAL_RUN_COUNT_SEMANTICS,
+            "actual_run_count": actual_run_count,
+            "adapter_attempt_count": adapter_attempt_count,
+            "runtime_invocation_count": runtime_invocation_count,
+            "runtime_completion_count": runtime_completion_count,
+            "blocked_before_runtime_count": blocked_before_runtime_count,
+            "phase11_sqlite_binary_present_locally": sqlite_binary_present_locally,
+            "phase11_sqlite_local_hash_valid": sqlite_local_hash_valid,
+            "authoritative_thesis_run_count": authoritative_count,
+            "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
+            "checks": checks,
+        },
+    )
+    _write_json(
+        output_dir / "statistics_verification.json",
+        {
+            "statistics_keys": sorted(stats),
+            "verifier_gated_authoritative_thesis_run_count": verifier_gated_authoritative_count,
+        },
+    )
+    _write_json(
+        output_dir / "thesis_assets_verification.json",
+        {
+            "thesis_ready": thesis_ready,
+            "thesis_docs_semantics_valid": checks["thesis_docs_semantics_valid"],
+        },
+    )
+    _write_json(
+        output_dir / "security_boundary_verification.json",
+        {
+            key: value
+            for key, value in checks.items()
+            if "hardware" in key or "sensitive" in key or "unsafe" in key
+        },
+    )
+    _write_json(output_dir / "phase12_summary.json", payload)
+    if profile == Phase12Profile.SMOKE:
+        _write_json(
+            output_dir / "phase12_smoke_status_correction.json",
+            {
+                "supersedes": "7b4c9af artifacts/phase12/verification/phase12_summary.json",
+                "previous_thesis_status": THESIS_STATUS,
+                "corrected_thesis_status": THESIS_PIPELINE_STATUS,
+                "correction_reason": (
+                    "Phase 12 smoke rows are synthetic pipeline samples, not final thesis evidence."
+                ),
+                "original_artifact_retained": True,
+            },
+        )
+    return payload
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return payload
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _plot_index_semantics_valid(root: Path) -> bool:
+    """检查图表索引是否明确区分真实 SVG 数据和 PNG 占位预览。"""
+
+    payload = _read_json(root / "plots/plot_index.json")
+    return (
+        payload.get("svg_data_source") == "aggregate_payload"
+        and payload.get("png_rendering_mode") == "placeholder_preview"
+        and payload.get("png_contains_metric_data") is False
+    )
+
+
+def _capability_table_semantics_valid(root: Path, aggregate: dict[str, Any]) -> bool:
+    """检查 T1 能力表是否与 aggregate 中的能力 evidence 保持一致。"""
+
+    rows = _read_csv_rows(root / "tables/csv/t1_system_capability.csv")
+    if not rows:
+        return False
+    by_capability = {str(row.get("capability", "")): row for row in rows}
+    statuses = aggregate.get("capability_statuses", {})
+    if not isinstance(statuses, dict) or not statuses:
+        return (
+            by_capability.get("Simulation Workbench", {}).get("status") == "UNKNOWN"
+            and by_capability.get("Model Control Center", {}).get("status") == "UNKNOWN"
+            and by_capability.get("Real Robot", {}).get("status") == "NOT_STARTED"
+        )
+    for capability, payload in statuses.items():
+        if not isinstance(payload, dict):
+            return False
+        row = by_capability.get(str(capability))
+        if row is None:
+            return False
+        expected_status = payload.get("status")
+        if expected_status and row.get("status") != str(expected_status):
+            return False
+        expected_hardware_claim = payload.get("hardware_claim")
+        if expected_hardware_claim and row.get("hardware_claim") != str(expected_hardware_claim):
+            return False
+    return True
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    return list(DictReader(path.read_text(encoding="utf-8").splitlines()))
+
+
+def _demo_summary_semantics_valid(
+    root: Path,
+    profile: Phase12Profile,
+    aggregate: dict[str, Any],
+    authoritative_count: int,
+) -> bool:
+    """检查答辩包 summary 没有夸大数据权威、样本数或硬件安全状态。"""
+
+    summary = _read_json(root / "demo_bundle/demo_summary.json")
+    if not summary:
+        return False
+    authority = str(summary.get("data_authority", ""))
+    allowed = _allowed_demo_authorities(profile)
+    if authority not in allowed:
+        return False
+    gated_count = _nonnegative_int(summary.get("verifier_gated_authoritative_thesis_run_count"))
+    if gated_count is None or gated_count > authoritative_count:
+        return False
+    if (
+        authority
+        in {
+            "PIPELINE_TEST_DATA",
+            "PENDING_VERIFICATION_DATA",
+            "VALIDATION_GAP_DATA",
+        }
+        and gated_count != 0
+    ):
+        return False
+    if summary.get("contains_secret") is not False:
+        return False
+    return _demo_hardware_claims_match(summary, _aggregate_hardware_claims(aggregate))
+
+
+def _allowed_demo_authorities(profile: Phase12Profile) -> set[str]:
+    if profile == Phase12Profile.FULL:
+        return {
+            "AUTHORITATIVE_THESIS_DATA",
+            "PENDING_VERIFICATION_DATA",
+            "VALIDATION_GAP_DATA",
+        }
+    if profile == Phase12Profile.VALIDATION:
+        return {
+            "VALIDATION_ACCEPTED_DATA",
+            "PENDING_VERIFICATION_DATA",
+            "VALIDATION_GAP_DATA",
+        }
+    return {"PIPELINE_TEST_DATA", "PENDING_VERIFICATION_DATA"}
+
+
+def _nonnegative_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if not isinstance(value, (str, bytes, bytearray, int, float)):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _aggregate_hardware_claims(aggregate: dict[str, Any]) -> dict[str, Any]:
+    claims = aggregate.get("hardware_claims", {})
+    if not isinstance(claims, dict):
+        claims = {}
+    return {
+        "real_controller_contacted": claims.get("real_controller_contacted") is True,
+        "hardware_motion_observed": claims.get("hardware_motion_observed") is True,
+        "hardware_write_operations": sorted(
+            str(item) for item in (claims.get("hardware_write_operations") or [])
+        ),
+        "highest_real_hardware_acceptance_level": str(
+            claims.get("highest_real_hardware_acceptance_level") or "NONE"
+        ),
+        "real_robot_validation": str(claims.get("real_robot_validation") or "NOT_STARTED"),
+    }
+
+
+def _demo_hardware_claims_match(
+    summary: dict[str, Any],
+    expected: dict[str, Any],
+) -> bool:
+    return (
+        summary.get("real_controller_contacted") is expected["real_controller_contacted"]
+        and summary.get("hardware_motion_observed") is expected["hardware_motion_observed"]
+        and sorted(str(item) for item in (summary.get("hardware_write_operations") or []))
+        == expected["hardware_write_operations"]
+        and str(summary.get("highest_real_hardware_acceptance_level") or "NONE")
+        == expected["highest_real_hardware_acceptance_level"]
+        and str(summary.get("real_robot_validation") or "NOT_STARTED")
+        == expected["real_robot_validation"]
+    )
+
+
+def _thesis_docs_semantics_valid(root: Path, profile: Phase12Profile) -> bool:
+    """检查 thesis markdown 没有越过当前 profile 的验收层级。"""
+
+    thesis_dir = root / "thesis"
+    docs = sorted(thesis_dir.glob("*.md"))
+    if not docs:
+        return False
+    content = "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in docs)
+    forbidden = {
+        "BIGSMALL_REAL_ROBOT_PROJECT_ACCEPTED",
+    }
+    if profile == Phase12Profile.SMOKE:
+        forbidden.update(
+            {
+                VALIDATION_STATUS,
+                VALIDATION_THESIS_STATUS,
+                FULL_STATUS,
+                THESIS_STATUS,
+                PROJECT_STATUS,
+                "AUTHORITATIVE_THESIS_DATA",
+            }
+        )
+    elif profile == Phase12Profile.VALIDATION:
+        forbidden.update(
+            {
+                FULL_STATUS,
+                THESIS_STATUS,
+                PROJECT_STATUS,
+                "AUTHORITATIVE_THESIS_DATA",
+                "BIGSMALL_SOFTWARE_AND_SIMULATION_PROJECT_ACCEPTED",
+            }
+        )
+    return not any(term in content for term in forbidden)
+
+
+def _normalize_rows_for_profile(
+    profile: Phase12Profile, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    if profile != Phase12Profile.SMOKE:
+        return rows
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        if "execution_source" in row:
+            normalized.append(row)
+            continue
+        updated = dict(row)
+        updated["execution_source"] = "SYNTHETIC_PIPELINE_SAMPLE"
+        updated["actual_runner_invoked"] = False
+        updated["adapter_attempted"] = False
+        updated["environment_check_completed"] = False
+        updated["runtime_invoked"] = False
+        updated["runtime_completed"] = False
+        updated["authoritative_for_thesis"] = False
+        updated["blocker_stage"] = ""
+        updated["source_artifact_path"] = ""
+        updated["source_artifact_hash"] = ""
+        updated["source_verifier"] = "phase12.synthetic_pipeline.legacy"
+        updated["environment_status"] = "READY"
+        updated["metric_provenance"] = {
+            "total_completion_time_ms": {
+                "source": "CONSTANT_PLACEHOLDER",
+                "source_field": "legacy phase12 smoke formula",
+                "source_artifact": "",
+                "unit": "ms",
+            }
+        }
+        normalized.append(updated)
+    return normalized
+
+
+def _all_false(rows: list[dict[str, Any]], key: str) -> bool:
+    return all(
+        row.get(key, False) is False and row.get("hardware_claims", {}).get(key, False) is False
+        for row in rows
+    )
+
+
+def _all_empty(rows: list[dict[str, Any]], key: str) -> bool:
+    return all(
+        row.get(key, []) == [] and row.get("hardware_claims", {}).get(key, []) == [] for row in rows
+    )
+
+
+def _any_true(rows: list[dict[str, Any]], key: str) -> bool:
+    return any(
+        row.get(key, False) is True or row.get("hardware_claims", {}).get(key, False) is True
+        for row in rows
+    )
+
+
+def _hardware_write_operations(rows: list[dict[str, Any]]) -> list[str]:
+    operations: set[str] = set()
+    for row in rows:
+        for value in (
+            row.get("hardware_write_operations"),
+            row.get("hardware_claims", {}).get("hardware_write_operations"),
+        ):
+            if isinstance(value, list):
+                operations.update(str(item) for item in value)
+    return sorted(operations)
+
+
+def _highest_hardware_level(rows: list[dict[str, Any]]) -> str:
+    order = {
+        "NONE": 0,
+        "LEVEL_0": 1,
+        "LEVEL_1": 2,
+        "LEVEL_2": 3,
+        "LEVEL_3": 4,
+        "LEVEL_4": 5,
+        "LEVEL_5": 6,
+        "LEVEL_6": 7,
+    }
+    highest = "NONE"
+    for row in rows:
+        for value in (
+            row.get("highest_real_hardware_acceptance_level"),
+            row.get("hardware_claims", {}).get("highest_real_hardware_acceptance_level"),
+        ):
+            level = str(value or "NONE")
+            if order.get(level, -1) > order.get(highest, -1):
+                highest = level
+    return highest
+
+
+def _failed_or_blocked_counts_match(rows: list[dict[str, Any]], aggregate: dict[str, Any]) -> bool:
+    """确认 aggregate 没有漏报 raw runs 中的失败、超时、安全停止或环境阻塞样本。"""
+
+    blocked = sum(1 for row in rows if row.get("status") == "BLOCKED_BY_ENV")
+    failed = sum(1 for row in rows if row.get("status") in {"FAILED", "TIMEOUT", "SAFETY_STOPPED"})
+    return (
+        aggregate.get("blocked_by_env_count") == blocked and aggregate.get("failed_count") == failed
+    )
+
+
+def _contains_sensitive_text(root: Path) -> bool:
+    pattern = re.compile(
+        r"(?i)(bearer\s+[A-Za-z0-9._-]+|api[_-]?key\s*[:=]|authorization\s*:|/home/[A-Za-z0-9._-]+/)"
+    )
+    binary_suffixes = {
+        ".db",
+        ".db-journal",
+        ".db-shm",
+        ".db-wal",
+        ".npy",
+        ".png",
+        ".pyc",
+        ".sqlite",
+        ".sqlite3",
+    }
+    for path in root.rglob("*"):
+        if not path.is_file() or path.suffix in binary_suffixes:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if pattern.search(text):
+            return True
+    return False
+
+
+def _adapter_attempts_verified(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:
+    """验证 adapter 尝试语义；真实 runtime 数量由 runtime_invoked 单独统计。"""
+
+    if profile == Phase12Profile.SMOKE:
+        return all(
+            row.get("runtime_invoked", row.get("actual_runner_invoked")) is False for row in rows
+        )
+    return bool(rows) and all(row.get("adapter_attempted") is True for row in rows)
+
+
+def _source_artifact_hash_verified(root: Path, rows: list[dict[str, Any]]) -> bool:
+    for row in rows:
+        if row.get("adapter_attempted") is not True:
+            continue
+        rel_path = str(row.get("source_artifact_path", ""))
+        expected = str(row.get("source_artifact_hash", ""))
+        if not rel_path or not expected:
+            return False
+        path = root / rel_path
+        if not path.exists():
+            return False
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            return False
+    return True
+
+
+def _sample_policy_satisfied(
+    profile: Phase12Profile, rows: list[dict[str, Any]], plan: Any
+) -> bool:
+    if profile == Phase12Profile.SMOKE:
+        return bool(rows) and all(row.get("seed") == 0 for row in rows)
+    by_experiment: dict[str, set[tuple[int, int]]] = {}
+    for row in rows:
+        by_experiment.setdefault(str(row.get("experiment_id")), set()).add(
+            (int(row.get("seed", -1)), int(row.get("repetition", -1)))
+        )
+    for experiment in plan.experiments:
+        observed = by_experiment.get(experiment.experiment_id, set())
+        seeds = {seed for seed, _ in observed}
+        repetitions = {rep for _, rep in observed}
+        if profile == Phase12Profile.VALIDATION:
+            if len(seeds) < experiment.validation_seed_count or len(repetitions) < 2:
+                return False
+        elif len(seeds) < experiment.sample_policy.seed_count:
+            return False
+    return True
+
+
+def _paired_run_completeness(rows: list[dict[str, Any]]) -> bool:
+    pairs: dict[str, set[str]] = {}
+    for row in rows:
+        if row.get("experiment_id") != "F15_MUJOCO_ISAAC_PAIRED":
+            continue
+        key = (
+            f"{row.get('scenario_id')}|{row.get('seed')}|"
+            f"{row.get('control_mode')}|{row.get('repetition')}"
+        )
+        pairs.setdefault(key, set()).add(str(row.get("backend")))
+    return not pairs or all(
+        {"MUJOCO", "ISAAC_SIM"}.issubset(backends) for backends in pairs.values()
+    )
+
+
+def _paired_acceptance_status_correct(profile: Phase12Profile, paired: dict[str, Any]) -> bool:
+    """按 profile 校验 paired backend 状态，避免 validation 阻塞被误作 full 通过。"""
+
+    accepted = paired.get("paired_backend_experiment_accepted", False) is True
+    if profile == Phase12Profile.VALIDATION:
+        return not accepted
+    if profile == Phase12Profile.FULL:
+        return accepted
+    return True
+
+
+def _stress_task_count_satisfied(profile: Phase12Profile, rows: list[dict[str, Any]]) -> bool:
+    count = sum(1 for row in rows if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY")
+    if profile == Phase12Profile.FULL:
+        return count >= 100
+    return count > 0 if rows else False
+
+
+def _blocked_rows_runtime_invoked_false(rows: list[dict[str, Any]]) -> bool:
+    return all(
+        row.get("runtime_invoked") is not True and row.get("runtime_completed") is not True
+        for row in rows
+        if row.get("status") == "BLOCKED_BY_ENV"
+    )
+
+
+def _runtime_receipts_exist(root: Path, rows: list[dict[str, Any]]) -> bool:
+    f20_rows = [row for row in rows if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"]
+    return bool(f20_rows) and all(_runtime_receipt(root, row) is not None for row in f20_rows)
+
+
+def _runtime_receipt_hash_valid(root: Path, rows: list[dict[str, Any]]) -> bool:
+    for row in rows:
+        if row.get("experiment_id") != "F20_STRESS_AND_RECOVERY":
+            continue
+        receipt = _runtime_receipt(root, row)
+        if receipt is None:
+            return False
+        expected = str(row.get("source_artifact_hash", ""))
+        path = root / str(row.get("source_artifact_path", ""))
+        if not expected or not path.exists():
+            return False
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            return False
+        if not _runtime_receipt_internal_hash_valid(receipt):
+            return False
+    return True
+
+
+def _phase11_sqlite_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(
+        root,
+        rows,
+        _sqlite_evidence_metadata_present,
+    )
+
+
+def _phase11_sqlite_binary_present_locally(root: Path, rows: list[dict[str, Any]]) -> bool:
+    """报告本机是否存在被 .gitignore 排除的 Phase 11 SQLite 二进制。"""
+
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: _sqlite_evidence_path(root, receipt).exists(),
+    )
+
+
+def _phase11_sqlite_local_hash_valid(root: Path, rows: list[dict[str, Any]]) -> bool:
+    """若本机 SQLite 二进制存在，则校验 hash；不存在时不影响仓库 evidence 验收。"""
+
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: (
+            not _sqlite_evidence_path(root, receipt).exists()
+            or _sqlite_evidence_hash_valid(root, receipt)
+        ),
+    )
+
+
+def _worker_lease_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: int(receipt.get("worker_lease_evidence", {}).get("lease_count", 0)) >= 1,
+    )
+
+
+def _terminal_artifact_paths_valid_for_rows(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(root, rows, _terminal_artifact_paths_valid)
+
+
+def _terminal_artifact_paths_valid(receipt: dict[str, Any]) -> bool:
+    main = receipt.get("main_job", {})
+    if not isinstance(main, dict):
+        return False
+    artifacts = main.get("artifact_paths", {})
+    if not isinstance(artifacts, dict):
+        return False
+    required = {
+        "run_manifest",
+        "job",
+        "runtime_job",
+        "attempts",
+        "leases",
+        "lease_history",
+        "events",
+        "state_transitions",
+        "metrics",
+        "result",
+        "provenance",
+        "resource_usage",
+        "cancellation",
+        "recovery",
+        "evidence_consistency",
+    }
+    return (
+        main.get("terminal_artifacts_present") is True
+        and main.get("evidence_consistency_present") is True
+        and required.issubset(set(artifacts))
+        and all(str(artifacts[key]) for key in required)
+    )
+
+
+def _recovery_evidence_valid_for_rows(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(root, rows, _recovery_evidence_valid)
+
+
+def _recovery_evidence_valid(receipt: dict[str, Any]) -> bool:
+    recovery = receipt.get("recovery_evidence", {})
+    if not isinstance(recovery, dict):
+        return False
+    transitions = recovery.get("transitions", [])
+    if not isinstance(transitions, list):
+        return False
+    required = [
+        ["RUNNING", "INTERRUPTED"],
+        ["INTERRUPTED", "RECOVERY_PENDING"],
+        ["RECOVERY_PENDING", "QUEUED"],
+    ]
+    return (
+        recovery.get("lease_expired") is True
+        and int(recovery.get("attempt_count", 0)) >= 2
+        and recovery.get("final_status") == "SUCCEEDED"
+        and all(transition in transitions for transition in required)
+    )
+
+
+def _duplicate_competition_evidence_exists(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(root, rows, _duplicate_competition_evidence_valid)
+
+
+def _duplicate_competition_evidence_valid(receipt: dict[str, Any]) -> bool:
+    duplicate = receipt.get("duplicate_competition_evidence", {})
+    if not isinstance(duplicate, dict):
+        return False
+    winner = str(duplicate.get("lease_winner", ""))
+    loser = str(duplicate.get("lease_loser", ""))
+    workers = duplicate.get("competing_worker_ids", [])
+    if not isinstance(workers, list):
+        return False
+    return (
+        bool(winner)
+        and bool(loser)
+        and winner != loser
+        and winner in workers
+        and loser in workers
+        and duplicate.get("runner_invocation_count") == 1
+        and int(duplicate.get("attempt_count", 0)) == 1
+        and int(duplicate.get("lease_count", 0)) == 1
+        and duplicate.get("final_status") == "SUCCEEDED"
+    )
+
+
+def _runner_invocation_count_exactly_one(root: Path, rows: list[dict[str, Any]]) -> bool:
+    return _all_f20_receipts(
+        root,
+        rows,
+        lambda receipt: (
+            receipt.get("duplicate_competition_evidence", {}).get("runner_invocation_count") == 1
+        ),
+    )
+
+
+def _metric_provenance_complete(rows: list[dict[str, Any]]) -> bool:
+    for row in rows:
+        provenance = row.get("metric_provenance")
+        if not isinstance(provenance, dict) or "total_completion_time_ms" not in provenance:
+            return False
+        for metric in provenance.values():
+            if not isinstance(metric, dict) or not metric.get("source"):
+                return False
+            source = str(metric.get("source"))
+            if source in {"MEASURED", "EVENT_DERIVED", "ADAPTER_DERIVED"} and (
+                not metric.get("source_field")
+                or not metric.get("source_artifact")
+                or not metric.get("unit")
+            ):
+                return False
+    return True
+
+
+def _placeholder_metrics_excluded(stats: dict[str, Any]) -> bool:
+    for section_name in ("group_statistics", "backend_statistics"):
+        section = stats.get(section_name, {})
+        if not isinstance(section, dict):
+            continue
+        for payload in section.values():
+            if not isinstance(payload, dict):
+                continue
+            if (
+                "valid_metric_sample_count" not in payload
+                or "excluded_metric_sample_count" not in payload
+            ):
+                return False
+            if payload.get("valid_metric_sample_count", 0) < 0:
+                return False
+            if payload.get("excluded_metric_sample_count", 0) < 0:
+                return False
+            if payload.get("sample_count", 0) != (
+                payload.get("valid_metric_sample_count", 0)
+                + payload.get("excluded_metric_sample_count", 0)
+            ):
+                return False
+    return True
+
+
+def _paired_payload(root: Path) -> dict[str, Any]:
+    payload = _read_json(root / "paired/paired_summary.json")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _runtime_receipt(root: Path, row: dict[str, Any]) -> dict[str, Any] | None:
+    rel_path = str(row.get("source_artifact_path", ""))
+    if not rel_path:
+        return None
+    path = root / rel_path
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else None
+
+
+def _runtime_receipt_internal_hash_valid(receipt: dict[str, Any]) -> bool:
+    expected = str(receipt.get("runtime_receipt_hash", ""))
+    if not expected:
+        return False
+    payload = dict(receipt)
+    payload.pop("runtime_receipt_hash", None)
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest() == expected
+
+
+def _sqlite_evidence_hash_valid(root: Path, receipt: dict[str, Any]) -> bool:
+    if not _sqlite_evidence_metadata_present(receipt):
+        return False
+    path = _sqlite_evidence_path(root, receipt)
+    if not path.exists():
+        return True
+    expected = str(receipt.get("sqlite_evidence", {}).get("sha256", ""))
+    return hashlib.sha256(path.read_bytes()).hexdigest() == expected
+
+
+def _sqlite_evidence_metadata_present(receipt: dict[str, Any]) -> bool:
+    evidence = receipt.get("sqlite_evidence", {})
+    if not isinstance(evidence, dict) or evidence.get("exists") is not True:
+        return False
+    rel_path = str(evidence.get("relative_path", ""))
+    expected = str(evidence.get("sha256", ""))
+    tables = evidence.get("tables")
+    return bool(rel_path and expected and isinstance(tables, dict) and tables)
+
+
+def _sqlite_evidence_path(root: Path, receipt: dict[str, Any]) -> Path:
+    evidence = receipt.get("sqlite_evidence", {})
+    rel_path = str(evidence.get("relative_path", "")) if isinstance(evidence, dict) else ""
+    return root / rel_path
+
+
+def _all_f20_receipts(root: Path, rows: list[dict[str, Any]], predicate: Any) -> bool:
+    f20_rows = [row for row in rows if row.get("experiment_id") == "F20_STRESS_AND_RECOVERY"]
+    if not f20_rows:
+        return False
+    for row in f20_rows:
+        receipt = _runtime_receipt(root, row)
+        if receipt is None or not predicate(receipt):
+            return False
+    return True
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, sort_keys=True, indent=2, default=str) + "\n", encoding="utf-8"
+    )

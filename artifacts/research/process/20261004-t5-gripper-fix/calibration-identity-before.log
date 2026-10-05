@@ -1,0 +1,140 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_contract_rejects_a_draft_from_another_model_snapshot ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76088ddb7350>
+
+    def test_contract_rejects_a_draft_from_another_model_snapshot(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cloud_edge_robot_arm.vision.execution import grounded_contract
+    
+        _decision(monkeypatch, "red cube")
+        request = _request("mujoco_camera")
+        old = resolve_visual_planner(
+            _snapshot(image_size=(64, 64), grasp_profile="mujoco_upright_box_v1")
+        )
+        current = _snapshot(image_size=(64, 64), grasp_profile="mujoco_upright_box_v2")
+        policy = ExecutionPolicy(instruction="Move the red box", model_snapshot_hash=current.digest())
+        with pytest.raises(ValueError, match="snapshot"):
+>           grounded_contract(old.plan(request), request.observation, policy)
+
+tests/test_rgbd_gripper_calibration.py:82: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+draft = PlannerDraft(raw_text='{"target_pixel": [32, 32], "destination_pixel": [8, 8], "target_label": "red cube", "reported_c...': -0.014999999664723873, 'z': 1.0800000429153442}, 'grounded_destination': {'x': -0.734375, 'y': 0.734375, 'z': 1.0}})
+observation = RGBDObservation(frame_id='scope-test', observation_id='scope-test', captured_at=datetime.datetime(2026, 10, 4, 5, 57, ..._id=None, calibration_version=None, checksum_sha256='28a67be7aac5055829aed887c478b701caac36d35643f34199112e65a1226dcf')
+policy = ExecutionPolicy(instruction='Move the red box', scope='VISION_CLOSED_LOOP', timeout_s=120.0, model_snapshot_hash='61b2...0, max_no_progress=3, deadline_s=120.0), output_dir=None, supervision_period_s=None, advance_physics_during_wait=False)
+
+    def grounded_contract(
+        draft: PlannerDraft, observation: RGBDObservation, policy: ExecutionPolicy
+    ) -> TaskContract:
+        """Bind validated planner intent to calibrated RGB-D geometry, not scene truth."""
+        evidence = draft.observation_evidence or {}
+        if evidence.get("top_grasp_offset_status") != "CALIBRATED_RGBD_TOP_GRASP_V1":
+            raise ValueError("explicit calibrated RGB-D grasp TCP is required")
+        asset_hash = calibration_asset_sha256(evidence.get("grasp_profile"))
+        if asset_hash is None or evidence.get("grasp_calibration_asset_sha256") != asset_hash:
+            raise ValueError("grasp calibration asset mismatch")
+        Pose.model_validate(evidence["resolved_top_grasp_tcp"])
+        Pose.model_validate(evidence["grounded_destination"])
+        if draft.parse_error or not draft.parsed_json or draft.parsed_json.get("_sentinel"):
+            raise ValueError("planner did not produce an executable visual contract")
+        now = datetime.now(UTC)
+        payload = dict(draft.parsed_json)
+        payload.update(
+            task_id=observation.episode_id,
+            plan_version=1,
+            command_seq=1,
+            timestamp=now,
+            issued_at=now,
+            valid_until=now + timedelta(seconds=policy.timeout_s),
+        )
+        payload["task_target"] = {
+            **payload["task_target"],
+            "object_id": "object",
+            "target_region_id": "target_region",
+        }
+>       contract = TaskContract.model_validate(payload)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for TaskContract
+E       task_id
+E         Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+E           For further information visit https://errors.pydantic.dev/2.13/v/string_type
+
+src/cloud_edge_robot_arm/vision/execution.py:437: ValidationError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76088ddb7350>
+
+    def test_contract_rejects_a_draft_from_another_model_snapshot(
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from cloud_edge_robot_arm.vision.execution import grounded_contract
+    
+        _decision(monkeypatch, "red cube")
+        request = _request("mujoco_camera")
+        old = resolve_visual_planner(
+            _snapshot(image_size=(64, 64), grasp_profile="mujoco_upright_box_v1")
+        )
+        current = _snapshot(image_size=(64, 64), grasp_profile="mujoco_upright_box_v2")
+        policy = ExecutionPolicy(instruction="Move the red box", model_snapshot_hash=current.digest())
+>       with pytest.raises(ValueError, match="snapshot"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'snapshot'
+E        Input: '1 validation error for TaskContract\ntask_id\n  Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_type'
+
+tests/test_rgbd_gripper_calibration.py:81: AssertionError
+_____ test_visual_episode_rejects_old_geometry_loaded_with_new_asset_path ______
+
+    def test_visual_episode_rejects_old_geometry_loaded_with_new_asset_path() -> None:
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+    
+        config = SimulatorConfig(camera_width=64, camera_height=64)
+        xml = Path(config.model_path).read_text().replace("0.075 0.009 0", "0.075 0.04 0")
+        xml = xml.replace("0.075 -0.009 0", "0.075 -0.04 0")
+        backend = MuJoCoPhysicsBackend()
+        backend.initialize(config, model_xml=xml)
+        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=31))
+        planner = resolve_visual_planner(_snapshot(grasp_profile="mujoco_upright_box_v2"))
+        assert planner.model_snapshot is not None
+        policy = ExecutionPolicy(instruction="Move the red box",
+                                 model_snapshot_hash=planner.model_snapshot.digest())
+        try:
+            with MuJoCoCaptureSession(config, backend=backend) as capture:
+>               with pytest.raises(ValueError, match="geometry"):
+E               Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_gripper_calibration.py:106: Failed
+____________ test_scene_summary_rejects_mixed_calibration_versions _____________
+
+    def test_scene_summary_rejects_mixed_calibration_versions() -> None:
+        from scripts.evaluate_rgbd_model_scenes import build_assignments, summarize_results
+        from tests.test_rgbd_model_scene_eval import _record
+    
+        assignments = build_assignments()
+        records = [_record(case) for case in assignments["cases"]]
+        asset_hash = hashlib.sha256(Path("assets/robots/franka_panda/scene.xml").read_bytes()).hexdigest()
+        for record in records:
+            record["attempt"]["observation_evidence"].update(
+                grasp_profile="mujoco_upright_box_v2", grasp_calibration_asset_sha256=asset_hash,
+            )
+        assert summarize_results(assignments, records)["all_cases_pass"]
+        records[0]["attempt"]["observation_evidence"].update(
+            grasp_profile="mujoco_upright_box_v1",
+            grasp_calibration_asset_sha256=(
+                "182fb2bc068ba44de394622f819ae444eb7fbe51df5c5311591a8abb97bf6a08"
+            ),
+        )
+        summary = summarize_results(assignments, records)
+>       assert not summary["all_cases_pass"]
+E       assert not True
+
+tests/test_rgbd_gripper_calibration.py:132: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_gripper_calibration.py::test_contract_rejects_a_draft_from_another_model_snapshot
+FAILED tests/test_rgbd_gripper_calibration.py::test_visual_episode_rejects_old_geometry_loaded_with_new_asset_path
+FAILED tests/test_rgbd_gripper_calibration.py::test_scene_summary_rejects_mixed_calibration_versions
+3 failed, 4 deselected in 0.43s

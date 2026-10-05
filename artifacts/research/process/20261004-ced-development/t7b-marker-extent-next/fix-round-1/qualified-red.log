@@ -1,0 +1,36 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_direct_registration_rejects_all_nonconcrete_or_forged_nested_marker_carriers _
+
+    def test_direct_registration_rejects_all_nonconcrete_or_forged_nested_marker_carriers():
+        # Break caught: a marker alias or forged nested field changes geometry without valid registration.
+        observation = RGBDObservation.model_validate_json(STATIC.read_text())
+        result, registration = replay(observation)
+        assert result.status == "OBSERVED_CANDIDATE" and registration.sources_valid()
+        marker = registration.pose_marker
+        mutable = SimpleNamespace(**asdict(marker), digest=lambda: marker.digest())
+    
+        class MarkerSubclass(PoseMarkerRegistration):
+            pass
+    
+        subclass = MarkerSubclass(**asdict(marker))
+        forged = replace(marker)
+        object.__setattr__(forged, "dictionary", "FORGED_DICTIONARY")
+        accepted = []
+        for name, carrier in (("mutable", mutable), ("subclass", subclass), ("forged", forged)):
+            try:
+                replace(registration, pose_marker=carrier)
+            except (ValueError, TypeError):
+                continue
+            accepted.append(name)
+>       assert accepted == [], f"unsupported nested marker carriers were accepted: {accepted}"
+E       AssertionError: unsupported nested marker carriers were accepted: ['mutable', 'subclass', 'forged']
+E       assert ['mutable', '...ss', 'forged'] == []
+E         
+E         Left contains 3 more items, first extra item: 'mutable'
+E         Use -v to get more diff
+
+tests/test_marker_extent_integration.py:207: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_marker_extent_integration.py::test_direct_registration_rejects_all_nonconcrete_or_forged_nested_marker_carriers
+1 failed, 7 deselected in 0.82s

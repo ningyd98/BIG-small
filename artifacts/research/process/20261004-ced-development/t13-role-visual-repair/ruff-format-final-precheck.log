@@ -1,0 +1,64 @@
+UP031 Use format specifiers instead of percent format
+   --> tests/test_role_visual_repair.py:482:23
+    |
+480 |     adapter, wire, planner, _, _, request, *_rest, ledger = setup(tmp_path, monkeypatch)
+481 |     secret = planner._api_key
+482 |     encoded = "".join("\\u%04x" % ord(c) for c in secret).encode()
+    |                       ^^^^^^^^^^^^^^^^^^
+483 |     seen = []
+484 |     planner.raw_transport_observer = lambda phase, path, data: seen.append((phase, path, data))
+    |
+help: Replace with format specifiers
+
+E501 Line too long (119 > 100)
+   --> tests/test_role_visual_repair.py:516:101
+    |
+515 | @pytest.mark.parametrize('changed', ['expired', 'source_drift'])
+516 | def test_post_wire_revalidation_rejects_expiration_or_source_drift_without_second_call(tmp_path, monkeypatch, changed):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+517 |     adapter, wire, _, _, _, request, *_ = setup(tmp_path, monkeypatch)
+518 |     def change(_):
+    |
+
+E501 Line too long (108 > 100)
+   --> tests/test_role_visual_repair.py:548:101
+    |
+548 | def test_existing_service_creates_candidate_only_without_ack_activation_or_execution(tmp_path, monkeypatch):
+    |                                                                                                     ^^^^^^^^
+549 |     from cloud_edge_robot_arm.cloud.replanning.service import LocalReplanningService
+550 |     from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import StepDependency
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_role_visual_repair.py:562:46
+    |
+560 |     checkpoint = repo.get_latest_execution_checkpoint('task')
+561 |     assert active is not None and checkpoint is not None
+562 |     data = checkpoint.model_dump(mode='json'); data['checkpoint_hash'] = ''
+    |                                              ^
+563 |     online = replace(source.context.online_evidence, context_hash=replan_payload_hash(data))
+564 |     context = replace(source.context, active_contract=active.contract, checkpoint=checkpoint,
+    |
+
+E501 Line too long (117 > 100)
+   --> tests/test_role_visual_repair.py:585:101
+    |
+585 | @pytest.mark.parametrize('key', ['joint_positions','trajectory','disable_safety','bypass_safety','ignore_collision'])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+586 | def test_grounding_cannot_embed_execution_or_safety_override(tmp_path, monkeypatch, key):
+587 |     from cloud_edge_robot_arm.contracts.models import replan_payload_hash
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_role_visual_repair.py:606:101
+    |
+604 |         del intent, observation
+605 |         context.active_contract.steps.clear()
+606 |         return api().GroundedRepairStep(original,source.action_evidence[original.step_id],binding_hash,
+    |                                                                                                     ^^^
+607 |             replan_payload_hash(original))
+608 |     adapter.grounding_provider = grounding
+    |
+
+Found 7 errors (1 fixed, 6 remaining).
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

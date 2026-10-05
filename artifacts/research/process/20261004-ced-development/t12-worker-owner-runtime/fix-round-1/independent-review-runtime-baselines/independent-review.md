@@ -1,0 +1,27 @@
+# Independent review: worker-owner fix1 full boundaries
+
+Verdict: **REQUEST_CHANGES**. The original lexical alias/../root finding is closed. A separate reproducible P2 still bypasses the advertised current source-byte hash check through a caller-supplied SHA string subclass. This review grants no actual owner, INITIAL, METHOD, native, continuous, physical or execution admission.
+
+## P2: SHA string subclass can override the byte comparison
+
+Location: frozen `src/cloud_edge_robot_arm/vision/worker_owner.py:262, 274, 276`, `pin_worker_source_inventory`; reused `_sources`/`_sha` are in frozen `vision/owner_registration.py:55–69`.
+
+The reused helper accepts `isinstance(value, str)` and preserves the supplied object. A SHA256-shaped str subclass overriding `__eq__`/`__ne__` therefore reaches `hashlib.sha256(path.read_bytes()).hexdigest() != digest`. Python dispatches the subclass comparison and the guard accepts unequal underlying hash text. The returned immutable mapping retains the subclass, so freezing the container does not remove the behavior.
+
+The unchanged SOFTWARE_ONLY probe creates a regular source.py with actual SHA ddced955472eca8cf0eea19edf798c43514e97feae458369b17732a4a6453e4b. A plain expected f*64 is rejected by the expected ValueError control. The identical f*64 text wrapped in `PermissiveHash(str)` is accepted and returned as type PermissiveHash. Source bytes remain unchanged; no actual permission or robot dispatch is attempted. Exact runnable script/output are source-sha-subclass-counterexample.py and source-sha-subclass-counterexample.log.
+
+The smallest owned-file correction is to require concrete built-in strings for inventory names and digests and reconstruct a plain immutable mapping before equality or path checks, or reject all such subclasses explicitly. Do not alter historical owner helpers or broaden actual admission. Add qualified wrong-hash-subclass RED with a plain correct-hash positive control; preserve wrong plain-hash, lexical aliases, ancestor aliases, ordinary directory parent-navigation and complete inventory controls. A container-only copy is insufficient.
+
+## Full frozen review and validation
+
+Exact manifest: 774 files, SHA16f15a3be6c7e69b25c5957f5ce0501470b19691d37ff4e01058277c55027e20. Producer report SHA d606566a3752b5aacacc3952af1f8b740b9d1a2e148654ef7d61cfd1cfd3368c. Producer artifact manifest contains794 files, SHAece54864d90ff9a22f17608c0e7bbd5599e4ded8bf8a5605f65d3ad37d3d053c. Only the two owned paths differ from the first774 package; the other772 are byte-identical. The independent overlay is /tmp/independent-worker-owner-fix1-qyp4eoc5 with only an environment venv link. No current raw-v3, risk, worker/evaluation/execution source replacement was used.
+
+The complete declared related CPU command independently passed **281 tests with3 backend-only skips in36.21s**. The skips are the frozen backend variants, not unavailable runtime research evidence. Ruff/format on the two owned files and a fresh no-incremental mypy check of one source passed. Exact argv/env/cwd and logs are setup.json, cpu.log, ruff.log, format.log and mypy.log. The original lexical counterexample and original27-case independent matrix were rerun unchanged; the historical counter script's exit status alone is insufficient, and the guarded-rejection output was checked explicitly. All27 expected rejection/preservation probes pass.
+
+The review covered the concrete repository publication guard; rereading current attempt rather than stale job attempt zero; live unique lease and unique open attempt joins; run/job/worker/lease identity, cancellation, release and absolute expiry; detached observation hashes and source-only scope; complete original contract including original conditions, task targets, calibration, sensor, tolerances, min safe height, timeout/retry/duration; ordered eight-skill dependency graph; original task/verification/contract expiry minimum; direct model-copy/subclass rejection and alias isolation; precise grounded TCP coordinates with strict numeric checks; original requirement/hash/identity/version/time/source binding; immutable original templates versus derived effect check inputs; missing/changed source bytes, canonical source names and lexical root/file/ancestor aliases. The remaining hash-subclass finding concerns that final byte-binding boundary.
+
+All774 archive and independent-overlay hashes,750 Python ASTs,794 producer artifacts,807 original release artifacts,23 original review artifacts and both unchanged live owned source hashes passed post-check. No production, existing tests, frozen original reports/probes, dataset, assets, collector or worker integration bytes were edited by this reviewer. New evidence exists only in independent-review-runtime-baselines/.
+
+## Scope limitations
+
+WorkerLeaseObservation is a source observation at its read time, not a later execution lease capability. Compiler/effect outputs are SOURCE_BINDING_ONLY and deterministic check inputs, not evidence verdicts. The source inventory check validates local consistency, not independently authenticated publisher authority. The real worker factory, fresh-frame registration, routing budgets/boundary generations, PRE_SAFETY/PRE_SKILL integration and actual full method evidence remain outside this two-file package. Completing the lexical fix and passing software tests does not accept those paths. No actual simulator state/step, render/capture, controller, provider, account, network or model call was performed.

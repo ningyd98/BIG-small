@@ -1,0 +1,80 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[memory] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7cfc04de81a0>, V...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 40, 40, 206015, tzinfo=datetime.timezone.utc)))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7cfc01f95220>
+
+    def test_expired_prior_grounding_remains_history_and_allows_fresh_boundary(prepared, monkeypatch):
+        """A synthetic clock advance never retimestamps an actual observation."""
+        repo, original, _, _, _ = prepared
+        previous = publish_source_grounding(prepared)
+        assert previous is not None
+        module = importlib.import_module(
+            "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
+        )
+        advanced = datetime.fromisoformat(previous.to_payload()["grounding"]["valid_until"])
+    
+        class SoftwareClockType(type):
+            def __instancecheck__(cls, value):
+                return isinstance(value, datetime)
+    
+        class LaterSoftwareClock(datetime, metaclass=SoftwareClockType):
+            @classmethod
+            def now(cls, tz=None):
+                return advanced if tz is None else advanced.astimezone(tz)
+    
+        monkeypatch.setattr(module, "datetime", LaterSoftwareClock)
+        assert repo.get_visual_owner_publication(original.identity.task_id) is None
+        refreshed = publish(
+            prepared,
+            boundary(previous.checkpoint, suffix="fresh-without-old-grounding"),
+            expected_owner_revision=2,
+            expected_checkpoint_hash=previous.checkpoint.checkpoint_hash,
+            state_generation=3,
+        )
+>       assert refreshed is not None and refreshed.owner_revision == 3
+E       assert (None is not None)
+
+tests/test_visual_owner_repository.py:692: AssertionError
+_ test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[sqlite] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7cfc01935490>, Vis...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 40, 40, 487170, tzinfo=datetime.timezone.utc)))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7cfc01936db0>
+
+    def test_expired_prior_grounding_remains_history_and_allows_fresh_boundary(prepared, monkeypatch):
+        """A synthetic clock advance never retimestamps an actual observation."""
+        repo, original, _, _, _ = prepared
+        previous = publish_source_grounding(prepared)
+        assert previous is not None
+        module = importlib.import_module(
+            "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
+        )
+        advanced = datetime.fromisoformat(previous.to_payload()["grounding"]["valid_until"])
+    
+        class SoftwareClockType(type):
+            def __instancecheck__(cls, value):
+                return isinstance(value, datetime)
+    
+        class LaterSoftwareClock(datetime, metaclass=SoftwareClockType):
+            @classmethod
+            def now(cls, tz=None):
+                return advanced if tz is None else advanced.astimezone(tz)
+    
+        monkeypatch.setattr(module, "datetime", LaterSoftwareClock)
+        assert repo.get_visual_owner_publication(original.identity.task_id) is None
+        refreshed = publish(
+            prepared,
+            boundary(previous.checkpoint, suffix="fresh-without-old-grounding"),
+            expected_owner_revision=2,
+            expected_checkpoint_hash=previous.checkpoint.checkpoint_hash,
+            state_generation=3,
+        )
+>       assert refreshed is not None and refreshed.owner_revision == 3
+E       assert (None is not None)
+
+tests/test_visual_owner_repository.py:692: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_repository.py::test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[memory]
+FAILED tests/test_visual_owner_repository.py::test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[sqlite]
+2 failed, 65 deselected in 0.82s

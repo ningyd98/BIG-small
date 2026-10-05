@@ -1,0 +1,232 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+___ test_executed_payload_and_original_absolute_deadlines_cannot_be_replaced ___
+
+    def test_executed_payload_and_original_absolute_deadlines_cannot_be_replaced():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:424: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+>       action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None, original.requirements["move"].original_step.model_dump(mode="json"))
+E       TypeError: TypedActionSpanV3.__init__() takes 14 positional arguments but 15 were given
+
+tests/test_raw_episode_v3.py:96: TypeError
+_____ test_retry_attempt_and_return_step_count_are_strict_original_policy ______
+
+    def test_retry_attempt_and_return_step_count_are_strict_original_policy():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:436: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+>       action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None, original.requirements["move"].original_step.model_dump(mode="json"))
+E       TypeError: TypedActionSpanV3.__init__() takes 14 positional arguments but 15 were given
+
+tests/test_raw_episode_v3.py:96: TypeError
+_____ test_missing_executed_arguments_is_incomplete_without_losing_attempt _____
+
+    def test_missing_executed_arguments_is_incomplete_without_losing_attempt():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:447: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+>       action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None, original.requirements["move"].original_step.model_dump(mode="json"))
+E       TypeError: TypedActionSpanV3.__init__() takes 14 positional arguments but 15 were given
+
+tests/test_raw_episode_v3.py:96: TypeError
+____ test_derived_source_transform_requires_exact_schema_and_policy_sources ____
+
+    def test_derived_source_transform_requires_exact_schema_and_policy_sources():
+>       envelope, records = fixture()
+                            ^^^^^^^^^
+
+tests/test_raw_episode_v3.py:454: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def fixture(*, late_action=False):
+        m = api()
+        original = values()["original"]
+        identity = m.RawEpisodeIdentityV3("raw-attempt-1", "assignment-1", SHA, "episode", "SOFTWARE_ONLY",
+                                        original.identity, SHA, SHA, SHA, SHA, SHA, {**SOURCES, **dict(original.source_hashes)}, "clock-1")
+        descriptor = m.ClockDescriptorV3("clock-1", "epoch-1", "fixture-monotonic", "fixture-utc", 1, 1000, None, SOURCES)
+        seq = 0
+        intervals, physics = [], []
+    
+        def next_seq():
+            nonlocal seq
+            seq += 1
+            return seq
+    
+        def pair(ns):
+            return m.ClockPairV3("clock-1", descriptor.digest(), ns + 1, ns, NOW + timedelta(microseconds=ns // 1000), ns + 100)
+    
+        def interval(name, kind, n0, n1, t0, t1, disposition="COMPLETE", error=None):
+            row = m.RawIntervalV3(name, next_seq(), identity, kind, pair(t0), pair(t1) if t1 is not None else None,
+                                  n0, n1, n0 / 240, n1 / 240 if n1 is not None else None, disposition, error)
+            intervals.append(row)
+            return row
+    
+        interval("settle", "SETTLE", 0, 120, 0, 12_100_000)
+        shift = 6_000_000_000 if late_action else 0
+        interval("attempt", "EXECUTOR_ATTEMPT", 120, 121, 210_000_000 + shift, 220_000_000 + shift)
+        for n in range(1, 122):
+            base = (n - 1) * 100_000 if n <= 120 else 211_000_000 + shift
+            interval(f"control-{n}", "CONTROL_APPLY", n - 1, n - 1, base + 1000, base + 2000)
+            interval(f"step-{n}", "PHYSICS_STEP", n - 1, n, base + 3000, base + 90_000)
+            physics.append(m.RawPhysicsStepV3(next_seq(), identity, n, hash_payload(state(n - 1)), state(n), control(n),
+                                            f"step-{n}", f"control-{n}", "settle" if n <= 120 else "attempt"))
+        interval("command", "COMMAND", 120, 120, 210_100_000 + shift, 210_110_000 + shift)
+        command = m.RawCommandV3(next_seq(), identity, 1,
+                                dict(type="joint_target", accepted=True, reason="", after_emergency_stop=False,
+                                     sim_time_s=0.5, episode_id="episode", physics_step=120, command_seq=1,
+                                     target_positions_rad=[0] * 7, applied_target_positions_rad=[0] * 7),
+                                "command", "attempt", "span-1", 121)
+>       action = m.TypedActionSpanV3(next_seq(), identity, "span-1", original, "move", 1, None,
+                                    "attempt", 1, 2,
+                                    build_action_result(action_type="MOVE_ABOVE", success=False, state_before={}, state_after={},
+                                                        duration_ms=4, started_at=NOW + timedelta(seconds=.21),
+                                                        error_code="SOFTWARE_DIAGNOSTIC", details={"physics_steps": 1}).model_dump(mode="json"),
+                                    "RETURNED", None, original.requirements["move"].original_step.model_dump(mode="json"))
+E       TypeError: TypedActionSpanV3.__init__() takes 14 positional arguments but 15 were given
+
+tests/test_raw_episode_v3.py:96: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_executed_payload_and_original_absolute_deadlines_cannot_be_replaced
+FAILED tests/test_raw_episode_v3.py::test_retry_attempt_and_return_step_count_are_strict_original_policy
+FAILED tests/test_raw_episode_v3.py::test_missing_executed_arguments_is_incomplete_without_losing_attempt
+FAILED tests/test_raw_episode_v3.py::test_derived_source_transform_requires_exact_schema_and_policy_sources
+4 failed, 38 deselected in 0.87s

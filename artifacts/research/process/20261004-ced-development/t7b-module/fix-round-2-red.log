@@ -1,0 +1,158 @@
+................................F.F.....F.F....FF                        [100%]
+=================================== FAILURES ===================================
+______ test_observed_horizontal_plane_with_pitched_camera_is_unsupported _______
+
+    def test_observed_horizontal_plane_with_pitched_camera_is_unsupported():
+        original = scene(resolution=10)
+        pitch = np.pi / 6
+        cosine, sine = np.cos(pitch), np.sin(pitch)
+        def observed_plane(rgb, depth):
+            ys = np.indices(depth.shape)[0]
+            depth[:] = 1 / (cosine - sine * (ys - 320) / 1000)
+            depth[rgb[:, :, 0] > 200] *= 0.94
+        pitched = image_variant(original, observed_plane)
+        payload = pitched.model_dump()
+        payload.update(camera_to_world=(1., 0., 0., 0., 0., -cosine, -sine, 0.,
+                                        0., sine, -cosine, 1., 0., 0., 0., 1.),
+                       checksum_sha256="")
+        acquisition = RGBDObservation.model_validate(payload)
+>       with pytest.raises(ValueError, match="camera_orientation_not_supported"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:332: Failed
+__ test_precision_endpoints_prove_lift_but_not_unobserved_interval_stability ___
+
+    def test_precision_endpoints_prove_lift_but_not_unobserved_interval_stability():
+        initial = scene(resolution=10, source="mujoco_camera")
+        tracked = tracker(initial, depth_error_bound_m=0.000001)
+        for index in range(7):
+            facts = tracked.facts(
+                scene(
+                    f"lift-{index}",
+                    time=0.1 + index * 0.1,
+                    lift=0.06,
+                    started=datetime.now(UTC) - timedelta(seconds=0.1 + index * 0.1),
+                    resolution=10,
+                    source="mujoco_camera",
+                ),
+                held(),
+            )
+            if index < 5:
+                assert facts["object_stable"]["value"] is None
+        assert facts["object_lifted"]["value"] is True
+>       assert facts["object_stable"]["value"] is None
+E       assert True is None
+
+tests/test_visual_effect_evidence.py:47: AssertionError
+_ test_release_geometry_and_endpoint_duration_do_not_prove_physical_stability __
+
+    def test_release_geometry_and_endpoint_duration_do_not_prove_physical_stability():
+        initial = scene(resolution=10, source="mujoco_camera")
+        tracked = tracker(initial, depth_error_bound_m=0.000001)
+        for index, x in enumerate((20, 30, 40, 48), 1):
+            tracked.facts(
+                scene(
+                    str(index),
+                    time=index * 0.1,
+                    x=x,
+                    started=datetime.now(UTC) - timedelta(seconds=index * 0.1),
+                    resolution=10,
+                    source="mujoco_camera",
+                ),
+                held(),
+            )
+        released = RobotState(connected=True, gripper_open=True, holding_object_id=None)
+        for index in range(12):
+            facts = tracked.facts(
+                scene(
+                    f"placed-{index}",
+                    time=0.5 + index * 0.1,
+                    x=48,
+                    started=datetime.now(UTC) - timedelta(seconds=0.5 + index * 0.1),
+                    resolution=10,
+                    source="mujoco_camera",
+                ),
+                released,
+            )
+            if index < 10:
+                assert facts["object_placed"]["value"] is None
+        assert facts["object_inside_target_region"]["value"] is True
+>       assert facts["placement_stable"]["value"] is None
+E       assert True is None
+
+tests/test_visual_effect_evidence.py:131: AssertionError
+_ test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance _
+
+    def test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance():
+        initial = scene(resolution=10, source="mujoco_camera")
+        tracked = tracker(initial, depth_error_bound_m=0.000001)
+        for index in range(7):
+            current = scene(
+                f"sim-{index}",
+                time=0.1 + index * 0.1,
+                lift=0.06,
+                started=initial.captured_at,
+                resolution=10,
+                source="mujoco_camera",
+            )
+            payload = current.model_dump()
+            payload.update(
+                captured_at=initial.captured_at + timedelta(seconds=0.001 * (index + 1)),
+                checksum_sha256="",
+            )
+            current = type(current).model_validate(payload)
+            facts = tracked.facts(current, held())
+>       assert facts["object_stable"]["value"] is None
+E       assert True is None
+
+tests/test_visual_effect_evidence.py:164: AssertionError
+_ test_identical_precision_frames_do_not_resolve_unobserved_motion[out_and_back] _
+
+unsupported_motion = 'out_and_back'
+
+    @pytest.mark.parametrize("unsupported_motion", ["out_and_back", "quarter_turn"])
+    def test_identical_precision_frames_do_not_resolve_unobserved_motion(unsupported_motion):
+        # Both possible motions have these exact observed endpoints. We do not give
+        # the estimator hidden trajectories or fabricate a ground-truth fixture.
+        initial = scene(resolution=10, source="mujoco_camera")
+        tracked = tracker(initial, depth_error_bound_m=0.000001,
+                          stability_verified=True, max_object_speed_m_s=0.0)
+        for index in range(7):
+            time = 0.1 + index * 0.1
+            facts = tracked.facts(scene(f"{unsupported_motion}-{index}", time=time, lift=0.06,
+                                        resolution=10, source="mujoco_camera",
+                                        started=datetime.now(UTC) - timedelta(seconds=time)), held())
+        stable = facts["object_stable"]
+>       assert stable["value"] is None
+E       assert True is None
+
+tests/test_visual_effect_evidence.py:251: AssertionError
+_ test_identical_precision_frames_do_not_resolve_unobserved_motion[quarter_turn] _
+
+unsupported_motion = 'quarter_turn'
+
+    @pytest.mark.parametrize("unsupported_motion", ["out_and_back", "quarter_turn"])
+    def test_identical_precision_frames_do_not_resolve_unobserved_motion(unsupported_motion):
+        # Both possible motions have these exact observed endpoints. We do not give
+        # the estimator hidden trajectories or fabricate a ground-truth fixture.
+        initial = scene(resolution=10, source="mujoco_camera")
+        tracked = tracker(initial, depth_error_bound_m=0.000001,
+                          stability_verified=True, max_object_speed_m_s=0.0)
+        for index in range(7):
+            time = 0.1 + index * 0.1
+            facts = tracked.facts(scene(f"{unsupported_motion}-{index}", time=time, lift=0.06,
+                                        resolution=10, source="mujoco_camera",
+                                        started=datetime.now(UTC) - timedelta(seconds=time)), held())
+        stable = facts["object_stable"]
+>       assert stable["value"] is None
+E       assert True is None
+
+tests/test_visual_effect_evidence.py:251: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_opencv_target_evidence.py::test_observed_horizontal_plane_with_pitched_camera_is_unsupported
+FAILED tests/test_visual_effect_evidence.py::test_precision_endpoints_prove_lift_but_not_unobserved_interval_stability
+FAILED tests/test_visual_effect_evidence.py::test_release_geometry_and_endpoint_duration_do_not_prove_physical_stability
+FAILED tests/test_visual_effect_evidence.py::test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance
+FAILED tests/test_visual_effect_evidence.py::test_identical_precision_frames_do_not_resolve_unobserved_motion[out_and_back]
+FAILED tests/test_visual_effect_evidence.py::test_identical_precision_frames_do_not_resolve_unobserved_motion[quarter_turn]
+6 failed, 43 passed in 19.40s

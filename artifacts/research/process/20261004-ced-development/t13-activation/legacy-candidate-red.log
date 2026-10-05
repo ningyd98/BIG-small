@@ -1,0 +1,259 @@
+FFF.....                                                                 [100%]
+=================================== FAILURES ===================================
+________________ test_phase62_full_replan_apply_resume_closure _________________
+
+    def test_phase62_full_replan_apply_resume_closure() -> None:
+        contract = _contract(retry_limit=1)
+        robot = _robot(grasp_failures=2)
+        runtime_repo = InMemoryRepository()
+        event_repo = InMemoryEventAutonomyRepository()
+        controller = EventTriggeredModeController(repository=event_repo)
+    
+        first = TaskExecutor(
+            robot=robot,
+            shield=SafetyShield(),
+            repository=runtime_repo,
+            event_controller=controller,
+        ).submit_contract(contract.model_dump(mode="json"))
+    
+        assert first.success is False
+        assert first.error is not None and first.error.code == "CLOUD_REPLAN_REQUIRED"
+        assert [entry.action_type for entry in robot.history] == ["APPROACH", "GRASP", "GRASP"]
+        request = _request_from_outbox(event_repo, contract.task_id)
+        failed_checkpoint = event_repo.get_latest_execution_checkpoint(contract.task_id)
+        assert failed_checkpoint is not None
+        assert failed_checkpoint.completed_step_ids == ["approach"]
+        assert failed_checkpoint.failed_step_id == "grasp"
+        assert event_repo.get_failure_summary(request.failure_summary_id) is not None
+        assert event_repo.get_active_contract(contract.task_id).plan_version == 1  # type: ignore[union-attr]
+    
+        response = LocalReplanningService(
+            adapter=RuleBasedReplannerAdapter(),
+            repository=event_repo,
+            apply_service=ReplanApplyService(repository=event_repo, dispatcher=None),
+>       ).process(request, apply=True, dispatch=False)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase6_2_replan_resume.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/cloud/replanning/service.py:123: in process
+    return self._repo.save_replan_result(conflict)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:350: in save_replan_result
+    self._ensure_same_hash(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+entity = 'LocalReplanningResponse'
+key = 'replan-req-task-phase62-evt-20261004095354242325-grasp_failed'
+existing_hash = 'fbe92e8842b61ee551003056c03d01c6a85192db0e3636fdba76daa01b00f10f'
+new_hash = 'dd8b69dabb06e663ba2c0b60e8f7ec85b3bcde3aafbcbff9e48653a49ba96c2d'
+
+    @staticmethod
+    def _ensure_same_hash(entity: str, key: str, existing_hash: str, new_hash: str) -> None:
+        if existing_hash != new_hash:
+>           raise IdempotencyConflictError(f"{entity} idempotency conflict for key {key!r}")
+E           cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError: LocalReplanningResponse idempotency conflict for key 'replan-req-task-phase62-evt-20261004095354242325-grasp_failed'
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:113: IdempotencyConflictError
+_______ test_phase62_completed_grasp_not_regenerated_after_place_failure _______
+
+    def test_phase62_completed_grasp_not_regenerated_after_place_failure() -> None:
+        contract = _contract(task_id="task-place-fail", retry_limit=1)
+        repo = InMemoryEventAutonomyRepository()
+        repo.save_active_contract(contract, plan_id="plan-task-place-fail", robot_id="robot-unknown")
+        now = datetime.now(UTC)
+        event = repo.save_event(
+            EdgeEvent(
+                task_id=contract.task_id,
+                plan_version=1,
+                command_seq=1,
+                timestamp=now,
+                event_id="evt-place",
+                event_type=EdgeEventType.PLACE_FAILED,
+                step_id="place",
+                severity="ERROR",
+                robot_id="robot-unknown",
+                plan_id="plan-task-place-fail",
+                scene_version=1,
+            )
+        )
+        summary = repo.save_failure_summary(
+            FailureSummary(
+                task_id=contract.task_id,
+                plan_version=1,
+                command_seq=1,
+                timestamp=now,
+                summary_id="fs-place",
+                failure_event_id=event.event_id,
+                failed_step_id="place",
+                completed_step_ids=["approach", "grasp", "lift", "move-region"],
+                reason="place failed",
+                local_retry_count=1,
+                recovery_hint="replan place",
+                robot_id="robot-unknown",
+                plan_id="plan-task-place-fail",
+                requested_replan_scope="CURRENT_STEP",
+            )
+        )
+        checkpoint = ExecutionCheckpoint(
+            checkpoint_id="ckpt-place",
+            task_id=contract.task_id,
+            plan_id="plan-task-place-fail",
+            robot_id="robot-unknown",
+            plan_version=1,
+            command_seq=1,
+            current_step_id="place",
+            current_step_index=4,
+            failed_step_id="place",
+            last_successful_step_id="move-region",
+            completed_step_ids=["approach", "grasp", "lift", "move-region"],
+            pending_step_ids=["place", "release", "verify"],
+            scene_version=1,
+            execution_state="WAITING_CLOUD_REPLAN",
+        )
+        repo.save_execution_checkpoint(checkpoint)
+        request = repo.save_replan_request(
+            LocalReplanningRequest(
+                request_id="req-place",
+                trigger_event_id=event.event_id,
+                failure_summary_id=summary.summary_id,
+                robot_id="robot-unknown",
+                task_id=contract.task_id,
+                plan_id="plan-task-place-fail",
+                current_plan_version=1,
+                current_command_seq=1,
+                requested_replan_scope="CURRENT_STEP",
+                completed_step_ids=list(checkpoint.completed_step_ids),
+                failed_step_id="place",
+                last_successful_step_id="move-region",
+                current_scene_version=1,
+            )
+        )
+>       response = LocalReplanningService(adapter=RuleBasedReplannerAdapter(), repository=repo).process(
+            request,
+            apply=True,
+            dispatch=False,
+        )
+
+tests/test_phase6_2_replan_resume.py:364: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/cloud/replanning/service.py:123: in process
+    return self._repo.save_replan_result(conflict)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:350: in save_replan_result
+    self._ensure_same_hash(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+entity = 'LocalReplanningResponse', key = 'req-place'
+existing_hash = '233e2801403ac96ba4e0414e5556a310dfd569b173f1936c3af5307f4f318464'
+new_hash = '1ab7bcd0611475598542ebdb252ae1639a8b202cfb04d3ae3f5dba3433fde500'
+
+    @staticmethod
+    def _ensure_same_hash(entity: str, key: str, existing_hash: str, new_hash: str) -> None:
+        if existing_hash != new_hash:
+>           raise IdempotencyConflictError(f"{entity} idempotency conflict for key {key!r}")
+E           cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError: LocalReplanningResponse idempotency conflict for key 'req-place'
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:113: IdempotencyConflictError
+_______________ test_phase62_old_replan_late_result_is_rejected ________________
+
+    def test_phase62_old_replan_late_result_is_rejected() -> None:
+        contract = _contract(task_id="task-late", retry_limit=1)
+        repo = InMemoryEventAutonomyRepository()
+        repo.save_active_contract(contract, plan_id="plan-task-late", robot_id="robot-unknown")
+        now = datetime.now(UTC)
+        event = repo.save_event(
+            EdgeEvent(
+                task_id=contract.task_id,
+                plan_version=1,
+                command_seq=1,
+                timestamp=now,
+                event_id="evt-late",
+                event_type=EdgeEventType.GRASP_FAILED,
+                step_id="grasp",
+                severity="ERROR",
+                robot_id="robot-unknown",
+                plan_id="plan-task-late",
+            )
+        )
+        summary = repo.save_failure_summary(
+            FailureSummary(
+                task_id=contract.task_id,
+                plan_version=1,
+                command_seq=1,
+                timestamp=now,
+                summary_id="fs-late",
+                failure_event_id=event.event_id,
+                failed_step_id="grasp",
+                completed_step_ids=["approach"],
+                reason="failed",
+                local_retry_count=1,
+                recovery_hint="replan",
+                robot_id="robot-unknown",
+                plan_id="plan-task-late",
+            )
+        )
+        checkpoint = repo.save_execution_checkpoint(
+            ExecutionCheckpoint(
+                checkpoint_id="ckpt-late",
+                task_id=contract.task_id,
+                plan_id="plan-task-late",
+                robot_id="robot-unknown",
+                plan_version=1,
+                command_seq=1,
+                current_step_id="grasp",
+                current_step_index=1,
+                failed_step_id="grasp",
+                completed_step_ids=["approach"],
+                pending_step_ids=["grasp", "lift", "move-region", "place", "release", "verify"],
+                scene_version=1,
+                execution_state="WAITING_CLOUD_REPLAN",
+            )
+        )
+        req_a = LocalReplanningRequest(
+            request_id="req-a",
+            trigger_event_id=event.event_id,
+            failure_summary_id=summary.summary_id,
+            robot_id="robot-unknown",
+            task_id=contract.task_id,
+            plan_id="plan-task-late",
+            current_plan_version=1,
+            current_command_seq=1,
+            requested_replan_scope="CURRENT_STEP",
+            completed_step_ids=["approach"],
+            failed_step_id="grasp",
+            current_scene_version=1,
+        )
+        req_b = req_a.model_copy(update={"request_id": "req-b", "idempotency_key": "req-b"})
+        service = ReplanApplyService(repository=repo, dispatcher=None)
+        resp_b = LocalReplanningResponse(
+            request_id="req-b",
+            outcome="REPLANNED",
+            reason="new",
+            new_steps=[
+                TaskStep(
+                    step_id="grasp-b",
+                    skill=SkillName.GRASP,
+                    parameters={"object_id": "obj-1"},
+                    expected_duration_ms=1000,
+                    timeout_ms=3000,
+                    retry_limit=1,
+                )
+            ],
+            new_plan_version=2,
+            new_command_seq=2,
+        )
+        applied_b = service.apply(request=req_b, response=resp_b, checkpoint=checkpoint, dispatch=False)
+>       assert applied_b.applied
+E       AssertionError: assert False
+E        +  where False = ReplanApplyResult(applied=False, record=ReplanApplyRecord(apply_id='apply-req-b', request_id='req-b', task_id='task-la..., command_ttl_ms=None, previous_command_seq=1), ack=None, errors=['candidate prepared; awaiting guarded edge staging']).applied
+
+tests/test_phase6_2_replan_resume.py:464: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_phase6_2_replan_resume.py::test_phase62_full_replan_apply_resume_closure
+FAILED tests/test_phase6_2_replan_resume.py::test_phase62_completed_grasp_not_regenerated_after_place_failure
+FAILED tests/test_phase6_2_replan_resume.py::test_phase62_old_replan_late_result_is_rejected
+3 failed, 5 passed in 0.79s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_phase6_2_replan_resume.py
+Observed exit code: 1

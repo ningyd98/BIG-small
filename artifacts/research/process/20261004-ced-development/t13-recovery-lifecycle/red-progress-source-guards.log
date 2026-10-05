@@ -1,0 +1,97 @@
+........................................................................ [ 74%]
+..........F.....F........                                                [100%]
+=================================== FAILURES ===================================
+__ test_actual_completion_order_and_identity_are_required[memory-early_start] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77415c9769c0>
+change = 'early_start'
+
+    @pytest.mark.parametrize("change", ["early_start", "future_finish", "old_task", "old_attempt",
+                                        "wrong_checkpoint", "missing_attempt_count"])
+    def test_actual_completion_order_and_identity_are_required(lifecycle_repo, change):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        authorized = atomic_authorize(lifecycle_repo, saved).recovery
+        proof = execution_proof(lifecycle_repo, authorized)
+        if change == "early_start":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={
+                "started_at": datetime(2000, 1, 1, tzinfo=UTC)}))
+        elif change == "future_finish":
+            proof = replace(proof, completion=proof.completion.model_copy(update={
+                "timestamp": datetime.now(UTC) + timedelta(seconds=5)}))
+        elif change == "old_task":
+            proof = replace(proof, completion=proof.completion.model_copy(update={"task_id": "other"}))
+        elif change == "old_attempt":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={"repair_id": "other"}))
+        elif change == "wrong_checkpoint":
+            proof = replace(proof, checkpoint_hash="wrong")
+        else:
+            from uuid import uuid4
+            cp = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(cp.model_copy(update={
+                "checkpoint_id": uuid4().hex, "checkpoint_hash": "", "step_attempts": {}}))
+        service = RecoveryLifecycleService(repository=lifecycle_repo, execution_provider=lambda _: proof)
+        actual = service.advance_recovery(saved.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ())
+>       assert actual == authorized
+E       AssertionError: assert RecoveryRecor...df42652c50a0') == RecoveryRecor...df42652c50a0')
+E         
+E         Omitting 23 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'reason',
+E          'revision',
+E          'task_budget_revision',...
+E         
+E         ...Full output truncated (33 lines hidden), use '-vv' to show
+
+tests/test_recovery_lifecycle_module.py:661: AssertionError
+__ test_actual_completion_order_and_identity_are_required[sqlite-early_start] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77415c9f0140>
+change = 'early_start'
+
+    @pytest.mark.parametrize("change", ["early_start", "future_finish", "old_task", "old_attempt",
+                                        "wrong_checkpoint", "missing_attempt_count"])
+    def test_actual_completion_order_and_identity_are_required(lifecycle_repo, change):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        authorized = atomic_authorize(lifecycle_repo, saved).recovery
+        proof = execution_proof(lifecycle_repo, authorized)
+        if change == "early_start":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={
+                "started_at": datetime(2000, 1, 1, tzinfo=UTC)}))
+        elif change == "future_finish":
+            proof = replace(proof, completion=proof.completion.model_copy(update={
+                "timestamp": datetime.now(UTC) + timedelta(seconds=5)}))
+        elif change == "old_task":
+            proof = replace(proof, completion=proof.completion.model_copy(update={"task_id": "other"}))
+        elif change == "old_attempt":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={"repair_id": "other"}))
+        elif change == "wrong_checkpoint":
+            proof = replace(proof, checkpoint_hash="wrong")
+        else:
+            from uuid import uuid4
+            cp = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(cp.model_copy(update={
+                "checkpoint_id": uuid4().hex, "checkpoint_hash": "", "step_attempts": {}}))
+        service = RecoveryLifecycleService(repository=lifecycle_repo, execution_provider=lambda _: proof)
+        actual = service.advance_recovery(saved.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ())
+>       assert actual == authorized
+E       AssertionError: assert RecoveryRecor...d7292822da24') == RecoveryRecor...d7292822da24')
+E         
+E         Omitting 23 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'reason',
+E          'revision',
+E          'task_budget_revision',...
+E         
+E         ...Full output truncated (33 lines hidden), use '-vv' to show
+
+tests/test_recovery_lifecycle_module.py:661: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_actual_completion_order_and_identity_are_required[memory-early_start]
+FAILED tests/test_recovery_lifecycle_module.py::test_actual_completion_order_and_identity_are_required[sqlite-early_start]
+2 failed, 95 passed in 14.46s

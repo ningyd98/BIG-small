@@ -1,0 +1,28 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_individual_original_task_deadline_cannot_extend_even_when_verification_is_earlier _
+
+    def test_individual_original_task_deadline_cannot_extend_even_when_verification_is_earlier():
+        envelope, records = fixture()
+        view = api().validate_raw_episode_v3(replace(envelope, task_deadline_at=NOW + timedelta(seconds=600)), records)
+>       assert view.status == "INVALID" and "original_absolute_deadline_extended" in view.reasons
+E       AssertionError: assert ('COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE)
+
+tests/test_raw_episode_v3.py:462: AssertionError
+_________ test_action_result_step_count_boolean_is_not_the_integer_one _________
+
+    def test_action_result_step_count_boolean_is_not_the_integer_one():
+        envelope, records = fixture()
+        payload = records.to_payload()
+        payload["actions"][0]["returned_result"]["details"]["physics_steps"] = True
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_raw_episode_v3.py:469: Failed
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_individual_original_task_deadline_cannot_extend_even_when_verification_is_earlier
+FAILED tests/test_raw_episode_v3.py::test_action_result_step_count_boolean_is_not_the_integer_one
+2 failed, 42 deselected in 1.19s

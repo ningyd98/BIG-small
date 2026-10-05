@@ -1,0 +1,27 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_observable_depth_defect_remains_unknown_with_verified_whole_action ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-515/test_observable_depth_defect_r0')
+
+    def test_observable_depth_defect_remains_unknown_with_verified_whole_action(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["formal"][0]
+        source = opportunity(tmp_path, row)
+        depth = np.zeros((240,320),dtype="<f4")
+        np.save(source / "depth.npy",depth)
+        data = json.loads((source / "observation.json").read_text())
+        data.update(depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+                    valid_mask_base64=None, checksum_sha256="")
+        write_json(source / "observation.json",RGBDObservation.model_validate(data).model_dump(mode="json"))
+        pools["_evidence"]["opportunity_sources"][row["assignment_id"]] = str(source)
+        api().prepare_protocol_evidence(pools,tmp_path / "output")
+        manifest = json.loads((tmp_path / "output" / "opportunities.json").read_text())
+        assert manifest[0]["seed"]["oracle_label"] == "UNKNOWN"
+>       assert manifest[0]["independent_label_evidence"]["geometry_applicable"] is True
+E       assert False is True
+
+tests/test_protocol_evidence_generation.py:1057: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_observable_depth_defect_remains_unknown_with_verified_whole_action
+1 failed in 0.46s

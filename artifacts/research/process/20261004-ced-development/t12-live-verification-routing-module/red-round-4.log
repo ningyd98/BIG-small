@@ -1,0 +1,54 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_same_named_conditions_keep_separate_target_spec_progress_histories[memory] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77ab84788410>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_same_named_conditions_keep_separate_target_spec_progress_histories(source):
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.vision.owner_registration import OriginalActionRequirements,freeze_original_visual_plan
+        _,data=source
+        original=data['original'];old=original.requirements['move']
+        pre=(*old.preconditions,ConditionSpec('target_visible',original.contract.task_target.target_region_id))
+        requirements={**dict(original.requirements),'move':OriginalActionRequirements(old.original_step,pre,old.postconditions,
+            old.allowed_error_m,old.sensor_requirements,old.ordinary_ttl_s,old.expected_duration_s,old.policy_source_hashes)}
+        original=freeze_original_visual_plan(**{**original.freeze_inputs(),'requirements':requirements})
+        repo=InMemoryEventAutonomyRepository()
+        pub=repo.initialize_visual_owner_if_absent(original,data['source_checkpoint'],data['publication'].verification_budget.state,data['publication'].retry_budget)
+        result=repo.route_visual_verification_if_current(request=request_for({**data,'original':original,'publication':pub}))
+        assert result.record.route=='REOBSERVE'
+        state=repo.get_verification_budget(original.identity.task_id).state
+>       assert len(state.previous_conditions)==2
+E       AssertionError: assert 1 == 2
+E        +  where 1 = len({'c14f5489dfcfcda74b17af017df1f5738b09e2421f92bce1593db03c3beda3cf:target_visible': ('UNKNOWN', None)})
+E        +    where {'c14f5489dfcfcda74b17af017df1f5738b09e2421f92bce1593db03c3beda3cf:target_visible': ('UNKNOWN', None)} = VerificationBudgetState(remaining_reobservations=2, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...f5738b09e2421f92bce1593db03c3beda3cf:target_visible': ('UNKNOWN', None)}, exhausted_reason=None, verification_rounds=1).previous_conditions
+
+tests/test_visual_verification_repository.py:703: AssertionError
+_ test_same_named_conditions_keep_separate_target_spec_progress_histories[sqlite] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77ab8134e960>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_same_named_conditions_keep_separate_target_spec_progress_histories(source):
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.vision.owner_registration import OriginalActionRequirements,freeze_original_visual_plan
+        _,data=source
+        original=data['original'];old=original.requirements['move']
+        pre=(*old.preconditions,ConditionSpec('target_visible',original.contract.task_target.target_region_id))
+        requirements={**dict(original.requirements),'move':OriginalActionRequirements(old.original_step,pre,old.postconditions,
+            old.allowed_error_m,old.sensor_requirements,old.ordinary_ttl_s,old.expected_duration_s,old.policy_source_hashes)}
+        original=freeze_original_visual_plan(**{**original.freeze_inputs(),'requirements':requirements})
+        repo=InMemoryEventAutonomyRepository()
+        pub=repo.initialize_visual_owner_if_absent(original,data['source_checkpoint'],data['publication'].verification_budget.state,data['publication'].retry_budget)
+        result=repo.route_visual_verification_if_current(request=request_for({**data,'original':original,'publication':pub}))
+        assert result.record.route=='REOBSERVE'
+        state=repo.get_verification_budget(original.identity.task_id).state
+>       assert len(state.previous_conditions)==2
+E       AssertionError: assert 1 == 2
+E        +  where 1 = len({'fcba3453812c452b7bd07e468b47eb602f3609be47831b388e3ef4df24b98e43:target_visible': ('UNKNOWN', None)})
+E        +    where {'fcba3453812c452b7bd07e468b47eb602f3609be47831b388e3ef4df24b98e43:target_visible': ('UNKNOWN', None)} = VerificationBudgetState(remaining_reobservations=2, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...eb602f3609be47831b388e3ef4df24b98e43:target_visible': ('UNKNOWN', None)}, exhausted_reason=None, verification_rounds=1).previous_conditions
+
+tests/test_visual_verification_repository.py:703: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_verification_repository.py::test_same_named_conditions_keep_separate_target_spec_progress_histories[memory]
+FAILED tests/test_visual_verification_repository.py::test_same_named_conditions_keep_separate_target_spec_progress_histories[sqlite]
+2 failed, 81 deselected in 0.83s

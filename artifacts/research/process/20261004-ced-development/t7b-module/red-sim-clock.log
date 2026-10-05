@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance _
+
+    def test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance():
+        initial = scene().model_copy(update={"source": "mujoco_camera"})
+        tracked = tracker(initial)
+        for index in range(7):
+            current = scene(
+                f"sim-{index}", time=0.1 + index * 0.1, lift=0.06,
+                started=initial.captured_at,
+            ).model_copy(update={
+                "source": "mujoco_camera",
+                "captured_at": initial.captured_at + timedelta(seconds=0.001 * (index + 1)),
+            })
+            facts = tracked.facts(current, held())
+>       assert facts["object_stable"]["value"] is True
+E       assert None is True
+
+tests/test_visual_effect_evidence.py:127: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_effect_evidence.py::test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance
+1 failed in 0.27s

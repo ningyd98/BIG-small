@@ -1,0 +1,95 @@
+--- before/src/cloud_edge_robot_arm/vision/execution.py
++++ after/src/cloud_edge_robot_arm/vision/execution.py
+@@ -992,6 +992,7 @@
+         while True:
+             self.check_active()
+             self.validate_role_boundary()
++            self.check_native_hard_stop(boundary)
+             assert self.observation is not None and self.policy.role_binding is not None
+             role_hash = self.policy.role_binding.bundle.digest()
+             action_context_hash = hashlib.sha256(json.dumps({
+@@ -1044,8 +1045,23 @@
+                                                       "step_id": step.step_id})
+             if route != DecisionAction.REOBSERVE:
+                 raise _EpisodeStopped(f"ACTION_EVIDENCE_{verdict.status}")
++            self.check_active()
++            self.check_native_hard_stop(boundary)
+             self.backend.step(steps=1)
+             self.recapture()
++
++    def check_native_hard_stop(self, boundary: str) -> None:
++        """Hard stops take precedence over an unavailable visual proof and its budget."""
++        state = self.robot.get_state()
++        reasons = [name for name, active in (
++            ("estop_engaged", state.estop_engaged),
++            ("collision_detected", state.collision_detected),
++            ("disconnected", not state.connected),
++        ) if active]
++        if reasons:
++            self.records.append({"layer": "HARD_SAFETY_STOP", "boundary": boundary,
++                                 "reasons": reasons, "physical_acceptance": False})
++            raise _EpisodeStopped("HARD_SAFETY_STOP:" + ",".join(reasons))
+ 
+     def monitor_physics_state(self) -> None:
+         """Proprioceptive contact checks only; detached oracle samples stay separate."""
+--- before/tests/test_native_action_submit.py
++++ after/tests/test_native_action_submit.py
+@@ -125,3 +125,58 @@
+     with pytest.raises(_EpisodeStopped, match="POST_SAFETY"):
+         episode.require_native_action_evidence(contract, step, boundary="PRE_SKILL")
+     assert touched == []
++
++
++@pytest.mark.parametrize("flag", ["estop_engaged", "collision_detected", "connected"])
++def test_hard_stop_cannot_be_masked_by_unknown_evidence_or_reobserve(flag):
++    from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++    from cloud_edge_robot_arm.vision.execution import _EpisodeStopped, _VisualEpisode
++    online, contract, step = sample()
++    state = online.robot_state.model_copy(update={flag: flag != "connected"})
++    episode = _VisualEpisode.__new__(_VisualEpisode)
++    episode.policy = SimpleNamespace(device_pipeline="OPENCV", role_binding=SimpleNamespace(
++        bundle=SimpleNamespace(digest=lambda: "role-bundle")))
++    episode.observation = online.observation
++    episode.robot = SimpleNamespace(get_state=lambda: state)
++    episode.tracker = SimpleNamespace(facts=lambda *args: online.visual_facts)
++    episode.check_active = lambda: None
++    episode.validate_role_boundary = lambda: None
++    episode.records = []
++    touched = []
++    def route(*args, **kwargs):
++        touched.append("route-budget")
++        return (DecisionAction.REOBSERVE if touched.count("route-budget") == 1
++                else DecisionAction.STOP)
++    episode.route = route
++    episode.backend = SimpleNamespace(step=lambda **kwargs: touched.append("physics"))
++    episode.recapture = lambda: touched.append("recapture")
++    # An immediate fault must stop before even a passive backend step.
++    with pytest.raises(_EpisodeStopped, match="HARD_SAFETY"):
++        episode.require_native_action_evidence(contract, step, boundary="PRE_SAFETY")
++    assert touched == []
++
++
++def test_new_hard_fault_after_route_stops_before_passive_physics_step():
++    from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++    from cloud_edge_robot_arm.vision.execution import _EpisodeStopped, _VisualEpisode
++    online, contract, step = sample()
++    states = [online.robot_state]
++    episode = _VisualEpisode.__new__(_VisualEpisode)
++    episode.policy = SimpleNamespace(device_pipeline="OPENCV", role_binding=SimpleNamespace(
++        bundle=SimpleNamespace(digest=lambda: "role-bundle")))
++    episode.observation = online.observation
++    episode.robot = SimpleNamespace(get_state=lambda: states[0])
++    episode.tracker = SimpleNamespace(facts=lambda *args: online.visual_facts)
++    episode.check_active = lambda: None
++    episode.validate_role_boundary = lambda: None
++    episode.records = []
++    def route(*args, **kwargs):
++        states[0] = states[0].model_copy(update={"estop_engaged": True})
++        return DecisionAction.REOBSERVE
++    episode.route = route
++    touched = []
++    episode.backend = SimpleNamespace(step=lambda **kwargs: touched.append("physics"))
++    episode.recapture = lambda: touched.append("recapture")
++    with pytest.raises(_EpisodeStopped, match="HARD_SAFETY"):
++        episode.require_native_action_evidence(contract, step, boundary="PRE_SAFETY")
++    assert touched == []

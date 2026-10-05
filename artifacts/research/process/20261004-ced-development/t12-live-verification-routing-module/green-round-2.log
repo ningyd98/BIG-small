@@ -1,0 +1,550 @@
+FFFFFFFF..........FFFFFFFF..........FF....................F              [100%]
+=================================== FAILURES ===================================
+_ test_missing_api_then_unknown_debits_pool_and_publication_atomically[memory] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x751478b4f890>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_missing_api_then_unknown_debits_pool_and_publication_atomically(source):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': 'c6b728c1008834f6e82eaaba2ab7810cfc4e703b02e3789565aa4e63dfe9af41', 'created_at': '2026-10-04T18:19:50.228696+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+_ test_missing_api_then_unknown_debits_pool_and_publication_atomically[sqlite] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x75144d935eb0>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_missing_api_then_unknown_debits_pool_and_publication_atomically(source):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data))
+>       assert result.write_disposition == 'NEW_COMMIT'
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'write_disposition'
+
+tests/test_visual_verification_repository.py:86: AttributeError
+________ test_pass_is_local_only_does_not_refund_or_debit_retry[memory] ________
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x75144d935850>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_pass_is_local_only_does_not_refund_or_debit_retry(source):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:102: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': 'bb00561e265c6a266f49ceb66d90c76d5f62956fc3864a767dad606f8db4bf22', 'created_at': '2026-10-04T18:19:50.567885+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+________ test_pass_is_local_only_does_not_refund_or_debit_retry[sqlite] ________
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7514755f6ab0>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_pass_is_local_only_does_not_refund_or_debit_retry(source):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False))
+>       assert result.record.route == 'CONTINUE'
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:103: AttributeError
+_ test_identical_retry_and_random_key_new_generation_cannot_charge_twice[memory] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7514755f4320>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_identical_retry_and_random_key_new_generation_cannot_charge_twice(source):
+        repo, data = source
+        request = request_for(data)
+>       first = repo.route_visual_verification_if_current(request=request)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:115: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': 'cebfa7a8a45b79adbd32a0baafbaf5efa9e7c2e9241aa5743fefd1f9ef2f9e76', 'created_at': '2026-10-04T18:19:50.877943+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+_ test_identical_retry_and_random_key_new_generation_cannot_charge_twice[sqlite] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x75144d98b020>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_identical_retry_and_random_key_new_generation_cannot_charge_twice(source):
+        repo, data = source
+        request = request_for(data)
+        first = repo.route_visual_verification_if_current(request=request)
+        repeated = repo.route_visual_verification_if_current(request=request)
+>       assert repeated.write_disposition == 'HISTORICAL_DUPLICATE'
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'write_disposition'
+
+tests/test_visual_verification_repository.py:117: AttributeError
+_ test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[memory] __
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7514755f4440>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_same_key_changed_payload_or_same_frame_changed_facts_conflicts(source):
+        repo, data = source
+>       repo.route_visual_verification_if_current(request=request_for(data))
+
+tests/test_visual_verification_repository.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': 'c2d889aa375baf9200f8dccb6b27ae15f14ef0b5e0a2405f87f5ac0223a9de37', 'created_at': '2026-10-04T18:19:51.212296+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+_ test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[sqlite] __
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x75144d9afa10>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_same_key_changed_payload_or_same_frame_changed_facts_conflicts(source):
+        repo, data = source
+        repo.route_visual_verification_if_current(request=request_for(data))
+>       with pytest.raises(IdempotencyConflictError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError'>
+
+tests/test_visual_verification_repository.py:129: Failed
+_ test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[memory] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x75144d937bc0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund(source):
+        repo, data = source
+        for index, expected in [(1, 2), (2, 1), (3, 0), (4, 0), (5, 0)]:
+>           result = repo.route_visual_verification_if_current(request=request_for(data, event_key=f'route-{index}'))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:172: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': 'f444490e6634605a50e05277696c8fab494c339469cedb00813da03a35c40df5', 'created_at': '2026-10-04T18:19:53.104794+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+_ test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[sqlite] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7514755c2360>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund(source):
+        repo, data = source
+        for index, expected in [(1, 2), (2, 1), (3, 0), (4, 0), (5, 0)]:
+            result = repo.route_visual_verification_if_current(request=request_for(data, event_key=f'route-{index}'))
+>           assert result.record.route == ('REOBSERVE' if index <= 3 else 'STOP')
+                   ^^^^^^^^^^^^^
+E           AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:173: AttributeError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SAFETY] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7514755c1af0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SAFETY'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': '2c4efa4742740eb3fd98a9ac0da0732e94efa0c5be7a5291e63b995b1978ae5d', 'created_at': '2026-10-04T18:19:53.434318+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SKILL] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x75144d9ae360>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SKILL'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': '7eab06f7906a2da34b7c212844705b044fc13a2d850e33063d47285da5414c59', 'created_at': '2026-10-04T18:19:53.490857+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-CLOUD_RETURN] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x75144d934bf0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'CLOUD_RETURN'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+>       result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': 'c8cb4579bf4b1bd658d507772add543caffa44544a6f14ab21757e6ad92c35bc', 'created_at': '2026-10-04T18:19:53.546273+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SAFETY] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x75144d9898b0>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SAFETY'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+>       assert result.record.route == ('STOP' if phase == 'NATIVE_PRE_SKILL' else 'REOBSERVE')
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:185: AttributeError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SKILL] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x75144d98b170>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'NATIVE_PRE_SKILL'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+>       assert result.record.route == ('STOP' if phase == 'NATIVE_PRE_SKILL' else 'REOBSERVE')
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:185: AttributeError
+_ test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-CLOUD_RETURN] _
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x75144d989d60>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+phase = 'CLOUD_RETURN'
+
+    @pytest.mark.parametrize('phase', ['NATIVE_PRE_SAFETY', 'NATIVE_PRE_SKILL', 'CLOUD_RETURN'])
+    def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(source, phase):
+        repo, data = source
+        result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False, phase=phase))
+>       assert result.record.route == ('STOP' if phase == 'NATIVE_PRE_SKILL' else 'REOBSERVE')
+               ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:185: AttributeError
+___ test_input_snapshot_and_detached_history_ignore_caller_mutations[memory] ___
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x75144d988ec0>, {...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_input_snapshot_and_detached_history_ignore_caller_mutations(source):
+        repo, data = source
+        request = request_for(data)
+        original_hash = request.digest()
+        data['online'].visual_facts['extra'] = {'caller': True}
+        data['publication'].verification_budget.state.remaining_reobservations = 0
+        assert request.digest() == original_hash
+>       result = repo.route_visual_verification_if_current(request=request)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_verification_repository.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:487: in route_visual_verification_if_current
+    values = derive_route(request, original, prior, ancestor, *self._visual_group_locked(task_id),
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:469: in derive_route
+    record=VisualVerificationRouteRecord(dict(schema_version='visual.verification.route.v1',scope='SOURCE_ROUTE_ONLY',
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:281: in __init__
+    before,after=_pool(raw['before_verification_budget']),_pool(raw['after_verification_budget'])
+                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = {'content_hash': '0552a5bfe9c9c05b909b44f6958705365487200188dec0f9a26037d66df6149a', 'created_at': '2026-10-04T18:19:55.844500+00:00', 'revision': 1, 'schema_version': 'recovery.verification-budget.v1', ...}
+
+    def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
+        if set(raw) != {'schema_version','task_id','state','revision','created_at','updated_at','content_hash'}:
+            raise ValueError('complete verification pool required')
+        state = raw['state']
+        if set(state) != {'remaining_reobservations','remaining_retries','consecutive_no_progress',
+                         'deadline_at','limits','previous_conditions','exhausted_reason','verification_rounds'}:
+            raise ValueError('complete verification state required')
+        for name in ('remaining_reobservations','remaining_retries','consecutive_no_progress','verification_rounds'):
+            counter(state[name])
+        if set(state['limits']) != {'max_reobservations','max_retries','max_no_progress','deadline_s'}:
+            raise ValueError('complete original verification limits required')
+        for name in ('max_reobservations','max_retries','max_no_progress'):
+            counter(state['limits'][name])
+        for key, pair in state['previous_conditions'].items():
+            _identifier(key)
+            if not isinstance(pair, list) or len(pair) != 2 or pair[0] not in {'UNKNOWN','FAIL','PASS'}:
+>               raise ValueError('strict best verified condition history required')
+E               ValueError: strict best verified condition history required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py:104: ValueError
+___ test_input_snapshot_and_detached_history_ignore_caller_mutations[sqlite] ___
+
+source = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x751479e6a090>, {'c...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}), tcp_velocity=0.15, acceleration=0.5, clearance_m=0.1, minimum_height_m=0.16), ...})
+
+    def test_input_snapshot_and_detached_history_ignore_caller_mutations(source):
+        repo, data = source
+        request = request_for(data)
+        original_hash = request.digest()
+        data['online'].visual_facts['extra'] = {'caller': True}
+        data['publication'].verification_budget.state.remaining_reobservations = 0
+        assert request.digest() == original_hash
+        result = repo.route_visual_verification_if_current(request=request)
+>       payload = result.record.to_payload()
+                  ^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'record'
+
+tests/test_visual_verification_repository.py:222: AttributeError
+_ test_two_sqlite_connections_commit_one_capture_claim_and_restart_preserves_history _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-951/test_two_sqlite_connections_co0')
+
+>   ???
+
+tests/test_visual_verification_repository.py:270: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x75147829bcd0>
+
+>   ???
+        
+E   AttributeError: 'NoneType' object has no attribute 'write_disposition'
+
+tests/test_visual_verification_repository.py:270: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_visual_verification_repository.py::test_missing_api_then_unknown_debits_pool_and_publication_atomically[memory]
+FAILED tests/test_visual_verification_repository.py::test_missing_api_then_unknown_debits_pool_and_publication_atomically[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_pass_is_local_only_does_not_refund_or_debit_retry[memory]
+FAILED tests/test_visual_verification_repository.py::test_pass_is_local_only_does_not_refund_or_debit_retry[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_identical_retry_and_random_key_new_generation_cannot_charge_twice[memory]
+FAILED tests/test_visual_verification_repository.py::test_identical_retry_and_random_key_new_generation_cannot_charge_twice[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[memory]
+FAILED tests/test_visual_verification_repository.py::test_same_key_changed_payload_or_same_frame_changed_facts_conflicts[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[memory]
+FAILED tests/test_visual_verification_repository.py::test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SAFETY]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-NATIVE_PRE_SKILL]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[memory-CLOUD_RETURN]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SAFETY]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-NATIVE_PRE_SKILL]
+FAILED tests/test_visual_verification_repository.py::test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context[sqlite-CLOUD_RETURN]
+FAILED tests/test_visual_verification_repository.py::test_input_snapshot_and_detached_history_ignore_caller_mutations[memory]
+FAILED tests/test_visual_verification_repository.py::test_input_snapshot_and_detached_history_ignore_caller_mutations[sqlite]
+FAILED tests/test_visual_verification_repository.py::test_two_sqlite_connections_commit_one_capture_claim_and_restart_preserves_history
+19 failed, 40 passed in 9.44s

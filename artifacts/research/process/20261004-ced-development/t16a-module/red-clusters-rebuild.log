@@ -1,0 +1,75 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__ test_fixed_opportunity_reduction_clusters_multiple_opportunities_per_group __
+
+    def test_fixed_opportunity_reduction_clusters_multiple_opportunities_per_group():
+>       effect=api().clustered_rate_reduction([(10,5),(20,10)],("STATIC_RTT0","STATIC_RTT100"))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'cloud_edge_robot_arm.research.statistics' has no attribute 'clustered_rate_reduction'
+
+tests/test_research_statistics.py:163: AttributeError
+_________ test_bootstrap_rejects_mismatched_repeated_seed_multiplicity _________
+
+    def test_bootstrap_rejects_mismatched_repeated_seed_multiplicity():
+        from dataclasses import replace
+        from cloud_edge_robot_arm.research.assignments import EpisodeAssignment
+        originals=records(1)
+        rows=[]
+        for method,seeds in (("B0",(1,1,2)),("JOINT",(1,2,2))):
+            base=next(row for row in originals if row.assignment.method_id==method)
+            for index,seed in enumerate(seeds):
+                assignment=EpisodeAssignment(f"g0::{method}::{index}","g0","STATIC_RTT0",method,seed,
+                                             "network",index)
+                rows.append(replace(base,assignment=assignment,
+                                    provenance=base.provenance.model_copy(update={"run_id":assignment.assignment_id})))
+>       with pytest.raises(ValueError,match="paired"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_statistics.py:181: Failed
+_ test_production_analysis_callable_is_deterministic_and_ignores_stored_commands _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-570/test_production_analysis_calla0')
+
+    def test_production_analysis_callable_is_deterministic_and_ignores_stored_commands(tmp_path):
+        import json
+        module=api("acceptance")
+        runs=tmp_path/"runs"
+        runs.mkdir()
+        (runs/"command.json").write_text(json.dumps({"cmd":"touch SHOULD_NOT_EXIST"}))
+        first=module.analyze_research_runs(runs,tmp_path/"missing-protocol",tmp_path/"first")
+        second=module.analyze_research_runs(runs,tmp_path/"missing-protocol",tmp_path/"second")
+        assert first==second
+        assert first["status"]=="NOT_RUN"
+        assert not (tmp_path/"SHOULD_NOT_EXIST").exists()
+        assert (tmp_path/"first"/"goal_verdicts.csv").read_bytes()==(tmp_path/"second"/"goal_verdicts.csv").read_bytes()
+>       assert (tmp_path/"first"/"goal_status.svg").read_bytes()==(tmp_path/"second"/"goal_status.svg").read_bytes()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_acceptance.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/pathlib.py:1021: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/pytest-of-ningyd/pytest-570/test_production_analysis_calla0/first/goal_status.svg')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-ningyd/pytest-570/test_production_analysis_calla0/first/goal_status.svg'
+
+/usr/lib/python3.12/pathlib.py:1015: FileNotFoundError
+=========================== short test summary info ============================
+FAILED tests/test_research_statistics.py::test_fixed_opportunity_reduction_clusters_multiple_opportunities_per_group
+FAILED tests/test_research_statistics.py::test_bootstrap_rejects_mismatched_repeated_seed_multiplicity
+FAILED tests/test_research_acceptance.py::test_production_analysis_callable_is_deterministic_and_ignores_stored_commands
+3 failed, 25 deselected in 0.37s

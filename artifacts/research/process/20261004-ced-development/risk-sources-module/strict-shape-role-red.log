@@ -1,0 +1,271 @@
+.......................FF...F.                                           [100%]
+=================================== FAILURES ===================================
+___ test_malformed_rehashed_tables_fail_typed_validation[summary.json-None] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-830/test_malformed_rehashed_tables2')
+name = 'summary.json', value = None
+
+    @pytest.mark.parametrize("name,value", [
+        ("commands.json", None), ("commands.json", {}), ("summary.json", None),
+        ("summary.json", []), ("physical-samples.json", {"success": True}),
+    ])
+    def test_malformed_rehashed_tables_fail_typed_validation(
+        tmp_path: Path, name: str, value: object
+    ) -> None:
+        case, directory = fixture_case(tmp_path)
+        json_file(directory / name, value)
+>       result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+
+tests/test_research_risk_sources.py:309: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/risk_sources.py:570: in audit
+    result = _case(directory, case, registration)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-830/test_malformed_rehashed_tables2/case')
+case = RawCaseRegistration(case_id='sw-case', relative_directory='case', layout='MARKER_MOTION_DEVELOPMENT_RAW_V1', original_...physics_steps': 121, 'commands': 0, 'actions': 0, 'frames': 0}), source_kind='SOFTWARE_ONLY', marker_registration=None)
+registration = RiskSourceRegistration(artifact_root=PosixPath('/tmp/pytest-of-ningyd/pytest-830/test_malformed_rehashed_tables2'), so...e_xy_radius_m=0.85, workspace_min_m=(-0.85, -0.85, 0.0), workspace_max_m=(0.85, 0.85, 1.2)), current_role_binding=None)
+
+    def _case(directory: Path, case: RawCaseRegistration,
+              registration: RiskSourceRegistration) -> Mapping[str, Any]:
+        if case.layout == "CED_PILOT_RAW_V2":
+            context = _json(directory / "context.json")
+            if not isinstance(context, dict) or context != _plain(case.context) or (
+                context.get("schema_version") != "rgbd.raw-episode.v2"
+            ):
+                raise ValueError("CED collector header differs from registered original/schema")
+            raw = _physics(_json(directory / "physical-observations.json"), case)
+            if context.get("assignment_hash") != content_digest(_plain(case.assignment)) or (
+                context.get("reset_step") != 0 or context.get("reset_sim_time_s") != 0
+                or context.get("terminal_step") != len(raw) - 1
+                or abs(_number(context["terminal_sim_time_s"]) - raw[-1].sim_time_s) > 1e-9
+                or context.get("reset_observation_hash") != content_digest(asdict(raw[0]))
+                or context.get("terminal_observation_hash") != content_digest(asdict(raw[-1]))
+            ):
+                raise ValueError("CED reset/terminal/assignment header does not reproduce")
+            controls = _json(directory / "actuator-steps.json")
+            actions = _json(directory / "raw-actions.json") if (
+                directory / "raw-actions.json").exists() else []
+        else:
+            raw = _physics(_rows(directory / "raw-physics.jsonl"), case)
+            controls = _rows(directory / "raw-actuators.jsonl")
+            actions = _rows(directory / "raw-actions.jsonl")
+        scene = _reset(raw, case)
+        if case.layout == "CED_PILOT_RAW_V2" and (
+            context.get("group_id") != scene.group_id or context.get("scene_hash") != scene.scene_hash
+        ):
+            raise ValueError("CED full scene/source identity differs")
+        binding = registration.current_role_binding
+        if case.source_kind == "RECORDED_SIMULATION" and case.layout == "CED_PILOT_RAW_V2":
+            if binding is None:
+                raise FileNotFoundError("actual_current_role_binding_unavailable")
+            binding._validate_sources(binding.bundle.cloud_snapshot.source_hashes)
+            binding._validate_sources(binding.edge_snapshot.source_hashes)
+            binding._validate_sources(binding.device_source_hashes)
+            if case.context.get("role_bundle_hash") != binding.bundle.digest():
+                raise ValueError("CED current role bundle differs from original raw context")
+        if case.marker_registration is not None and (
+            scene.asset_family_hash != case.marker_registration.marked_asset_sha256
+            or case.marker_registration.marked_asset_sha256
+            not in registration.current_source_hashes.values()
+        ):
+            raise ValueError("marker registration/current asset differs")
+        commands = _json(directory / "commands.json")
+        _controls(commands, controls, raw, case)
+        _actions(actions, commands, raw, case)
+        samples = [sample_physical_observation(item, registration.criteria) for item in raw]
+        outcome = asdict(evaluate_evidence(samples, registration.criteria, evaluation_start_step=120))
+        samples_path = directory / "physical-samples.json"
+        if samples_path.exists() and content_digest(_json(samples_path)) != content_digest(
+            [asdict(item) for item in samples]
+        ):
+            raise ValueError("physical summary samples do not reproduce raw snapshots")
+        summary_path = directory / "summary.json"
+>       if summary_path.exists() and _json(summary_path).get("outcome") != _plain(outcome):
+                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'get'
+
+src/cloud_edge_robot_arm/research/risk_sources.py:510: AttributeError
+__ test_malformed_rehashed_tables_fail_typed_validation[summary.json-value3] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-830/test_malformed_rehashed_tables3')
+name = 'summary.json', value = []
+
+    @pytest.mark.parametrize("name,value", [
+        ("commands.json", None), ("commands.json", {}), ("summary.json", None),
+        ("summary.json", []), ("physical-samples.json", {"success": True}),
+    ])
+    def test_malformed_rehashed_tables_fail_typed_validation(
+        tmp_path: Path, name: str, value: object
+    ) -> None:
+        case, directory = fixture_case(tmp_path)
+        json_file(directory / name, value)
+>       result = registered(tmp_path, replace(case, original_file_hashes=hashes(directory))).audit(
+            "fixture", scope="RAW_EXECUTION"
+        )
+
+tests/test_research_risk_sources.py:309: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/risk_sources.py:570: in audit
+    result = _case(directory, case, registration)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-830/test_malformed_rehashed_tables3/case')
+case = RawCaseRegistration(case_id='sw-case', relative_directory='case', layout='MARKER_MOTION_DEVELOPMENT_RAW_V1', original_...physics_steps': 121, 'commands': 0, 'actions': 0, 'frames': 0}), source_kind='SOFTWARE_ONLY', marker_registration=None)
+registration = RiskSourceRegistration(artifact_root=PosixPath('/tmp/pytest-of-ningyd/pytest-830/test_malformed_rehashed_tables3'), so...e_xy_radius_m=0.85, workspace_min_m=(-0.85, -0.85, 0.0), workspace_max_m=(0.85, 0.85, 1.2)), current_role_binding=None)
+
+    def _case(directory: Path, case: RawCaseRegistration,
+              registration: RiskSourceRegistration) -> Mapping[str, Any]:
+        if case.layout == "CED_PILOT_RAW_V2":
+            context = _json(directory / "context.json")
+            if not isinstance(context, dict) or context != _plain(case.context) or (
+                context.get("schema_version") != "rgbd.raw-episode.v2"
+            ):
+                raise ValueError("CED collector header differs from registered original/schema")
+            raw = _physics(_json(directory / "physical-observations.json"), case)
+            if context.get("assignment_hash") != content_digest(_plain(case.assignment)) or (
+                context.get("reset_step") != 0 or context.get("reset_sim_time_s") != 0
+                or context.get("terminal_step") != len(raw) - 1
+                or abs(_number(context["terminal_sim_time_s"]) - raw[-1].sim_time_s) > 1e-9
+                or context.get("reset_observation_hash") != content_digest(asdict(raw[0]))
+                or context.get("terminal_observation_hash") != content_digest(asdict(raw[-1]))
+            ):
+                raise ValueError("CED reset/terminal/assignment header does not reproduce")
+            controls = _json(directory / "actuator-steps.json")
+            actions = _json(directory / "raw-actions.json") if (
+                directory / "raw-actions.json").exists() else []
+        else:
+            raw = _physics(_rows(directory / "raw-physics.jsonl"), case)
+            controls = _rows(directory / "raw-actuators.jsonl")
+            actions = _rows(directory / "raw-actions.jsonl")
+        scene = _reset(raw, case)
+        if case.layout == "CED_PILOT_RAW_V2" and (
+            context.get("group_id") != scene.group_id or context.get("scene_hash") != scene.scene_hash
+        ):
+            raise ValueError("CED full scene/source identity differs")
+        binding = registration.current_role_binding
+        if case.source_kind == "RECORDED_SIMULATION" and case.layout == "CED_PILOT_RAW_V2":
+            if binding is None:
+                raise FileNotFoundError("actual_current_role_binding_unavailable")
+            binding._validate_sources(binding.bundle.cloud_snapshot.source_hashes)
+            binding._validate_sources(binding.edge_snapshot.source_hashes)
+            binding._validate_sources(binding.device_source_hashes)
+            if case.context.get("role_bundle_hash") != binding.bundle.digest():
+                raise ValueError("CED current role bundle differs from original raw context")
+        if case.marker_registration is not None and (
+            scene.asset_family_hash != case.marker_registration.marked_asset_sha256
+            or case.marker_registration.marked_asset_sha256
+            not in registration.current_source_hashes.values()
+        ):
+            raise ValueError("marker registration/current asset differs")
+        commands = _json(directory / "commands.json")
+        _controls(commands, controls, raw, case)
+        _actions(actions, commands, raw, case)
+        samples = [sample_physical_observation(item, registration.criteria) for item in raw]
+        outcome = asdict(evaluate_evidence(samples, registration.criteria, evaluation_start_step=120))
+        samples_path = directory / "physical-samples.json"
+        if samples_path.exists() and content_digest(_json(samples_path)) != content_digest(
+            [asdict(item) for item in samples]
+        ):
+            raise ValueError("physical summary samples do not reproduce raw snapshots")
+        summary_path = directory / "summary.json"
+>       if summary_path.exists() and _json(summary_path).get("outcome") != _plain(outcome):
+                                     ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'list' object has no attribute 'get'
+
+src/cloud_edge_robot_arm/research/risk_sources.py:510: AttributeError
+_______ test_role_binding_nested_snapshots_copy_without_mutable_aliases ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-830/test_role_binding_nested_snaps0')
+
+    def test_role_binding_nested_snapshots_copy_without_mutable_aliases(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+        edge_names = ["src/cloud_edge_robot_arm/edge/recovery/verification_router.py", *[
+            f"src/cloud_edge_robot_arm/edge/evidence/{name}.py" for name in ("models", "validator", "conditions")
+        ]]
+        cloud_names = ["src/cloud_edge_robot_arm/vision/role_models.py"]
+        device_name = "src/cloud_edge_robot_arm/vision/action_evidence.py"
+        source_hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                         for name in [*edge_names, *cloud_names, device_name]}
+        policy = {"scope": "SOFTWARE_ONLY", "values": [1, 2]}
+        cloud = RoleProviderSnapshot("CLOUD", "fixture-cloud", "LOCAL_HOST", "fixture-model",
+                                     None, None, None, configuration_hash(policy),
+                                     {name: source_hashes[name] for name in cloud_names})
+        edge = RoleProviderSnapshot("EDGE", "fixture-edge", "LOCAL_HOST", None, None, None,
+                                    None, configuration_hash(policy),
+                                    {name: source_hashes[name] for name in edge_names})
+        device = {device_name: source_hashes[device_name]}
+        binding = RoleRuntimeBinding(RoleModelBundle(cloud, edge.provider_id, edge.digest(),
+                                                    configuration_hash(device)), edge, device,
+                                     policy, root=ROOT)
+>       registration = RiskSourceRegistration(tmp_path, ROOT, sources(), (case,),
+                                             CompletionCriteria("object", "target_region"), binding)
+
+tests/test_research_risk_sources.py:355: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_sources.py:163: in __post_init__
+    **{**asdict(cloud), "source_hashes": dict(cloud.source_hashes)}
+         ^^^^^^^^^^^^^
+/usr/lib/python3.12/dataclasses.py:1322: in asdict
+    return _asdict_inner(obj, dict_factory)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/dataclasses.py:1332: in _asdict_inner
+    f.name: _asdict_inner(getattr(obj, f.name), dict)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/dataclasses.py:1379: in _asdict_inner
+    return copy.deepcopy(obj)
+           ^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = mappingproxy({'src/cloud_edge_robot_arm/vision/role_models.py': '13b59bd3679cd4893de60431e1392ec495bc1a964aa8493536defc435d91c0c9'})
+memo = {}, _nil = []
+
+    def deepcopy(x, memo=None, _nil=[]):
+        """Deep copy operation on arbitrary Python objects.
+    
+        See the module's __doc__ string for more info.
+        """
+    
+        if memo is None:
+            memo = {}
+    
+        d = id(x)
+        y = memo.get(d, _nil)
+        if y is not _nil:
+            return y
+    
+        cls = type(x)
+    
+        copier = _deepcopy_dispatch.get(cls)
+        if copier is not None:
+            y = copier(x, memo)
+        else:
+            if issubclass(cls, type):
+                y = _deepcopy_atomic(x, memo)
+            else:
+                copier = getattr(x, "__deepcopy__", None)
+                if copier is not None:
+                    y = copier(memo)
+                else:
+                    reductor = dispatch_table.get(cls)
+                    if reductor:
+                        rv = reductor(x)
+                    else:
+                        reductor = getattr(x, "__reduce_ex__", None)
+                        if reductor is not None:
+>                           rv = reductor(4)
+                                 ^^^^^^^^^^^
+E                           TypeError: cannot pickle 'mappingproxy' object
+
+/usr/lib/python3.12/copy.py:151: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_malformed_rehashed_tables_fail_typed_validation[summary.json-None]
+FAILED tests/test_research_risk_sources.py::test_malformed_rehashed_tables_fail_typed_validation[summary.json-value3]
+FAILED tests/test_research_risk_sources.py::test_role_binding_nested_snapshots_copy_without_mutable_aliases
+3 failed, 27 passed in 9.11s

@@ -1,0 +1,38 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_frozen_development_exclusions_reject_external_supplied_pool _______
+
+pools = {'formal': [{'assignment_id': 'formal-0001', 'ood_definition': None, 'perturbation': {'invalid_fraction': 0.0, 'moveme...'position': [...], 'rgba': [...]}, 'distractors': [], ...}, 'schema_version': 'rgbd.dataset.v1', ...}, ...}, ...], ...}
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-733/test_frozen_development_exclus0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74e7926e2cc0>
+
+    def test_frozen_development_exclusions_reject_external_supplied_pool(pools, tmp_path, monkeypatch):
+        import scripts.run_rgbd_pilot as script
+        import yaml
+    
+        from cloud_edge_robot_arm.research.protocol import file_hash
+    
+        row = pools["foundation"][0]
+        source = tmp_path / "used-assignment.json"
+        source.write_text(json.dumps(row))
+        payload = {"schema_version": "ced.excluded-groups.v1", "scope": "DEVELOPMENT_USED",
+                   "group_ids": [row["scene"]["group_id"]],
+                   "sources": [{"path": str(source), "sha256": file_hash(source),
+                                "kind": "assignment"}]}
+        inventory = tmp_path / "exclusions.yaml"
+        inventory.write_text(yaml.safe_dump({**payload, "content_hash": content_digest(payload)}))
+        monkeypatch.setattr(script, "CED_EXCLUSION_INVENTORY", inventory, raising=False)
+        supplied = tmp_path / "pools.json"
+        supplied.write_text(json.dumps(pools))
+        settings = {"exclude_datasets": [], "exclude_pilots": [], "pools_path": str(supplied),
+                    "seed": 981301}
+        with pytest.raises(ValueError, match="previously used"):
+            script._ced_pools(settings)
+>       assert result["selected_period_s"] is None
+               ^^^^^^
+E       NameError: name 'result' is not defined
+
+tests/test_ced_pilot_stages.py:219: NameError
+=========================== short test summary info ============================
+FAILED tests/test_ced_pilot_stages.py::test_frozen_development_exclusions_reject_external_supplied_pool
+1 failed, 16 deselected in 1.14s

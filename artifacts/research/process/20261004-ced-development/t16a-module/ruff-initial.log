@@ -1,0 +1,324 @@
+E501 Line too long (101 > 100)
+  --> src/cloud_edge_robot_arm/research/acceptance.py:72:101
+   |
+70 |             for goal in GOAL_IDS]
+71 |     if metrics.get("scope")!="SOFTWARE_ONLY":
+72 |         raise ValueError("software goal diagnostics require an explicit SOFTWARE_ONLY metrics scope")
+   |                                                                                                     ^
+73 |     validate_formal_protocol(protocol)
+74 |     effects=metrics.get("effects",{})
+   |
+
+E501 Line too long (104 > 100)
+  --> src/cloud_edge_robot_arm/research/acceptance.py:79:101
+   |
+77 |     raw_p={key:(effects[key].get("p_value") if isinstance(effects.get(key),Mapping) else None)
+78 |            for key in protocol.spec.hypothesis_family}
+79 |     adjusted=holm_adjust({key:float(value) if value is not None else 1. for key,value in raw_p.items()})
+   |                                                                                                     ^^^^
+80 |     estimates={key:_effect(effects,key) for key in
+81 |         (*protocol.spec.hypothesis_family,"G2A_BYTES","G2A_DURATION")}
+   |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/research/acceptance.py:101:101
+    |
+ 99 |             verdicts["G2"]=GoalVerdict("G2",status,{"requests":asdict(requests),"success":asdict(success),
+100 |                 "safety":asdict(safety),"holm_adjusted_p":adjusted},
+101 |                 ("software threshold evaluation only; no accepted physical evidence",),evidence_scope=scope)
+    |                                                                                                     ^^^^^^^^
+102 |     secondary={key:improvement_status(estimates[key],target) if estimates[key] else "NOT_RUN"
+103 |                for key,target in (("G2A_BYTES",.25),("G2A_DURATION",.15))}
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/acceptance.py:108:101
+    |
+106 |             "FAIL" if "FAIL" in secondary.values() else "INSUFFICIENT_EVIDENCE")
+107 |         verdicts["G2a"]=GoalVerdict("G2a",status,secondary,
+108 |             ("bytes and penalized P95 duration are separate secondary targets",),evidence_scope=scope)
+    |                                                                                                     ^^
+109 |     # G0/G1/G3/G4/G5 still need independent stage/geometric/fault/data evidence.
+110 |     # Neither a replay nor a success declaration fills those prerequisites.
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/acceptance.py:121:101
+    |
+119 |         path=output/name
+120 |         if path.exists() and path.read_text()!=text:
+121 |             raise ValueError("existing analysis output differs; preserve it and use a new directory")
+    |                                                                                                     ^
+122 |         path.write_text(text)
+123 |     with (output/"goal_verdicts.csv").open("w",newline="") as stream:
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/research/acceptance.py:127:101
+    |
+125 |         writer.writerow(("goal_id","status","evidence_scope","reasons"))
+126 |         for value in report["goal_verdicts"]:
+127 |             writer.writerow((value["goal_id"],value["status"],value["evidence_scope"],"; ".join(value["reasons"])))
+    |                                                                                                     ^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/acceptance.py:137:101
+    |
+135 |     metrics: Mapping[str,object]={"schema_version":"ced.research-metrics.v1","scope":scope,
+136 |         "formal_accepted":False,"accepted_physical_success":0,"source_validation_status":"NOT_CONFIGURED"}
+137 |     verdicts=[GoalVerdict(goal,"NOT_RUN",None,("analysis prerequisites missing",),evidence_scope=scope)
+    |                                                                                                     ^^^
+138 |               for goal in GOAL_IDS]
+139 |     status="NOT_RUN"
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/acceptance.py:149:101
+    |
+147 |         manifest=json.loads(manifest_path.read_text())
+148 |         expected_hash=manifest.pop("content_hash",None)
+149 |         if manifest.get("schema_version")!="ced.assignments.v1" or content_digest(manifest)!=expected_hash:
+    |                                                                                                     ^^^^^^^
+150 |             raise ValueError("frozen assignment manifest schema/hash mismatch")
+151 |         if manifest.get("protocol_hash")!=frozen.content_hash:
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/acceptance.py:161:101
+    |
+159 |         actual={row.assignment.assignment_id:row for row in rows}
+160 |         if len(actual)!=len(rows) or set(actual)!=set(expected):
+161 |             raise ValueError("analysis requires every preassigned episode, including missing/blocked failures")
+    |                                                                                                     ^^^^^^^^^^^
+162 |         if any(row.assignment!=expected[key] for key,row in actual.items()):
+163 |             raise ValueError("episode differs from its frozen preassigned identity")
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/cloud_edge_robot_arm/research/metrics.py:3:1
+   |
+ 1 |   """研究全分母诊断；正式物理来源重算未整合时不接受元数据成功。"""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | from collections import Counter
+ 6 | | from collections.abc import Mapping, Sequence
+ 7 | | from dataclasses import asdict
+ 8 | | from typing import Any
+ 9 | |
+10 | | import numpy as np
+11 | |
+12 | | from cloud_edge_robot_arm.edge.evidence.opportunities import (
+13 | |     GateReplayRecord,
+14 | |     Opportunity,
+15 | |     summarize_gate_replay,
+16 | | )
+17 | | from cloud_edge_robot_arm.research.assignments import EpisodeRecord
+18 | | from cloud_edge_robot_arm.research.provenance import audit_provenance
+19 | | from cloud_edge_robot_arm.research.statistics import paired_binary_effect, stratified_paired_bootstrap
+   | |______________________________________________________________________________________________________^
+   |
+help: Organize imports
+
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/research/metrics.py:19:101
+   |
+17 | from cloud_edge_robot_arm.research.assignments import EpisodeRecord
+18 | from cloud_edge_robot_arm.research.provenance import audit_provenance
+19 | from cloud_edge_robot_arm.research.statistics import paired_binary_effect, stratified_paired_bootstrap
+   |                                                                                                     ^^
+   |
+
+E501 Line too long (106 > 100)
+  --> src/cloud_edge_robot_arm/research/metrics.py:38:101
+   |
+36 |     n=len(rows)
+37 |     online=sum(row.outcome.online_reported_complete is True for row in rows)
+38 |     false_completion=sum(row.outcome.online_reported_complete is True and not row.outcome.physical_success
+   |                                                                                                     ^^^^^^
+39 |                          for row in rows)
+40 |     declared_success=sum(bool(row.outcome.success and row.outcome.physical_success and
+   |
+
+E501 Line too long (104 > 100)
+  --> src/cloud_edge_robot_arm/research/metrics.py:43:101
+   |
+41 |                               row.outcome.online_reported_complete) for row in rows)
+42 |     safety=sum(row.outcome.safety_violation for row in rows)
+43 |     progress=sum(any(marker in (row.outcome.terminal_reason or row.outcome.failure_reason or "").upper()
+   |                                                                                                     ^^^^
+44 |                      for marker in ("NO_PROGRESS","STALL")) for row in rows)
+45 |     fallback=sum(row.run_status=="FALLBACK" for row in rows)
+   |
+
+E501 Line too long (110 > 100)
+  --> src/cloud_edge_robot_arm/research/metrics.py:67:101
+   |
+65 |         "terminal_status_counts":dict(Counter(row.run_status for row in rows)),
+66 |         "cloud_requests_total":sum(row.costs.cloud_model_requests for row in rows),
+67 |         "cloud_requests_mean":float(np.mean([row.costs.cloud_model_requests for row in rows])) if n else None,
+   |                                                                                                     ^^^^^^^^^^
+68 |         "model_requests_total":sum(row.costs.model_requests for row in rows),
+69 |         "model_requests_by_role":dict(roles),
+   |
+
+E501 Line too long (111 > 100)
+  --> src/cloud_edge_robot_arm/research/metrics.py:97:101
+   |
+95 |     audit=audit_provenance([record.provenance for record in records])
+96 |     metrics: dict[str, Any]={
+97 |         "schema_version":"ced.research-metrics.v1", "scope":"SOFTWARE_ONLY" if software_only else "UNVERIFIED",
+   |                                                                                                     ^^^^^^^^^^^
+98 |         "formal_accepted":False,"source_validation_status":"NOT_CONFIGURED",
+99 |         "source_validation_reason":"independent raw physics/capture/model/decision source verifier is not integrated",
+   |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/research/metrics.py:99:101
+    |
+ 97 |         "schema_version":"ced.research-metrics.v1", "scope":"SOFTWARE_ONLY" if software_only else "UNVERIFIED",
+ 98 |         "formal_accepted":False,"source_validation_status":"NOT_CONFIGURED",
+ 99 |         "source_validation_reason":"independent raw physics/capture/model/decision source verifier is not integrated",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+100 |         "assignment_denominator":len(records),
+101 |         "independent_group_denominator":len({row.assignment.group_id for row in records}),
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/metrics.py:116:101
+    |
+114 |                 pair=pairs.setdefault(row.assignment.group_id,{})
+115 |                 if row.assignment.method_id in pair:
+116 |                     raise ValueError("repeated base group needs hierarchical explicit seed analysis")
+    |                                                                                                     ^
+117 |                 pair[row.assignment.method_id]=row
+118 |         if any(set(pair)!={"B0","JOINT"} for pair in pairs.values()):
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/metrics.py:121:101
+    |
+119 |             raise ValueError("main analysis must retain all paired assigned groups")
+120 |         if pairs:
+121 |             success=[(bool(pair["JOINT"].outcome.success and pair["JOINT"].outcome.physical_success and
+    |                                                                                                     ^^^
+122 |                            pair["JOINT"].outcome.online_reported_complete),
+123 |                       bool(pair["B0"].outcome.success and pair["B0"].outcome.physical_success and
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/metrics.py:145:101
+    |
+143 |             base=metrics["gate"]["B3"]["false_acceptance_rate"]
+144 |             joint=metrics["gate"]["JOINT"]["false_acceptance_rate"]
+145 |             metrics["gate"]["relative_false_acceptance_reduction"]=(base-joint)/base if base else None
+    |                                                                                                     ^^
+146 |     elif opportunities:
+147 |         metrics["gate"]["status"]="NOT_RUN"
+    |
+
+F401 [*] `typing.Any` imported but unused
+  --> src/cloud_edge_robot_arm/research/statistics.py:10:20
+   |
+ 8 | from dataclasses import dataclass, field
+ 9 | from statistics import NormalDist
+10 | from typing import Any, Literal
+   |                    ^^^
+11 |
+12 | import numpy as np
+   |
+help: Remove unused import: `typing.Any`
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/research/statistics.py:253:101
+    |
+251 |     for start in range(0,iterations,256):
+252 |         count = min(256,iterations-start)
+253 |         sampled = np.concatenate([rng.choice(layer,size=(count,len(layer))) for layer in layers],axis=1)
+    |                                                                                                     ^^^^
+254 |         draws.extend(_aggregate(x[sampled],y[sampled],metric).tolist())
+255 |     estimates = np.asarray(draws)
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/test_research_acceptance.py:84:5
+   |
+83 |   def test_false_rejection_excludes_unknown():
+84 | /     from tests.test_fixed_opportunity_replay import opportunities
+85 | |     from cloud_edge_robot_arm.research.runner import run_gate_replay
+   | |____________________________________________________________________^
+86 |       values=opportunities()
+87 |       metrics=api("metrics").compute_research_metrics((),values,run_gate_replay(values,"JOINT"),
+   |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/test_research_acceptance.py:97:5
+    |
+ 96 |   def test_g3_replay_never_counts_as_task_success():
+ 97 | /     from tests.test_fixed_opportunity_replay import opportunities
+ 98 | |     from cloud_edge_robot_arm.research.runner import run_gate_replay
+    | |____________________________________________________________________^
+ 99 |       values=opportunities()
+100 |       metrics=api("metrics").compute_research_metrics((),values,run_gate_replay(values,"JOINT"),
+    |
+help: Organize imports
+
+E401 [*] Multiple imports on one line
+   --> tests/test_research_acceptance.py:121:5
+    |
+120 | def test_analysis_cli_missing_final_is_not_run(tmp_path):
+121 |     import json,subprocess,sys
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+122 |     result=subprocess.run([sys.executable,"scripts/analyze_rgbd_research.py","--runs",
+123 |         str(tmp_path/"empty"),"--protocol",str(tmp_path/"absent"),"--output",str(tmp_path/"out")],
+    |
+help: Split imports
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> tests/test_research_acceptance.py:121:5
+    |
+120 | def test_analysis_cli_missing_final_is_not_run(tmp_path):
+121 |     import json,subprocess,sys
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+122 |     result=subprocess.run([sys.executable,"scripts/analyze_rgbd_research.py","--runs",
+123 |         str(tmp_path/"empty"),"--protocol",str(tmp_path/"absent"),"--output",str(tmp_path/"out")],
+    |
+help: Organize imports
+
+E501 Line too long (103 > 100)
+  --> tests/test_research_statistics.py:23:101
+   |
+21 |     assert result.lower95 < result.point < result.upper95
+22 |     # Same marginal .6/.5, different paired concordance => larger uncertainty.
+23 |     less_concordant = [(True, True)]*30 + [(True, False)]*30 + [(False, True)]*20 + [(False, False)]*20
+   |                                                                                                     ^^^
+24 |     wider = api().paired_binary_effect(less_concordant)
+25 |     assert wider.point == pytest.approx(.1)
+   |
+
+E501 Line too long (106 > 100)
+  --> tests/test_research_statistics.py:88:101
+   |
+86 |     rows = records()
+87 |     result = api().stratified_paired_bootstrap(rows,"cloud_requests_relative_reduction")
+88 |     duplicated_frames = [replace(row,verification_records=tuple({"status":"UNKNOWN"} for _ in range(100)))
+   |                                                                                                     ^^^^^^
+89 |                           for row in rows]
+90 |     repeated = api().stratified_paired_bootstrap(duplicated_frames,"cloud_requests_relative_reduction")
+   |
+
+E501 Line too long (103 > 100)
+  --> tests/test_research_statistics.py:90:101
+   |
+88 |     duplicated_frames = [replace(row,verification_records=tuple({"status":"UNKNOWN"} for _ in range(100)))
+89 |                           for row in rows]
+90 |     repeated = api().stratified_paired_bootstrap(duplicated_frames,"cloud_requests_relative_reduction")
+   |                                                                                                     ^^^
+91 |     assert repeated == result
+92 |     assert result.denominator == 8
+   |
+
+Found 28 errors.
+[*] 6 fixable with the `--fix` option.

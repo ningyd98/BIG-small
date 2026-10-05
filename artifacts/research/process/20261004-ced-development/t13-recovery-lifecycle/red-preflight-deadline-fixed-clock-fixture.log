@@ -1,0 +1,34 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+____ test_expired_preflight_does_not_acquire_another_evidence_frame[memory] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x75ae8a9fea20>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x75ae8a9fe8d0>
+
+    def test_expired_preflight_does_not_acquire_another_evidence_frame(lifecycle_repo, monkeypatch):
+        import cloud_edge_robot_arm.edge.recovery.lifecycle as lifecycle
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "UNKNOWN")
+        future = record.budget_state.deadline_at + timedelta(seconds=1)
+>       monkeypatch.setattr(lifecycle, "_utc_clock", lambda: future)
+E       AttributeError: <module 'cloud_edge_robot_arm.edge.recovery.lifecycle' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py'> has no attribute '_utc_clock'
+
+tests/test_recovery_lifecycle_module.py:1366: AttributeError
+____ test_expired_preflight_does_not_acquire_another_evidence_frame[sqlite] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x75ae86baf380>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x75ae86baf290>
+
+    def test_expired_preflight_does_not_acquire_another_evidence_frame(lifecycle_repo, monkeypatch):
+        import cloud_edge_robot_arm.edge.recovery.lifecycle as lifecycle
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "UNKNOWN")
+        future = record.budget_state.deadline_at + timedelta(seconds=1)
+>       monkeypatch.setattr(lifecycle, "_utc_clock", lambda: future)
+E       AttributeError: <module 'cloud_edge_robot_arm.edge.recovery.lifecycle' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py'> has no attribute '_utc_clock'
+
+tests/test_recovery_lifecycle_module.py:1366: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_expired_preflight_does_not_acquire_another_evidence_frame[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_expired_preflight_does_not_acquire_another_evidence_frame[sqlite]
+2 failed, 154 deselected in 0.81s

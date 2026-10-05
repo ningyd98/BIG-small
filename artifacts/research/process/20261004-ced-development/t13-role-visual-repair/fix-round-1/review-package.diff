@@ -1,0 +1,72 @@
+--- original/src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py
++++ fix-round-1/src/cloud_edge_robot_arm/cloud/replanning/role_visual_repair.py
+@@ -453,6 +453,7 @@
+             if not isinstance(grounded, GroundedRepairStep):
+                 raise RoleVisualRepairUnavailable("typed_grounding_proof_missing")
+             step = grounded.step
++            original_proof = self.source.action_evidence[original.step_id]
+             if (
+                 grounded.source_binding_hash != binding_hash
+                 or grounded.payload_hash != replan_payload_hash(step)
+@@ -464,9 +465,15 @@
+                 or step.timeout_ms != original.timeout_ms
+                 or step.retry_limit != original.retry_limit
+                 or digest(grounded.action_evidence.preconditions)
+-                != digest(self.source.action_evidence[original.step_id].preconditions)
++                != digest(original_proof.preconditions)
+                 or digest(grounded.action_evidence.postconditions)
+-                != digest(self.source.action_evidence[original.step_id].postconditions)
++                != digest(original_proof.postconditions)
++                or grounded.action_evidence.allowed_error_m != original_proof.allowed_error_m
++                or grounded.action_evidence.sensor_requirements
++                != original_proof.sensor_requirements
++                or grounded.action_evidence.ordinary_ttl_s != original_proof.ordinary_ttl_s
++                or grounded.action_evidence.expected_duration_s
++                != original_proof.expected_duration_s
+             ):
+                 raise RoleVisualRepairUnavailable("grounding_changed_frozen_requirements")
+             self._validate_action(step, grounded.action_evidence, context)
+--- original/tests/test_role_visual_repair.py
++++ fix-round-1/tests/test_role_visual_repair.py
+@@ -450,6 +450,41 @@
+     adapter.grounding_provider = grounding
+     result = adapter.replan(request)
+     assert len(wire.requests) == 1 and result.new_steps == [] and result.outcome != "REPLANNED"
++
++
++@pytest.mark.parametrize(
++    "changed", ["error_tolerance", "required_sensors", "ttl", "duration"]
++)
++def test_grounder_preserves_frozen_action_policy_even_when_new_proof_is_valid(
++    tmp_path, monkeypatch, changed
++):
++    from cloud_edge_robot_arm.contracts.models import replan_payload_hash
++
++    adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
++
++    def grounding(intent, original, observation, context, binding_hash):
++        del intent, observation, context
++        proof = source.action_evidence[original.step_id]
++        if changed == "error_tolerance":
++            proof = replace(
++                proof,
++                allowed_error_m=0.1,
++                evidence=replace(proof.evidence, geometric_error_bound_m=0.05),
++            )
++        elif changed == "required_sensors":
++            proof = replace(proof, sensor_requirements=())
++        elif changed == "ttl":
++            proof = replace(proof, ordinary_ttl_s=proof.ordinary_ttl_s * 2)
++        else:
++            proof = replace(proof, expected_duration_s=proof.expected_duration_s + 1)
++        return api().GroundedRepairStep(
++            original, proof, binding_hash, replan_payload_hash(original)
++        )
++
++    adapter.grounding_provider = grounding
++    result = adapter.replan(request)
++    assert len(wire.requests) == 1
++    assert result.outcome != "REPLANNED" and result.new_steps == []
+ 
+ 
+ def test_wire_observer_and_cost_ledger_preserve_actual_mock_body_bytes(tmp_path, monkeypatch):

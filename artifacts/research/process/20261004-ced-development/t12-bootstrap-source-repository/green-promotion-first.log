@@ -1,0 +1,62 @@
+FF..............s..                                                      [100%]
+=================================== FAILURES ===================================
+_ test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[memory] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x771ffc21d460>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once(store):
+        from dataclasses import asdict
+    
+        repo, data = store
+        source = promotion_ready(repo, data)
+        record, original, checkpoint, state, retry, promotion = source
+        saved = adopt(repo, source)
+        promoted = repo.get_visual_bootstrap(record.definition.bootstrap_id)
+        assert promoted.terminal_reason == "original_adopted"
+        assert asdict(promoted.verification_state) == asdict(state)
+        assert asdict(saved.verification_budget.state) == asdict(state)
+        assert state.remaining_reobservations == 0 and state.verification_rounds == 2
+        assert state.consecutive_no_progress == 1
+        assert saved.retry_budget == retry
+        assert repo.get_visual_original_plan(original.identity.task_id, 1).digest() == original.digest()
+        assert repo.get_active_contract(original.identity.task_id).contract == original.contract
+        assert (
+>           repo.get_execution_checkpoint(original.identity.task_id).checkpoint_hash
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            == checkpoint.checkpoint_hash
+        )
+E       AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'get_execution_checkpoint'. Did you mean: 'save_execution_checkpoint'?
+
+tests/test_visual_bootstrap_repository.py:735: AttributeError
+_ test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[sqlite] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x771ffd8137a0>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once(store):
+        from dataclasses import asdict
+    
+        repo, data = store
+        source = promotion_ready(repo, data)
+        record, original, checkpoint, state, retry, promotion = source
+        saved = adopt(repo, source)
+        promoted = repo.get_visual_bootstrap(record.definition.bootstrap_id)
+        assert promoted.terminal_reason == "original_adopted"
+        assert asdict(promoted.verification_state) == asdict(state)
+        assert asdict(saved.verification_budget.state) == asdict(state)
+        assert state.remaining_reobservations == 0 and state.verification_rounds == 2
+        assert state.consecutive_no_progress == 1
+        assert saved.retry_budget == retry
+        assert repo.get_visual_original_plan(original.identity.task_id, 1).digest() == original.digest()
+        assert repo.get_active_contract(original.identity.task_id).contract == original.contract
+        assert (
+>           repo.get_execution_checkpoint(original.identity.task_id).checkpoint_hash
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            == checkpoint.checkpoint_hash
+        )
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'get_execution_checkpoint'. Did you mean: 'save_execution_checkpoint'?
+
+tests/test_visual_bootstrap_repository.py:735: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[memory]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[sqlite]
+2 failed, 16 passed, 1 skipped, 57 deselected in 14.24s

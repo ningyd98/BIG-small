@@ -1,0 +1,92 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_retry_consumer_uses_single_lifecycle_transaction_and_duplicate_cannot_dispatch[memory] _
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7ae8d18ffc50>
+
+    def test_retry_consumer_uses_single_lifecycle_transaction_and_duplicate_cannot_dispatch(repo):
+        saved = repo.initialize_recovery_if_absent(detected_record(repo))
+        proof = authorization_proof(saved)
+        service = RetryBudgetService(repository=repo)
+        before = repo.get_retry_budget("task").retry_count_used
+        repo.consume_retry_if_available = lambda **kwargs: pytest.fail("split retry transaction used")
+>       first = service.consume_for_recovery(proof)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RetryBudgetService' object has no attribute 'consume_for_recovery'
+
+tests/test_retry_lifecycle_consumer.py:28: AttributeError
+_ test_retry_consumer_uses_single_lifecycle_transaction_and_duplicate_cannot_dispatch[sqlite] _
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7ae8cdd56ed0>
+
+    def test_retry_consumer_uses_single_lifecycle_transaction_and_duplicate_cannot_dispatch(repo):
+        saved = repo.initialize_recovery_if_absent(detected_record(repo))
+        proof = authorization_proof(saved)
+        service = RetryBudgetService(repository=repo)
+        before = repo.get_retry_budget("task").retry_count_used
+        repo.consume_retry_if_available = lambda **kwargs: pytest.fail("split retry transaction used")
+>       first = service.consume_for_recovery(proof)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RetryBudgetService' object has no attribute 'consume_for_recovery'
+
+tests/test_retry_lifecycle_consumer.py:28: AttributeError
+_____ test_retry_consumer_invalid_current_version_does_not_consume[memory] _____
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7ae8cdd56c30>
+
+    def test_retry_consumer_invalid_current_version_does_not_consume(repo):
+        saved = repo.initialize_recovery_if_absent(detected_record(repo))
+        proof = authorization_proof(saved)
+        proof = replace(proof, current=replace(proof.current, plan_version=999))
+        before = repo.get_retry_budget("task").model_dump()
+>       result = RetryBudgetService(repository=repo).consume_for_recovery(proof)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RetryBudgetService' object has no attribute 'consume_for_recovery'
+
+tests/test_retry_lifecycle_consumer.py:43: AttributeError
+_____ test_retry_consumer_invalid_current_version_does_not_consume[sqlite] _____
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7ae8cdda1670>
+
+    def test_retry_consumer_invalid_current_version_does_not_consume(repo):
+        saved = repo.initialize_recovery_if_absent(detected_record(repo))
+        proof = authorization_proof(saved)
+        proof = replace(proof, current=replace(proof.current, plan_version=999))
+        before = repo.get_retry_budget("task").model_dump()
+>       result = RetryBudgetService(repository=repo).consume_for_recovery(proof)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RetryBudgetService' object has no attribute 'consume_for_recovery'
+
+tests/test_retry_lifecycle_consumer.py:43: AttributeError
+___ test_retry_consumer_missing_recovery_cannot_initialize_or_spend[memory] ____
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7ae8cdda2090>
+
+    def test_retry_consumer_missing_recovery_cannot_initialize_or_spend(repo):
+        proposal = detected_record(repo)
+        before = repo.get_retry_budget("task").model_dump()
+>       result = RetryBudgetService(repository=repo).consume_for_recovery(authorization_proof(proposal))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RetryBudgetService' object has no attribute 'consume_for_recovery'
+
+tests/test_retry_lifecycle_consumer.py:52: AttributeError
+___ test_retry_consumer_missing_recovery_cannot_initialize_or_spend[sqlite] ____
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7ae8cddd8080>
+
+    def test_retry_consumer_missing_recovery_cannot_initialize_or_spend(repo):
+        proposal = detected_record(repo)
+        before = repo.get_retry_budget("task").model_dump()
+>       result = RetryBudgetService(repository=repo).consume_for_recovery(authorization_proof(proposal))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'RetryBudgetService' object has no attribute 'consume_for_recovery'
+
+tests/test_retry_lifecycle_consumer.py:52: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_retry_lifecycle_consumer.py::test_retry_consumer_uses_single_lifecycle_transaction_and_duplicate_cannot_dispatch[memory]
+FAILED tests/test_retry_lifecycle_consumer.py::test_retry_consumer_uses_single_lifecycle_transaction_and_duplicate_cannot_dispatch[sqlite]
+FAILED tests/test_retry_lifecycle_consumer.py::test_retry_consumer_invalid_current_version_does_not_consume[memory]
+FAILED tests/test_retry_lifecycle_consumer.py::test_retry_consumer_invalid_current_version_does_not_consume[sqlite]
+FAILED tests/test_retry_lifecycle_consumer.py::test_retry_consumer_missing_recovery_cannot_initialize_or_spend[memory]
+FAILED tests/test_retry_lifecycle_consumer.py::test_retry_consumer_missing_recovery_cannot_initialize_or_spend[sqlite]
+6 failed in 1.17s

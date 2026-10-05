@@ -1,0 +1,104 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[memory] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x78baad1b3c80>, V...fo=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 40, 7, 622645, tzinfo=datetime.timezone.utc)))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78baac962b70>
+
+    def test_expired_prior_grounding_remains_history_and_allows_fresh_boundary(prepared, monkeypatch):
+        """A synthetic clock advance never retimestamps an actual observation."""
+        repo, original, _, _, _ = prepared
+        previous = publish_source_grounding(prepared)
+        assert previous is not None
+        module = importlib.import_module(
+            "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
+        )
+        advanced = datetime.fromisoformat(previous.to_payload()["grounding"]["valid_until"])
+    
+        class LaterSoftwareClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return advanced if tz is None else advanced.astimezone(tz)
+    
+        monkeypatch.setattr(module, "datetime", LaterSoftwareClock)
+>       assert repo.get_visual_owner_publication(original.identity.task_id) is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_owner_repository.py:680: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:198: in get_visual_owner_publication
+    record = self._visual_record_locked(task_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py:161: in _visual_record_locked
+    record = VisualOwnerPublicationRecord.from_payload(json.loads(raw))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:382: in from_payload
+    return cls(payload)
+           ^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:336: in __init__
+    checkpoint = strict_checkpoint(
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:150: in strict_checkpoint
+    aware(result.created_at)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = datetime.datetime(2026, 10, 4, 16, 40, 7, 622645, tzinfo=TzInfo(0))
+
+    def aware(value: datetime) -> datetime:
+        if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+>           raise ValueError("aware durable source clock required")
+E           ValueError: aware durable source clock required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:42: ValueError
+_ test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[sqlite] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x78baae4200e0>, Vis...fo=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 40, 7, 929249, tzinfo=datetime.timezone.utc)))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x78baae4220f0>
+
+    def test_expired_prior_grounding_remains_history_and_allows_fresh_boundary(prepared, monkeypatch):
+        """A synthetic clock advance never retimestamps an actual observation."""
+        repo, original, _, _, _ = prepared
+        previous = publish_source_grounding(prepared)
+        assert previous is not None
+        module = importlib.import_module(
+            "cloud_edge_robot_arm.repositories.event_autonomy.visual_owner"
+        )
+        advanced = datetime.fromisoformat(previous.to_payload()["grounding"]["valid_until"])
+    
+        class LaterSoftwareClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return advanced if tz is None else advanced.astimezone(tz)
+    
+        monkeypatch.setattr(module, "datetime", LaterSoftwareClock)
+>       assert repo.get_visual_owner_publication(original.identity.task_id) is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_owner_repository.py:680: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py:2262: in get_visual_owner_publication
+    record = self._visual_record_locked(task_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py:2083: in _visual_record_locked
+    result = VisualOwnerPublicationRecord.from_payload(json.loads(row["payload_json"]))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:382: in from_payload
+    return cls(payload)
+           ^^^^^^^^^^^^
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:336: in __init__
+    checkpoint = strict_checkpoint(
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:150: in strict_checkpoint
+    aware(result.created_at)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = datetime.datetime(2026, 10, 4, 16, 40, 7, 929249, tzinfo=TzInfo(0))
+
+    def aware(value: datetime) -> datetime:
+        if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+>           raise ValueError("aware durable source clock required")
+E           ValueError: aware durable source clock required
+
+src/cloud_edge_robot_arm/repositories/event_autonomy/visual_owner.py:42: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_repository.py::test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[memory]
+FAILED tests/test_visual_owner_repository.py::test_expired_prior_grounding_remains_history_and_allows_fresh_boundary[sqlite]
+2 failed, 65 deselected in 0.86s

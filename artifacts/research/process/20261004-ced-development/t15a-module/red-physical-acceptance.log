@@ -1,0 +1,32 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_declared_physics_metadata_cannot_accept_success_without_raw_validator __
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-542/test_declared_physics_metadata0')
+
+    def test_declared_physics_metadata_cannot_accept_success_without_raw_validator(scene_pool, tmp_path):
+        import hashlib
+    
+        from cloud_edge_robot_arm.research.models import StageEvidence, StageStatus
+    
+        row = assignment(scene_pool)
+        trace = tmp_path / "declared.json"
+        trace.write_text('{"declared":"physical success"}')
+        ref = assignment_api().ArtifactReference("trace.v1", hashlib.sha256(trace.read_bytes()).hexdigest(),
+                                                  str(trace))
+        declared = RunProvenance(run_id=row.assignment_id, source_tree_hash="a"*64,
+            scene_group_id=row.group_id, split_role="formal", model_snapshot_hash="b"*64,
+            observation_hashes=["c"*64], physics_steps=100, evidence_kind=EvidenceKind.PHYSICS,
+            task_success=True, stages=[StageEvidence(stage=key, status=StageStatus.REAL,
+            source_hashes=["d"*64]) for key in ("PERCEPTION", "INFERENCE", "ACTION")])
+        result = assignment_api().EpisodeRecord(row, outcome(True), declared, CostSnapshot(),
+            1.0, None, (ref,), ({"status": "PASS"},), (), {"cloud": "v1"}, source_verified=True)
+>       assert result.accepted_task_success is False
+E       AssertionError: assert True is False
+E        +  where True = EpisodeRecord(assignment=EpisodeAssignment(assignment_id='formal-0001::JOINT', group_id='g-f8a3087fa882eba833805c1b62f...rovider_versions={'cloud': 'v1'}, run_status='COMPLETED', source_verified=True, schema_version='ced.episode-record.v1').accepted_task_success
+
+tests/test_research_runner.py:140: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_runner.py::test_declared_physics_metadata_cannot_accept_success_without_raw_validator
+1 failed, 19 deselected in 0.45s

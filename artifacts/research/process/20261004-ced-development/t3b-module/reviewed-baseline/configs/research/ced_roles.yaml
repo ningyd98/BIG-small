@@ -1,0 +1,38 @@
+schema_version: ced.roles.v1
+cloud:
+  # Select an existing model-control profile through --profile-id; never activate it.
+  profile_id: null
+  model_family: qwen3.8-max
+  # A supplied provider registry may advertise date snapshots; absence stays unknown.
+  available_model_ids: []
+  image_size: [320, 240]
+  coordinate_system: pixel
+  grasp_profile: mujoco_upright_box_v2
+edge:
+  provider_id: deterministic_rules_cost_v1
+  provider_location: LOCAL_HOST
+  model_id: null
+  source_paths:
+    - src/cloud_edge_robot_arm/vision/role_models.py
+  policy:
+    dispatch: false
+    local_recover_enabled: false
+    score_source: rules
+    status: NOT_ACCEPTED
+# These hashes bind software/calibration; they do not prove device acceptance.
+device:
+  source_paths:
+    - src/cloud_edge_robot_arm/vision/observations.py
+    - src/cloud_edge_robot_arm/vision/capture.py
+    - src/cloud_edge_robot_arm/vision/top_grasp.py
+    - src/cloud_edge_robot_arm/vision/tracking.py
+    - src/cloud_edge_robot_arm/vision/task_semantics.py
+    - src/cloud_edge_robot_arm/vision/execution.py
+    - src/cloud_edge_robot_arm/edge/safety/shield.py
+    - src/cloud_edge_robot_arm/edge/evidence/conditions.py
+    - assets/robots/franka_panda/scene.xml
+probe:
+  scenario_id: S01_NORMAL_STATIC
+  seed: 0
+  instruction: pick the red cube and place it in the green target region
+  warm_runs: 3

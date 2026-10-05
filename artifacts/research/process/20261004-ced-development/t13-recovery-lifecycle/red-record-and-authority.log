@@ -1,0 +1,270 @@
+..........FFFFFFFFFFF                                                    [100%]
+=================================== FAILURES ===================================
+_ test_task_pool_retry_allowance_only_mirrors_existing_authority[memory-False] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688cc97260>
+retry_available = False
+
+    @pytest.mark.parametrize("retry_available", [False, True])
+    def test_task_pool_retry_allowance_only_mirrors_existing_authority(lifecycle_repo, retry_available):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+    
+        now = datetime.now(UTC)
+        if retry_available:
+            lifecycle_repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", remaining_retries=1,
+                task_total_retry_limit=4, task_retry_count=3, retry_count_used=3,
+                retry_deadline=now + timedelta(seconds=10),
+            ))
+        proposed = VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now)
+        actual = lifecycle_repo.initialize_verification_budget_if_absent("task", proposed)
+>       assert actual.state.remaining_retries == (1 if retry_available else 0)
+E       AssertionError: assert 8 == 0
+E        +  where 8 = VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0).remaining_retries
+E        +    where VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0) = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=8...138626, tzinfo=datetime.timezone.utc), content_hash='24d6280968d5944af567443fbe56177a7ae9716c6bec68f87d33256f968009e7').state
+
+tests/test_recovery_lifecycle_module.py:120: AssertionError
+_ test_task_pool_retry_allowance_only_mirrors_existing_authority[memory-True] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688cc97ef0>
+retry_available = True
+
+    @pytest.mark.parametrize("retry_available", [False, True])
+    def test_task_pool_retry_allowance_only_mirrors_existing_authority(lifecycle_repo, retry_available):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+    
+        now = datetime.now(UTC)
+        if retry_available:
+            lifecycle_repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", remaining_retries=1,
+                task_total_retry_limit=4, task_retry_count=3, retry_count_used=3,
+                retry_deadline=now + timedelta(seconds=10),
+            ))
+        proposed = VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now)
+        actual = lifecycle_repo.initialize_verification_budget_if_absent("task", proposed)
+>       assert actual.state.remaining_retries == (1 if retry_available else 0)
+E       AssertionError: assert 8 == 1
+E        +  where 8 = VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0).remaining_retries
+E        +    where VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0) = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=8...154765, tzinfo=datetime.timezone.utc), content_hash='0b7faeb8357a9f68896701033eb0b43f199b5e032aa51377cd2e32a8d753cc32').state
+
+tests/test_recovery_lifecycle_module.py:120: AssertionError
+_ test_task_pool_retry_allowance_only_mirrors_existing_authority[sqlite-False] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62d310>
+retry_available = False
+
+    @pytest.mark.parametrize("retry_available", [False, True])
+    def test_task_pool_retry_allowance_only_mirrors_existing_authority(lifecycle_repo, retry_available):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+    
+        now = datetime.now(UTC)
+        if retry_available:
+            lifecycle_repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", remaining_retries=1,
+                task_total_retry_limit=4, task_retry_count=3, retry_count_used=3,
+                retry_deadline=now + timedelta(seconds=10),
+            ))
+        proposed = VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now)
+        actual = lifecycle_repo.initialize_verification_budget_if_absent("task", proposed)
+>       assert actual.state.remaining_retries == (1 if retry_available else 0)
+E       AssertionError: assert 8 == 0
+E        +  where 8 = VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0).remaining_retries
+E        +    where VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0) = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=8...393062, tzinfo=datetime.timezone.utc), content_hash='a8f9eacfc76bf29f4f07150b47cc53bf01eb051152e3aab4171de27d53eb6cb8').state
+
+tests/test_recovery_lifecycle_module.py:120: AssertionError
+_ test_task_pool_retry_allowance_only_mirrors_existing_authority[sqlite-True] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62cc50>
+retry_available = True
+
+    @pytest.mark.parametrize("retry_available", [False, True])
+    def test_task_pool_retry_allowance_only_mirrors_existing_authority(lifecycle_repo, retry_available):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+    
+        now = datetime.now(UTC)
+        if retry_available:
+            lifecycle_repo.initialize_retry_budget_if_absent(RecoveryBudget(
+                budget_id="authority", task_id="task", remaining_retries=1,
+                task_total_retry_limit=4, task_retry_count=3, retry_count_used=3,
+                retry_deadline=now + timedelta(seconds=10),
+            ))
+        proposed = VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now)
+        actual = lifecycle_repo.initialize_verification_budget_if_absent("task", proposed)
+>       assert actual.state.remaining_retries == (1 if retry_available else 0)
+E       AssertionError: assert 8 == 1
+E        +  where 8 = VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0).remaining_retries
+E        +    where VerificationBudgetState(remaining_reobservations=2, remaining_retries=8, consecutive_no_progress=0, deadline_at=dateti...max_retries=8, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0) = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=8...651299, tzinfo=datetime.timezone.utc), content_hash='2ffcad9b35d88d8699e82cb101287bd16d06851a3bdea03290aa6db7974a4bb4').state
+
+tests/test_recovery_lifecycle_module.py:120: AssertionError
+______ test_detected_recovery_is_persisted_and_remains_unresolved[memory] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688c62cbf0>
+
+    def test_detected_recovery_is_persisted_and_remains_unresolved(lifecycle_repo):
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688c62cbf0>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+>       from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+E       ImportError: cannot import name 'RecoveryRecord' from 'cloud_edge_robot_arm.edge.recovery.lifecycle' (/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py)
+
+tests/test_recovery_lifecycle_module.py:129: ImportError
+______ test_detected_recovery_is_persisted_and_remains_unresolved[sqlite] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62ec30>
+
+    def test_detected_recovery_is_persisted_and_remains_unresolved(lifecycle_repo):
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62ec30>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+>       from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+E       ImportError: cannot import name 'RecoveryRecord' from 'cloud_edge_robot_arm.edge.recovery.lifecycle' (/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py)
+
+tests/test_recovery_lifecycle_module.py:129: ImportError
+___ test_public_initialization_cannot_assert_authorized_or_resolved[memory] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688c62ed50>
+
+    def test_public_initialization_cannot_assert_authorized_or_resolved(lifecycle_repo):
+        from dataclasses import replace
+    
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688c62ed50>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+>       from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+E       ImportError: cannot import name 'RecoveryRecord' from 'cloud_edge_robot_arm.edge.recovery.lifecycle' (/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py)
+
+tests/test_recovery_lifecycle_module.py:129: ImportError
+___ test_public_initialization_cannot_assert_authorized_or_resolved[sqlite] ____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62f170>
+
+    def test_public_initialization_cannot_assert_authorized_or_resolved(lifecycle_repo):
+        from dataclasses import replace
+    
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62f170>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+>       from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+E       ImportError: cannot import name 'RecoveryRecord' from 'cloud_edge_robot_arm.edge.recovery.lifecycle' (/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py)
+
+tests/test_recovery_lifecycle_module.py:129: ImportError
+____ test_recovery_identity_conflict_cannot_replace_original_event[memory] _____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688c62f3b0>
+
+    def test_recovery_identity_conflict_cannot_replace_original_event(lifecycle_repo):
+        from dataclasses import replace
+    
+        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x77688c62f3b0>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+>       from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+E       ImportError: cannot import name 'RecoveryRecord' from 'cloud_edge_robot_arm.edge.recovery.lifecycle' (/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py)
+
+tests/test_recovery_lifecycle_module.py:129: ImportError
+____ test_recovery_identity_conflict_cannot_replace_original_event[sqlite] _____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62e210>
+
+    def test_recovery_identity_conflict_cannot_replace_original_event(lifecycle_repo):
+        from dataclasses import replace
+    
+        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
+>       proposal = detected_record(lifecycle_repo)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62e210>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+>       from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+E       ImportError: cannot import name 'RecoveryRecord' from 'cloud_edge_robot_arm.edge.recovery.lifecycle' (/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py)
+
+tests/test_recovery_lifecycle_module.py:129: ImportError
+_____ test_detected_record_restart_preserves_bindings_and_shared_task_pool _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-675/test_detected_record_restart_p0')
+
+    def test_detected_record_restart_preserves_bindings_and_shared_task_pool(tmp_path):
+        path = tmp_path / "record.sqlite"
+        repo = SQLiteEventAutonomyRepository(path)
+>       proposal = detected_record(repo)
+                   ^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x77688c62e390>
+
+    def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
+        """Complete software failure identity, with no gateway or physical effect."""
+        from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+>       from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+E       ImportError: cannot import name 'RecoveryRecord' from 'cloud_edge_robot_arm.edge.recovery.lifecycle' (/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py)
+
+tests/test_recovery_lifecycle_module.py:129: ImportError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_task_pool_retry_allowance_only_mirrors_existing_authority[memory-False]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_pool_retry_allowance_only_mirrors_existing_authority[memory-True]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_pool_retry_allowance_only_mirrors_existing_authority[sqlite-False]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_pool_retry_allowance_only_mirrors_existing_authority[sqlite-True]
+FAILED tests/test_recovery_lifecycle_module.py::test_detected_recovery_is_persisted_and_remains_unresolved[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_detected_recovery_is_persisted_and_remains_unresolved[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_public_initialization_cannot_assert_authorized_or_resolved[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_public_initialization_cannot_assert_authorized_or_resolved[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_recovery_identity_conflict_cannot_replace_original_event[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_recovery_identity_conflict_cannot_replace_original_event[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_detected_record_restart_preserves_bindings_and_shared_task_pool
+11 failed, 10 passed in 3.21s

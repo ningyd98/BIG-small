@@ -1,0 +1,130 @@
+..................................s..FFFFFF                              [100%]
+=================================== FAILURES ===================================
+_ test_partial_ordinary_pool_cannot_become_bootstrap_then_receive_new_limits[memory] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d716933ef60>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_partial_ordinary_pool_cannot_become_bootstrap_then_receive_new_limits(store):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+    
+        repo, data = store
+        existing = RecoveryBudget(task_id='episode',budget_id='already-spent',
+            remaining_retries=0,retry_deadline=data['definition'].verification_deadline_at)
+        repo.save_retry_budget(existing)
+>       with pytest.raises(IdempotencyConflictError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError'>
+
+tests/test_visual_bootstrap_repository.py:236: Failed
+_ test_partial_ordinary_pool_cannot_become_bootstrap_then_receive_new_limits[sqlite] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d716937cfe0>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_partial_ordinary_pool_cannot_become_bootstrap_then_receive_new_limits(store):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+    
+        repo, data = store
+        existing = RecoveryBudget(task_id='episode',budget_id='already-spent',
+            remaining_retries=0,retry_deadline=data['definition'].verification_deadline_at)
+        repo.save_retry_budget(existing)
+>       with pytest.raises(IdempotencyConflictError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError'>
+
+tests/test_visual_bootstrap_repository.py:236: Failed
+___ test_detached_sources_cannot_refill_persisted_pending_or_history[memory] ___
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d716937e540>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_detached_sources_cannot_refill_persisted_pending_or_history(store):
+        repo,data=store
+        record=repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        request=request_for(data,record,'RESERVE_INITIAL_CAPTURE')
+        claimed=repo.transition_visual_bootstrap_if_current(request=request)
+        raw=claimed.record.to_payload()
+>       raw['verification_state']['remaining_reobservations']=900
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'verification_state'
+
+tests/test_visual_bootstrap_repository.py:248: KeyError
+___ test_detached_sources_cannot_refill_persisted_pending_or_history[sqlite] ___
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d716930c4a0>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_detached_sources_cannot_refill_persisted_pending_or_history(store):
+        repo,data=store
+        record=repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        request=request_for(data,record,'RESERVE_INITIAL_CAPTURE')
+        claimed=repo.transition_visual_bootstrap_if_current(request=request)
+        raw=claimed.record.to_payload()
+>       raw['verification_state']['remaining_reobservations']=900
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'verification_state'
+
+tests/test_visual_bootstrap_repository.py:248: KeyError
+_ test_clock_rollback_stays_unavailable_and_deadline_stops_without_refund[memory] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d71693ca9c0>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d71693c8aa0>
+
+    def test_clock_rollback_stays_unavailable_and_deadline_stops_without_refund(store,monkeypatch):
+        repo,data=store
+        record=repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        if isinstance(repo,InMemoryEventAutonomyRepository):
+            module=importlib.import_module('cloud_edge_robot_arm.repositories.event_autonomy.memory')
+            set_clock=lambda at:monkeypatch.setattr(module,'_utc_now',lambda:at)
+        else:
+            module=importlib.import_module('cloud_edge_robot_arm.repositories.event_autonomy.sqlite')
+            class Clock:
+                value=data['definition'].registered_at
+                @classmethod
+                def now(cls,*args):return cls.value
+            monkeypatch.setattr(module,'datetime',Clock)
+            set_clock=lambda at:setattr(Clock,'value',at)
+        set_clock(data['definition'].registered_at-timedelta(seconds=1))
+        assert repo.transition_visual_bootstrap_if_current(request=request_for(data,record,'RESERVE_INITIAL_CAPTURE')) is None
+        set_clock(data['definition'].verification_deadline_at)
+        stopped=repo.transition_visual_bootstrap_if_current(request=request_for(data,record,'RESERVE_INITIAL_CAPTURE'))
+>       assert stopped.record.terminal_reason=='verification_deadline'
+E       AssertionError: assert 'deadline_exhausted' == 'verification_deadline'
+E         
+E         - verification_deadline
+E         + deadline_exhausted
+
+tests/test_visual_bootstrap_repository.py:277: AssertionError
+_ test_clock_rollback_stays_unavailable_and_deadline_stops_without_refund[sqlite] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d71693c9250>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d71693c9520>
+
+    def test_clock_rollback_stays_unavailable_and_deadline_stops_without_refund(store,monkeypatch):
+        repo,data=store
+        record=repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        if isinstance(repo,InMemoryEventAutonomyRepository):
+            module=importlib.import_module('cloud_edge_robot_arm.repositories.event_autonomy.memory')
+            set_clock=lambda at:monkeypatch.setattr(module,'_utc_now',lambda:at)
+        else:
+            module=importlib.import_module('cloud_edge_robot_arm.repositories.event_autonomy.sqlite')
+            class Clock:
+                value=data['definition'].registered_at
+                @classmethod
+                def now(cls,*args):return cls.value
+            monkeypatch.setattr(module,'datetime',Clock)
+            set_clock=lambda at:setattr(Clock,'value',at)
+        set_clock(data['definition'].registered_at-timedelta(seconds=1))
+        assert repo.transition_visual_bootstrap_if_current(request=request_for(data,record,'RESERVE_INITIAL_CAPTURE')) is None
+        set_clock(data['definition'].verification_deadline_at)
+        stopped=repo.transition_visual_bootstrap_if_current(request=request_for(data,record,'RESERVE_INITIAL_CAPTURE'))
+>       assert stopped.record.terminal_reason=='verification_deadline'
+E       AssertionError: assert 'deadline_exhausted' == 'verification_deadline'
+E         
+E         - verification_deadline
+E         + deadline_exhausted
+
+tests/test_visual_bootstrap_repository.py:277: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_bootstrap_repository.py::test_partial_ordinary_pool_cannot_become_bootstrap_then_receive_new_limits[memory]
+FAILED tests/test_visual_bootstrap_repository.py::test_partial_ordinary_pool_cannot_become_bootstrap_then_receive_new_limits[sqlite]
+FAILED tests/test_visual_bootstrap_repository.py::test_detached_sources_cannot_refill_persisted_pending_or_history[memory]
+FAILED tests/test_visual_bootstrap_repository.py::test_detached_sources_cannot_refill_persisted_pending_or_history[sqlite]
+FAILED tests/test_visual_bootstrap_repository.py::test_clock_rollback_stays_unavailable_and_deadline_stops_without_refund[memory]
+FAILED tests/test_visual_bootstrap_repository.py::test_clock_rollback_stays_unavailable_and_deadline_stops_without_refund[sqlite]
+6 failed, 36 passed, 1 skipped in 7.40s

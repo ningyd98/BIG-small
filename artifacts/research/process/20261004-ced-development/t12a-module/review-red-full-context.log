@@ -1,0 +1,37 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_provider_cannot_mutate_authoritative_observation_robot_facts_or_capabilities _
+
+    def test_provider_cannot_mutate_authoritative_observation_robot_facts_or_capabilities():
+        from cloud_edge_robot_arm.contracts import Pose
+        module = import_module("cloud_edge_robot_arm.auto_mode.judgment")
+        ctx = prepared_context()
+        original_capabilities = ctx.capabilities
+        ctx = replace(ctx, online_evidence=replace(ctx.online_evidence,
+            visual_facts={**ctx.online_evidence.visual_facts, "auxiliary_pose": Pose(x=.1, y=0, z=.3)}),
+            condition_verdicts=tuple(replace(row, measured_values={"cancelled":False, "auxiliary_pose":Pose(x=.2,y=0,z=.3)})
+                                      for row in ctx.condition_verdicts))
+        class ContextMutator:
+            def choose(self, copied_context, candidates, estimates):
+                copied_context.online_evidence.robot_state.estop_engaged = True
+                copied_context.online_evidence.robot_state.tcp_pose.x = 99
+                copied_context.online_evidence.observation.__dict__["calibration_version"] = "mutated"
+                copied_context.online_evidence.visual_facts["auxiliary_pose"].x = 99
+                copied_context.condition_verdicts[0].measured_values["auxiliary_pose"].x = 99
+                object.__setattr__(copied_context.condition_verdicts[0], "measured_values", {"cancelled":True})
+                object.__setattr__(copied_context, "capabilities", frozenset({DecisionAction.LOCAL_RECOVER}))
+                return module.JudgmentResult(None,{},None,None,"ABSTAIN","context-mutator",0.)
+        chosen = policy(judge=ContextMutator())
+        assert chosen.decide(ctx) == DecisionAction.REOBSERVE
+        assert ctx.online_evidence.robot_state.estop_engaged is False
+        assert ctx.online_evidence.robot_state.tcp_pose.x == .2
+>       assert ctx.online_evidence.observation.calibration_version == "cal"
+E       AssertionError: assert 'mutated' == 'cal'
+E         
+E         - cal
+E         + mutated
+
+tests/test_joint_visual_policy.py:464: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_joint_visual_policy.py::test_provider_cannot_mutate_authoritative_observation_robot_facts_or_capabilities
+1 failed, 28 deselected in 0.32s

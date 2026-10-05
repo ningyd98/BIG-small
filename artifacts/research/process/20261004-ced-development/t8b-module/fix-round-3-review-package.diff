@@ -1,0 +1,753 @@
+--- a/src/cloud_edge_robot_arm/research/freeze_evidence.py
++++ b/src/cloud_edge_robot_arm/research/freeze_evidence.py
+@@ -16,6 +16,7 @@
+ import numpy as np
+ 
+ from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
++from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+ from cloud_edge_robot_arm.research.pilot import derive_tcap
+ from cloud_edge_robot_arm.research.pilot_audit import audit_pilot, physical_sample, read_json
+ from cloud_edge_robot_arm.research.protocol import (
+@@ -435,17 +436,173 @@
+ 
+ def _case_wire_payloads(case: Path, entry: Mapping[str, Any]) -> tuple[bytes, bytes]:
+     request = _inside(case, entry["request_path"]).read_bytes()
+-    response = (
+-        _inside(case, entry["response_path"]).read_bytes() if entry.get("response_path") else b""
+-    )
++    response_path = entry.get("response_path")
++    if response_path:
++        if entry.get("response_present", True) is not True:
++            raise ValueError("response presence contradicts original wire payload")
++        response = _inside(case, response_path).read_bytes()
++        if hashlib.sha256(response).hexdigest() != entry.get("response_sha256"):
++            raise ValueError("actual response wire hash differs, including empty payloads")
++    else:
++        if entry.get("response_present") is not False or (entry.get("response_sha256") is not None):
++            raise ValueError("absent response requires explicit absence and no wire payload hash")
++        response = b""
+     if (
+         hashlib.sha256(request).hexdigest() != entry["request_sha256"]
+         or len(request) != entry["serialized_sent_bytes"]
+         or len(response) != entry["serialized_received_bytes"]
+-        or (response and hashlib.sha256(response).hexdigest() != entry["response_sha256"])
+     ):
+         raise ValueError("actual request/response wire length/hash differs from settled counts")
+     return request, response
++
++
++def _join_b0_cost_wire(
++    case: Path, requests: list[RequestCost], wire: list[Mapping[str, Any]], provider_version: str
++) -> list[tuple[Mapping[str, Any], RequestCost]]:
++    """Join exact original B0 request IDs, roles, provider and role-specific wire prompt."""
++    by_id = {r.request_id: r for r in requests if r.sent_at is not None}
++    if len({r.request_id for r in requests}) != len(requests) or len(by_id) != len(wire):
++        raise ValueError("B0 original request/wire IDs are incomplete or duplicated")
++    if any(
++        r.status == "IN_FLIGHT"
++        or r.provider_location != "REMOTE_SERVICE"
++        or r.model_role not in {"PLANNER", "SUPERVISOR"}
++        or r.provider_version != provider_version
++        for r in requests
++    ):
++        raise ValueError("B0 settled planner/supervisor provider attribution differs")
++    seen, joined = set(), []
++    for entry in wire:
++        if not isinstance(entry, Mapping):
++            raise ValueError("B0 original wire rows must be objects")
++        identity = entry.get("request_id")
++        if not isinstance(identity, str) or identity not in by_id or identity in seen:
++            raise ValueError("B0 original request ID does not join a unique wire attempt")
++        seen.add(identity)
++        row = by_id[identity]
++        raw, response = _case_wire_payloads(case, entry)
++        if not entry.get("response_path") and row.status == "SUCCESS":
++            raise ValueError("successful B0 request cannot have an absent original response")
++        body = json.loads(raw)
++        if not isinstance(body, dict):
++            raise ValueError("B0 request body must be its original JSON object")
++        if (
++            entry.get("model_role") != row.model_role
++            or entry.get("provider_version") != row.provider_version
++            or (len(raw), len(response))
++            != (row.serialized_sent_bytes, row.serialized_received_bytes)
++        ):
++            raise ValueError("B0 role/provider/original wire identity differs from settled cost")
++        if entry.get("response_path") and any(
++            entry.get(f"response_{field}") != getattr(row, field)
++            for field in ("request_id", "model_role", "provider_version")
++        ):
++            raise ValueError("B0 response role/provider/request identity differs from its ledger")
++        joined.append((entry, row))
++    return joined
++
++
++def _b0_expected_request_body(
++    body: Mapping[str, Any],
++    role: str,
++    observation: Any,
++    instruction: str,
++    settings: Mapping[str, Any],
++) -> dict[str, Any]:
++    """Compile the exact production request locally; never send or invent a model reply."""
++    from cloud_edge_robot_arm.vision.messages import build_visual_messages
++    from cloud_edge_robot_arm.vision.planner import (
++        RGBDPlannerAdapter,
++        VisualDecision,
++        compatible_messages,
++    )
++    from cloud_edge_robot_arm.vision.supervision import SupervisionContext
++
++    if role == "PLANNER":
++        messages = build_visual_messages(
++            instruction,
++            observation,
++            image_size=tuple(settings["image_size"]),
++            coordinate_system=settings["coordinate_system"],
++            decision_schema=VisualDecision.model_json_schema(),
++        )
++    elif role == "SUPERVISOR":
++        supplied = body.get("messages")
++        if (
++            not isinstance(supplied, list)
++            or len(supplied) != 2
++            or not isinstance(supplied[1], dict)
++        ):
++            raise ValueError("supervision requires its exact original observable request")
++        content = supplied[1].get("content")
++        if not isinstance(content, list):
++            raise ValueError("supervision must retain compatible RGB-D message parts")
++        texts = [p.get("text") for p in content if isinstance(p, dict) and p.get("type") == "text"]
++        prefix = "Inspect the current task and robot state. "
++        if len(texts) != 1 or not isinstance(texts[0], str) or not texts[0].startswith(prefix):
++            raise ValueError("supervision original typed context is unavailable")
++        decoded, _ = json.JSONDecoder().raw_decode(texts[0][len(prefix) :])
++        context = SupervisionContext.model_validate(decoded)
++        if (
++            context.observation_id != observation.observation_id
++            or context.episode_id != observation.episode_id
++            or context.captured_at != observation.captured_at
++            or context.task_instruction != instruction
++        ):
++            raise ValueError("supervision typed context differs from its registered frame/task")
++        captured: list[list[dict[str, Any]]] = []
++
++        class _Compiled(Exception):
++            pass
++
++        class _MessageCompiler(RGBDPlannerAdapter):
++            def _request_visual(
++                self, messages: list[dict[str, Any]], decision_schema: dict[str, Any]
++            ) -> dict[str, Any]:
++                captured.append(messages)
++                raise _Compiled
++
++        # This endpoint is unused: the compiler stops before transport/parsing.
++        snapshot = ModelConfigSnapshot(
++            provider="openai_compatible",
++            endpoint="http://127.0.0.1:11434",
++            model=settings["model"],
++            weight_digest=settings["weight_digest"],
++            quantization=settings["quantization"],
++            image_size=tuple(settings["image_size"]),
++            generation_parameters=settings["generation_parameters"],
++            timeout_s=settings["timeout_s"],
++            coordinate_system=settings["coordinate_system"],
++            grasp_profile=settings["grasp_profile"],
++        )
++        compiler = _MessageCompiler(model=settings["model"], model_snapshot=snapshot)
++        try:
++            compiler.supervise(observation, context)
++        except _Compiled:
++            pass
++        if len(captured) != 1:
++            raise ValueError("production supervision message compilation did not complete")
++        messages = captured[0]
++    else:
++        raise ValueError("unsupported B0 request role")
++    return {
++        "model": settings["model"],
++        "messages": compatible_messages(messages),
++        "temperature": settings["generation_parameters"]["temperature"],
++        "max_tokens": settings["generation_parameters"]["num_predict"],
++        "response_format": {"type": "json_object"},
++    }
++
++
++def _verify_b0_request_body(
++    body: Mapping[str, Any],
++    role: str,
++    observation: Any,
++    instruction: str,
++    settings: Mapping[str, Any],
++) -> None:
++    if body != _b0_expected_request_body(body, role, observation, instruction, settings):
++        raise ValueError("complete original B0 role-specific request differs from production")
+ 
+ 
+ def _ced_evaluation_start(header: Mapping[str, Any], raw_count: int) -> int:
+@@ -462,7 +619,6 @@
+ 
+     from scripts.probe_rgbd_roles import summarize_role_request
+ 
+-    from cloud_edge_robot_arm.research.cost_ledger import RequestCost
+     from cloud_edge_robot_arm.research.protocol_evidence import _trace
+     from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
+         CompletionCriteria,
+@@ -488,6 +644,9 @@
+     _audit_ced_reset(raw, header, assignment["base_assignment"]["scene"])
+     _audit_actuators(case, raw, header)
+     policy = read_json(_inside(case, "policy.json"))
++    color = assignment["base_assignment"]["scene"]["scene_parameters"]["target"]["color_name"]
++    if policy.get("instruction") != f"Move the {color} block to the green region.":
++        raise ValueError("B0 task instruction differs from the full assigned scene")
+     if (
+         policy["device_pipeline"] != "OPENCV"
+         or policy["model_snapshot_hash"] != _model_evidence_hash(probe["request_settings"])
+@@ -545,7 +704,7 @@
+     ):
+         raise ValueError("online observation trace does not reproduce from raw frames")
+     settings = probe["request_settings"]
+-    image_pairs = set()
++    image_pairs: dict[tuple[str, ...], list[Any]] = {}
+     for observation in observations.values():
+         messages = build_visual_messages(
+             "audit",
+@@ -561,20 +720,13 @@
+                 raise ValueError("registered model images must be base64 strings")
+             blobs.extend(encoded)
+         images = tuple(hashlib.sha256(base64.b64decode(image)).hexdigest() for image in blobs)
+-        image_pairs.add(images)
++        image_pairs.setdefault(images, []).append(observation)
+     wire = read_json(_inside(case, "wire-index.json"))
+     costs = read_json(_inside(case, "costs.json"))
+     requests = [RequestCost.model_validate(value) for value in costs["requests"]]
+     sent = [r for r in requests if r.sent_at is not None]
+-    if len(sent) != len(wire) or any(
+-        r.status == "IN_FLIGHT"
+-        or r.provider_location != "REMOTE_SERVICE"
+-        or r.model_role != "PLANNER"
+-        or r.provider_version != _model_evidence_hash(settings)
+-        for r in sent
+-    ):
+-        raise ValueError("settled actual request/wire denominator is incomplete")
+-    for entry in wire:
++    joined = _join_b0_cost_wire(case, requests, wire, _model_evidence_hash(settings))
++    for entry, cost in joined:
+         request_raw, _ = _case_wire_payloads(case, entry)
+         body = json.loads(request_raw)
+         summary = summarize_role_request(body)
+@@ -586,6 +738,18 @@
+             or body["response_format"] != {"type": "json_object"}
+         ):
+             raise ValueError("actual model wire differs from frozen model/current RGB-D")
++        matched = False
++        for observation in image_pairs[tuple(summary["image_sha256"])]:
++            try:
++                _verify_b0_request_body(
++                    body, cost.model_role, observation, policy["instruction"], settings
++                )
++            except ValueError:
++                continue
++            matched = True
++            break
++        if not matched:
++            raise ValueError("B0 original complete role-specific request does not reproduce")
+     if sum(e["serialized_sent_bytes"] for e in wire) != sum(
+         r.serialized_sent_bytes for r in sent
+     ) or (
+--- a/scripts/run_rgbd_pilot.py
++++ b/scripts/run_rgbd_pilot.py
+@@ -12,7 +12,7 @@
+ import sys
+ import threading
+ import time
+-from collections.abc import Mapping
++from collections.abc import Callable, Mapping
+ from dataclasses import asdict
+ from pathlib import Path
+ from typing import Any
+@@ -27,7 +27,7 @@
+ from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec, content_digest
+ from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
+ from cloud_edge_robot_arm.research.budget import estimate_budget
+-from cloud_edge_robot_arm.research.cost_ledger import CostLedger
++from cloud_edge_robot_arm.research.cost_ledger import CostLedger, RequestCost
+ from cloud_edge_robot_arm.research.network import NetworkInjector, NetworkSchedule
+ from cloud_edge_robot_arm.research.pilot import PilotReport, derive_tcap, run_pilot_stage
+ from cloud_edge_robot_arm.research.protocol import (
+@@ -393,6 +393,109 @@
+     return dict(pools)
+ 
+ 
++class _PilotCostLedger(CostLedger):
++    """Bind the transport observer to its exact cost ID before transmission."""
++
++    def __init__(self, observer: Callable[[RequestCost], None]) -> None:
++        super().__init__()
++        self.observer = observer
++
++    def record_request(self, cost: RequestCost) -> None:
++        validated = RequestCost.model_validate(cost.model_dump())
++        super().record_request(validated)
++        self.observer(validated)
++
++
++class _PilotWireCollector:
++    """Original wire plus exact planner/supervisor ledger identity; no heuristic pairing."""
++
++    def __init__(self, directory: Path, *, secret: str) -> None:
++        self.directory, self.secret = directory, secret
++        self.wire: list[dict[str, Any]] = []
++        self.pending: dict[int, dict[str, Any]] = {}
++        self.by_request_id: dict[str, dict[str, Any]] = {}
++        self.settled: dict[str, RequestCost] = {}
++        self.lock = threading.RLock()
++        self.ledger = _PilotCostLedger(self.bind_cost)
++
++    def _publish(self) -> None:
++        write_json(self.directory / "wire-index.json", self.wire)
++
++    def observe(self, phase: str, path: str, raw: bytes) -> None:
++        import hashlib
++
++        from scripts.probe_rgbd_roles import _text_contains_credential
++
++        if self.secret and _text_contains_credential(raw.decode(errors="replace"), self.secret):
++            raise ValueError("credential-bearing body withheld")
++        with self.lock:
++            thread = threading.get_ident()
++            if phase == "REQUEST":
++                if thread in self.pending:
++                    raise ValueError("unsettled wire attempt remains in this request thread")
++                entry: dict[str, Any] = {
++                    "schema_version": "ced.pilot-wire-entry.v2",
++                    "request_path": f"wire/{len(self.wire):05d}.request.raw",
++                    "request_sha256": hashlib.sha256(raw).hexdigest(),
++                    "chat_path": path,
++                    "serialized_sent_bytes": len(raw),
++                    "serialized_received_bytes": 0,
++                    "response_present": False,
++                    "response_path": None,
++                    "response_sha256": None,
++                }
++                self.wire.append(entry)
++                self.pending[thread] = entry
++                target = self.directory / entry["request_path"]
++            elif phase == "RESPONSE":
++                entry = self.pending[thread]
++                if "request_id" not in entry or entry["response_present"]:
++                    raise ValueError("duplicate response for an original request attempt")
++                entry.update(
++                    response_request_id=entry["request_id"],
++                    response_model_role=entry["model_role"],
++                    response_provider_version=entry["provider_version"],
++                    response_present=True,
++                    response_path=entry["request_path"].replace("request", "response"),
++                    response_sha256=hashlib.sha256(raw).hexdigest(),
++                    serialized_received_bytes=len(raw),
++                )
++                target = self.directory / entry["response_path"]
++            else:
++                raise ValueError("unknown original transport phase")
++            target.parent.mkdir(parents=True, exist_ok=True)
++            with target.open("xb") as stream:
++                stream.write(raw)
++            self._publish()
++
++    def bind_cost(self, row: RequestCost) -> None:
++        with self.lock:
++            thread = threading.get_ident()
++            if row.status == "IN_FLIGHT":
++                entry = self.pending[thread]
++                if row.request_id in self.by_request_id or "request_id" in entry:
++                    raise ValueError("duplicate original request/wire identity")
++                if row.serialized_sent_bytes != entry["serialized_sent_bytes"]:
++                    raise ValueError("original request observer/cost byte lengths differ")
++                entry.update(
++                    request_id=row.request_id,
++                    model_role=row.model_role,
++                    provider_version=row.provider_version,
++                )
++                self.by_request_id[row.request_id] = entry
++            else:
++                if self.settled.get(row.request_id) == row:
++                    return
++                entry = self.by_request_id[row.request_id]
++                if self.pending.get(thread) is not entry or (
++                    row.serialized_received_bytes != entry["serialized_received_bytes"]
++                ):
++                    raise ValueError("settled original request observer identity/bytes differ")
++                del self.pending[thread]
++                self.settled[row.request_id] = row
++            self._publish()
++
++
+ class _RoleBoundPilotExecutor:
+     """The existing B0/skill path with actual role binding and detached raw observers."""
+ 
+@@ -424,54 +527,13 @@
+     def __call__(self, assignment: Mapping[str, Any], directory: Path) -> Mapping[str, Any]:
+         self._archive()
+         active = copy.copy(self.planner)
+-        ledger = CostLedger()
++        collector = _PilotWireCollector(directory, secret=active._api_key)
++        ledger = collector.ledger
+         active.cost_ledger = ledger
+         self.ledgers.append((ledger, directory))
+         schedule = NetworkSchedule.model_validate(assignment["network_schedule"])
+         active.network_injector = NetworkInjector(schedule)
+-        wire: list[dict[str, Any]] = []
+-        pending: dict[int, dict[str, Any]] = {}
+-        lock = threading.Lock()
+-
+-        def observe(phase: str, path: str, raw: bytes) -> None:
+-            import hashlib
+-
+-            from scripts.probe_rgbd_roles import _text_contains_credential
+-
+-            # Hashing records actual bytes; a credential-bearing body is withheld.
+-            if active._api_key and _text_contains_credential(
+-                raw.decode(errors="replace"), active._api_key
+-            ):
+-                raise ValueError("credential-bearing body withheld")
+-            with lock:
+-                thread = threading.get_ident()
+-                if phase == "REQUEST":
+-                    if thread in pending:
+-                        raise ValueError("provider has multiple in-flight requests in one thread")
+-                    entry: dict[str, Any] = {
+-                        "request_path": f"wire/{len(wire):05d}.request.raw",
+-                        "request_sha256": hashlib.sha256(raw).hexdigest(),
+-                        "chat_path": path,
+-                        "serialized_sent_bytes": len(raw),
+-                        "serialized_received_bytes": 0,
+-                    }
+-                    wire.append(entry)
+-                    pending[thread] = entry
+-                    target = directory / entry["request_path"]
+-                else:
+-                    entry = pending.pop(thread)
+-                    entry.update(
+-                        response_path=entry["request_path"].replace("request", "response"),
+-                        response_sha256=hashlib.sha256(raw).hexdigest(),
+-                        serialized_received_bytes=len(raw),
+-                    )
+-                    target = directory / entry["response_path"]
+-                target.parent.mkdir(parents=True, exist_ok=True)
+-                with target.open("xb") as stream:
+-                    stream.write(raw)
+-                write_json(directory / "wire-index.json", wire)
+-
+-        active.raw_transport_observer = observe
++        active.raw_transport_observer = collector.observe
+         scene = SceneSpec.model_validate(assignment["base_assignment"]["scene"])
+         config = SimulatorConfig(
+             render_rgb=True,
+@@ -605,7 +667,7 @@
+             cloud_requests=ledger.snapshot().cloud_model_requests,
+         )
+         write_json(directory / "costs.json", ledger.export())
+-        write_json(directory / "wire-index.json", wire)
++        write_json(directory / "wire-index.json", collector.wire)
+         return row
+ 
+ 
+--- a/tests/test_ced_pilot_stages.py
++++ b/tests/test_ced_pilot_stages.py
+@@ -13,6 +13,104 @@
+ 
+ def api():
+     return importlib.import_module("cloud_edge_robot_arm.research.pilot")
++
++
++def test_actual_pilot_wire_collector_binds_each_ledger_id_role_and_absent_response(tmp_path):
++    from datetime import datetime
++
++    from scripts.run_rgbd_pilot import _PilotWireCollector
++
++    from cloud_edge_robot_arm.research.cost_ledger import RequestCost
++
++    collector = _PilotWireCollector(tmp_path, secret="")
++    collector.observe("REQUEST", "/chat/completions", b"SOFTWARE_ONLY-request")
++    row = RequestCost(
++        request_id="actual-observer-fixture",
++        sent_at="2026-10-04T00:00:00Z",
++        finished_at=None,
++        is_cloud_model=True,
++        model_role="SUPERVISOR",
++        deployment="CLOUD",
++        provider_location="REMOTE_SERVICE",
++        provider_version="a" * 64,
++        status="IN_FLIGHT",
++        serialized_sent_bytes=21,
++        serialized_received_bytes=0,
++    )
++    collector.ledger.record_request(row)
++    finished = row.model_copy(
++        update={
++            "finished_at": datetime.fromisoformat("2026-10-04T00:00:01Z"),
++            "status": "TIMEOUT",
++        }
++    )
++    collector.ledger.record_request(finished)
++    collector.ledger.record_request(finished)
++    entry = json.loads((tmp_path / "wire-index.json").read_text())[0]
++    assert entry["request_id"] == row.request_id and entry["model_role"] == "SUPERVISOR"
++    assert entry["provider_version"] == row.provider_version
++    assert entry["response_present"] is False and entry["response_sha256"] is None
++    assert collector.ledger.snapshot().cloud_model_requests == 1
++
++
++@pytest.mark.parametrize("response_mode", ["nonempty", "empty", "absent"])
++def test_pilot_collector_joins_actual_transport_order_without_model_call(
++    tmp_path, monkeypatch, response_mode
++):
++    import hashlib
++    import urllib.request
++
++    from scripts.run_rgbd_pilot import _PilotWireCollector
++
++    from cloud_edge_robot_arm.vision.planner import RGBDModelCallFailed, RGBDPlannerAdapter
++
++    class Response:
++        def __enter__(self):
++            return self
++
++        def __exit__(self, *args):
++            return False
++
++        def read(self, size):
++            return b"{}" if response_mode == "nonempty" else b""
++
++    class Opener:
++        def open(self, request, timeout):
++            if response_mode == "absent":
++                raise TimeoutError("SOFTWARE_ONLY transport fixture")
++            return Response()
++
++    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener())
++    collector = _PilotWireCollector(tmp_path, secret="")
++    planner = RGBDPlannerAdapter(
++        base_url="https://software-only.invalid",
++        model="SOFTWARE_ONLY",
++        provider="openai_compatible",
++        model_role="SUPERVISOR",
++        cost_ledger=collector.ledger,
++        raw_transport_observer=collector.observe,
++    )
++    if response_mode == "nonempty":
++        assert planner._post("/chat/completions", {"model": "SOFTWARE_ONLY"}) == {}
++    else:
++        with pytest.raises(RGBDModelCallFailed):
++            planner._post("/chat/completions", {"model": "SOFTWARE_ONLY"})
++    entry = collector.wire[0]
++    row = collector.ledger.requests()[0]
++    assert entry["request_id"] == row.request_id and entry["model_role"] == "SUPERVISOR"
++    assert entry["provider_version"] == row.provider_version
++    assert (
++        row.status == {"nonempty": "SUCCESS", "empty": "ERROR", "absent": "TIMEOUT"}[response_mode]
++    )
++    assert entry["response_present"] is (response_mode != "absent")
++    if response_mode != "absent":
++        assert entry["response_request_id"] == row.request_id
++        assert entry["response_model_role"] == row.model_role
++        assert entry["response_provider_version"] == row.provider_version
++    if response_mode == "empty":
++        assert entry["response_sha256"] == hashlib.sha256(b"").hexdigest()
++    if response_mode == "absent":
++        assert entry["response_sha256"] is None and entry["response_path"] is None
+ 
+ 
+ @pytest.fixture(scope="module")
+--- a/tests/test_ced_initial_freeze.py
++++ b/tests/test_ced_initial_freeze.py
+@@ -322,6 +322,188 @@
+             api()._case_wire_payloads(tmp_path, entry)
+ 
+ 
++def test_case_empty_response_cannot_keep_a_stale_nonempty_hash(tmp_path):
++    import hashlib
++
++    (tmp_path / "request.raw").write_bytes(b"request")
++    (tmp_path / "response.raw").write_bytes(b"")
++    entry = {
++        "request_path": "request.raw",
++        "response_path": "response.raw",
++        "request_sha256": hashlib.sha256(b"request").hexdigest(),
++        "response_sha256": hashlib.sha256(b"original response").hexdigest(),
++        "serialized_sent_bytes": 7,
++        "serialized_received_bytes": 0,
++    }
++    with pytest.raises(ValueError, match="wire"):
++        api()._case_wire_payloads(tmp_path, entry)
++
++
++@pytest.mark.parametrize("damage", [None, "role", "request_id", "duplicate", "response_identity"])
++def test_b0_costs_join_planner_and_supervisor_to_each_original_wire(tmp_path, damage):
++    import hashlib
++
++    from cloud_edge_robot_arm.research.cost_ledger import RequestCost
++
++    roles = ("PLANNER", "SUPERVISOR")
++    prefixes = (
++        "Inspect image 1 (RGB) to identify the requested object and destination. ",
++        "You supervise a running robot using only the paired current RGB and depth images ",
++    )
++    rows, wire = [], []
++    for index, (role, prefix) in enumerate(zip(roles, prefixes, strict=True)):
++        request = json.dumps({"messages": [{"role": "system", "content": prefix}]}).encode()
++        request_path = f"request-{index}.raw"
++        (tmp_path / request_path).write_bytes(request)
++        rows.append(
++            RequestCost(
++                request_id=f"r{index}",
++                sent_at="2026-10-04T00:00:00Z",
++                finished_at="2026-10-04T00:00:01Z",
++                is_cloud_model=True,
++                model_role=role,
++                deployment="CLOUD",
++                provider_location="REMOTE_SERVICE",
++                provider_version="a" * 64,
++                status="TIMEOUT",
++                serialized_sent_bytes=len(request),
++                serialized_received_bytes=0,
++            )
++        )
++        wire.append(
++            {
++                "request_id": f"r{index}",
++                "model_role": role,
++                "provider_version": "a" * 64,
++                "request_path": request_path,
++                "request_sha256": hashlib.sha256(request).hexdigest(),
++                "serialized_sent_bytes": len(request),
++                "serialized_received_bytes": 0,
++                "response_present": False,
++                "response_path": None,
++                "response_sha256": None,
++            }
++        )
++    if damage == "role":
++        wire[1]["model_role"] = "REPLANNER"
++    elif damage == "request_id":
++        wire[1]["request_id"] = "foreign"
++    elif damage == "duplicate":
++        wire[1]["request_id"] = "r0"
++    elif damage == "response_identity":
++        (tmp_path / "response.raw").write_bytes(b"!")
++        rows[1] = rows[1].model_copy(update={"serialized_received_bytes": 1})
++        wire[1].update(
++            response_present=True,
++            response_path="response.raw",
++            response_sha256=hashlib.sha256(b"!").hexdigest(),
++            serialized_received_bytes=1,
++            response_request_id="foreign",
++            response_model_role="SUPERVISOR",
++            response_provider_version="a" * 64,
++        )
++    if damage is None:
++        joined = api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
++        assert [row.model_role for _, row in joined] == ["PLANNER", "SUPERVISOR"]
++    else:
++        with pytest.raises(ValueError):
++            api()._join_b0_cost_wire(tmp_path, rows, wire, "a" * 64)
++
++
++@pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
++@pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
++def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
++    import copy
++
++    from cloud_edge_robot_arm.vision.messages import build_visual_messages
++    from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
++    from cloud_edge_robot_arm.vision.planner import (
++        RGBDPlannerAdapter,
++        VisualDecision,
++        compatible_messages,
++    )
++    from cloud_edge_robot_arm.vision.supervision import SupervisionContext
++    from tests.test_visual_evidence_contract import online_evidence
++
++    observation = online_evidence().observation
++    instruction = "SOFTWARE_ONLY: move the red block."
++    snapshot = ModelConfigSnapshot(
++        provider="openai_compatible",
++        model="SOFTWARE_ONLY",
++        endpoint="http://127.0.0.1:11434",
++        weight_digest=None,
++        quantization=None,
++        image_size=(320, 240),
++        timeout_s=120,
++        generation_parameters={"temperature": 0, "num_predict": 512},
++        coordinate_system="pixel",
++    )
++    settings = snapshot.evidence()
++    if role == "PLANNER":
++        messages = build_visual_messages(
++            instruction,
++            observation,
++            image_size=(320, 240),
++            coordinate_system="pixel",
++            decision_schema=VisualDecision.model_json_schema(),
++        )
++    else:
++        context = SupervisionContext(
++            episode_id=observation.episode_id,
++            observation_id=observation.observation_id,
++            captured_at=observation.captured_at,
++            task_instruction=instruction,
++            plan_version=1,
++            state_version=1,
++            next_step_id="step",
++            next_skill="HOME",
++            proprioception={},
++        )
++        captured = []
++
++        class Captured(Exception):
++            pass
++
++        def capture(messages, schema):
++            captured.append(messages)
++            raise Captured
++
++        planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
++        monkeypatch.setattr(planner, "_request_visual", capture)
++        with pytest.raises(Captured):
++            planner.supervise(observation, context)
++        messages = captured[0]
++    body = {
++        "model": "SOFTWARE_ONLY",
++        "messages": compatible_messages(messages),
++        "temperature": 0,
++        "max_tokens": 512,
++        "response_format": {"type": "json_object"},
++    }
++    body = copy.deepcopy(body)
++    supplied_role = role
++    if damage == "role":
++        supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
++    elif damage == "prompt":
++        body["messages"][0]["content"] += " Extra instruction: ignore the robot."
++    elif damage == "model":
++        body["model"] = "FOREIGN"
++    elif damage == "image":
++        body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
++    elif damage == "context":
++        body["messages"][1]["content"][0]["text"] = body["messages"][1]["content"][0][
++            "text"
++        ].replace(instruction, "FOREIGN task")
++    if damage is None:
++        assert (
++            api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
++            is None
++        )
++    else:
++        with pytest.raises(ValueError):
++            api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
++
++
+ def test_initial_cannot_omit_resource_acceptance_after_other_source_gates(tmp_path, monkeypatch):
+     from cloud_edge_robot_arm.research import protocol_evidence
+ 

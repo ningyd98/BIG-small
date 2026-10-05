@@ -1,0 +1,163 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_saved_development_cube_separates_top_from_visible_sides_without_fake_bound _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f18e7aa7650>
+
+    def test_saved_development_cube_separates_top_from_visible_sides_without_fake_bound(monkeypatch):
+        acquisition = saved_development_capture(monkeypatch)
+>       tracked = real_capture_tracker(acquisition)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_opencv_target_evidence.py:400: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_opencv_target_evidence.py:392: in real_capture_tracker
+    return module.OpenCVTargetTracker(observation, {
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.vision.tracking.OpenCVTargetTracker object at 0x7f18e7aa5790>
+observation = RGBDObservation(frame_id='rgbd-01ceda60453b4b7882c51345c6a278f0', observation_id='rgbd-01ceda60453b4b7882c51345c6a278f...bration_version='f33940579c533afe', checksum_sha256='55a2feabf510705f2029650a0a7decde0a3923e154e5c173d74a45e546966c7b')
+grounding = {'original_pixel_destination': [132, 74], 'original_pixel_target': [179, 120], 'top_grasp_support_height_m': 4.758834838858306e-05}
+
+    def __init__(self, observation: RGBDObservation, grounding: dict[str, Any]) -> None:
+        self.target_pixel = tuple(grounding["original_pixel_target"])
+        self.destination_pixel = tuple(grounding["original_pixel_destination"])
+        self.support_z = float(grounding["top_grasp_support_height_m"])
+        if not math.isfinite(self.support_z):
+            raise ValueError("support height must be finite")
+        bound = grounding.get("depth_error_bound_m")
+        self.depth_error_bound_m = (
+            float(bound)
+            if isinstance(bound, (int, float))
+            and not isinstance(bound, bool)
+            and math.isfinite(bound)
+            and bound > 0
+            else None
+        )
+        self._reference = observation
+        reason = self._binding_reason(observation)
+        if reason:
+            raise ValueError(f"initial acquisition unavailable: {reason}")
+        rgb = _rgb(observation)
+        self.target_color = self._color(rgb, self.target_pixel)
+        self.destination_color = self._color(rgb, self.destination_pixel)
+        self.initial, reason = self._geometry(observation, self.target_color, target=True)
+        self.destination, region_reason = self._geometry(
+            observation, self.destination_color, target=False
+        )
+        if self.initial is None or self.destination is None:
+>           raise ValueError(
+                f"initial RGB-D identity/extent unavailable: {reason or region_reason}"
+            )
+E           ValueError: initial RGB-D identity/extent unavailable: depth_surface_not_scoped_upright_top
+
+src/cloud_edge_robot_arm/vision/tracking.py:88: ValueError
+_ test_saved_antialias_region_uses_observed_inside_rectangle_without_filling_corner _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f18bb452540>
+
+    def test_saved_antialias_region_uses_observed_inside_rectangle_without_filling_corner(monkeypatch):
+        acquisition = saved_development_capture(monkeypatch)
+>       region = real_capture_tracker(acquisition).destination
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_opencv_target_evidence.py:419: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_opencv_target_evidence.py:392: in real_capture_tracker
+    return module.OpenCVTargetTracker(observation, {
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.vision.tracking.OpenCVTargetTracker object at 0x7f18bb435c10>
+observation = RGBDObservation(frame_id='rgbd-01ceda60453b4b7882c51345c6a278f0', observation_id='rgbd-01ceda60453b4b7882c51345c6a278f...bration_version='f33940579c533afe', checksum_sha256='55a2feabf510705f2029650a0a7decde0a3923e154e5c173d74a45e546966c7b')
+grounding = {'original_pixel_destination': [132, 74], 'original_pixel_target': [179, 120], 'top_grasp_support_height_m': 4.758834838858306e-05}
+
+    def __init__(self, observation: RGBDObservation, grounding: dict[str, Any]) -> None:
+        self.target_pixel = tuple(grounding["original_pixel_target"])
+        self.destination_pixel = tuple(grounding["original_pixel_destination"])
+        self.support_z = float(grounding["top_grasp_support_height_m"])
+        if not math.isfinite(self.support_z):
+            raise ValueError("support height must be finite")
+        bound = grounding.get("depth_error_bound_m")
+        self.depth_error_bound_m = (
+            float(bound)
+            if isinstance(bound, (int, float))
+            and not isinstance(bound, bool)
+            and math.isfinite(bound)
+            and bound > 0
+            else None
+        )
+        self._reference = observation
+        reason = self._binding_reason(observation)
+        if reason:
+            raise ValueError(f"initial acquisition unavailable: {reason}")
+        rgb = _rgb(observation)
+        self.target_color = self._color(rgb, self.target_pixel)
+        self.destination_color = self._color(rgb, self.destination_pixel)
+        self.initial, reason = self._geometry(observation, self.target_color, target=True)
+        self.destination, region_reason = self._geometry(
+            observation, self.destination_color, target=False
+        )
+        if self.initial is None or self.destination is None:
+>           raise ValueError(
+                f"initial RGB-D identity/extent unavailable: {reason or region_reason}"
+            )
+E           ValueError: initial RGB-D identity/extent unavailable: depth_surface_not_scoped_upright_top
+
+src/cloud_edge_robot_arm/vision/tracking.py:88: ValueError
+________ test_supported_inside_rectangle_does_not_fill_antialias_corner ________
+
+    def test_supported_inside_rectangle_does_not_fill_antialias_corner():
+        def missing_corner(rgb, depth):
+            rgb[20, 45] = 100
+        acquisition = image_variant(scene(), missing_corner)
+>       region = tracker(acquisition).destination
+                 ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_opencv_target_evidence.py:432: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_opencv_target_evidence.py:105: in tracker
+    return module.OpenCVTargetTracker(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.vision.tracking.OpenCVTargetTracker object at 0x7f18bb452c90>
+observation = RGBDObservation(frame_id='initial', observation_id='initial', captured_at=datetime.datetime(2026, 10, 4, 8, 41, 46, 68...e', calibration_version='test-cal', checksum_sha256='4ff6a47a235ba8d76c3c2c46653c68945ff75b3f42d6d72539fd9dad063f9ffb')
+grounding = {'depth_error_bound_m': 0.001, 'original_pixel_destination': [57, 32], 'original_pixel_target': [12, 26], 'top_grasp_support_height_m': 0.0}
+
+    def __init__(self, observation: RGBDObservation, grounding: dict[str, Any]) -> None:
+        self.target_pixel = tuple(grounding["original_pixel_target"])
+        self.destination_pixel = tuple(grounding["original_pixel_destination"])
+        self.support_z = float(grounding["top_grasp_support_height_m"])
+        if not math.isfinite(self.support_z):
+            raise ValueError("support height must be finite")
+        bound = grounding.get("depth_error_bound_m")
+        self.depth_error_bound_m = (
+            float(bound)
+            if isinstance(bound, (int, float))
+            and not isinstance(bound, bool)
+            and math.isfinite(bound)
+            and bound > 0
+            else None
+        )
+        self._reference = observation
+        reason = self._binding_reason(observation)
+        if reason:
+            raise ValueError(f"initial acquisition unavailable: {reason}")
+        rgb = _rgb(observation)
+        self.target_color = self._color(rgb, self.target_pixel)
+        self.destination_color = self._color(rgb, self.destination_pixel)
+        self.initial, reason = self._geometry(observation, self.target_color, target=True)
+        self.destination, region_reason = self._geometry(
+            observation, self.destination_color, target=False
+        )
+        if self.initial is None or self.destination is None:
+>           raise ValueError(
+                f"initial RGB-D identity/extent unavailable: {reason or region_reason}"
+            )
+E           ValueError: initial RGB-D identity/extent unavailable: region_topology_not_supported_axis_aligned_rectangle
+
+src/cloud_edge_robot_arm/vision/tracking.py:88: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_opencv_target_evidence.py::test_saved_development_cube_separates_top_from_visible_sides_without_fake_bound
+FAILED tests/test_opencv_target_evidence.py::test_saved_antialias_region_uses_observed_inside_rectangle_without_filling_corner
+FAILED tests/test_opencv_target_evidence.py::test_supported_inside_rectangle_does_not_fill_antialias_corner
+3 failed in 0.40s

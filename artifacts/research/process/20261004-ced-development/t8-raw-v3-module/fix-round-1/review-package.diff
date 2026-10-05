@@ -1,0 +1,574 @@
+--- a/src/cloud_edge_robot_arm/research/raw_episode_v3.py
++++ b/src/cloud_edge_robot_arm/research/raw_episode_v3.py
+@@ -1209,6 +1209,39 @@
+         range(1, len(commands) + 1)
+     ):
+         issue("command_coverage_missing", missing=True)
++    physics_by_step = {record.physics_step: record for record in records.physics}
++    state_events: list[tuple[int, int, bool]] = []
++    for physical_record in records.physics:
++        state_interval = intervals.get(physical_record.physics_interval_id)
++        if state_interval is not None and state_interval.end is not None:
++            state_events.append(
++                (
++                    state_interval.end.mono_after_ns,
++                    state_interval.start.mono_before_ns,
++                    physical_record.post_state_payload["estop_engaged"],
++                )
++            )
++    state_events.sort()
++    state_cursor = 0
++    stop_latched: bool = envelope.reset_state_payload["estop_engaged"]
++    latch_known_after_ns: int | None = None
++
++    def advance_available_states(until_ns: int | None = None) -> None:
++        nonlocal state_cursor, stop_latched, latch_known_after_ns
++        while state_cursor < len(state_events):
++            end_ns, start_ns, engaged = state_events[state_cursor]
++            if until_ns is not None and end_ns > until_ns:
++                break
++            if engaged and not stop_latched:
++                stop_latched = True
++                latch_known_after_ns = end_ns
++            elif not engaged and stop_latched:
++                if latch_known_after_ns is None or start_ns >= latch_known_after_ns:
++                    issue("recorded_stop_latch_state_cleared")
++                else:
++                    issue("stop_state_sampling_overlaps_latch_transition", missing=True)
++            state_cursor += 1
++
+     previous_command_end: ClockPairV3 | None = None
+     for command in records.commands:
+         command_payload = command.command_payload
+@@ -1221,21 +1254,39 @@
+             issue("command_source_identity_mismatch")
+         elif not math.isclose(command_payload["sim_time_s"], raw[n]["sim_time_s"], abs_tol=1e-9):
+             issue("command_dispatch_sim_time_mismatch")
+-        if (
+-            command_payload["accepted"]
+-            and command_payload["after_emergency_stop"]
+-            and command_payload["type"] not in {"hold_current_joints"}
+-        ):
+-            issue("ordinary_command_accepted_after_emergency_stop")
+         interval = interval_for(command.interval_id, "COMMAND")
+         parent = interval_for(command.parent_interval_id)
+         if interval:
++            if n > 0:
++                current_record = physics_by_step.get(n)
++                current_interval = (
++                    intervals.get(current_record.physics_interval_id) if current_record else None
++                )
++                if current_interval is None or current_interval.end is None:
++                    issue("command_current_physics_boundary_unavailable", missing=True)
++                elif current_interval.end.mono_after_ns > interval.start.mono_before_ns:
++                    issue("command_dispatch_precedes_current_physics_state")
++            advance_available_states(interval.start.mono_before_ns)
+             if (
+                 previous_command_end
+                 and interval.start.mono_before_ns < previous_command_end.mono_after_ns
+             ):
+                 issue("command_dispatch_clock_order_mismatch")
+             previous_command_end = interval.end
++        kind = command_payload["type"]
++        if kind == "emergency_stop":
++            if command_payload["after_emergency_stop"]:
++                issue("emergency_stop_own_flag_mismatch")
++            if command_payload["accepted"] and not stop_latched:
++                stop_latched = True
++                latch_known_after_ns = (
++                    interval.end.mono_after_ns if interval and interval.end else None
++                )
++        else:
++            if command_payload["after_emergency_stop"] != stop_latched:
++                issue("command_stop_flag_latch_mismatch")
++            if command_payload["accepted"] and stop_latched and kind != "hold_current_joints":
++                issue("ordinary_command_accepted_after_emergency_stop")
+         if interval and (interval.start_step != n or interval.end_step != n):
+             issue("command_interval_dispatch_step_mismatch")
+         if interval and parent and not within(interval, parent):
+@@ -1254,6 +1305,7 @@
+             )
+         ):
+             issue("hold_target_not_measured_dispatch_q")
++    advance_available_states()
+ 
+     arm_targets = tuple(envelope.initial_controller_targets["joints_rad"])
+     finger_targets = tuple(envelope.initial_controller_targets["fingers_m"])
+@@ -1454,6 +1506,65 @@
+             and purpose.interval_id not in action_intervals
+         ):
+             issue("physics_executor_action_source_missing", missing=True)
++
++    terminal_boundary_ns: int | None = None
++    if any(join.relation == "TERMINAL" for join in records.joins):
++        terminal_physics = next((p for p in records.physics if p.physics_step == terminal), None)
++        terminal_interval = (
++            intervals.get(terminal_physics.physics_interval_id) if terminal_physics else None
++        )
++        if terminal_interval is None or terminal_interval.end is None:
++            issue("terminal_physics_boundary_unavailable", missing=True)
++        else:
++            terminal_boundary_ns = terminal_interval.end.mono_after_ns
++        completion_ends: list[int] = []
++        all_actions_closed = counts["missing_actions"] == 0
++        for recorded_action in records.actions:
++            completion = intervals.get(recorded_action.interval_id)
++            if completion is not None and completion.end is not None:
++                completion_ends.append(completion.end.mono_after_ns)
++            if (
++                completion is None
++                or completion.end is None
++                or completion.disposition != "COMPLETE"
++                or recorded_action.disposition not in {"RETURNED", "REJECTED"}
++                or (
++                    recorded_action.disposition == "RETURNED"
++                    and recorded_action.returned_result is None
++                )
++            ):
++                all_actions_closed = False
++        terminations = [row for row in records.intervals if row.kind == "TERMINATION"]
++        final_termination = max(
++            terminations, key=lambda row: row.start.mono_before_ns, default=None
++        )
++        termination_closed = (
++            final_termination is not None
++            and final_termination.disposition == "COMPLETE"
++            and final_termination.end is not None
++        )
++        if final_termination is not None and not termination_closed:
++            issue("terminal_termination_boundary_unavailable", missing=True)
++        if not all_actions_closed and not termination_closed:
++            issue("terminal_action_completion_boundary_unavailable", missing=True)
++        if (
++            termination_closed
++            and final_termination is not None
++            and final_termination.end is not None
++        ):
++            if final_termination.end_step != terminal:
++                issue("termination_terminal_physics_mismatch")
++            if terminal_boundary_ns is not None and final_termination.end.mono_after_ns < max(
++                [terminal_boundary_ns, *completion_ends]
++            ):
++                issue("termination_precedes_recorded_completion")
++        completion_ends.extend(
++            termination.end.mono_after_ns
++            for termination in terminations
++            if termination.disposition == "COMPLETE" and termination.end is not None
++        )
++        if terminal_boundary_ns is not None:
++            terminal_boundary_ns = max([terminal_boundary_ns, *completion_ends])
+ 
+     frames = {f.acquisition_id: f for f in records.frames}
+     if len(frames) != len(records.frames):
+@@ -1593,6 +1704,22 @@
+             intervals.get(joined_frame.interval_id),
+             intervals.get(joined_action.interval_id),
+         )
++        if join.relation == "TERMINAL" and acquisition is not None:
++            if acquisition.start_step != terminal or acquisition.end_step not in {None, terminal}:
++                issue("terminal_frame_physics_identity_mismatch")
++            if acquisition.end is None:
++                issue("terminal_capture_boundary_unavailable", missing=True)
++            if joined_frame.joined_physics_observation_hash is None:
++                issue("terminal_frame_state_binding_unavailable", missing=True)
++            elif joined_frame.joined_physics_observation_hash != _digest(
++                envelope.terminal_state_payload
++            ):
++                issue("terminal_frame_state_identity_mismatch")
++            if (
++                terminal_boundary_ns is not None
++                and acquisition.start.mono_before_ns < terminal_boundary_ns
++            ):
++                issue("terminal_capture_precedes_final_boundary")
+         if acquisition and attempt:
+             if join.relation == "BEFORE_SUBMIT" and (
+                 acquisition.end is None
+--- a/tests/test_raw_episode_v3.py
++++ b/tests/test_raw_episode_v3.py
+@@ -904,3 +904,386 @@
+     envelope, bad = derived_fixture(corrupt_online=True)
+     view = api().validate_raw_episode_v3(envelope, bad)
+     assert view.status == "INVALID" and "derived_online_transform_bytes_mismatch" in view.reasons
++
++
++def clock_interval(base, name, kind, n0, n1, start_ns, end_ns):
++    def pair(ns):
++        return replace(
++            base.start,
++            sequence=ns + 1,
++            mono_before_ns=ns,
++            mono_after_ns=ns + 100,
++            utc_at=NOW + timedelta(microseconds=ns // 1000),
++        )
++
++    return replace(
++        base,
++        interval_id=name,
++        kind=kind,
++        start_step=n0,
++        end_step=n1,
++        start_sim_time_s=n0 / 240,
++        end_sim_time_s=n1 / 240,
++        start=pair(start_ns),
++        end=pair(end_ns),
++    )
++
++
++def stop_order_fixture(*, later="accepted", clear_state=False):
++    envelope, records = fixture()
++    base = next(i for i in records.intervals if i.interval_id == "command")
++    intervals = (
++        clock_interval(base, "hold-before-stop", "COMMAND", 120, 120, 210020000, 210021000),
++        clock_interval(base, "accepted-stop", "COMMAND", 120, 120, 210040000, 210041000),
++    )
++    common = {
++        "accepted": True,
++        "reason": "",
++        "after_emergency_stop": False,
++        "sim_time_s": 0.5,
++        "episode_id": "episode",
++        "physics_step": 120,
++    }
++    original = records.commands[0]
++    hold = replace(
++        original,
++        interval_id=intervals[0].interval_id,
++        command_payload={
++            **common,
++            "type": "hold_current_joints",
++            "command_seq": 1,
++            "target_positions_rad": [0] * 7,
++            "applied_target_positions_rad": [0] * 7,
++        },
++    )
++    stop = replace(
++        original,
++        command_seq=2,
++        interval_id=intervals[1].interval_id,
++        command_payload={**common, "type": "emergency_stop", "command_seq": 2},
++    )
++    payload = {**dict(original.command_payload), "command_seq": 3}
++    effective = 121
++    if later == "rejected":
++        payload.update(accepted=False, reason="emergency_stop", after_emergency_stop=True)
++        del payload["applied_target_positions_rad"]
++        effective = None
++    elif later == "hold":
++        payload.update(type="hold_current_joints", after_emergency_stop=True)
++    subsequent = replace(
++        original, command_seq=3, command_payload=payload, effective_from_step=effective
++    )
++    final_state = {**dict(records.physics[-1].post_state_payload), "estop_engaged": not clear_state}
++    final_physics = replace(records.physics[-1], post_state_payload=final_state)
++    final_frame = replace(
++        records.frames[-1], joined_physics_observation_hash=hash_payload(final_state)
++    )
++    return replace(envelope, terminal_command_seq=3, terminal_state_payload=final_state), renumber(
++        replace(
++            records,
++            intervals=(*records.intervals, *intervals),
++            commands=(hold, stop, subsequent),
++            actions=(replace(records.actions[0], command_seq_end=4),),
++            physics=(*records.physics[:-1], final_physics),
++            frames=(records.frames[0], final_frame),
++        )
++    )
++
++
++def test_terminal_relation_cannot_point_to_the_preserved_before_action_frame():
++    envelope, records = fixture()
++    stale = replace(records.joins[0], relation="TERMINAL")
++    view = api().validate_raw_episode_v3(
++        envelope, renumber(replace(records, joins=(*records.joins, stale)))
++    )
++    assert view.status == "INVALID"
++    assert view.counts["physics_recorded"] == view.counts["physics_expected"] == 121
++
++
++def test_terminal_relation_to_actual_final_state_after_known_return_is_complete():
++    envelope, records = fixture()
++    terminal = replace(records.joins[1], relation="TERMINAL")
++    view = api().validate_raw_episode_v3(
++        envelope, renumber(replace(records, joins=(*records.joins, terminal)))
++    )
++    assert view.status == "COMPLETE", view.reasons
++    assert view.utc_mapping == "UNAVAILABLE" and view.continuous_motion == "NOT_CERTIFIED"
++
++
++def test_accepted_stop_cannot_be_erased_by_a_later_ordinary_command_false_flag():
++    envelope, records = stop_order_fixture()
++    view = api().validate_raw_episode_v3(envelope, records)
++    assert view.status == "INVALID"
++    assert view.counts["commands_expected"] == view.counts["commands_recorded"] == 3
++    assert view.counts["allocated_actions"] == view.counts["recorded_actions"] == 1
++
++
++def test_consistently_stopped_states_cannot_accept_ordinary_command_false_flag():
++    envelope, records = fixture()
++    previous = {**dict(envelope.reset_state_payload), "estop_engaged": True}
++    physics = []
++    for row in records.physics:
++        post = {**dict(row.post_state_payload), "estop_engaged": True}
++        physics.append(
++            replace(row, previous_state_hash=hash_payload(previous), post_state_payload=post)
++        )
++        previous = post
++    by_step = {row.physics_step: row.post_state_payload for row in physics}
++    indices = {interval.interval_id: interval.start_step for interval in records.intervals}
++    frames = tuple(
++        replace(
++            frame,
++            joined_physics_observation_hash=hash_payload(dict(by_step[indices[frame.interval_id]])),
++        )
++        for frame in records.frames
++    )
++    view = api().validate_raw_episode_v3(
++        replace(
++            envelope,
++            reset_state_payload={**dict(envelope.reset_state_payload), "estop_engaged": True},
++            terminal_state_payload=previous,
++        ),
++        replace(records, physics=tuple(physics), frames=frames),
++    )
++    assert view.status == "INVALID"
++
++
++def test_command_cannot_claim_a_current_state_that_is_available_only_after_dispatch():
++    envelope, records = fixture()
++    previous = dict(envelope.reset_state_payload)
++    physics = []
++    for row in records.physics:
++        post = {**dict(row.post_state_payload), "estop_engaged": row.physics_step >= 120}
++        physics.append(
++            replace(row, previous_state_hash=hash_payload(previous), post_state_payload=post)
++        )
++        previous = post
++    changed = []
++    for interval in records.intervals:
++        if interval.interval_id == "settle":
++            interval = clock_interval(interval, "settle", interval.kind, 0, 120, 0, 210200000)
++        elif interval.interval_id == "control-120":
++            interval = clock_interval(
++                interval, "control-120", interval.kind, 119, 119, 210120000, 210121000
++            )
++        elif interval.interval_id == "step-120":
++            interval = clock_interval(
++                interval, "step-120", interval.kind, 119, 120, 210130000, 210190000
++            )
++        changed.append(interval)
++    by_step = {row.physics_step: row.post_state_payload for row in physics}
++    indices = {interval.interval_id: interval.start_step for interval in records.intervals}
++    frames = tuple(
++        replace(
++            frame,
++            joined_physics_observation_hash=hash_payload(dict(by_step[indices[frame.interval_id]])),
++        )
++        for frame in records.frames
++    )
++    view = api().validate_raw_episode_v3(
++        replace(envelope, terminal_state_payload=previous),
++        renumber(replace(records, intervals=tuple(changed), physics=tuple(physics), frames=frames)),
++    )
++    assert view.status == "INVALID"
++    assert "command_dispatch_precedes_current_physics_state" in view.reasons
++    assert view.counts["commands_expected"] == view.counts["commands_recorded"] == 1
++
++
++@pytest.mark.parametrize("later", ["rejected", "hold"])
++def test_latched_stop_keeps_rejected_ordinary_and_allowed_hold_original_records(later):
++    envelope, records = stop_order_fixture(later=later)
++    view = api().validate_raw_episode_v3(envelope, records)
++    assert view.status == "COMPLETE", view.reasons
++    assert view.counts["commands_recorded"] == 3
++    assert records.commands[1].command_payload["after_emergency_stop"] is False
++    assert records.physics[-2].post_state_payload["estop_engaged"] is False
++    assert records.commands[-1].command_payload["after_emergency_stop"] is True
++
++
++def test_rejected_ordinary_stop_flag_must_preserve_the_latch():
++    envelope, records = stop_order_fixture(later="rejected")
++    bad = replace(
++        records.commands[-1],
++        command_payload={
++            **dict(records.commands[-1].command_payload),
++            "after_emergency_stop": False,
++        },
++    )
++    assert (
++        api()
++        .validate_raw_episode_v3(envelope, replace(records, commands=(*records.commands[:-1], bad)))
++        .status
++        == "INVALID"
++    )
++
++
++def test_later_physics_cannot_clear_an_accepted_stop_latch():
++    envelope, cleared = stop_order_fixture(later="rejected", clear_state=True)
++    assert api().validate_raw_episode_v3(envelope, cleared).status == "INVALID"
++
++
++@pytest.mark.parametrize("late", [False, True])
++def test_terminal_join_obeys_the_final_termination_boundary(late):
++    envelope, records = fixture()
++    base = next(i for i in records.intervals if i.interval_id == "attempt")
++    first = clock_interval(base, "termination-1", "TERMINATION", 121, 121, 220100000, 220900000)
++    intervals = (*records.intervals, first)
++    if late:
++        intervals += (
++            clock_interval(
++                base, "termination-final", "TERMINATION", 121, 121, 230000000, 240000000
++            ),
++        )
++    terminal = replace(records.joins[1], relation="TERMINAL")
++    view = api().validate_raw_episode_v3(
++        envelope, renumber(replace(records, intervals=intervals, joins=(*records.joins, terminal)))
++    )
++    assert view.status == ("INVALID" if late else "COMPLETE"), view.reasons
++
++
++def test_terminal_missing_actual_return_boundary_stays_incomplete():
++    envelope, records = fixture()
++    terminal = replace(records.joins[1], relation="TERMINAL")
++    records = renumber(
++        replace(
++            records,
++            actions=(replace(records.actions[0], returned_result=None),),
++            joins=(*records.joins, terminal),
++        )
++    )
++    view = api().validate_raw_episode_v3(envelope, records)
++    assert view.status == "INCOMPLETE"
++    assert "terminal_action_completion_boundary_unavailable" in view.reasons
++    assert view.counts["allocated_actions"] == view.counts["recorded_actions"] == 1
++
++
++@pytest.mark.parametrize("capture_after_rejection", [False, True])
++def test_terminal_boundaries_consider_all_actions_including_later_zero_step_rejection(
++    capture_after_rejection,
++):
++    envelope, records = fixture()
++    base = next(i for i in records.intervals if i.interval_id == "attempt")
++    rejected = clock_interval(
++        base, "grasp-rejected", "EXECUTOR_ATTEMPT", 121, 121, 230000000, 240000000
++    )
++    action = replace(
++        records.actions[0],
++        span_id="span-2",
++        step_id="grasp",
++        interval_id=rejected.interval_id,
++        command_seq_start=2,
++        command_seq_end=2,
++        returned_result=None,
++        disposition="REJECTED",
++        error="precondition_rejected",
++        executed_step_payload=records.actions[0]
++        .original_plan.requirements["grasp"]
++        .original_step.model_dump(mode="json"),
++    )
++    before_second = replace(records.joins[1], span_id="span-2", relation="BEFORE_SUBMIT")
++    terminal = replace(records.joins[1], relation="TERMINAL")
++    extra_frames, extra_intervals = (), ()
++    if capture_after_rejection:
++        source = records.frames[-1]
++        payload = {
++            **dict(source.observation_payload),
++            "frame_id": "terminal",
++            "observation_id": "terminal",
++            "captured_at": (NOW + timedelta(microseconds=241000)).isoformat(),
++            "checksum_sha256": "",
++        }
++        observation = RGBDObservation.model_validate(payload)
++        files = {
++            name.replace("/after/", "/terminal/"): digest
++            for name, digest in source.file_hashes.items()
++        }
++        acquisition = clock_interval(
++            base, "acq-terminal", "ACQUISITION", 121, 121, 241000000, 242000000
++        )
++        frame = replace(
++            source,
++            acquisition_id="terminal",
++            interval_id=acquisition.interval_id,
++            observation_payload=observation.model_dump(mode="json"),
++            file_hashes=files,
++        )
++        extra_frames, extra_intervals = (
++            (frame,),
++            (
++                acquisition,
++                clock_interval(
++                    base, "earlier-termination", "TERMINATION", 121, 121, 220100000, 220900000
++                ),
++                clock_interval(
++                    base, "final-termination", "TERMINATION", 121, 121, 240100000, 240900000
++                ),
++            ),
++        )
++        terminal = replace(
++            terminal,
++            acquisition_id="terminal",
++            observation_id=observation.observation_id,
++            checksum_sha256=observation.checksum_sha256,
++        )
++        envelope = replace(
++            envelope,
++            allocated_acquisition_ids=(*envelope.allocated_acquisition_ids, "terminal"),
++            original_file_hashes={**dict(envelope.original_file_hashes), **files},
++        )
++    view = api().validate_raw_episode_v3(
++        replace(envelope, allocated_action_span_ids=("span-1", "span-2")),
++        renumber(
++            replace(
++                records,
++                intervals=(*records.intervals, rejected, *extra_intervals),
++                actions=(*records.actions, action),
++                frames=(*records.frames, *extra_frames),
++                joins=(*records.joins, before_second, terminal),
++            )
++        ),
++    )
++    assert view.status == ("COMPLETE" if capture_after_rejection else "INVALID"), view.reasons
++    assert view.counts["allocated_actions"] == view.counts["recorded_actions"] == 2
++    assert view.counts["rejected_actions"] == 1
++
++
++@pytest.mark.parametrize("has_termination", [False, True])
++def test_partial_action_terminal_requires_explicit_complete_termination(has_termination):
++    envelope, records = fixture()
++    base = next(i for i in records.intervals if i.interval_id == "attempt")
++    partial = replace(
++        base,
++        end=None,
++        end_step=None,
++        end_sim_time_s=None,
++        disposition="PARTIAL",
++        error="reader-failed",
++    )
++    intervals = tuple(partial if row == base else row for row in records.intervals)
++    if has_termination:
++        intervals += (
++            clock_interval(base, "termination", "TERMINATION", 121, 121, 220100000, 220900000),
++        )
++    terminal = replace(records.joins[1], relation="TERMINAL")
++    view = api().validate_raw_episode_v3(
++        envelope,
++        renumber(
++            replace(
++                records,
++                intervals=intervals,
++                actions=(
++                    replace(
++                        records.actions[0],
++                        returned_result=None,
++                        disposition="PARTIAL",
++                        error="reader-failed",
++                    ),
++                ),
++                joins=(*records.joins, terminal),
++            )
++        ),
++    )
++    assert view.status == "INCOMPLETE", view.reasons
++    assert (
++        "terminal_action_completion_boundary_unavailable" in view.reasons
++    ) is not has_termination

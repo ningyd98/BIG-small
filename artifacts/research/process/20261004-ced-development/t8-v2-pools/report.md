@@ -1,0 +1,5 @@
+# v2独立开发池
+
+build_scene_pools增加显式ced.research.v2，3260独立来源组：selection/foundation/power各120、formal2400、recovery200、OOD300。selection完整12层各10组；原v1缺selection的3140池默认路径保留用于历史诊断。对被排除组按注册seen总数有界跳过，允许相同seed在完全已用池之外重新获取新组；未知version拒绝。
+
+两项RED先行；11项新/旧protocol测试退出0，Ruff/mypy通过。未做四周期实际selection或INITIAL。池只有assignment，不是实测证据。

@@ -1,0 +1,261 @@
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+...................F.................................................... [ 40%]
+..................F...F.FFFFFFFF..FF.................................... [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]
+........................................................................ [ 80%]
+........................................................................ [ 90%]
+...................................................................      [100%]
+=================================== FAILURES ===================================
+__________ test_model_freeze_binds_profile_evidence_and_source_asset ___________
+
+    def test_model_freeze_binds_profile_evidence_and_source_asset() -> None:
+        from scripts.probe_rgbd_model import can_freeze
+    
+        report = _passing_report()
+        asset = hashlib.sha256(Path("assets/robots/franka_panda/scene.xml").read_bytes()).hexdigest()
+        report["snapshot"]["grasp_profile"] = "mujoco_upright_box_v2"
+        for attempt in report["attempts"]:
+            attempt["observation_evidence"].update(
+                grasp_profile="mujoco_upright_box_v2", grasp_calibration_asset_sha256=asset,
+            )
+>       assert can_freeze(report)
+E       AssertionError: assert False
+E        +  where False = <function can_freeze at 0x768d6abd23e0>({'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+
+tests/test_rgbd_gripper_calibration.py:72: AssertionError
+_ test_freeze_preserves_coordinate_protocol_and_binds_source_and_request_evidence _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_freeze_preserves_coordina0')
+
+    def test_freeze_preserves_coordinate_protocol_and_binds_source_and_request_evidence(
+        tmp_path,
+    ) -> None:
+        snapshot = {**_snapshot(), "coordinate_system": "normalized_1000"}
+        report = _passing_report()
+        report["snapshot"] = snapshot
+        target = tmp_path / "model-frozen.json"
+>       assert write_frozen_if_verified(target, snapshot, report)
+E       AssertionError: assert False
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_freeze_preserves_coordina0/model-frozen.json'), {'coordinate_system': 'normalized_1000', 'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+
+tests/test_rgbd_model_probe.py:212: AssertionError
+____________ test_freeze_requires_real_transport_geometry_and_cuda _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_freeze_requires_real_tran0')
+
+    def test_freeze_requires_real_transport_geometry_and_cuda(tmp_path) -> None:
+        snapshot = _snapshot()
+        target = tmp_path / "model-frozen.json"
+        report = _passing_report()
+        for path, value in [
+            (("source",), "mock_camera"),
+            (("capture", "synchronized"), False),
+            (("model", "digest_matches"), False),
+            (("model", "quantization_matches"), False),
+            (("model", "vision"), False),
+            (("device", "cuda"), False),
+            (("attempts", 0, "transport_two_images"), False),
+            (("attempts", 0, "parsed"), False),
+            (("attempts", 0, "grounded"), False),
+            (("attempts", 0, "target_hit"), False),
+            (("attempts", 0, "destination_hit"), False),
+            (("timing", "warm_samples"), 0),
+        ]:
+            broken = copy.deepcopy(report)
+            nested = broken
+            for key in path[:-1]:
+                nested = nested[key]
+            nested[path[-1]] = value
+            assert can_freeze(broken) is False
+            assert write_frozen_if_verified(target, snapshot, broken) is False
+            assert not target.exists()
+>       assert can_freeze(report) is True
+E       AssertionError: assert False is True
+E        +  where False = can_freeze({'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+
+tests/test_rgbd_model_probe.py:354: AssertionError
+___ test_prior_freeze_evidence_is_authenticated_and_archived_together[False] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_prior_freeze_evidence_is_0')
+tampered = False
+
+    @pytest.mark.parametrize("tampered", [False, True])
+    def test_prior_freeze_evidence_is_authenticated_and_archived_together(tmp_path, tampered) -> None:
+        target = tmp_path / "model-frozen.json"
+        report = _passing_report()
+>       assert write_frozen_if_verified(target, _snapshot(), report)
+E       AssertionError: assert False
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_prior_freeze_evidence_is_0/model-frozen.json'), {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+E        +    where {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...} = _snapshot()
+
+tests/test_rgbd_model_probe.py:380: AssertionError
+___ test_prior_freeze_evidence_is_authenticated_and_archived_together[True] ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_prior_freeze_evidence_is_1')
+tampered = True
+
+    @pytest.mark.parametrize("tampered", [False, True])
+    def test_prior_freeze_evidence_is_authenticated_and_archived_together(tmp_path, tampered) -> None:
+        target = tmp_path / "model-frozen.json"
+        report = _passing_report()
+>       assert write_frozen_if_verified(target, _snapshot(), report)
+E       AssertionError: assert False
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_prior_freeze_evidence_is_1/model-frozen.json'), {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+E        +    where {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...} = _snapshot()
+
+tests/test_rgbd_model_probe.py:380: AssertionError
+______ test_unknown_evidence_sidecar_blocks_publication_without_overwrite ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_unknown_evidence_sidecar_0')
+
+    def test_unknown_evidence_sidecar_blocks_publication_without_overwrite(tmp_path) -> None:
+        target = tmp_path / "model-frozen.json"
+        evidence = tmp_path / "model-frozen-evidence.json"
+        evidence.write_text("user-owned evidence")
+>       with pytest.raises(FileExistsError):
+E       Failed: DID NOT RAISE <class 'FileExistsError'>
+
+tests/test_rgbd_model_probe.py:406: Failed
+________ test_writer_rejects_a_different_snapshot_from_the_verified_run ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_writer_rejects_a_differen0')
+
+    def test_writer_rejects_a_different_snapshot_from_the_verified_run(tmp_path) -> None:
+        snapshot = {**_snapshot(), "coordinate_system": "normalized_1000"}
+>       with pytest.raises(ValueError, match="differs"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_model_probe.py:414: Failed
+_ test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[snapshot] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x768d6741d160>
+tamper = 'snapshot'
+
+    @pytest.mark.parametrize("tamper", ["snapshot", "sidecar", "report", "source"])
+    def test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes(
+        tmp_path, monkeypatch, tamper,
+    ) -> None:
+        report = _passing_report()
+        target = tmp_path / "model-frozen.json"
+        sidecar = tmp_path / "model-frozen-evidence.json"
+>       assert write_frozen_if_verified(target, _snapshot(), report)
+E       AssertionError: assert False
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu0/model-frozen.json'), {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+E        +    where {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...} = _snapshot()
+
+tests/test_rgbd_model_probe.py:425: AssertionError
+_ test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[sidecar] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x768d6741f440>
+tamper = 'sidecar'
+
+    @pytest.mark.parametrize("tamper", ["snapshot", "sidecar", "report", "source"])
+    def test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes(
+        tmp_path, monkeypatch, tamper,
+    ) -> None:
+        report = _passing_report()
+        target = tmp_path / "model-frozen.json"
+        sidecar = tmp_path / "model-frozen-evidence.json"
+>       assert write_frozen_if_verified(target, _snapshot(), report)
+E       AssertionError: assert False
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu1/model-frozen.json'), {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+E        +    where {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...} = _snapshot()
+
+tests/test_rgbd_model_probe.py:425: AssertionError
+_ test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[report] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x768d6741c080>
+tamper = 'report'
+
+    @pytest.mark.parametrize("tamper", ["snapshot", "sidecar", "report", "source"])
+    def test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes(
+        tmp_path, monkeypatch, tamper,
+    ) -> None:
+        report = _passing_report()
+        target = tmp_path / "model-frozen.json"
+        sidecar = tmp_path / "model-frozen-evidence.json"
+>       assert write_frozen_if_verified(target, _snapshot(), report)
+E       AssertionError: assert False
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu2/model-frozen.json'), {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+E        +    where {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...} = _snapshot()
+
+tests/test_rgbd_model_probe.py:425: AssertionError
+_ test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[source] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x768d6741f350>
+tamper = 'source'
+
+    @pytest.mark.parametrize("tamper", ["snapshot", "sidecar", "report", "source"])
+    def test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes(
+        tmp_path, monkeypatch, tamper,
+    ) -> None:
+        report = _passing_report()
+        target = tmp_path / "model-frozen.json"
+        sidecar = tmp_path / "model-frozen-evidence.json"
+>       assert write_frozen_if_verified(target, _snapshot(), report)
+E       AssertionError: assert False
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_frozen_bundle_verifies_cu3/model-frozen.json'), {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+E        +    where {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...} = _snapshot()
+
+tests/test_rgbd_model_probe.py:425: AssertionError
+_________ test_verified_writer_never_overwrites_unknown_existing_file __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_verified_writer_never_ove0')
+
+    def test_verified_writer_never_overwrites_unknown_existing_file(tmp_path) -> None:
+        target = tmp_path / "model-frozen.json"
+        target.write_text("user-owned file\n", encoding="utf-8")
+        snapshot = _snapshot()
+        try:
+            write_frozen_if_verified(target, snapshot, _passing_report())
+        except FileExistsError:
+            pass
+        else:
+>           raise AssertionError("verified writer must not replace an unknown file")
+E           AssertionError: verified writer must not replace an unknown file
+
+tests/test_rgbd_model_probe.py:541: AssertionError
+___________ test_verified_writer_recovers_after_interrupted_staging ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_verified_writer_recovers_0')
+
+    def test_verified_writer_recovers_after_interrupted_staging(tmp_path) -> None:
+        target = tmp_path / "model-frozen.json"
+        stale = tmp_path / "model-frozen.json.tmp"
+        stale.write_text("interrupted prior write\n", encoding="utf-8")
+        snapshot = _snapshot()
+    
+>       assert write_frozen_if_verified(target, snapshot, _passing_report()) is True
+E       AssertionError: assert False is True
+E        +  where False = write_frozen_if_verified(PosixPath('/tmp/pytest-of-ningyd/pytest-425/test_verified_writer_recovers_0/model-frozen.json'), {'endpoint': 'http://127.0.0.1:11434', 'generation_parameters': {'num_ctx': 8192, 'num_predict': 512, 'temperature': 0, 'think': False}, 'grasp_profile': 'mujoco_upright_box_v2', 'image_size': [320, 240], ...}, {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...})
+E        +    where {'attempts': [{'capture_path': 'offline-fixture', 'destination_hit': True, 'expected_request_summary': {'distinct_imag...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'inherited_parameters': 'presence_penalty 1.5', 'name': 'qwen3.5:4b', ...}, ...} = _passing_report()
+
+tests/test_rgbd_model_probe.py:551: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:45
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_gripper_calibration.py::test_model_freeze_binds_profile_evidence_and_source_asset
+FAILED tests/test_rgbd_model_probe.py::test_freeze_preserves_coordinate_protocol_and_binds_source_and_request_evidence
+FAILED tests/test_rgbd_model_probe.py::test_freeze_requires_real_transport_geometry_and_cuda
+FAILED tests/test_rgbd_model_probe.py::test_prior_freeze_evidence_is_authenticated_and_archived_together[False]
+FAILED tests/test_rgbd_model_probe.py::test_prior_freeze_evidence_is_authenticated_and_archived_together[True]
+FAILED tests/test_rgbd_model_probe.py::test_unknown_evidence_sidecar_blocks_publication_without_overwrite
+FAILED tests/test_rgbd_model_probe.py::test_writer_rejects_a_different_snapshot_from_the_verified_run
+FAILED tests/test_rgbd_model_probe.py::test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[snapshot]
+FAILED tests/test_rgbd_model_probe.py::test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[sidecar]
+FAILED tests/test_rgbd_model_probe.py::test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[report]
+FAILED tests/test_rgbd_model_probe.py::test_frozen_bundle_verifies_current_sources_and_all_artifact_hashes[source]
+FAILED tests/test_rgbd_model_probe.py::test_verified_writer_never_overwrites_unknown_existing_file
+FAILED tests/test_rgbd_model_probe.py::test_verified_writer_recovers_after_interrupted_staging
+13 failed, 702 passed, 1 warning in 355.91s (0:05:55)

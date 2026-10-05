@@ -1,0 +1,44 @@
+...................F.                                                    [100%]
+=================================== FAILURES ===================================
+__________ test_actual_excluded_saved_motion_raw_only_reconstruction ___________
+
+    def test_actual_excluded_saved_motion_raw_only_reconstruction() -> None:
+        directory = MOTION / "attempt-1"
+        header = json.loads((MOTION / "header.json").read_bytes())
+        summary = json.loads((directory / "summary.json").read_bytes())
+        context = {
+            "episode_id": summary["episode_id"], "physics_dt_s": header["config"]["physics_dt_s"],
+            "evaluation_start_step": 120,
+            "initial_controller_targets": {"joints_rad": [-.8, 0, 0, 0, 0, 0, 0],
+                                           "fingers_m": [.039, .039]},
+            "actuator_delay_steps": 0,
+        }
+        case = RawCaseRegistration(
+            "actual-excluded-motion", "attempt-1", "MARKER_MOTION_DEVELOPMENT_RAW_V1",
+            hashes(directory), header["scene"], context,
+            {"physics_steps": 4806, "commands": 743, "actions": 9, "frames": 10},
+            marker_registration=PoseMarkerRegistration(
+                7, .045, "2ba368bb5150becd1c021fe52495f3c59bd155f862502ec590b2ecd3a57899e4"
+            ),
+            source_kind="RECORDED_SIMULATION",
+        )
+        inventory = sources()
+        asset = "assets/robots/franka_panda/scene_pose_marker_color_v2.xml"
+        inventory[asset] = hashlib.sha256((ROOT / asset).read_bytes()).hexdigest()
+        registration = RiskSourceRegistration(
+            MOTION, ROOT, inventory, (case,), CompletionCriteria("object", "target_region")
+        )
+        auditor = RiskSourceAuditor({"actual": registration})
+        raw = auditor.audit("actual", scope="RAW_EXECUTION")
+>       assert raw.status == "VALID", raw.reasons
+E       AssertionError: ('actual-excluded-motion:invalid:frame episode/scene identity differs',)
+E       assert 'INVALID' == 'VALID'
+E         
+E         - VALID
+E         + INVALID
+E         ? ++
+
+tests/test_research_risk_sources.py:256: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_actual_excluded_saved_motion_raw_only_reconstruction
+1 failed, 20 passed in 3.32s

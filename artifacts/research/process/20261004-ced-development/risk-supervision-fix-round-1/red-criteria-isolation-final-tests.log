@@ -1,0 +1,158 @@
+FF.FF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_registered_workspace_lists_cannot_mutate_reconstructed_labels[workspace_min_m] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-937/test_registered_workspace_list0')
+bound = 'workspace_min_m'
+
+    @pytest.mark.parametrize("bound", ["workspace_min_m", "workspace_max_m"])
+    def test_registered_workspace_lists_cannot_mutate_reconstructed_labels(
+        tmp_path: Path, bound: str
+    ) -> None:
+        from cloud_edge_robot_arm.research.risk_sources import RiskSourceAuditor
+    
+        registration, directory, _, _ = registered_fixture(tmp_path)
+        minimum = [-0.85, -0.85, 0.0]
+        maximum = [0.85, 0.85, 1.2]
+        criteria = replace(
+            registration.raw_registration.criteria,
+            workspace_min_m=minimum,
+            workspace_max_m=maximum,
+        )
+        raw = replace(registration.raw_registration, criteria=criteria)
+        replay = RiskSourceAuditor({"raw": raw}).audit("raw", scope="RAW_EXECUTION")
+        assert replay.status == "VALID", replay.reasons
+        json_file(
+            directory / "summary.json", {"outcome": dict(replay.case_results[0]["physical_outcome"])}
+        )
+        case = replace(raw.cases[0], original_file_hashes=hashes(directory))
+        registration = replace(registration, raw_registration=replace(raw, cases=(case,)))
+        owner = api().RiskSupervisionAuditor({"source": registration})
+        before = owner.audit("source")
+        assert before.diagnostic_status == "VALID", before.reasons
+        assert len(before.rows) == 2
+        original_hashes = hashes(directory)
+    
+        if bound == "workspace_min_m":
+            minimum[2] = 0.7
+        else:
+            maximum[2] = 0.001
+    
+        assert hashes(directory) == original_hashes
+        after = owner.audit("source")
+>       assert after.diagnostic_status == before.diagnostic_status, after.reasons
+E       AssertionError: ('sw-case:invalid:physical outcome summary does not reproduce raw snapshots', 'raw_v3_clock_publisher_unavailable', 'i...e', 'derived_risk_commits_unavailable', 'risk_selection_replay_unavailable', 'initial_source_registration_unavailable')
+E       assert 'INVALID' == 'VALID'
+E         
+E         - VALID
+E         + INVALID
+E         ? ++
+
+tests/test_research_risk_supervision.py:191: AssertionError
+_ test_registered_workspace_lists_cannot_mutate_reconstructed_labels[workspace_max_m] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-937/test_registered_workspace_list1')
+bound = 'workspace_max_m'
+
+    @pytest.mark.parametrize("bound", ["workspace_min_m", "workspace_max_m"])
+    def test_registered_workspace_lists_cannot_mutate_reconstructed_labels(
+        tmp_path: Path, bound: str
+    ) -> None:
+        from cloud_edge_robot_arm.research.risk_sources import RiskSourceAuditor
+    
+        registration, directory, _, _ = registered_fixture(tmp_path)
+        minimum = [-0.85, -0.85, 0.0]
+        maximum = [0.85, 0.85, 1.2]
+        criteria = replace(
+            registration.raw_registration.criteria,
+            workspace_min_m=minimum,
+            workspace_max_m=maximum,
+        )
+        raw = replace(registration.raw_registration, criteria=criteria)
+        replay = RiskSourceAuditor({"raw": raw}).audit("raw", scope="RAW_EXECUTION")
+        assert replay.status == "VALID", replay.reasons
+        json_file(
+            directory / "summary.json", {"outcome": dict(replay.case_results[0]["physical_outcome"])}
+        )
+        case = replace(raw.cases[0], original_file_hashes=hashes(directory))
+        registration = replace(registration, raw_registration=replace(raw, cases=(case,)))
+        owner = api().RiskSupervisionAuditor({"source": registration})
+        before = owner.audit("source")
+        assert before.diagnostic_status == "VALID", before.reasons
+        assert len(before.rows) == 2
+        original_hashes = hashes(directory)
+    
+        if bound == "workspace_min_m":
+            minimum[2] = 0.7
+        else:
+            maximum[2] = 0.001
+    
+        assert hashes(directory) == original_hashes
+        after = owner.audit("source")
+>       assert after.diagnostic_status == before.diagnostic_status, after.reasons
+E       AssertionError: ('sw-case:invalid:physical outcome summary does not reproduce raw snapshots', 'raw_v3_clock_publisher_unavailable', 'i...e', 'derived_risk_commits_unavailable', 'risk_selection_replay_unavailable', 'initial_source_registration_unavailable')
+E       assert 'INVALID' == 'VALID'
+E         
+E         - VALID
+E         + INVALID
+E         ? ++
+
+tests/test_research_risk_supervision.py:191: AssertionError
+_ test_registered_workspace_bounds_reject_boolean_without_numeric_coercion[workspace_min_m] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-937/test_registered_workspace_boun0')
+bound = 'workspace_min_m'
+
+    @pytest.mark.parametrize("bound", ["workspace_min_m", "workspace_max_m"])
+    def test_registered_workspace_bounds_reject_boolean_without_numeric_coercion(
+        tmp_path: Path, bound: str
+    ) -> None:
+        registration, _, _, _ = registered_fixture(tmp_path)
+        minimum = [-0.85, -0.85, 0.0]
+        maximum = [0.85, 0.85, 1.2]
+        criteria = replace(
+            registration.raw_registration.criteria,
+            workspace_min_m=minimum,
+            workspace_max_m=maximum,
+        )
+        raw = replace(registration.raw_registration, criteria=criteria)
+        if bound == "workspace_min_m":
+            minimum[0] = False
+        else:
+            maximum[2] = True
+>       with pytest.raises(ValueError, match="numeric"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_risk_supervision.py:243: Failed
+_ test_registered_workspace_bounds_reject_boolean_without_numeric_coercion[workspace_max_m] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-937/test_registered_workspace_boun1')
+bound = 'workspace_max_m'
+
+    @pytest.mark.parametrize("bound", ["workspace_min_m", "workspace_max_m"])
+    def test_registered_workspace_bounds_reject_boolean_without_numeric_coercion(
+        tmp_path: Path, bound: str
+    ) -> None:
+        registration, _, _, _ = registered_fixture(tmp_path)
+        minimum = [-0.85, -0.85, 0.0]
+        maximum = [0.85, 0.85, 1.2]
+        criteria = replace(
+            registration.raw_registration.criteria,
+            workspace_min_m=minimum,
+            workspace_max_m=maximum,
+        )
+        raw = replace(registration.raw_registration, criteria=criteria)
+        if bound == "workspace_min_m":
+            minimum[0] = False
+        else:
+            maximum[2] = True
+>       with pytest.raises(ValueError, match="numeric"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_risk_supervision.py:243: Failed
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_supervision.py::test_registered_workspace_lists_cannot_mutate_reconstructed_labels[workspace_min_m]
+FAILED tests/test_research_risk_supervision.py::test_registered_workspace_lists_cannot_mutate_reconstructed_labels[workspace_max_m]
+FAILED tests/test_research_risk_supervision.py::test_registered_workspace_bounds_reject_boolean_without_numeric_coercion[workspace_min_m]
+FAILED tests/test_research_risk_supervision.py::test_registered_workspace_bounds_reject_boolean_without_numeric_coercion[workspace_max_m]
+4 failed, 1 passed, 37 deselected in 1.83s

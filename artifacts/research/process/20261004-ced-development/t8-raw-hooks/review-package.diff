@@ -1,0 +1,407 @@
+--- a/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
++++ b/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
+@@ -5,6 +5,7 @@
+ import math
+ from collections.abc import Callable, Iterator, Mapping
+ from contextlib import contextmanager
++from copy import deepcopy
+ from dataclasses import dataclass
+ from importlib.util import find_spec
+ from pathlib import Path
+@@ -89,6 +90,22 @@
+     estop_engaged: bool
+ 
+ 
++@dataclass(frozen=True, slots=True)
++class ActuatorStepObservation:
++    """独立离线采样的真实步进前控制输出，不参与在线决策。"""
++
++    episode_id: str
++    physics_step: int
++    sim_time_s: float
++    applied_joint_targets_rad: tuple[float, ...]
++    pre_joint_positions_rad: tuple[float, ...]
++    pre_gravity_bias_nm: tuple[float, ...]
++    control_rad: tuple[float, ...]
++    finger_control_targets_m: tuple[float, ...]
++    actuator_gains: tuple[float, ...]
++    actuator_ctrl_ranges: tuple[tuple[float, float], ...]
++
++
+ class MuJoCoPhysicsBackend:
+     """MuJoCo-backed deterministic physics backend for Phase 9 core validation."""
+ 
+@@ -116,6 +133,7 @@
+         self._camera: MuJoCoRGBDCamera | None = None
+         self._episode_id: str | None = None
+         self._step_observer: Callable[[PhysicsStepObservation], None] | None = None
++        self._actuator_observer: Callable[[ActuatorStepObservation], None] | None = None
+         self._in_observer_callback = False
+         self._self_collision_geom_pairs: tuple[tuple[str, str, int, int], ...] = ()
+         self._target_motion: tuple[float, float, float] | None = None
+@@ -136,7 +154,7 @@
+ 
+     @property
+     def command_records(self) -> list[dict[str, object]]:
+-        return [dict(record) for record in self._command_records]
++        return deepcopy(self._command_records)
+ 
+     @property
+     def model_parameter_evidence(self) -> dict[str, object]:
+@@ -197,6 +215,7 @@
+         self._data = mujoco.MjData(self._model)
+         self._config = config
+         self._step_observer = None
++        self._actuator_observer = None
+         arm_pairs = tuple(
+             (
+                 first_name,
+@@ -270,6 +289,7 @@
+             for _ in range(steps):
+                 # Emergency stop blocks new commands but actively holds joints.
+                 self._apply_control()
++                self._emit_actuator_observation()
+                 self._mujoco.mj_step(self._model, self._data)
+                 executed += 1
+                 self._total_physics_steps += 1
+@@ -277,6 +297,7 @@
+         else:
+             for _ in range(steps):
+                 self._apply_control()
++                self._emit_actuator_observation()
+                 self._mujoco.mj_step(self._model, self._data)
+                 executed += 1
+                 self._total_physics_steps += 1
+@@ -301,6 +322,7 @@
+     def shutdown(self) -> None:
+         self._require_not_in_observer_callback()
+         self._step_observer = None
++        self._actuator_observer = None
+         if self._camera is not None:
+             self._camera.close()
+             self._camera = None
+@@ -367,6 +389,50 @@
+     def get_sensor_frame(self) -> SensorFrame:
+         return self._sensor_frame
+ 
++    @contextmanager
++    def observe_actuator_steps(
++        self, callback: Callable[[ActuatorStepObservation], None]
++    ) -> Iterator[None]:
++        """旁路读取每次真实mj_step之前的控制值，不持有逐步历史。"""
++        self._require_not_in_observer_callback()
++        self._require_loaded()
++        if self._episode_id is None:
++            raise RuntimeError("MuJoCo scenario is not reset")
++        if self._actuator_observer is not None:
++            raise RuntimeError("an actuator observer is already active")
++        self._actuator_observer = callback
++        try:
++            yield
++        finally:
++            if self._actuator_observer is callback:
++                self._actuator_observer = None
++
++    def _emit_actuator_observation(self) -> None:
++        callback = self._actuator_observer
++        if callback is None:
++            return
++        assert self._data is not None and self._model is not None and self._episode_id
++        row = ActuatorStepObservation(
++            episode_id=self._episode_id, physics_step=self._total_physics_steps + 1,
++            sim_time_s=float(self._data.time),
++            applied_joint_targets_rad=tuple(float(v) for v in self._target_positions),
++            pre_joint_positions_rad=tuple(float(v) for v in self._data.qpos[:7]),
++            pre_gravity_bias_nm=tuple(float(v) for v in self._data.qfrc_bias[:7]),
++            control_rad=tuple(float(v) for v in self._data.ctrl[:7]),
++            finger_control_targets_m=tuple(float(v) for v in self._data.ctrl[7:9]),
++            actuator_gains=tuple(float(v) for v in self._model.actuator_gainprm[:7, 0]),
++            actuator_ctrl_ranges=tuple((float(v[0]), float(v[1]))
++                                      for v in self._model.actuator_ctrlrange[:7]),
++        )
++        self._in_observer_callback = True
++        try:
++            callback(row)
++        except BaseException:
++            self._actuator_observer = None
++            raise
++        finally:
++            self._in_observer_callback = False
++
+     def capture_sensor_frame_with_instances(
+         self,
+     ) -> tuple[SensorFrame, tuple[int, ...], dict[int, str], tuple[str, ...]]:
+@@ -389,7 +455,8 @@
+     def apply_joint_targets(self, targets: JointCommand) -> None:
+         self._require_not_in_observer_callback()
+         if self._estop_engaged:
+-            self._record_command("joint_target", accepted=False, reason="emergency_stop")
++            self._record_command("joint_target", accepted=False, reason="emergency_stop",
++                                 target_positions_rad=list(targets.positions))
+             return
+         if len(targets.positions) != 7:
+             raise ValueError("Franka Panda profile requires exactly 7 joint targets")
+@@ -401,15 +468,20 @@
+                 "joint_target",
+                 accepted=True,
+                 reason=f"queued_until_physics_step={available_step}",
++                target_positions_rad=list(targets.positions),
++                applied_target_positions_rad=clipped.tolist(),
+             )
+         else:
+             self._target_positions = clipped
+-            self._record_command("joint_target", accepted=True, reason="")
++            self._record_command("joint_target", accepted=True, reason="",
++                                 target_positions_rad=list(targets.positions),
++                                 applied_target_positions_rad=clipped.tolist())
+ 
+     def apply_gripper_command(self, command: GripperCommand) -> None:
+         self._require_not_in_observer_callback()
+         if self._estop_engaged:
+-            self._record_command("gripper", accepted=False, reason="emergency_stop")
++            self._record_command("gripper", accepted=False, reason="emergency_stop",
++                                 target_open=command.open)
+             return
+         self._gripper_open = command.open
+         assert self._data is not None
+@@ -417,7 +489,7 @@
+         if self._data.ctrl.shape[0] >= 9:
+             self._data.ctrl[7] = target
+             self._data.ctrl[8] = target
+-        self._record_command("gripper", accepted=True, reason="")
++        self._record_command("gripper", accepted=True, reason="", target_open=command.open)
+ 
+     def emergency_stop(self) -> None:
+         self._require_not_in_observer_callback()
+@@ -433,7 +505,11 @@
+         assert self._data is not None
+         self._pending_joint_targets.clear()
+         self._target_positions = np.array(self._data.qpos[:7], dtype=float)
+-        self._record_command("hold_current_joints", accepted=True, reason="motion_terminated")
++        self._record_command(
++            "hold_current_joints", accepted=True, reason="motion_terminated",
++            target_positions_rad=self._target_positions.tolist(),
++            applied_target_positions_rad=self._target_positions.tolist(),
++        )
+ 
+     def inject_fault(self, fault: PhysicalFault) -> None:
+         self._require_not_in_observer_callback()
+@@ -689,7 +765,9 @@
+             ground_truth_used_for_control=False,
+         )
+ 
+-    def _record_command(self, command_type: str, *, accepted: bool, reason: str) -> None:
++    def _record_command(
++        self, command_type: str, *, accepted: bool, reason: str, **details: object
++    ) -> None:
+         self._command_records.append(
+             {
+                 "type": command_type,
+@@ -697,6 +775,10 @@
+                 "reason": reason,
+                 "after_emergency_stop": self._estop_engaged and command_type != "emergency_stop",
+                 "sim_time_s": self.get_sim_time() if self._data is not None else 0.0,
++                "episode_id": self._episode_id,
++                "physics_step": self._total_physics_steps,
++                "command_seq": len(self._command_records) + 1,
++                **deepcopy(details),
+             }
+         )
+ 
+--- a/src/cloud_edge_robot_arm/datasets/rgbd/teacher.py
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/teacher.py
+@@ -3,10 +3,10 @@
+ from __future__ import annotations
+ 
+ import hashlib
+-from collections.abc import Callable
++from collections.abc import Callable, Mapping
+ from datetime import UTC, datetime
+ from pathlib import Path
+-from typing import Literal
++from typing import Any, Literal
+ 
+ from cloud_edge_robot_arm.contracts import ActionResult, Pose
+ from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec, TrajectoryFrame
+@@ -94,6 +94,8 @@
+     *,
+     case: TeacherCase = "NORMAL",
+     settle_steps: int = 120,
++    physical_observer: Callable[[PhysicsStepObservation], None] | None = None,
++    action_observer: Callable[[Mapping[str, Any]], None] | None = None,
+ ) -> EpisodeOutcome:
+     """Execute an offline ground-truth teacher inside one prepared MuJoCo episode.
+ 
+@@ -115,12 +117,19 @@
+     if scene.asset_family_hash != asset_hash:
+         raise ValueError("teacher scene asset family differs from current robot model")
+     criteria = CompletionCriteria(object_id="object", target_region_id="target_region")
+-    recorder.physical_samples.append(
+-        sample_physical_observation(backend.current_physics_observation(), criteria)
+-    )
++    initial_snapshot = backend.current_physics_observation()
++    recorder.physical_samples.append(sample_physical_observation(initial_snapshot, criteria))
++    if physical_observer is not None:
++        backend._in_observer_callback = True
++        try:
++            physical_observer(initial_snapshot)
++        finally:
++            backend._in_observer_callback = False
+ 
+     def on_step(snapshot: PhysicsStepObservation) -> None:
+         recorder.physical_samples.append(sample_physical_observation(snapshot, criteria))
++        if physical_observer is not None:
++            physical_observer(snapshot)
+ 
+     with backend.observe_physics_steps(on_step):
+         if settle_steps:
+@@ -137,6 +146,7 @@
+         def execute(action: Callable[[], ActionResult]) -> bool:
+             nonlocal observation
+             before_step = backend.total_physics_steps
++            command_start = len(backend.command_records) + 1
+             result = action()
+             details = dict(result.details)
+             details["teacher_source"] = "GROUND_TRUTH_TEACHER"
+@@ -144,6 +154,20 @@
+                 details["resolved_target_source"] = "GROUND_TRUTH_TEACHER"
+             result = result.model_copy(update={"details": details})
+             actual_steps = backend.total_physics_steps - before_step
++            if action_observer is not None:
++                event = {
++                    "result": result.model_dump(mode="json"),
++                    "episode_id": backend._episode_id,
++                    "start_step": before_step,
++                    "end_step": backend.total_physics_steps,
++                    "command_seq_start": command_start,
++                    "command_seq_end": len(backend.command_records) + 1,
++                }
++                backend._in_observer_callback = True
++                try:
++                    action_observer(event)
++                finally:
++                    backend._in_observer_callback = False
+             if actual_steps == 0:
+                 recorder.unframed_actions.append(result)
+                 return False
+--- /dev/null
++++ b/tests/test_protocol_raw_observers.py
+@@ -0,0 +1,118 @@
++"""Passive evidence hooks read actual commands/actuators without creating an executor."""
++
++from dataclasses import FrozenInstanceError
++
++import pytest
++
++from cloud_edge_robot_arm.simulation.models import GripperCommand, JointCommand
++from tests.test_rgbd_step_observer import backend as _backend_fixture
++
++
++@pytest.fixture(name="backend")
++def raw_backend():
++    yield from _backend_fixture.__wrapped__()
++
++
++def test_command_records_bind_actual_episode_step_and_requested_target(backend):
++    backend.apply_joint_targets(JointCommand(positions=[3.0] * 7))
++    backend.apply_gripper_command(GripperCommand(open=False))
++    commands = backend.command_records
++    assert [row["command_seq"] for row in commands] == [1, 2]
++    assert all(
++        row["episode_id"] == backend.current_physics_observation().episode_id
++        and row["physics_step"] == 0
++        for row in commands
++    )
++    assert commands[0]["target_positions_rad"] == [3.0] * 7
++    assert commands[0]["applied_target_positions_rad"] == [2.8] * 7
++    assert commands[1]["target_open"] is False
++    commands[0]["target_positions_rad"][0] = -99
++    assert backend.command_records[0]["target_positions_rad"] == [3.0] * 7
++
++
++def test_actuator_observer_reads_pre_step_values_and_cannot_mutate(backend):
++    actual = []
++    model, data = backend._model, backend._data
++
++    def observe(row):
++        actual.append(row)
++        assert row.physics_step == backend.total_physics_steps + 1
++        assert row.sim_time_s == backend.get_sim_time()
++        assert row.pre_joint_positions_rad == pytest.approx(data.qpos[:7])
++        assert row.pre_gravity_bias_nm == pytest.approx(data.qfrc_bias[:7])
++        assert row.control_rad == pytest.approx(data.ctrl[:7])
++        assert row.finger_control_targets_m == pytest.approx(data.ctrl[7:9])
++        assert row.actuator_gains == pytest.approx(model.actuator_gainprm[:7, 0])
++        with pytest.raises(RuntimeError, match="observer callback"):
++            backend.apply_joint_targets(JointCommand(positions=[0.0] * 7))
++        with pytest.raises(FrozenInstanceError):
++            row.physics_step = 99
++
++    with backend.observe_actuator_steps(observe):
++        backend.step(steps=3)
++    backend.step(steps=1)
++    assert [row.physics_step for row in actual] == [1, 2, 3]
++
++
++def test_passive_step_and_actuator_observers_coexist_and_cleanup(backend):
++    controls, observations = [], []
++    with (
++        backend.observe_actuator_steps(controls.append),
++        backend.observe_physics_steps(observations.append),
++    ):
++        backend.step(steps=2)
++    assert [row.physics_step for row in controls] == [row.physics_step for row in observations]
++    assert all(
++        post.sim_time_s > pre.sim_time_s for pre, post in zip(controls, observations, strict=True)
++    )
++    with pytest.raises(RuntimeError, match="raw observer failure"):
++        with backend.observe_actuator_steps(
++            lambda row: (_ for _ in ()).throw(RuntimeError("raw observer failure"))
++        ):
++            backend.step()
++    backend.step()
++    assert backend.total_physics_steps == 3
++
++
++def test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges():
++    from cloud_edge_robot_arm.datasets.rgbd.teacher import EpisodeRecorder, run_teacher_episode
++    from cloud_edge_robot_arm.simulation.config import SimulatorConfig
++    from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++    from tests.test_rgbd_teacher_smoke import _fixed_scene
++
++    observed, actions, controls = [], [], []
++    with MuJoCoCaptureSession(SimulatorConfig(camera_width=64, camera_height=64)) as session:
++        scene = _fixed_scene()
++        session.apply_scene(scene)
++        physical = session._backend
++        with physical.observe_actuator_steps(controls.append):
++            outcome = run_teacher_episode(
++                scene,
++                MuJoCoSkillRobot(physical),
++                EpisodeRecorder(),
++                case="NO_CONTACT",
++                settle_steps=3,
++                physical_observer=observed.append,
++                action_observer=actions.append,
++            )
++        assert not outcome.success
++        assert [row.physics_step for row in observed] == list(
++            range(physical.total_physics_steps + 1)
++        )
++        assert [row.physics_step for row in controls] == list(
++            range(1, physical.total_physics_steps + 1)
++        )
++        assert len(actions) == 1
++        event = actions[0]
++        assert event["episode_id"] == observed[0].episode_id
++        assert event["start_step"] == 3 and event["end_step"] == observed[-1].physics_step
++        commands = physical.command_records
++        selected = [
++            row
++            for row in commands
++            if event["command_seq_start"] <= row["command_seq"] < event["command_seq_end"]
++        ]
++        assert selected
++        assert event["result"]["success"] is False
++        assert event["result"]["action_type"] == "GRASP"

@@ -1,5 +1,13 @@
 # 当前交接
 
+**2026-10-05 第49步：** 新独立标记资产在原顶视相机与控制器下实测搬运10/10边界可见；9动作/743命令/4806步，4807完整物理状态独立复算与旧物理路径一致。先读[实测报告](../../../artifacts/research/process/20261004-ced-development/t7b-visible-marker-next/report.md)和独审，原中心标记的九个动作后UNKNOWN保留。边界RGB-D及运动校准输入仍不授native/连续证书；主线T12/18、T13并行，真实Max、风险校准及INITIAL/METHOD/FINAL继续实施，边缘型号后置。下文旧快照保留原时点。
+
+**当前持续研发入口：** [新总计划](../../superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)、[逐步阶段总结](continuation_20261004.md)、[复现说明](../reproduction.md)和[结果/限制](../results_and_limits.md)。多项云、边、端软件已通过独立审查，当前继续资源冻结、恢复消费者、Max局部修复及真实准入/方法接口。边缘模型型号后置；真实Max凭据、端侧校准/连续证据、完整机会/200故障和合格B0仍缺。不得重用旧模型probe或软件恢复状态解除实际准入。
+
+最新独立运行组合检查为33份冻结hash/AST、125项相关回归及静态PASS，实际方法仍NOT_ADMITTED。4200条BLOCKED软件记录的CLI重建和只读页面导出已验证一致，physical/正式研究NOT_RUN。后续交接需先读局部报告的来源及软件范围；下文旧批次和READY队列保留历史时点，不能覆盖当前阶段总结。
+
+**本轮接续入口：** [2026-10-04阶段总结](continuation_20261004.md)。T17a已DONE；T8修复后120场景已结束，5成功、静态4/40，独立物理/帧/成本复核一致。初次冻结退出3，当前候选未过质量门；机会快照与200恢复证据仍需研发，T8保持IN_PROGRESS。v1只作诊断，不改写原始失败。合并518回归及最后58项补测通过（有重叠），全仓检查未完整通过。用户提出Max／4B／OpenCV候选已评估，尚未切换主线；下一重点是端侧证据保持与在线效果验证。后文READY队列为此前快照。
+
 **截至 2026-10-04：T1/T2/T6a/T3/T4/T5 均为 `DONE`；T7 为 `DONE`，最终454项回归通过；T8/T17a 为 `READY`，T6b 为 `TODO`。** T4 在当前资产与控制器 v2 下完成 6/6 类真实物理验收；T5 的20例离线教师为7成功、12失败、1安全违规，独立逐条重评通过。T3 沿用已安装的 Qwen3-VL 4B，320×240 normalized_1000 双图固定 S01 探针 4/4 通过并冻结，见[本轮验收](../../../artifacts/research/process/20261003-t3-small-model-optimization/acceptance.md)。这是协议与 RGB-D 几何优化，未训练、未更换更大模型、未下载新权重；模型仅经 localhost 直连调用且不走代理。T3 限当前资产中高5–10cm的竖直方块及显式 `mujoco_upright_box_v1` 顶抓配置，无物理动作执行，未配置抓取标定时默认拒绝规划；独立开发验证29/32符合各自判据（23/24有目标定位、6/8目标缺失时明确拒绝），`all_cases_pass=false`；两条缺失幻觉及一条有目标误拒绝均为0步契约，失败保留。本阶段无新正式实验结果；历史 `PHASE12_REJECTED`、旧5,580行排除边界与权威论文运行数0保持不变。
 
 当前 T7 已跑完同一批 20 assignments 的 v2：2 正常成功、18 失败、0 blocked、0 false completion；正常 2/12，全分配 2/20（10%）。[独立复算](../../../artifacts/research/process/20261003-t7-visual-closed-loop/smoke-20-v2-validation.json)核对 34,353 样本、154 帧、52 动作并返回 valid/accepted=true。v1 的 20 失败、34 份源码快照及 22,147 样本/105 帧/33 动作原样保留；diagnostic-03 已在线与物理双成功。开发 smoke 仅限当前 MuJoCo 直立有色方块，不能称正式 G1。95 runtime 与 277 prerequisite 只是阶段回归记录，最终合并回归为454 passed。

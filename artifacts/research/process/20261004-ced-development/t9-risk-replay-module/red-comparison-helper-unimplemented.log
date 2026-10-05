@@ -1,0 +1,384 @@
+....................................FFFFFFFFF                            [100%]
+=================================== FAILURES ===================================
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[coefficient] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric0')
+kind = 'coefficient'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[raw_probability] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric1')
+kind = 'raw_probability'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[omit_candidate] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric2')
+kind = 'omit_candidate'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+___ test_rehashed_original_numeric_files_cannot_override_full_replay[winner] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric3')
+kind = 'winner'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[source_flag] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric4')
+kind = 'source_flag'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[unknown_schema] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric5')
+kind = 'unknown_schema'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[bool_coefficient] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric6')
+kind = 'bool_coefficient'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[wrong_filename] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_rehashed_original_numeric7')
+kind = 'wrong_filename'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+        registered,result=original_numeric_artifacts(tmp_path)
+        digest=result["candidate_results"][0]["parameters_hash"]
+        artifact=registered.candidate_artifacts[digest]
+        path=tmp_path/artifact.model_path
+        payload=json.loads(path.read_text())
+        if kind in {"raw_probability","omit_candidate","winner"}:
+            path=tmp_path/"selection.json"
+            payload=json.loads(path.read_text())
+            if kind == "raw_probability":
+                payload["candidate_results"][0]["selection_results"][0]["failure_probability"] = .75
+            elif kind == "omit_candidate":
+                payload["candidate_results"].pop()
+            else:
+                payload["diagnostic_winner_hash"] = "f"*64
+        elif kind == "coefficient":
+            payload["weights"][0] = .1
+        elif kind == "bool_coefficient":
+            payload["weights"][0] = True
+        elif kind == "source_flag":
+            payload["source_accepted"] = True
+        elif kind == "unknown_schema":
+            payload["schema_version"] = "unknown.model.v9"
+        else:
+            bad=tmp_path/digest/"calibration-wrong.json"
+            old=tmp_path/artifact.calibration_path
+            old.rename(bad)
+            artifacts=dict(registered.candidate_artifacts)
+            artifacts[digest]=replace(artifact, calibration_path=f"{digest}/{bad.name}")
+            registered=replace(registered, candidate_artifacts=artifacts, original_file_hashes=hashes(tmp_path))
+        if kind != "wrong_filename":
+            json_file(path, payload)
+            registered=replace(registered, original_file_hashes=hashes(tmp_path))
+        with pytest.raises(ValueError):
+>           api()._compare_original_artifacts(registered, result, [])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:421: AttributeError
+______ test_complete_original_numeric_comparison_remains_diagnostic_only _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-963/test_complete_original_numeric0')
+
+    def test_complete_original_numeric_comparison_remains_diagnostic_only(tmp_path):
+        registered,result=original_numeric_artifacts(tmp_path)
+>       assert api()._compare_original_artifacts(registered, result, []) == "VALID"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'cloud_edge_robot_arm.research.risk_replay' has no attribute '_compare_original_artifacts'
+
+tests/test_research_risk_replay.py:426: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[coefficient]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[raw_probability]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[omit_candidate]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[winner]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[source_flag]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[unknown_schema]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[bool_coefficient]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[wrong_filename]
+FAILED tests/test_research_risk_replay.py::test_complete_original_numeric_comparison_remains_diagnostic_only
+9 failed, 36 passed in 2.31s

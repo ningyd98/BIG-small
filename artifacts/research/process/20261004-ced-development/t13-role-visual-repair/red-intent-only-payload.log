@@ -1,0 +1,28 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_remote_context_is_intent_only_with_complete_proof_remaining_local ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-784/test_remote_context_is_intent_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x702f786c9f70>
+
+    def test_remote_context_is_intent_only_with_complete_proof_remaining_local(tmp_path, monkeypatch):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        request = request.model_copy(update={"current_robot_state": {"internal-only": "private-state"}})
+        result = adapter.replan(request)
+        assert result.outcome == "REPLANNED"
+        body = json.loads(wire.requests[0])
+        envelope = json.loads(body["messages"][1]["content"][0]["text"]
+            .split("\nROLE_REPAIR_CONTEXT=")[1].split("\n")[0])
+>       assert set(envelope) == {"schema_version", "binding_hash", "request", "window", "frame",
+            "context_hash", "source_hash", "bundle_hash", "prompt_schema_hash", "authorized_steps",
+            "failure_kind"}
+E       AssertionError: assert {'authorized_...ma_hash', ...} == {'authorized_... 'frame', ...}
+E         
+E         Extra items in the right set:
+E         'failure_kind'
+E         Use -v to get more diff
+
+tests/test_role_visual_repair.py:656: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_remote_context_is_intent_only_with_complete_proof_remaining_local
+1 failed, 50 deselected in 0.55s

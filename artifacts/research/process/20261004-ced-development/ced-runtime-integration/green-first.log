@@ -1,0 +1,160 @@
+...........F                                                             [100%]
+=================================== FAILURES ===================================
+_______ test_native_stability_is_not_overwritten_by_legacy_endpoint_hold _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-600/test_native_stability_is_not_o0')
+
+    def test_native_stability_is_not_overwritten_by_legacy_endpoint_hold(tmp_path):
+        from cloud_edge_robot_arm.vision.execution import _VisualEpisode
+        from tests.test_opencv_target_evidence import scene, tracker
+    
+        _, binding = role_binding(tmp_path)
+        episode = _VisualEpisode.__new__(_VisualEpisode)
+        episode.policy = ExecutionPolicy("pick red", model_snapshot_hash="a" * 64,
+            device_pipeline="OPENCV", role_binding=binding)
+        episode.observation = scene()
+        episode.tracker = tracker(episode.observation)
+        state = SimpleNamespace()
+        episode.robot = SimpleNamespace(get_state=lambda: state)
+        backend = SimpleNamespace(total_physics_steps=0, _config=SimpleNamespace(physics_dt_s=.1))
+        backend.step = lambda steps: setattr(backend, "total_physics_steps",
+            backend.total_physics_steps + steps)
+        episode.backend = backend
+        episode.records = []
+        episode.monitor_physics_state = lambda: None
+        episode.recapture = lambda: None
+        observed = []
+        episode.verify = lambda *_, **kwargs: observed.append(kwargs.get("facts_transform")) or False
+>       assert episode.hold_lift() is False
+               ^^^^^^^^^^^^^^^^^^^
+
+tests/test_ced_runtime_binding.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/vision/execution.py:1127: in hold_lift
+    add_sample(self.observation, self.tracker.facts(self.observation, self.robot.get_state()))
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.vision.tracking.OpenCVTargetTracker object at 0x79721a573ec0>
+observation = RGBDObservation(frame_id='initial', observation_id='initial', captured_at=datetime.datetime(2026, 10, 4, 9, 53, 14, 10...e', calibration_version='test-cal', checksum_sha256='99b937c36b955da328ff2219369896a84ada22c5829104364aee350ad237a1da')
+robot_state = namespace()
+
+    def facts(
+        self, observation: RGBDObservation, robot_state: RobotState | None = None
+    ) -> dict[str, Any]:
+        reason = self._binding_reason(observation)
+        if reason:
+            return self._unknown(observation, reason)
+        previous = self._last_observation
+        repeat = observation.observation_id == previous.observation_id
+        initial_repeat = repeat and observation is self._reference
+        if repeat and observation.checksum_sha256 != previous.checksum_sha256:
+            return self._unknown(observation, "reused_frame_with_changed_payload")
+        dt = observation.sim_time_s - previous.sim_time_s
+        capture_dt = (observation.captured_at - previous.captured_at).total_seconds()
+        elapsed = dt if observation.source in {"mujoco_camera", "isaac_camera"} else capture_dt
+        if not repeat and (observation.observation_id in self._seen or dt <= 0 or capture_dt <= 0):
+            return self._unknown(observation, "capture_not_new_and_monotonic")
+        if not repeat:
+            self._seen.add(observation.observation_id)
+            self._last_observation = observation
+            if elapsed > _MAX_SAMPLE_GAP_S + 1e-9:
+                self._lift_samples.clear()
+                self._placement_samples.clear()
+        target, reason = self._geometry(observation, self.target_color, target=True)
+        if target is None:
+            return self._unknown(observation, reason or "target_extent_missing")
+        assert self.initial is not None and self.destination is not None
+        widths = np.asarray(target["max"])[:2] - np.asarray(target["min"])[:2]
+        initial_widths = np.asarray(self.initial["max"])[:2] - np.asarray(self.initial["min"])[:2]
+        if np.any(np.abs(widths / initial_widths - 1.0) > 0.15):
+            return self._unknown(observation, "target_extent_changed_or_partially_occluded")
+        # Sampling tolerance cannot shrink the full body's conservative envelope.
+        for axis in (0, 1):
+            deficit = max(0.0, initial_widths[axis] - widths[axis])
+            target["min"][axis] -= deficit
+            target["max"][axis] += deficit
+        displacement = np.linalg.norm(
+            np.asarray(target["center"]) - np.asarray(self._last_geometry["center"])
+        )
+        if not repeat and displacement > _MAX_VISUAL_SPEED_M_S * elapsed + 0.012:
+            return self._unknown(observation, "target_identity_temporal_jump")
+        self._last_geometry = target
+        envelope = self._envelope(observation, target)
+        public = self._public(target)
+        # The scoped rigid upright body extends down by its initially observed
+        # top-to-support height. Full xy bounds retain top silhouette uncertainty.
+        body_height = max(0.0, self.initial["center"][2] - self.support_z)
+        public["full_extent_min"] = list(public["min"])
+        public["full_extent_min"][2] = min(
+            public["min"][2],
+            public["center"][2]
+            - body_height
+            - self.initial["uncertainty_m"][2]
+            - target["uncertainty_m"][2],
+        )
+        public["full_extent_max"] = list(public["max"])
+        public["extent_source"] = "unique_complete_rgbd_top_and_initial_upright_support_height"
+        public["conservative_full_extent_min"] = (
+            public["full_extent_min"] if target["extent_complete"] else None
+        )
+        public["conservative_full_extent_max"] = (
+            public["full_extent_max"] if target["extent_complete"] else None
+        )
+        result = {
+            name: {
+                **envelope,
+                "value": None,
+                "measured_values": {},
+                "reasons": ["effect_evidence_incomplete"],
+            }
+            for name in _CONDITIONS
+        }
+        result["target_visible"] = {**envelope, "value": True, "measured_values": public}
+        stationary = all(
+            target["min"][axis] >= self.initial["min"][axis] - 0.018
+            and target["max"][axis] <= self.initial["max"][axis] + 0.018
+            for axis in (0, 1)
+        )
+        result["target_reachable"] = {
+            **envelope,
+            "value": stationary,
+            "measured_values": {"stationary_support": stationary},
+        }
+        if self.depth_error_bound_m is None:
+            result["target_reachable"]["value"] = None
+            result["target_reachable"]["reasons"] = ["calibrated_depth_error_bound_missing"]
+            for name in _CONDITIONS[2:]:
+                result[name]["reasons"] = ["calibrated_depth_error_bound_missing"]
+            return result
+        error = target["uncertainty_m"][2] + self.initial["uncertainty_m"][2]
+        lift = float(target["center"][2] - self.initial["center"][2] - error)
+        lift_upper = float(target["center"][2] - self.initial["center"][2] + error)
+        lifted = True if lift >= 0.05 else False if lift_upper < 0.05 else None
+        result["object_lifted"] = {
+            **envelope,
+            "value": lifted,
+            "measured_values": {
+                "minimum_visual_lift_m": lift,
+                "maximum_visual_lift_m": lift_upper,
+                "required_lift_m": 0.05,
+                "height_difference_error_bound_m": error,
+                "target": public,
+            },
+            "reasons": ["lift_threshold_overlaps_measurement_interval"] if lifted is None else [],
+        }
+        holding = bool(
+            robot_state
+>           and robot_state.connected
+                ^^^^^^^^^^^^^^^^^^^^^
+            and not robot_state.gripper_open
+            and robot_state.holding_object_id == "object"
+            and not robot_state.estop_engaged
+            and not robot_state.collision_detected
+        )
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'connected'
+
+src/cloud_edge_robot_arm/vision/tracking.py:646: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_ced_runtime_binding.py::test_native_stability_is_not_overwritten_by_legacy_endpoint_hold
+1 failed, 11 passed in 0.43s

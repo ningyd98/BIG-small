@@ -1,0 +1,46 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_preconditions_use_supplied_commit_clock[validate_evidence] ________
+
+method = 'validate_evidence'
+
+    @pytest.mark.parametrize("method", ["validate_evidence", "validate_b3"])
+    def test_preconditions_use_supplied_commit_clock(method):
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        _, validator = api()
+        value = contract(preconditions=(ConditionSpec("target_visible", "object",
+                                                    {"max_age_s": .5}),))
+        value = replace(value, evidence=replace(value.evidence, motion_bound_m_s=0))
+        result = getattr(validator, method)(value, NOW + timedelta(seconds=1),
+            "context-1", "cal-1", online_evidence=online_evidence())
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'VALID' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + VALID
+
+tests/test_visual_evidence_contract.py:309: AssertionError
+__________ test_preconditions_use_supplied_commit_clock[validate_b3] ___________
+
+method = 'validate_b3'
+
+    @pytest.mark.parametrize("method", ["validate_evidence", "validate_b3"])
+    def test_preconditions_use_supplied_commit_clock(method):
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        _, validator = api()
+        value = contract(preconditions=(ConditionSpec("target_visible", "object",
+                                                    {"max_age_s": .5}),))
+        value = replace(value, evidence=replace(value.evidence, motion_bound_m_s=0))
+        result = getattr(validator, method)(value, NOW + timedelta(seconds=1),
+            "context-1", "cal-1", online_evidence=online_evidence())
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'VALID' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + VALID
+
+tests/test_visual_evidence_contract.py:309: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_evidence_contract.py::test_preconditions_use_supplied_commit_clock[validate_evidence]
+FAILED tests/test_visual_evidence_contract.py::test_preconditions_use_supplied_commit_clock[validate_b3]
+2 failed, 29 deselected in 0.27s

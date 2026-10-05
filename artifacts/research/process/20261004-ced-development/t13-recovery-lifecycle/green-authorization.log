@@ -1,0 +1,54 @@
+.....................FF................F                                 [100%]
+=================================== FAILURES ===================================
+_ test_atomic_authorization_spends_existing_retry_once_but_does_not_resolve[memory] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7d0d4875ef90>
+
+    def test_atomic_authorization_spends_existing_retry_once_but_does_not_resolve(lifecycle_repo):
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        result = atomic_authorize(lifecycle_repo, saved, proof)
+>       assert result.authorized and result.recovery.state == "RECOVERY_AUTHORIZED"
+E       AssertionError: assert (False)
+E        +  where False = RecoveryAuthorizationResult(authorized=False, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', ta...), content_hash='e4aa4b75ffcf55d98eed97febb16dd6988da9c262bdf5ce88b4085404f93596e'), reasons=('precondition_unknown',)).authorized
+
+tests/test_recovery_lifecycle_module.py:257: AssertionError
+_ test_atomic_authorization_spends_existing_retry_once_but_does_not_resolve[sqlite] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7d0d4808ef30>
+
+    def test_atomic_authorization_spends_existing_retry_once_but_does_not_resolve(lifecycle_repo):
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        result = atomic_authorize(lifecycle_repo, saved, proof)
+>       assert result.authorized and result.recovery.state == "RECOVERY_AUTHORIZED"
+E       AssertionError: assert (False)
+E        +  where False = RecoveryAuthorizationResult(authorized=False, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', ta...), content_hash='ce6485fb2f0cba52a0b35e64757124fe48f3652ce5d1656fefe011a6e36be581'), reasons=('precondition_unknown',)).authorized
+
+tests/test_recovery_lifecycle_module.py:257: AssertionError
+____ test_two_sqlite_authorizations_commit_one_recovery_retry_and_task_pool ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-684/test_two_sqlite_authorizations0')
+
+    def test_two_sqlite_authorizations_commit_one_recovery_retry_and_task_pool(tmp_path):
+        path = tmp_path / "authorize.sqlite"
+        first, second = (SQLiteEventAutonomyRepository(path) for _ in range(2))
+        saved = first.initialize_recovery_if_absent(detected_record(first))
+        proof = authorization_proof(saved)
+        barrier = Barrier(2)
+        def authorize(repo):
+            barrier.wait(timeout=5)
+            return atomic_authorize(repo, saved, proof)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = [future.result(timeout=10) for future in
+                       [executor.submit(authorize, repo) for repo in (first, second)]]
+>       assert sum(result.authorized for result in results) == 1
+E       assert 0 == 1
+E        +  where 0 = sum(<generator object test_two_sqlite_authorizations_commit_one_recovery_retry_and_task_pool.<locals>.<genexpr> at 0x7d0d488c2440>)
+
+tests/test_recovery_lifecycle_module.py:328: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_atomic_authorization_spends_existing_retry_once_but_does_not_resolve[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_atomic_authorization_spends_existing_retry_once_but_does_not_resolve[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_two_sqlite_authorizations_commit_one_recovery_retry_and_task_pool
+3 failed, 37 passed in 6.03s

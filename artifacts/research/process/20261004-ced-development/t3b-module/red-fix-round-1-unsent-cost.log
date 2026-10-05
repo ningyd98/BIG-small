@@ -1,0 +1,52 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_raw_observer_failure_preserves_actual_call_count_and_exact_costs[REQUEST] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x783eec9dba70>
+phase = 'REQUEST'
+
+    @pytest.mark.parametrize("phase", ["REQUEST", "RESPONSE"])
+    def test_raw_observer_failure_preserves_actual_call_count_and_exact_costs(monkeypatch, phase):
+        import io
+        import urllib.request
+    
+        from cloud_edge_robot_arm.research.cost_ledger import CostLedger
+        from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+    
+        raw = b'  {"choices": []}\n'
+        sent = []
+    
+        class ExternalBoundary:
+            def open(self, request, timeout):
+                sent.append(request.data)
+                return io.BytesIO(raw)
+    
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
+        observed = []
+    
+        def failing_observer(actual_phase, path, body):
+            observed.append((actual_phase, path, body))
+            if actual_phase == phase:
+                raise RuntimeError("private observer failure")
+    
+        ledger = CostLedger()
+        adapter = RGBDPlannerAdapter(
+            base_url="https://dashscope.aliyuncs.com",
+            model="qwen3.8-max",
+            provider="openai_compatible",
+            api_key="credential-marker",
+            allow_paid=True,
+            cost_ledger=ledger,
+            raw_transport_observer=failing_observer,
+        )
+        with pytest.raises(RGBDModelUnavailable, match="observer"):
+            adapter._post("/chat/completions", {"model": "qwen3.8-max"})
+        rows = ledger.requests()
+>       assert len(rows) == (1 if phase == "RESPONSE" else 0)
+E       AssertionError: assert 1 == 0
+E        +  where 1 = len((RequestCost(request_id='604434fc7ca4405facdd410bdef86e94', sent_at=datetime.datetime(2026, 10, 4, 7, 41, 35, 22043, t...der_version='qwen3.8-max', status='ERROR', serialized_sent_bytes=24, serialized_received_bytes=0, monetary_cost=None),))
+
+tests/test_rgbd_role_models.py:752: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_raw_observer_failure_preserves_actual_call_count_and_exact_costs[REQUEST]
+1 failed, 1 passed, 44 deselected in 0.20s

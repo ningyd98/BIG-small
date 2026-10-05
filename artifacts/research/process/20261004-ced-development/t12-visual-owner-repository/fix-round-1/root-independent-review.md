@@ -1,0 +1,13 @@
+# Durable visual owner nested-source fix independent review
+
+Verdict: **PASS for DURABLE_BINDING_ONLY source persistence and CAS software.** The original nested serialized-model finding is closed. Mode remains NOT_INCLUDED; actual worker/lease, METHOD, native and execution admission are not established.
+
+The exact772 manifest `0271d4785ef84c7a4f5fdcf4efd0ded0e9baccec02f7351f04d7b9bde4a917d6` passed all archived-source SHA256 and Python AST checks. Only visual_owner.py and its dedicated test changed against the original772; all other770 references, including protocol/memory/sqlite, are byte-identical. All five current owned production/test hashes match. Independent assembly used only the immutable final archive, and all772 archive/overlay hashes and five live owned hashes remain unchanged after review. The original e86... archive, first review and original probe script were preserved.
+
+Fresh independent verification:241 CPU tests passed,3 backend-only skips in29.82s. Ruff check/format of two changed files and cold mypy of the production codec pass. Exact commands/results appear in `root-review-setup.json`, `root-review-cpu.log`, `root-review-ruff.log`, `root-review-format.log`, `root-review-mypy.log` and `root-review-post-check.json`.
+
+The original unchanged10 public probes now all reject construction. The full suite includes the20 constructor/stored-getter regression cases and two controls preserving legitimately defined free-form safety-state booleans. The new codec checks the complete raw nested model schema, strict integer fields/maps and finite values before decoding, then requires an exact canonical typed JSON round trip. Typed getters apply the same gate. This prevents normalized or ignored fields from concealing different retained source bytes, while preserving registered arbitrary maps.
+
+Lock/SQLite atomicity, rollback, restart/races, exact historical operation idempotency, current-source freshness, immutable original requirements, completed prefix and existing pool limits/debits/deadlines retain the tested original behavior. A historical publication is not an action receipt, a completed cursor is not physical proof, and the separate simulation/mode database is not included in the repository transaction.
+
+This review created no simulator state, physics step, render/capture, controller action, model/network/account call or actual accepted source. All fixtures remain SOFTWARE_ONLY. The actual source factory must still authenticate current worker/attempt/lease/backend/capture and preserve original canonical policy during resolution before live boundary integration can be accepted.

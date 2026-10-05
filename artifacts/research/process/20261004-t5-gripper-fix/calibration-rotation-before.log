@@ -1,0 +1,196 @@
+.FFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[body_rotation] _
+
+mutation = 'body_rotation'
+
+    @pytest.mark.parametrize("mutation", [
+        "old_centers", "body_rotation", "geom_rotation", "tcp_rotation", "unlimited_joint",
+    ])
+    def test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path(
+        mutation: str,
+    ) -> None:
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+    
+        config = SimulatorConfig(camera_width=64, camera_height=64)
+        root = ElementTree.fromstring(Path(config.model_path).read_text())
+        if mutation == "old_centers":
+            for name, sign in (("left_finger", ""), ("right_finger", "-")):
+                element = root.find(f".//body[@name='{name}']")
+                assert element is not None
+                element.set("pos", f"0.075 {sign}0.04 0")
+        else:
+            selector = {
+                "body_rotation": ".//body[@name='left_finger']",
+                "geom_rotation": ".//geom[@name='left_finger_geom']",
+                "tcp_rotation": ".//site[@name='tcp']",
+                "unlimited_joint": ".//joint[@name='finger_left_joint']",
+            }[mutation]
+            element = root.find(selector)
+            assert element is not None
+            if mutation == "unlimited_joint":
+                element.set("limited", "false")
+            else:
+                element.set("quat", "0.7071067811865476 0 0.7071067811865476 0")
+        xml = ElementTree.tostring(root, encoding="unicode")
+        backend = MuJoCoPhysicsBackend()
+        backend.initialize(config, model_xml=xml)
+        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=31))
+        planner = resolve_visual_planner(_snapshot(grasp_profile="mujoco_upright_box_v2"))
+        assert planner.model_snapshot is not None
+        policy = ExecutionPolicy(instruction="Move the red box",
+                                 model_snapshot_hash=planner.model_snapshot.digest())
+        try:
+            with MuJoCoCaptureSession(config, backend=backend) as capture:
+>               with pytest.raises(ValueError, match="geometry"):
+E               Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_gripper_calibration.py:141: Failed
+_ test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[geom_rotation] _
+
+mutation = 'geom_rotation'
+
+    @pytest.mark.parametrize("mutation", [
+        "old_centers", "body_rotation", "geom_rotation", "tcp_rotation", "unlimited_joint",
+    ])
+    def test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path(
+        mutation: str,
+    ) -> None:
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+    
+        config = SimulatorConfig(camera_width=64, camera_height=64)
+        root = ElementTree.fromstring(Path(config.model_path).read_text())
+        if mutation == "old_centers":
+            for name, sign in (("left_finger", ""), ("right_finger", "-")):
+                element = root.find(f".//body[@name='{name}']")
+                assert element is not None
+                element.set("pos", f"0.075 {sign}0.04 0")
+        else:
+            selector = {
+                "body_rotation": ".//body[@name='left_finger']",
+                "geom_rotation": ".//geom[@name='left_finger_geom']",
+                "tcp_rotation": ".//site[@name='tcp']",
+                "unlimited_joint": ".//joint[@name='finger_left_joint']",
+            }[mutation]
+            element = root.find(selector)
+            assert element is not None
+            if mutation == "unlimited_joint":
+                element.set("limited", "false")
+            else:
+                element.set("quat", "0.7071067811865476 0 0.7071067811865476 0")
+        xml = ElementTree.tostring(root, encoding="unicode")
+        backend = MuJoCoPhysicsBackend()
+        backend.initialize(config, model_xml=xml)
+        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=31))
+        planner = resolve_visual_planner(_snapshot(grasp_profile="mujoco_upright_box_v2"))
+        assert planner.model_snapshot is not None
+        policy = ExecutionPolicy(instruction="Move the red box",
+                                 model_snapshot_hash=planner.model_snapshot.digest())
+        try:
+            with MuJoCoCaptureSession(config, backend=backend) as capture:
+>               with pytest.raises(ValueError, match="geometry"):
+E               Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_gripper_calibration.py:141: Failed
+_ test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[tcp_rotation] _
+
+mutation = 'tcp_rotation'
+
+    @pytest.mark.parametrize("mutation", [
+        "old_centers", "body_rotation", "geom_rotation", "tcp_rotation", "unlimited_joint",
+    ])
+    def test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path(
+        mutation: str,
+    ) -> None:
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+    
+        config = SimulatorConfig(camera_width=64, camera_height=64)
+        root = ElementTree.fromstring(Path(config.model_path).read_text())
+        if mutation == "old_centers":
+            for name, sign in (("left_finger", ""), ("right_finger", "-")):
+                element = root.find(f".//body[@name='{name}']")
+                assert element is not None
+                element.set("pos", f"0.075 {sign}0.04 0")
+        else:
+            selector = {
+                "body_rotation": ".//body[@name='left_finger']",
+                "geom_rotation": ".//geom[@name='left_finger_geom']",
+                "tcp_rotation": ".//site[@name='tcp']",
+                "unlimited_joint": ".//joint[@name='finger_left_joint']",
+            }[mutation]
+            element = root.find(selector)
+            assert element is not None
+            if mutation == "unlimited_joint":
+                element.set("limited", "false")
+            else:
+                element.set("quat", "0.7071067811865476 0 0.7071067811865476 0")
+        xml = ElementTree.tostring(root, encoding="unicode")
+        backend = MuJoCoPhysicsBackend()
+        backend.initialize(config, model_xml=xml)
+        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=31))
+        planner = resolve_visual_planner(_snapshot(grasp_profile="mujoco_upright_box_v2"))
+        assert planner.model_snapshot is not None
+        policy = ExecutionPolicy(instruction="Move the red box",
+                                 model_snapshot_hash=planner.model_snapshot.digest())
+        try:
+            with MuJoCoCaptureSession(config, backend=backend) as capture:
+>               with pytest.raises(ValueError, match="geometry"):
+E               Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_gripper_calibration.py:141: Failed
+_ test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[unlimited_joint] _
+
+mutation = 'unlimited_joint'
+
+    @pytest.mark.parametrize("mutation", [
+        "old_centers", "body_rotation", "geom_rotation", "tcp_rotation", "unlimited_joint",
+    ])
+    def test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path(
+        mutation: str,
+    ) -> None:
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+    
+        config = SimulatorConfig(camera_width=64, camera_height=64)
+        root = ElementTree.fromstring(Path(config.model_path).read_text())
+        if mutation == "old_centers":
+            for name, sign in (("left_finger", ""), ("right_finger", "-")):
+                element = root.find(f".//body[@name='{name}']")
+                assert element is not None
+                element.set("pos", f"0.075 {sign}0.04 0")
+        else:
+            selector = {
+                "body_rotation": ".//body[@name='left_finger']",
+                "geom_rotation": ".//geom[@name='left_finger_geom']",
+                "tcp_rotation": ".//site[@name='tcp']",
+                "unlimited_joint": ".//joint[@name='finger_left_joint']",
+            }[mutation]
+            element = root.find(selector)
+            assert element is not None
+            if mutation == "unlimited_joint":
+                element.set("limited", "false")
+            else:
+                element.set("quat", "0.7071067811865476 0 0.7071067811865476 0")
+        xml = ElementTree.tostring(root, encoding="unicode")
+        backend = MuJoCoPhysicsBackend()
+        backend.initialize(config, model_xml=xml)
+        backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=31))
+        planner = resolve_visual_planner(_snapshot(grasp_profile="mujoco_upright_box_v2"))
+        assert planner.model_snapshot is not None
+        policy = ExecutionPolicy(instruction="Move the red box",
+                                 model_snapshot_hash=planner.model_snapshot.digest())
+        try:
+            with MuJoCoCaptureSession(config, backend=backend) as capture:
+>               with pytest.raises(ValueError, match="geometry"):
+E               Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_rgbd_gripper_calibration.py:141: Failed
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_gripper_calibration.py::test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[body_rotation]
+FAILED tests/test_rgbd_gripper_calibration.py::test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[geom_rotation]
+FAILED tests/test_rgbd_gripper_calibration.py::test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[tcp_rotation]
+FAILED tests/test_rgbd_gripper_calibration.py::test_visual_episode_rejects_changed_geometry_loaded_with_new_asset_path[unlimited_joint]
+4 failed, 1 passed, 8 deselected in 0.43s

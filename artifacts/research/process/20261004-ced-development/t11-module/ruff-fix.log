@@ -1,0 +1,935 @@
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:43:101
+   |
+41 |     from cloud_edge_robot_arm.risk import evaluator, models
+42 |     sources = {'auto_mode/selector.py': Path(selector.__file__),
+43 |                'risk/evaluator.py': Path(evaluator.__file__), 'risk/models.py': Path(models.__file__),
+   |                                                                                                     ^^
+44 |                'auto_mode/models.py': Path(__file__).with_name('models.py')}
+45 |     return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in sources.items()}
+   |
+
+E501 Line too long (107 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:74:101
+   |
+72 | ) -> FrozenLegacyRuleSnapshot:
+73 |     """从现有policy的实际参数冻结B2；默认值保持原risk-v1/auto-v1。"""
+74 |     return FrozenLegacyRuleSnapshot((risk_policy or RiskPolicy(version='risk-v1')).model_dump(mode='json'),
+   |                                                                                                     ^^^^^^^
+75 |         (auto_policy or AutoModePolicy(version='auto-v1')).model_dump(mode='json'), _source_hashes())
+   |
+
+E501 Line too long (101 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:75:101
+   |
+73 |     """从现有policy的实际参数冻结B2；默认值保持原risk-v1/auto-v1。"""
+74 |     return FrozenLegacyRuleSnapshot((risk_policy or RiskPolicy(version='risk-v1')).model_dump(mode='json'),
+75 |         (auto_policy or AutoModePolicy(version='auto-v1')).model_dump(mode='json'), _source_hashes())
+   |                                                                                                     ^
+   |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:102:101
+    |
+100 |         self._decisions: OrderedDict[str, tuple[tuple[Any, ...], DecisionAction]] = OrderedDict()
+101 |
+102 |     def _remember(self, context: DecisionContext, choose: Callable[[], DecisionAction]) -> DecisionAction:
+    |                                                                                                     ^^^^^^
+103 |         if self._hard_stop(context):
+104 |             return DecisionAction.STOP
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:105:101
+    |
+103 |         if self._hard_stop(context):
+104 |             return DecisionAction.STOP
+105 |         key = (context.task_id, context.episode_id, context.event.observation_id, context.plan_version,
+    |                                                                                                     ^^^
+106 |                context.command_seq, context.mode_version, context.online_evidence.context_hash,
+107 |                context.online_evidence.observation.checksum_sha256, context.event.kind,
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:127:101
+    |
+125 |         budget = context.verification_budget
+126 |         return (state.estop_engaged or state.collision_detected or not state.connected
+127 |                 or any(v.measured_values.get('hard_safety_fault') is True for v in context.condition_verdicts)
+    |                                                                                                     ^^^^^^^^^^
+128 |                 or budget.exhausted_reason is not None or context.event.occurred_at >= budget.deadline_at
+129 |                 or budget.consecutive_no_progress >= budget.limits.max_no_progress)
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:128:101
+    |
+126 |         return (state.estop_engaged or state.collision_detected or not state.connected
+127 |                 or any(v.measured_values.get('hard_safety_fault') is True for v in context.condition_verdicts)
+128 |                 or budget.exhausted_reason is not None or context.event.occurred_at >= budget.deadline_at
+    |                                                                                                     ^^^^^
+129 |                 or budget.consecutive_no_progress >= budget.limits.max_no_progress)
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:174:101
+    |
+172 |         self.merged_tick_events = 0
+173 |
+174 |     def supervision(self, infer: Callable[[Any], Any], capture: Callable[[], Any]) -> PeriodicSupervision:
+    |                                                                                                     ^^^^^^
+175 |         """返回既有有界单在途监督器，不建立另一套调度/执行器。"""
+176 |         return PeriodicSupervision(self.period_s, infer, capture)
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:189:101
+    |
+187 |         self._observed_ticks = ticks
+188 |         return (DecisionEvent(f'b0-tick-{ticks}', DecisionEventKind.SUPERVISION_TICK,
+189 |                               occurred_at, observation_id, atomic_action_active, ConditionStatus.PASS),)
+    |                                                                                                     ^^^^
+190 |
+191 |     def decide(self, context: DecisionContext) -> DecisionAction:
+    |
+
+E501 Line too long (110 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:197:101
+    |
+195 |             if guarded is not None:
+196 |                 return guarded
+197 |             action = (DecisionAction.REQUEST_CLOUD if context.event.kind == DecisionEventKind.SUPERVISION_TICK
+    |                                                                                                     ^^^^^^^^^^
+198 |                       else DecisionAction.CONTINUE)
+199 |             return self._available(context, action)
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:224:101
+    |
+222 |                     or not math.isfinite(probability) or not 0 <= probability <= 1):
+223 |                 return self._observe(context)
+224 |             action = DecisionAction.REQUEST_CLOUD if probability >= self.threshold else DecisionAction.CONTINUE
+    |                                                                                                     ^^^^^^^^^^^
+225 |             return self._available(context, action)
+226 |         return self._remember(context, choose)
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:247:101
+    |
+245 |         if (state.task_id != context.task_id or risk_input.task_id != context.task_id
+246 |                 or state.mode_version != context.mode_version or state.current_mode != context.mode
+247 |                 or risk_input.current_mode != context.mode or risk_input.current_time != context.event.occurred_at):
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+248 |             return None
+249 |         risk_policy = RiskPolicy.model_validate(dict(self.rule_snapshot.risk_policy))
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:253:101
+    |
+251 |             return None
+252 |         risk = RiskEvaluator(policy=risk_policy).evaluate(risk_input)
+253 |         return AutoModeSelector(policy=AutoModePolicy.model_validate(dict(self.rule_snapshot.auto_policy)),
+    |                                                                                                     ^^^^^^^
+254 |                                 clock=lambda: context.event.occurred_at).decide(
+255 |             current_state=state, risk_snapshot=risk, cache_lookup=legacy.cache_lookup,
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:260:101
+    |
+258 |             event_autonomy_ready=legacy.event_autonomy_ready,
+259 |             supervision_available=legacy.supervision_available,
+260 |             atomic_step_active=context.event.atomic_action_active, mode_history=list(legacy.mode_history))
+    |                                                                                                     ^^^^^^
+261 |
+262 |     def decide(self, context: DecisionContext) -> DecisionAction:
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:273:101
+    |
+271 |                 return DecisionAction.STOP
+272 |             actions = {AutoModeDecisionType.KEEP_CURRENT_MODE: DecisionAction.CONTINUE,
+273 |                 AutoModeDecisionType.SWITCH_TO_EVENT_TRIGGERED_EDGE_AUTONOMY: DecisionAction.CONTINUE,
+    |                                                                                                     ^^
+274 |                 AutoModeDecisionType.SWITCH_TO_PERIODIC_CLOUD_SUPERVISION: DecisionAction.REQUEST_CLOUD,
+275 |                 AutoModeDecisionType.REQUEST_MORE_OBSERVATION: DecisionAction.REOBSERVE}
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:274:101
+    |
+272 |             actions = {AutoModeDecisionType.KEEP_CURRENT_MODE: DecisionAction.CONTINUE,
+273 |                 AutoModeDecisionType.SWITCH_TO_EVENT_TRIGGERED_EDGE_AUTONOMY: DecisionAction.CONTINUE,
+274 |                 AutoModeDecisionType.SWITCH_TO_PERIODIC_CLOUD_SUPERVISION: DecisionAction.REQUEST_CLOUD,
+    |                                                                                                     ^^^^
+275 |                 AutoModeDecisionType.REQUEST_MORE_OBSERVATION: DecisionAction.REOBSERVE}
+276 |             action = actions.get(decision.action, DecisionAction.STOP)
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:277:101
+    |
+275 |                 AutoModeDecisionType.REQUEST_MORE_OBSERVATION: DecisionAction.REOBSERVE}
+276 |             action = actions.get(decision.action, DecisionAction.STOP)
+277 |             return self._observe(context) if action == DecisionAction.REOBSERVE else self._available(context, action)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+278 |         return self._remember(context, choose)
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:303:101
+    |
+301 |             or len(counts) != 12 or set(counts.values()) != {10}
+302 |             or sum(n for key, n in counts.items() if key.startswith('STATIC')) != 40):
+303 |         raise ValueError('selection requires all 120 unique groups, 12 strata of 10, including 40 static')
+    |                                                                                                     ^^^^^^
+304 |     audit = audit_pilot(directory)
+305 |     summary = audit['summary']
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:311:101
+    |
+309 |     cases = audit['cases']
+310 |     if any(case.get('errors') or type(case.get('safety_violation')) is not bool for case in cases):
+311 |         raise ValueError('selection safety outcomes must be independently reconstructed for every assigned case')
+    |                                                                                                     ^^^^^^^^^^^^^
+312 |     durations = [case.get('wall_duration_s') for case in cases]
+313 |     if any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in durations):
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:317:101
+    |
+315 |     requests = sum(case['costs']['cloud_model_requests'] for case in cases)
+316 |     return {'period_s': period, 'assigned': 120, 'static_assigned': 40,
+317 |             'stratum_counts': dict(counts), 'group_ids': groups, 'assignment_hash': audit['assignment_hash'],
+    |                                                                                                     ^^^^^^^^^
+318 |             'bindings': bindings, 'success_rate': summary['success_rate_all_assigned'],
+319 |             'static_success_rate': summary['nominal_success_rate'],
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:322:101
+    |
+320 |             'safety_violation_rate': summary['safety_violations'] / 120,
+321 |             'actual_cloud_requests': requests, 'mean_wall_duration_s': sum(durations) / 120,
+322 |             'audit_hash': _canonical_hash(audit), 'manifest_hash': _file_hash(directory / 'selection-manifest.json')}
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:341:101
+    |
+339 |     curves = result['curves']
+340 |     reference = curves[0]
+341 |     if any(row['assignment_hash'] != reference['assignment_hash'] or row['bindings'] != reference['bindings']
+    |                                                                                                     ^^^^^^^^^
+342 |            for row in curves[1:]):
+343 |         result['errors'].append('all methods must share fixed assignment/role/device/provider bindings')
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:343:101
+    |
+341 |     if any(row['assignment_hash'] != reference['assignment_hash'] or row['bindings'] != reference['bindings']
+342 |            for row in curves[1:]):
+343 |         result['errors'].append('all methods must share fixed assignment/role/device/provider bindings')
+    |                                                                                                     ^^^^
+344 |         return result
+345 |     feasible = [row for row in curves if row['static_success_rate'] >= .9
+    |
+
+E501 Line too long (120 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:350:101
+    |
+348 |         result['status'] = 'NO_FEASIBLE_BASELINE'
+349 |         return result
+350 |     winner = min(feasible, key=lambda row: (row['actual_cloud_requests'], row['mean_wall_duration_s'], row['period_s']))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+351 |     result.update(status='SELECTED', selected_period_s=winner['period_s'], savings_claim_allowed=True)
+352 |     return result
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/baseline_policies.py:351:101
+    |
+349 |         return result
+350 |     winner = min(feasible, key=lambda row: (row['actual_cloud_requests'], row['mean_wall_duration_s'], row['period_s']))
+351 |     result.update(status='SELECTED', selected_period_s=winner['period_s'], savings_claim_allowed=True)
+    |                                                                                                     ^^
+352 |     return result
+    |
+
+E501 Line too long (127 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/repository.py:75:101
+   |
+73 |         ...
+74 |
+75 |     def save_transition_checkpoint(self, transition_id: str, checkpoint: ModeTransitionCheckpoint) -> ModeTransitionCheckpoint:
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+76 |         """持久化模式提交边界证明。"""
+77 |         ...
+   |
+
+E501 Line too long (111 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/repository.py:89:101
+   |
+87 |         ...
+88 |
+89 |     def abort_transition(self, transition_id: str, *, reason: str, aborted_at: datetime) -> AutoModeTransition:
+   |                                                                                                     ^^^^^^^^^^^
+90 |         """只中止prepared事务。"""
+91 |         ...
+   |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:231:101
+    |
+229 |             _validate_checkpoint(record, checkpoint)
+230 |             assert record is not None
+231 |             self._checkpoints[transition_id] = (record.payload_hash, checkpoint.model_copy(deep=True))
+    |                                                                                                     ^^
+232 |             return checkpoint.model_copy(deep=True)
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:256:101
+    |
+254 |             current = self.get_status(record.task_id)
+255 |             _validate_commit(record, current, committed_at, boundary,
+256 |                              self.get_transition_checkpoint(transition_id), require_verified_boundary)
+    |                                                                                                     ^^
+257 |             assert current is not None
+258 |             updated, status = _committed_values(record, current, committed_at)
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:263:101
+    |
+261 |             return updated
+262 |
+263 |     def abort_transition(self, transition_id: str, *, reason: str, aborted_at: datetime) -> AutoModeTransition:
+    |                                                                                                     ^^^^^^^^^^^
+264 |         """只允许prepared事务中止；重复中止返回最初结果。"""
+265 |         with self._lock:
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:274:101
+    |
+272 |                 return record
+273 |             updated = record.model_copy(update={'status': AutoModeTransitionStatus.ABORTED,
+274 |                                                'aborted_at': aborted_at, 'reason': reason}, deep=True)
+    |                                                                                                     ^^
+275 |             self._transitions[transition_id] = updated
+276 |             return updated.model_copy(deep=True)
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:319:101
+    |
+317 |         with self._lock, self._conn:
+318 |             self._conn.execute('BEGIN IMMEDIATE')
+319 |             _validate_transition_save(self.get_transition_by_idempotency(transition.idempotency_key), transition)
+    |                                                                                                     ^^^^^^^^^^^^^
+320 |             _validate_transition_save(self.get_transition(transition.transition_id), transition)
+321 |             self._upsert_transition(transition, commit=False)
+    |
+
+E501 Line too long (132 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:327:101
+    |
+325 |         """按 transition_id 读取模式切换记录。"""
+326 |         with self._lock:
+327 |             row = self._conn.execute("SELECT payload_json FROM mode_transitions WHERE transition_id=?", (transition_id,)).fetchone()
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+328 |             return None if row is None else AutoModeTransition.model_validate_json(row["payload_json"])
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:328:101
+    |
+326 |         with self._lock:
+327 |             row = self._conn.execute("SELECT payload_json FROM mode_transitions WHERE transition_id=?", (transition_id,)).fetchone()
+328 |             return None if row is None else AutoModeTransition.model_validate_json(row["payload_json"])
+    |                                                                                                     ^^^
+329 |
+330 |     def get_transition_by_idempotency(self, idempotency_key: str) -> AutoModeTransition | None:
+    |
+
+E501 Line too long (136 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:333:101
+    |
+331 | …
+332 | …
+333 | …_json FROM mode_transitions WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+334 | …Transition.model_validate_json(row["payload_json"])
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:334:101
+    |
+332 |         with self._lock:
+333 |             row = self._conn.execute("SELECT payload_json FROM mode_transitions WHERE idempotency_key=?", (idempotency_key,)).fetchon…
+334 |             return None if row is None else AutoModeTransition.model_validate_json(row["payload_json"])
+    |                                                                                                     ^^^
+335 |
+336 |     def latest_prepared_transition(self, task_id: str) -> AutoModeTransition | None:
+    |
+
+E501 Line too long (135 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:339:101
+    |
+337 | …
+338 | …
+339 | …d_json FROM mode_transitions WHERE task_id=? ORDER BY created_at DESC", (task_id,))
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+340 | …
+341 | …lidate_json(row["payload_json"])
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:355:101
+    |
+353 |         """按任务读取当前 AUTO 模式状态。"""
+354 |         with self._lock:
+355 |             row = self._conn.execute("SELECT payload_json FROM auto_mode_statuses WHERE task_id=?", (task_id,)).fetchone()
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+356 |             return None if row is None else AutoModeStatus.model_validate_json(row["payload_json"])
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:553:101
+    |
+551 |             row = self._conn.execute('''SELECT c.payload_hash, c.checkpoint_json,
+552 |                 t.payload_json FROM mode_transition_checkpoints c JOIN mode_transitions t
+553 |                 ON c.transition_id=t.transition_id WHERE c.transition_id=?''', (transition_id,)).fetchone()
+    |                                                                                                     ^^^^^^^
+554 |             if row is None:
+555 |                 return None
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:575:101
+    |
+573 |             current = self.get_status(record.task_id)
+574 |             _validate_commit(record, current, committed_at, boundary,
+575 |                              self.get_transition_checkpoint(transition_id), require_verified_boundary)
+    |                                                                                                     ^^
+576 |             assert current is not None
+577 |             updated, status = _committed_values(record, current, committed_at)
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:579:101
+    |
+577 |             updated, status = _committed_values(record, current, committed_at)
+578 |             self._upsert_transition(updated, commit=False)
+579 |             self._upsert('auto_mode_statuses', 'task_id', record.task_id, record.task_id, status, commit=False)
+    |                                                                                                     ^^^^^^^^^^^
+580 |             return updated
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:582:101
+    |
+580 |             return updated
+581 |
+582 |     def abort_transition(self, transition_id: str, *, reason: str, aborted_at: datetime) -> AutoModeTransition:
+    |                                                                                                     ^^^^^^^^^^^
+583 |         """写事务内中止prepared记录；已提交记录不可改写。"""
+584 |         with self._lock, self._conn:
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:594:101
+    |
+592 |                 return record
+593 |             updated = record.model_copy(update={'status': AutoModeTransitionStatus.ABORTED,
+594 |                                                'aborted_at': aborted_at, 'reason': reason}, deep=True)
+    |                                                                                                     ^^
+595 |             self._upsert_transition(updated, commit=False)
+596 |             return updated
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:604:101
+    |
+604 | def _validate_checkpoint(record: AutoModeTransition | None, checkpoint: ModeTransitionCheckpoint) -> None:
+    |                                                                                                     ^^^^^^
+605 |     if record is None or record.status != AutoModeTransitionStatus.PREPARED:
+606 |         raise ValueError("checkpoint requires a prepared transition")
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:607:101
+    |
+605 |     if record is None or record.status != AutoModeTransitionStatus.PREPARED:
+606 |         raise ValueError("checkpoint requires a prepared transition")
+607 |     if (checkpoint.task_id != record.task_id or checkpoint.mode_version != record.expected_mode_version):
+    |                                                                                                     ^^^^^
+608 |         raise ValueError("checkpoint identity/version mismatch")
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:618:101
+    |
+616 |     if current is None:
+617 |         raise ValueError("current mode state is missing")
+618 |     if current.current_mode != record.from_mode or current.mode_version != record.expected_mode_version:
+    |                                                                                                     ^^^^
+619 |         raise ValueError("current mode/version changed before commit")
+620 |     if record.new_mode_version != record.expected_mode_version + 1:
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:642:101
+    |
+640 |     status = current.model_copy(update={"current_mode": record.to_mode,
+641 |         "mode_version": record.new_mode_version, "switch_count": current.switch_count + 1,
+642 |         "last_switch_at": now, "last_decision_id": record.decision_id, "updated_at": now}, deep=True)
+    |                                                                                                     ^
+643 |     return transition, status
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:646:101
+    |
+646 | def _validate_transition_save(existing: AutoModeTransition | None, incoming: AutoModeTransition) -> None:
+    |                                                                                                     ^^^^^
+647 |     if existing is None:
+648 |         return
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/repository.py:649:101
+    |
+647 |     if existing is None:
+648 |         return
+649 |     if existing.transition_id != incoming.transition_id or existing.payload_hash != incoming.payload_hash:
+    |                                                                                                     ^^^^^^
+650 |         raise IdempotencyConflictError("mode transition idempotency/payload conflict")
+651 |     if existing.status != AutoModeTransitionStatus.PREPARED and existing != incoming:
+    |
+
+E402 Module level import not at top of file
+  --> src/cloud_edge_robot_arm/auto_mode/runtime_events.py:48:1
+   |
+47 | # 类型仅供静态检查；risk、evidence 和 verification_router 复用本模块枚举。
+48 | from collections.abc import Mapping, Sequence
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 | from dataclasses import replace
+50 | from types import MappingProxyType
+   |
+
+E402 Module level import not at top of file
+  --> src/cloud_edge_robot_arm/auto_mode/runtime_events.py:49:1
+   |
+47 | # 类型仅供静态检查；risk、evidence 和 verification_router 复用本模块枚举。
+48 | from collections.abc import Mapping, Sequence
+49 | from dataclasses import replace
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+50 | from types import MappingProxyType
+51 | from typing import TYPE_CHECKING, Any, Protocol
+   |
+
+E402 Module level import not at top of file
+  --> src/cloud_edge_robot_arm/auto_mode/runtime_events.py:50:1
+   |
+48 | from collections.abc import Mapping, Sequence
+49 | from dataclasses import replace
+50 | from types import MappingProxyType
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+51 | from typing import TYPE_CHECKING, Any, Protocol
+   |
+
+E402 Module level import not at top of file
+  --> src/cloud_edge_robot_arm/auto_mode/runtime_events.py:51:1
+   |
+49 | from dataclasses import replace
+50 | from types import MappingProxyType
+51 | from typing import TYPE_CHECKING, Any, Protocol
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+52 |
+53 | from cloud_edge_robot_arm.contracts import ControlMode
+   |
+
+E402 Module level import not at top of file
+  --> src/cloud_edge_robot_arm/auto_mode/runtime_events.py:53:1
+   |
+51 | from typing import TYPE_CHECKING, Any, Protocol
+52 |
+53 | from cloud_edge_robot_arm.contracts import ControlMode
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+54 | from cloud_edge_robot_arm.edge.evidence.conditions import ConditionVerdict, OnlineEvidenceSnapshot
+   |
+
+E402 Module level import not at top of file
+  --> src/cloud_edge_robot_arm/auto_mode/runtime_events.py:54:1
+   |
+53 | from cloud_edge_robot_arm.contracts import ControlMode
+54 | from cloud_edge_robot_arm.edge.evidence.conditions import ConditionVerdict, OnlineEvidenceSnapshot
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+55 |
+56 | if TYPE_CHECKING:
+   |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/auto_mode/runtime_events.py:129:101
+    |
+127 |             raise ValueError('condition observation identity mismatch')
+128 |         object.__setattr__(self, 'mode', ControlMode(self.mode))
+129 |         object.__setattr__(self, 'capabilities', frozenset(DecisionAction(v) for v in self.capabilities))
+    |                                                                                                     ^^^^^
+130 |         object.__setattr__(self, 'condition_verdicts', tuple(
+131 |             replace(verdict, measured_values=_freeze_online(verdict.measured_values),
+    |
+
+E501 Line too long (106 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/transition_service.py:29:101
+   |
+27 |         self, *, clock: Callable[[], datetime] | None = None,
+28 |         repository: AutoModeRepository | None = None,
+29 |         commit_guard: Callable[[AutoModeTransitionRecord], ModeTransitionCheckpoint | None] | None = None,
+   |                                                                                                     ^^^^^^
+30 |         require_verified_boundary: bool = False,
+31 |     ) -> None:
+   |
+
+E501 Line too long (114 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/transition_service.py:33:101
+   |
+31 |     ) -> None:
+32 |         self._clock = clock or _utc_now
+33 |         self._repository = repository if repository is not None else InMemoryAutoModeRepository(clock=self._clock)
+   |                                                                                                     ^^^^^^^^^^^^^^
+34 |         self._commit_guard = commit_guard
+35 |         self._require_verified_boundary = require_verified_boundary
+   |
+
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/transition_service.py:39:101
+   |
+37 |     def prepare(self, request: AutoModeTransitionRequest) -> AutoModeTransitionRecord:
+38 |         """幂等准备请求，重启后仍从仓储返回原来的prepared或terminal记录。"""
+39 |         canonical = json.dumps(request.model_dump(mode='json'), sort_keys=True, separators=(',', ':'))
+   |                                                                                                     ^^
+40 |         record = AutoModeTransitionRecord(
+41 |             transition_id=f'transition-{uuid4().hex}', task_id=request.task_id,
+   |
+
+E501 Line too long (104 > 100)
+  --> src/cloud_edge_robot_arm/auto_mode/transition_service.py:80:101
+   |
+78 |                 aborted_at=now, reason=reason,
+79 |             )
+80 |         return self._repository.abort_transition(transition_id, reason=reason, aborted_at=self._clock())
+   |                                                                                                     ^^^^
+   |
+
+E501 Line too long (151 > 100)
+  --> tests/test_mode_transition_cas.py:25:101
+   |
+24 | …
+25 | …expected_mode_version=1,idempotency_key=key,decision_id='decision',reason='online boundary')
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+26 | …
+27 | …
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:50:54
+   |
+49 | def test_duplicate_transition_is_idempotent_and_preserves_original_time(tmp_path:Path):
+50 |     repo=SQLiteAutoModeRepository(tmp_path/'mode.db');initialize(repo)
+   |                                                      ^
+51 |     service=ModeTransitionService(repository=repo,clock=lambda:NOW)
+52 |     prepared=service.prepare(request())
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:66:38
+   |
+65 | def test_abort_prepared_transition_prevents_later_commit_and_committed_is_terminal():
+66 |     repo=InMemoryAutoModeRepository();initialize(repo)
+   |                                      ^
+67 |     service=ModeTransitionService(repository=repo,clock=lambda:NOW)
+68 |     prepared=service.prepare(request())
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:80:28
+   |
+79 | def test_conflicting_prepare_is_rejected_across_restart(tmp_path:Path):
+80 |     path=tmp_path/'mode.db';repo=SQLiteAutoModeRepository(path);initialize(repo)
+   |                            ^
+81 |     service=ModeTransitionService(repository=repo)
+82 |     service.prepare(request());repo.close()
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:80:64
+   |
+79 | def test_conflicting_prepare_is_rejected_across_restart(tmp_path:Path):
+80 |     path=tmp_path/'mode.db';repo=SQLiteAutoModeRepository(path);initialize(repo)
+   |                                                                ^
+81 |     service=ModeTransitionService(repository=repo)
+82 |     service.prepare(request());repo.close()
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:82:31
+   |
+80 |     path=tmp_path/'mode.db';repo=SQLiteAutoModeRepository(path);initialize(repo)
+81 |     service=ModeTransitionService(repository=repo)
+82 |     service.prepare(request());repo.close()
+   |                               ^
+83 |     repo=SQLiteAutoModeRepository(path);service=ModeTransitionService(repository=repo)
+84 |     with pytest.raises(IdempotencyConflictError):
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:83:40
+   |
+81 |     service=ModeTransitionService(repository=repo)
+82 |     service.prepare(request());repo.close()
+83 |     repo=SQLiteAutoModeRepository(path);service=ModeTransitionService(repository=repo)
+   |                                        ^
+84 |     with pytest.raises(IdempotencyConflictError):
+85 |         service.prepare(request(reason='different intent'))
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:90:28
+   |
+89 | def test_two_sqlite_connections_cannot_commit_stale_modes(tmp_path:Path):
+90 |     path=tmp_path/'mode.db';one=SQLiteAutoModeRepository(path);initialize(one)
+   |                            ^
+91 |     two=SQLiteAutoModeRepository(path)
+92 |     first=ModeTransitionService(repository=one,clock=lambda:NOW)
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:90:63
+   |
+89 | def test_two_sqlite_connections_cannot_commit_stale_modes(tmp_path:Path):
+90 |     path=tmp_path/'mode.db';one=SQLiteAutoModeRepository(path);initialize(one)
+   |                                                               ^
+91 |     two=SQLiteAutoModeRepository(path)
+92 |     first=ModeTransitionService(repository=one,clock=lambda:NOW)
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:94:31
+   |
+92 |     first=ModeTransitionService(repository=one,clock=lambda:NOW)
+93 |     second=ModeTransitionService(repository=two,clock=lambda:NOW)
+94 |     a=first.prepare(request());b=second.prepare(request('second'))
+   |                               ^
+95 |     first.commit(a.transition_id)
+96 |     with pytest.raises(ValueError,match='version|current'):
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_mode_transition_cas.py:99:16
+   |
+97 |         second.commit(b.transition_id)
+98 |     assert two.get_status('task').mode_version==2
+99 |     one.close();two.close()
+   |                ^
+   |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_mode_transition_cas.py:112:54
+    |
+110 |     module=import_module('cloud_edge_robot_arm.auto_mode.models')
+111 |     assert hasattr(module,'ModeTransitionCheckpoint'), 'durable boundary contract is missing'
+112 |     repo=SQLiteAutoModeRepository(tmp_path/'mode.db');initialize(repo)
+    |                                                      ^
+113 |     boundary=module.ModeTransitionCheckpoint(task_id='task',checkpoint_id='cp',plan_version=1,command_seq=1,mode_version=1,atomic_act…
+114 |     service=ModeTransitionService(repository=repo,clock=lambda:NOW,require_verified_boundary=True,commit_guard=lambda record:boundary)
+    |
+
+E501 Line too long (134 > 100)
+   --> tests/test_mode_transition_cas.py:114:101
+    |
+112 | …');initialize(repo)
+113 | …d='task',checkpoint_id='cp',plan_version=1,command_seq=1,mode_version=1,atomic_action_active=False,persisted_at=NOW)
+114 | …lock=lambda:NOW,require_verified_boundary=True,commit_guard=lambda record:boundary)
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+115 | …
+116 | …|boundary'):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_mode_transition_cas.py:127:38
+    |
+125 |     module=import_module('cloud_edge_robot_arm.auto_mode.models')
+126 |     assert hasattr(module,'ModeTransitionCheckpoint')
+127 |     repo=InMemoryAutoModeRepository();initialize(repo)
+    |                                      ^
+128 |     boundary=module.ModeTransitionCheckpoint(task_id='task',checkpoint_id='cp',plan_version=1,command_seq=1,mode_version=1,atomic_act…
+129 |     service=ModeTransitionService(repository=repo,clock=lambda:NOW,require_verified_boundary=True,commit_guard=lambda record:boundary)
+    |
+
+E501 Line too long (134 > 100)
+   --> tests/test_mode_transition_cas.py:129:101
+    |
+127 | …po)
+128 | …d='task',checkpoint_id='cp',plan_version=1,command_seq=1,mode_version=1,atomic_action_active=True,persisted_at=NOW)
+129 | …lock=lambda:NOW,require_verified_boundary=True,commit_guard=lambda record:boundary)
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+130 | …
+131 | …tion_id,boundary.model_copy(update={'atomic_action_active':False}))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_mode_transition_cas.py:138:38
+    |
+137 | def test_research_commit_without_guard_never_falls_back_to_legacy():
+138 |     repo=InMemoryAutoModeRepository();initialize(repo)
+    |                                      ^
+139 |     assert 'require_verified_boundary' in __import__('inspect').signature(ModeTransitionService).parameters
+140 |     service=ModeTransitionService(repository=repo,require_verified_boundary=True)
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_mode_transition_cas.py:139:101
+    |
+137 | def test_research_commit_without_guard_never_falls_back_to_legacy():
+138 |     repo=InMemoryAutoModeRepository();initialize(repo)
+139 |     assert 'require_verified_boundary' in __import__('inspect').signature(ModeTransitionService).parameters
+    |                                                                                                     ^^^^^^^
+140 |     service=ModeTransitionService(repository=repo,require_verified_boundary=True)
+141 |     prepared=service.prepare(request())
+    |
+
+E501 Line too long (121 > 100)
+  --> tests/test_runtime_auto_baselines.py:39:101
+   |
+37 |     assert hasattr(events, 'DecisionContext'), 'T11 DecisionContext is missing'
+38 |     payload = observation_payload()
+39 |     payload.update(frame_id='fresh', observation_id='', captured_at=NOW, episode_id='episode', calibration_version='cal')
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+40 |     obs = RGBDObservation.model_validate(payload)
+41 |     values = dict(task_id='task', episode_id='episode', mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
+   |
+
+E501 Line too long (134 > 100)
+  --> tests/test_runtime_auto_baselines.py:44:101
+   |
+42 |                   mode_version=1, plan_version=1, command_seq=1,
+43 |                   event=DecisionEvent('event', kind, NOW, 'fresh', False, ConditionStatus.PASS),
+44 |                   online_evidence=OnlineEvidenceSnapshot(obs, RobotState(connected=True, tcp_pose=Pose(x=.2,y=0,z=.3)), {},1,1,'ctx'),
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 |                   evidence_verdict=EvidenceVerdict('VALID', ()),
+46 |                   condition_verdicts=(ConditionVerdict(ConditionStatus.PASS,'target_visible','fresh'),),
+   |
+
+E501 Line too long (130 > 100)
+  --> tests/test_runtime_auto_baselines.py:58:101
+   |
+56 | def policies():
+57 |     module=import_module('cloud_edge_robot_arm.auto_mode.baseline_policies')
+58 |     return [module.PeriodicPolicy(1),module.ThresholdPolicy(.5),module.FrozenRuleAutoPolicy(module.freeze_legacy_rule_snapshot())]
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (116 > 100)
+  --> tests/test_runtime_auto_baselines.py:92:101
+   |
+90 |         assert len(ticks)==1 and ticks[0].kind == DecisionEventKind.SUPERVISION_TICK
+91 |         assert ticks[0].atomic_action_active is True
+92 |         assert policy.tick_events({'ticks':3},occurred_at=NOW,observation_id='fresh',atomic_action_active=False)==()
+   |                                                                                                     ^^^^^^^^^^^^^^^^
+93 |         assert policy.decide(context(event=replace(ticks[0],atomic_action_active=False))) == DecisionAction.REQUEST_CLOUD
+   |
+
+E501 Line too long (121 > 100)
+  --> tests/test_runtime_auto_baselines.py:93:101
+   |
+91 |         assert ticks[0].atomic_action_active is True
+92 |         assert policy.tick_events({'ticks':3},occurred_at=NOW,observation_id='fresh',atomic_action_active=False)==()
+93 |         assert policy.decide(context(event=replace(ticks[0],atomic_action_active=False))) == DecisionAction.REQUEST_CLOUD
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (120 > 100)
+   --> tests/test_runtime_auto_baselines.py:104:101
+    |
+102 | def test_hard_stop_bypasses_atomic_dwell_and_capability_filter():
+103 |     for policy in policies():
+104 |         ctx=context(capabilities=set(), event=DecisionEvent('atomic',DecisionEventKind.ANOMALY,NOW,'fresh',True,'FAIL'))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+105 |         ctx=replace(ctx,online_evidence=replace(ctx.online_evidence,robot_state=ctx.online_evidence.robot_state.model_copy(update={'e…
+106 |         assert policy.decide(ctx)==DecisionAction.STOP
+    |
+
+E501 Line too long (154 > 100)
+   --> tests/test_runtime_auto_baselines.py:128:101
+    |
+128 | …':{'ground_truth':(1,2,3)}},{'fault_schedule':[(3,'move')]},{'source':'physical_evaluator'}])
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+129 | …y(invalid):
+130 | …
+    |
+
+E501 Line too long (132 > 100)
+   --> tests/test_runtime_auto_baselines.py:151:101
+    |
+149 | …
+150 | …o_mode.baseline_policies')
+151 | …xt(risk_estimate=RiskEstimate(.1,{},.01,.01,'VALID'))) == DecisionAction.REOBSERVE
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+152 | …xt(risk_estimate=RiskEstimate(.1,{'CONTINUE':.8},.01,.01,'VALID'))) == DecisionAction.REQUEST_CLOUD
+    |
+
+E501 Line too long (149 > 100)
+   --> tests/test_runtime_auto_baselines.py:152:101
+    |
+150 | …seline_policies')
+151 | …stimate=RiskEstimate(.1,{},.01,.01,'VALID'))) == DecisionAction.REOBSERVE
+152 | …stimate=RiskEstimate(.1,{'CONTINUE':.8},.01,.01,'VALID'))) == DecisionAction.REQUEST_CLOUD
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_runtime_auto_baselines.py:247:54
+    |
+245 |     result=[]
+246 |     for index,assignment in enumerate(assignments):
+247 |         case=root/'cases'/assignment['assignment_id'];case.mkdir(parents=True)
+    |                                                      ^
+248 |         samples=failure if index < failed else successes
+249 |         outcome=asdict(evaluate_evidence(samples,CompletionCriteria('object','target_region'),evaluation_start_step=0))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_runtime_auto_baselines.py:266:43
+    |
+264 |         row={'assignment_id':assignment['assignment_id'],'stratum_id':assignment['stratum_id'],'success':success,
+265 |              'wall_duration_s':duration,'costs':summary,'terminal_reason':None}
+266 |         write(case/'case-result.json',row);result.append(row)
+    |                                           ^
+267 |     write(root/'assignments.json',assignments);write(root/'results.json',result)
+268 |     write(root/'selection-manifest.json',{'stage':'SELECTION','period_s':period,'snapshot_id':'common',
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_runtime_auto_baselines.py:267:47
+    |
+265 |              'wall_duration_s':duration,'costs':summary,'terminal_reason':None}
+266 |         write(case/'case-result.json',row);result.append(row)
+267 |     write(root/'assignments.json',assignments);write(root/'results.json',result)
+    |                                               ^
+268 |     write(root/'selection-manifest.json',{'stage':'SELECTION','period_s':period,'snapshot_id':'common',
+269 |        'role_bundle_hash':'c'*64,'device_pipeline_hash':'d'*64,'edge_provider_hash':'e'*64,
+    |
+
+Found 94 errors (5 fixed, 89 remaining).

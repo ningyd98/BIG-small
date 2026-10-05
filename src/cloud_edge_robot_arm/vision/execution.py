@@ -7,17 +7,20 @@ is accumulated for the independent evaluator, which runs after online terminatio
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import io
+import json
 import math
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
@@ -49,6 +52,8 @@ from cloud_edge_robot_arm.edge.runtime.skill_registry import SkillRegistry
 from cloud_edge_robot_arm.edge.safety.models import HardSafetyLimits
 from cloud_edge_robot_arm.edge.safety.policy import OperationalSafetyPolicy, merge_constraints
 from cloud_edge_robot_arm.edge.safety.shield import SafetyConfig, SafetyShield, _policy_hash
+from cloud_edge_robot_arm.research.clock import ExperimentClock
+from cloud_edge_robot_arm.research.supervision import PeriodicSupervision
 from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
     CompletionCriteria,
     PhysicalSample,
@@ -64,8 +69,19 @@ from cloud_edge_robot_arm.vision.evaluation import (
     write_json,
 )
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
-from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
-from cloud_edge_robot_arm.vision.top_grasp import CALIBRATED_ASSET_SHA256
+from cloud_edge_robot_arm.vision.planner import (
+    RGBDModelCallFailed,
+    RGBDModelUnavailable,
+    RGBDPlannerAdapter,
+)
+from cloud_edge_robot_arm.vision.top_grasp import (
+    calibration_asset_sha256,
+    matches_calibrated_gripper,
+)
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
+    from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
 
 TRACK_SUPPORT_TOLERANCE_M = 0.018
 TRACK_FOREGROUND_MARGIN_M = 0.005
@@ -397,17 +413,65 @@ class RGBDTargetTracker:
         return result
 
 
+def make_target_tracker(
+    observation: RGBDObservation, evidence: dict[str, Any], policy: ExecutionPolicy
+) -> RGBDTargetTracker | OpenCVTargetTracker:
+    if policy.device_pipeline == "OPENCV":
+        from cloud_edge_robot_arm.vision.online_intent import validate_grounded_colors
+        from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
+
+        tracker = OpenCVTargetTracker(observation, evidence)
+        validate_grounded_colors(
+            policy.instruction, tracker.target_color.tolist(), tracker.destination_color.tolist()
+        )
+        return tracker
+    return RGBDTargetTracker(observation, evidence)
+
+
+def terminal_conditions(policy: ExecutionPolicy) -> list[ConditionSpec]:
+    checks = [
+        ConditionSpec("object_inside_target_region", target_id="object"),
+        ConditionSpec("gripper_released"),
+        ConditionSpec("robot_in_safe_pose", tolerances={"minimum_safe_height": 0.08}),
+    ]
+    if policy.device_pipeline == "OPENCV":
+        checks.append(ConditionSpec("placement_stable", target_id="object"))
+    return checks
+
+
+def validated_grounding_evidence(draft: PlannerDraft, policy: ExecutionPolicy) -> dict[str, Any]:
+    """Check the complete selected calibration receipt before using its TCP offset."""
+    evidence = draft.observation_evidence or {}
+    if policy.role_binding is not None and (
+        evidence.get("role_bundle_hash") != policy.role_binding.bundle.digest()
+    ):
+        raise ValueError("planner evidence differs from the selected role bundle")
+    snapshot = evidence.get("model_snapshot")
+    if evidence.get("model_snapshot_hash") != policy.model_snapshot_hash:
+        raise ValueError("planner evidence differs from the selected model snapshot")
+    if not isinstance(snapshot, dict) or (
+        snapshot.get("grasp_profile") != evidence.get("grasp_profile")
+    ):
+        raise ValueError("grasp calibration differs from the selected model snapshot")
+    if hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest() != (
+        policy.model_snapshot_hash
+    ):
+        raise ValueError("planner snapshot evidence has changed")
+    if evidence.get("top_grasp_offset_status") != "CALIBRATED_RGBD_TOP_GRASP_V1":
+        raise ValueError("explicit calibrated RGB-D grasp TCP is required")
+    asset_hash = calibration_asset_sha256(evidence.get("grasp_profile"))
+    if asset_hash is None or evidence.get("grasp_calibration_asset_sha256") != asset_hash:
+        raise ValueError("grasp calibration asset mismatch")
+    Pose.model_validate(evidence["resolved_top_grasp_tcp"])
+    Pose.model_validate(evidence["grounded_destination"])
+    return evidence
+
+
 def grounded_contract(
     draft: PlannerDraft, observation: RGBDObservation, policy: ExecutionPolicy
 ) -> TaskContract:
     """Bind validated planner intent to calibrated RGB-D geometry, not scene truth."""
-    evidence = draft.observation_evidence or {}
-    if evidence.get("top_grasp_offset_status") != "CALIBRATED_RGBD_TOP_GRASP_V1":
-        raise ValueError("explicit calibrated RGB-D grasp TCP is required")
-    if evidence.get("grasp_calibration_asset_sha256") != CALIBRATED_ASSET_SHA256:
-        raise ValueError("grasp calibration asset mismatch")
-    Pose.model_validate(evidence["resolved_top_grasp_tcp"])
-    Pose.model_validate(evidence["grounded_destination"])
+    validated_grounding_evidence(draft, policy)
     if draft.parse_error or not draft.parsed_json or draft.parsed_json.get("_sentinel"):
         raise ValueError("planner did not produce an executable visual contract")
     now = datetime.now(UTC)
@@ -476,6 +540,11 @@ def resolved_step(step: TaskStep, robot: MuJoCoSkillRobot, evidence: dict[str, A
 
 
 class _VisualEpisode:
+    supervision: PeriodicSupervision | None = None
+    wait_clock: ExperimentClock | None = None
+    _supervision_started = False
+    worker_runtime: VisualWorkerRuntime | None = None
+
     def __init__(
         self,
         planner: RGBDPlannerAdapter,
@@ -487,26 +556,96 @@ class _VisualEpisode:
             raise ValueError("capture and skills must share the same backend")
         if policy.scope != "VISION_CLOSED_LOOP":
             raise ValueError("run_visual_episode requires VISION_CLOSED_LOOP scope")
+        if policy.device_pipeline == "OPENCV":
+            from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+
+            if type(policy.worker_runtime) is not VisualWorkerRuntime:
+                raise ValueError("OpenCV execution requires a live visual worker runtime")
+            if policy.worker_runtime.episode_id != robot._backend._episode_id:
+                raise ValueError("worker runtime must belong to the actual shared backend episode")
+            definition = policy.worker_runtime.bootstrap.definition
+            if (
+                definition.user_instruction != policy.instruction
+                or definition.model_snapshot_hash != policy.model_snapshot_hash
+                or policy.role_binding is None
+                or definition.role_bundle_hash != policy.role_binding.bundle.digest()
+            ):
+                raise ValueError("policy differs from the original live worker source")
         snapshot = planner.model_snapshot
         if snapshot is None or snapshot.digest() != policy.model_snapshot_hash:
             raise ValueError("episode planner differs from the immutable model snapshot")
+        if policy.role_binding is not None:
+            policy.role_binding.validate(planner)
         self.planner, self.robot, self.capture, self.policy = planner, robot, capture, policy
+        self.worker_runtime = policy.worker_runtime
         self.backend = robot._backend
         self.started_at = time.monotonic()
         self.deadline = self.started_at + policy.timeout_s
-        self.budget = VerificationBudgetState.start(policy.verification_budget)
+        if self.worker_runtime is not None:
+            original_start = self.worker_runtime.source.task_started_at
+            elapsed = (datetime.now(UTC) - original_start).total_seconds()
+            if elapsed < 0:
+                raise ValueError("original worker task clock is in the future")
+            self.started_at -= elapsed
+            self.deadline = min(
+                self.deadline,
+                self.started_at + self.worker_runtime.source.task_timeout_s,
+            )
+        self.budget = (
+            self.worker_runtime.verification_state
+            if self.worker_runtime is not None
+            else VerificationBudgetState.start(policy.verification_budget)
+        )
         self.records: list[dict[str, Any]] = []
         self.observation: RGBDObservation | None = None
         self.count = self.calls = self.actions = 0
-        self.tracker: RGBDTargetTracker | None = None
+        self.tracker: RGBDTargetTracker | OpenCVTargetTracker | None = None
         self.require_continuous_grasp = False
         self.shield = research_safety_shield(policy.timeout_s)
-        self.executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
+        if policy.raw_recorder is not None:
+            from cloud_edge_robot_arm.vision.raw_recorder_v3 import VisualRawRecorderV3
+
+            if (
+                type(policy.raw_recorder) is not VisualRawRecorderV3
+                or policy.raw_recorder.backend is not self.backend
+                or policy.raw_recorder.capture_session is not capture
+                or policy.raw_recorder.executor._robot is not robot
+            ):
+                raise ValueError(
+                    "raw recorder must share the actual capture and sole skill executor"
+                )
+            self.executor = policy.raw_recorder.executor
+        else:
+            self.executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
+        self.supervision: PeriodicSupervision | None = None
+        self.wait_clock: ExperimentClock | None = None
+        self._supervision_started = False
+        self._state_version = 0
+        self._plan_version = 0
+        self._active_step_id = "planning"
+        self._active_skill = "PLANNING"
+        self._worker_supervision_frames: dict[str, Any] = {}
+        self._worker_plan_wait_claim: str | None = None
+        self._worker_supervision_reobserve_pending: tuple[Any, datetime] | None = None
         config = self.backend._config
-        if config is None or hashlib.sha256(Path(config.model_path).read_bytes()).hexdigest() != (
-            CALIBRATED_ASSET_SHA256
+        asset_hash = calibration_asset_sha256(snapshot.grasp_profile)
+        if (
+            asset_hash is None
+            or config is None
+            or (hashlib.sha256(Path(config.model_path).read_bytes()).hexdigest() != asset_hash)
         ):
             raise ValueError("backend asset differs from calibrated upright-box profile")
+        if not matches_calibrated_gripper(self.backend._model, snapshot.grasp_profile):
+            raise ValueError("loaded gripper geometry differs from calibrated upright-box profile")
+        if policy.advance_physics_during_wait:
+            self.wait_clock = ExperimentClock(
+                config.physics_dt_s,
+                self._advance_wait_steps if self.worker_runtime is not None else self.backend.step,
+            )
+        if policy.supervision_period_s is not None:
+            self.supervision = PeriodicSupervision(
+                policy.supervision_period_s, self.supervise_frame, self.capture_supervision_frame
+            )
         if policy.output_dir:
             policy.output_dir.mkdir(parents=True, exist_ok=True)
             write_json(
@@ -516,7 +655,11 @@ class _VisualEpisode:
                     "scope": policy.scope,
                     "timeout_s": policy.timeout_s,
                     "model_snapshot_hash": policy.model_snapshot_hash,
+                    "device_pipeline": policy.device_pipeline,
+                    "role_binding": policy.role_binding.evidence() if policy.role_binding else None,
                     "verification_budget": asdict(policy.verification_budget),
+                    "supervision_period_s": policy.supervision_period_s,
+                    "advance_physics_during_wait": policy.advance_physics_during_wait,
                     "safety_policy": self.shield.config.hard_limits.to_dict(),
                     "safety_policy_hash": self.shield.config.policy_hash,
                     "development_config": {
@@ -533,9 +676,30 @@ class _VisualEpisode:
                 },
             )
 
+    def validate_role_boundary(self) -> None:
+        if self.policy.role_binding is not None:
+            try:
+                self.policy.role_binding.validate_execution_policy(self.policy)
+                self.policy.role_binding.validate(self.planner)
+            except (ValueError, OSError) as error:
+                raise _EpisodeStopped("ROLE_BINDING_CHANGED") from error
+
+    def worker_call(self, operation: Callable[[], Any]) -> Any:
+        """Source failures stop the episode without disclosing repository/provider payloads."""
+        try:
+            return operation()
+        except (ValueError, OSError, RuntimeError) as error:
+            raise _EpisodeStopped("WORKER_RUNTIME_SOURCE_INVALID") from error
+
     def check_active(self) -> None:
         if self.policy.cancelled is not None and self.policy.cancelled():
             raise _EpisodeStopped("CANCELLED")
+        runtime = self.worker_runtime
+        if runtime is not None:
+            if self.backend._episode_id != runtime.episode_id:
+                raise _EpisodeStopped("WORKER_BACKEND_EPISODE_CHANGED")
+            self.worker_call(lambda: runtime.check_active(self.robot.get_state()))
+            self.budget = runtime.verification_state
         if self.budget.exhausted_reason is not None:
             raise _EpisodeStopped("VERIFICATION_BUDGET_EXHAUSTED")
         if datetime.now(UTC) >= self.budget.deadline_at:
@@ -543,22 +707,279 @@ class _VisualEpisode:
         if time.monotonic() >= self.deadline:
             raise _EpisodeStopped("EPISODE_TIMEOUT")
 
-    def recapture(self) -> RGBDObservation:
+    def recapture(
+        self,
+        *,
+        advance_steps: int = 0,
+        completion: Any = None,
+        purpose: str = "AFTER_EFFECT",
+    ) -> RGBDObservation:
         self.check_active()
+        self.validate_role_boundary()
+        if type(advance_steps) is not int or advance_steps < 0:
+            raise ValueError("capture advance requires a nonnegative integer")
         previous = self.observation
-        observation = self.capture.capture()
+        claim_id = None
+        runtime = self.worker_runtime
+        if runtime is not None:
+            if completion is None:
+                claim_id = self.worker_call(
+                    lambda: runtime.reserve_capture(
+                        self.robot.get_state(),
+                        initial=previous is None,
+                    )
+                )
+            else:
+                claim_id = self.worker_call(
+                    lambda: runtime.reserve_effect_capture(
+                        completion,
+                        self.robot.get_state(),
+                        purpose=purpose,
+                    )
+                )
+        if advance_steps:
+            self.check_active()
+            recorder = getattr(self.policy, "raw_recorder", None)
+            raw_purpose = (
+                {"POST_HOLD": "HOLD", "TERMINAL": "TERMINATION"}.get(
+                    purpose,
+                    "VERIFY_ADVANCE",
+                )
+                if completion is not None
+                else "VERIFY_ADVANCE"
+            )
+            with recorder.purpose(raw_purpose) if recorder is not None else nullcontext():
+                self.backend.step(steps=advance_steps)
+        self.check_active()
+        recorder = getattr(self.policy, "raw_recorder", None)
+        observation = recorder.capture() if recorder is not None else self.capture.capture()
+        self.check_active()
+        self.validate_role_boundary()
         if previous is not None and (
             observation.episode_id != previous.episode_id
             or observation.frame_id == previous.frame_id
             or observation.captured_at <= previous.captured_at
         ):
             raise _EpisodeStopped("STALE_OR_FOREIGN_RECAPTURE")
+        if runtime is not None:
+            assert isinstance(claim_id, str)
+            self.worker_call(
+                lambda: runtime.complete_capture(
+                    claim_id,
+                    observation,
+                    self.robot.get_state(),
+                )
+            )
+            self.budget = runtime.verification_state
+        pending = getattr(self, "_worker_supervision_reobserve_pending", None)
+        if pending is not None:
+            expected_completion, requested_at = pending
+            if (
+                completion is None
+                or completion.digest() != expected_completion.digest()
+                or observation.captured_at < requested_at
+            ):
+                raise _EpisodeStopped("WORKER_SUPERVISION_FRESH_FRAME_NOT_VERIFIED")
+            self._worker_supervision_reobserve_pending = None
+            self.records.append(
+                {
+                    "layer": "SUPERVISION_FRESH_FRAME",
+                    **observation.evidence(),
+                    "source": "OWNED_AFTER_EFFECT_CAPTURE",
+                }
+            )
         self.observation = observation
         self.count += 1
         self.records.append({"layer": "OBSERVATION", **observation.evidence()})
         if self.policy.output_dir:
             save_observation(observation, self.policy.output_dir / "frames" / f"{self.count:03d}")
         return observation
+
+    def worker_route(
+        self,
+        phase: str,
+        contract: TaskContract,
+        step: TaskStep,
+        completion: Any = None,
+    ) -> DecisionAction:
+        """Let the repository evaluate the complete registered requirement set."""
+        assert self.worker_runtime is not None and self.observation is not None
+        runtime = self.worker_runtime
+        self.check_active()
+        self.validate_role_boundary()
+        publication = (
+            runtime.supervision_source_publication
+            if completion is not None and phase in {"AFTER_EFFECT", "POST_HOLD", "TERMINAL"}
+            else runtime.publication
+        )
+        state = self.robot.get_state()
+        online = OnlineEvidenceSnapshot(
+            self.observation,
+            state,
+            self.tracker.facts(self.observation, state) if self.tracker is not None else {},
+            contract.plan_version,
+            contract.command_seq,
+            publication.checkpoint.checkpoint_hash,
+        )
+        result = self.worker_call(
+            lambda: runtime.route(
+                online,
+                step_id=step.step_id,
+                phase=phase,
+                execution_contract=contract,
+                completion=completion,
+                grounding_receipt=getattr(self, "_worker_grounding", None),
+            )
+        )
+        self.records.append(
+            {
+                "layer": "WORKER_CANONICAL_VERIFICATION",
+                "phase": phase,
+                "source_record": result.record.to_payload(),
+                "write_disposition": result.write_disposition,
+                "execution_admitted": False,
+            }
+        )
+        if result.record.route != "STOP":
+            self.worker_call(lambda: runtime.check_active(self.robot.get_state()))
+        self.validate_role_boundary()
+        self.budget = self.worker_runtime.verification_state
+        return DecisionAction(result.record.route)
+
+    def verify_worker(
+        self,
+        phase: str,
+        contract: TaskContract,
+        step: TaskStep,
+        completion: Any = None,
+    ) -> bool:
+        while True:
+            action = self.worker_route(phase, contract, step, completion)
+            if action == DecisionAction.CONTINUE:
+                return True
+            if action != DecisionAction.REOBSERVE:
+                return False
+            self.recapture(advance_steps=1)
+
+    def prepare_worker_step(
+        self,
+        step: TaskStep,
+        draft: PlannerDraft,
+    ) -> tuple[TaskContract, TaskStep]:
+        """Resolve a fresh frame while preserving the immutable original action policy."""
+        from cloud_edge_robot_arm.vision.owner_registration import (
+            DeterministicGroundingPolicy,
+            GroundingFrameInputs,
+            _resolved_parameters,
+            bind_step_grounding,
+        )
+        from cloud_edge_robot_arm.vision.tracking import OpenCVTargetTracker
+
+        assert self.worker_runtime is not None and self.tracker is not None
+        assert self.observation is not None
+        runtime = self.worker_runtime
+        if not isinstance(self.tracker, OpenCVTargetTracker):
+            raise _EpisodeStopped("WORKER_DEVICE_TRACKER_CHANGED")
+        tracker = self.tracker
+        self.check_active()
+        self.validate_role_boundary()
+        evidence = validated_grounding_evidence(draft, self.policy)
+        original = self.worker_runtime.original
+        publication = self.worker_runtime.publication
+        state = self.robot.get_state()
+        facts = self.tracker.facts(self.observation, state)
+        target = facts.get("target_visible", {})
+        if target.get("value") is not True:
+            raise _EpisodeStopped("WORKER_FRESH_GROUNDING_UNAVAILABLE")
+        # Association remains anchored to the original RGB-D identity; coordinate
+        # values come from this frame, including the currently observed region.
+        target_geometry, _ = tracker._geometry(
+            self.observation,
+            tracker.target_color,
+            target=True,
+        )
+        region, _ = tracker._geometry(
+            self.observation,
+            tracker.destination_color,
+            target=False,
+            occlusion_geometry=target_geometry,
+        )
+        if target_geometry is None or region is None or self.tracker.initial is None:
+            raise _EpisodeStopped("WORKER_FRESH_GROUNDING_UNAVAILABLE")
+        center = target_geometry["center"]
+        calibrated_tcp = Pose.model_validate(evidence["resolved_top_grasp_tcp"])
+        offset = calibrated_tcp.z - float(self.tracker.initial["center"][2])
+        inputs = GroundingFrameInputs(
+            observation_id=self.observation.observation_id,
+            observation_checksum_sha256=self.observation.checksum_sha256,
+            episode_id=original.identity.episode_id,
+            calibration_version=self.observation.calibration_version or "",
+            grasp_tcp={"x": center[0], "y": center[1], "z": center[2] + offset},
+            destination=dict(zip("xyz", region["center"], strict=True)),
+            support_height_m=float(evidence["top_grasp_support_height_m"]),
+            source_hashes=original.source_hashes,
+        )
+        policy = DeterministicGroundingPolicy(
+            policy_id="rgbd-top-grasp-v1",
+            version="worker-rgbd-top-grasp-v1",
+            source_hashes=original.source_hashes,
+            tcp_velocity=min(0.15, original.contract.safety_constraints.max_tcp_velocity),
+            acceleration=0.5,
+            clearance_m=0.10,
+            minimum_height_m=max(0.16, original.contract.safety_constraints.minimum_safe_height),
+        )
+        online = OnlineEvidenceSnapshot(
+            self.observation,
+            state,
+            facts,
+            original.contract.plan_version,
+            original.contract.command_seq,
+            publication.checkpoint.checkpoint_hash,
+        )
+        source_step = original.requirements[step.step_id].original_step
+        grounded = source_step.model_copy(
+            update={
+                "parameters": _resolved_parameters(source_step, original, online, inputs, policy),
+                # Canonical checks are retained in original.requirements and evaluated
+                # by the durable router. The executor consumes this checked view.
+                "preconditions": [],
+                "success_conditions": [],
+            },
+            deep=True,
+        )
+        binding = bind_step_grounding(
+            original,
+            original_step_id=step.step_id,
+            grounded_step=grounded,
+            online=online,
+            source_checkpoint=publication.checkpoint,
+            current_identity=original.identity,
+            owner_revision=publication.owner_revision,
+            state_generation=publication.state_generation + 1,
+            grounding_inputs=inputs,
+            grounding_policy=policy,
+            now=datetime.now(UTC),
+        )
+        self.worker_call(lambda: runtime.publish_grounding(binding, state))
+        self.records.append(
+            {
+                "layer": "WORKER_FRESH_GROUNDING",
+                "binding": binding.to_payload(),
+                "execution_admitted": False,
+            }
+        )
+        self._worker_draft = draft
+        self._worker_grounding = binding
+        contract = original.contract.model_copy(
+            update={
+                "steps": [
+                    grounded if item.step_id == grounded.step_id else item
+                    for item in original.contract.steps
+                ],
+            },
+            deep=True,
+        )
+        return contract, grounded
 
     def verify(
         self,
@@ -569,6 +990,7 @@ class _VisualEpisode:
     ) -> bool:
         while True:
             self.check_active()
+            self.validate_role_boundary()
             assert self.observation is not None
             facts = (
                 self.tracker.facts(self.observation, self.robot.get_state()) if self.tracker else {}
@@ -581,7 +1003,9 @@ class _VisualEpisode:
                 facts,
                 1,
                 1,
-                self.policy.model_snapshot_hash,
+                self.policy.role_binding.bundle.digest()
+                if self.policy.role_binding
+                else self.policy.model_snapshot_hash,
             )
             verdicts = evaluate_conditions(conditions, snapshot)
             action = self.route(verdicts, kind, {**(extra or {}), "visual_facts": facts})
@@ -652,8 +1076,10 @@ class _VisualEpisode:
     def plan(self) -> PlannerDraft:
         from cloud_edge_robot_arm.vision.request_control import bounded_model_call
 
+        runtime = self.worker_runtime
         while True:
             self.check_active()
+            self.validate_role_boundary()
             assert self.observation is not None
             request = InitialPlanningRequest(
                 request_id="visual-episode",
@@ -661,21 +1087,38 @@ class _VisualEpisode:
                 observation=self.observation,
                 scene=SceneSummary(scene_version=1, updated_at=self.observation.captured_at),
             )
+            claim_id = None
+            if runtime is not None:
+                claim_id = self.worker_call(lambda: runtime.reserve_plan(self.robot.get_state()))
+                self._worker_plan_wait_claim = claim_id
             self.calls += 1
             started = time.monotonic()
-            draft = bounded_model_call(
-                partial(self.planner.plan, request),
-                timeout_s=max(
-                    0.001,
-                    min(
-                        self.deadline - started,
-                        (self.budget.deadline_at - datetime.now(UTC)).total_seconds(),
+            if self.wait_clock is not None:
+                self.wait_clock.begin_wait()
+            try:
+                draft = bounded_model_call(
+                    partial(self.planner.plan, request),
+                    timeout_s=max(
+                        0.001,
+                        min(
+                            self.deadline - started,
+                            (self.budget.deadline_at - datetime.now(UTC)).total_seconds(),
+                        ),
                     ),
-                ),
-                cancelled=self.policy.cancelled,
-                resource_key=self.planner.base_url,
-            )
+                    cancelled=self.policy.cancelled,
+                    resource_key=self.planner.base_url,
+                    on_wait=self.wait_clock.advance_wait if self.wait_clock is not None else None,
+                )
+            finally:
+                self._worker_plan_wait_claim = None
             self.check_active()
+            self.validate_role_boundary()
+            if self.policy.role_binding is not None:
+                draft.observation_evidence = {
+                    **(draft.observation_evidence or {}),
+                    "role_bundle_hash": self.policy.role_binding.bundle.digest(),
+                    "role_binding": self.policy.role_binding.evidence(),
+                }
             self.records.append(
                 {
                     "layer": "MODEL_RETURN",
@@ -687,6 +1130,31 @@ class _VisualEpisode:
                     "parse_error": draft.parse_error,
                 }
             )
+            if runtime is not None:
+                assert isinstance(claim_id, str)
+                self.worker_call(
+                    partial(
+                        runtime.complete_plan,
+                        claim_id,
+                        draft,
+                        self.robot.get_state(),
+                    )
+                )
+                self.budget = runtime.verification_state
+                self.records.append(
+                    {
+                        "layer": "WORKER_BOOTSTRAP_PLAN",
+                        "bootstrap_hash": runtime.bootstrap.digest(),
+                        "planning_source_usable": runtime.bootstrap.planning_source_usable,
+                        "budget": asdict(self.budget),
+                        "execution_admitted": False,
+                    }
+                )
+                self.check_active()
+                if runtime.bootstrap.planning_source_usable:
+                    return draft
+                self.recapture(advance_steps=1)
+                continue
             if (
                 not draft.parse_error
                 and draft.parsed_json
@@ -719,6 +1187,11 @@ class _VisualEpisode:
 
     def execute(self, contract: TaskContract, step: TaskStep) -> bool:
         self.check_active()
+        self.validate_role_boundary()
+        self.require_native_action_evidence(contract, step, boundary="PRE_SAFETY")
+        if self.worker_runtime is not None:
+            contract, step = self.refresh_worker_grounding(contract, step)
+            self.worker_dispatch_guard(contract, step)
         assert self.observation is not None
         before = self.observation
         state = self.robot.get_state()
@@ -729,7 +1202,7 @@ class _VisualEpisode:
             contract=contract,
             step=step,
             robot_state=state,
-            scene_version=1,
+            scene_version=contract.scene_version if self.worker_runtime is not None else 1,
             resolved_parameters=params,
             scene_updated_at=before.captured_at,
             telemetry_timestamp=now,
@@ -754,6 +1227,8 @@ class _VisualEpisode:
             }
         )
         if not pre.allowed:
+            if self.worker_runtime is not None:
+                raise _EpisodeStopped("SAFETY_REJECTED")
             self.route(
                 [
                     ConditionVerdict(
@@ -768,9 +1243,21 @@ class _VisualEpisode:
             )
             raise _EpisodeStopped("SAFETY_REJECTED")
         if pre.limited_parameters:
+            if self.worker_runtime is not None and pre.limited_parameters != step.parameters:
+                # A limiter cannot silently change the payload covered by the
+                # original grounding. A fresh checked compilation is required.
+                raise _EpisodeStopped("WORKER_SAFETY_LIMITS_REQUIRE_RECOMPILATION")
             step = step.model_copy(update={"parameters": pre.limited_parameters})
         self.check_active()
+        self.validate_role_boundary()
+        self.require_native_action_evidence(contract, step, boundary="PRE_SKILL")
+        if self.worker_runtime is not None:
+            contract, step = self.refresh_worker_grounding(contract, step)
+            self.worker_dispatch_guard(contract, step)
+        self.check_active()
+        self.validate_role_boundary()
         start_step = self.backend.total_physics_steps
+        action_started_at = datetime.now(UTC)
         self.records.append(
             {
                 "layer": "ACTION_STARTED",
@@ -781,7 +1268,15 @@ class _VisualEpisode:
             }
         )
         try:
-            result = self.executor.execute_attempt(contract=contract, step=step, attempt=1)
+            if self.policy.raw_recorder is not None:
+                result = self.policy.raw_recorder.execute_attempt(
+                    contract=contract,
+                    step=step,
+                    attempt=1,
+                    grounding=self._worker_grounding,
+                )
+            else:
+                result = self.executor.execute_attempt(contract=contract, step=step, attempt=1)
         except Exception as exc:
             actual_steps = self.backend.total_physics_steps - start_step
             self.actions += int(actual_steps > 0)
@@ -798,6 +1293,7 @@ class _VisualEpisode:
                 }
             )
             raise
+        returned_at = datetime.now(UTC)
         self.actions += int(self.backend.total_physics_steps > start_step)
         self.records.append(
             {
@@ -818,7 +1314,48 @@ class _VisualEpisode:
             }
         )
         self.check_active()
-        self.recapture()
+        completion = None
+        if self.worker_runtime is not None:
+            from cloud_edge_robot_arm.contracts.models import SkillExecutionResult
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import digest
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
+                VisualEffectCompletion,
+            )
+
+            original = self.worker_runtime.original
+            completion = VisualEffectCompletion(
+                result=SkillExecutionResult(
+                    task_id=result.task_id,
+                    plan_version=contract.plan_version,
+                    command_seq=contract.command_seq,
+                    timestamp=result.timestamp,
+                    step_id=result.step_id,
+                    skill=step.skill,
+                    scene_version=contract.scene_version,
+                    success=result.success,
+                    error=result.error,
+                    duration_ms=result.duration_ms,
+                    details={"attempt": result.attempt},
+                ),
+                task_id=original.identity.task_id,
+                plan_id=original.identity.plan_id,
+                robot_id=original.identity.robot_id,
+                step_id=step.step_id,
+                attempt=result.attempt,
+                plan_version=contract.plan_version,
+                command_seq=contract.command_seq,
+                started_at=action_started_at,
+                returned_at=returned_at,
+                before_observation_id=before.observation_id,
+                execution_payload_hash=digest(contract.model_dump(mode="json")),
+                source_checkpoint_hash=(
+                    self.worker_runtime.supervision_source_publication.checkpoint.checkpoint_hash
+                ),
+                source_hashes=original.source_hashes,
+            )
+            self._worker_completion = completion
+            self.apply_supervision()
+        self.recapture(completion=completion)
         assert self.observation is not None
         post_ctx = ctx.model_copy(
             update={
@@ -840,6 +1377,38 @@ class _VisualEpisode:
         self.records.append(
             {"layer": "SAFETY_POSTCHECK", "step_id": step.step_id, "evaluation": asdict(post)}
         )
+        if self.worker_runtime is not None:
+            if not post.allowed:
+                raise _EpisodeStopped("WORKER_SAFETY_POSTCHECK_FAILED")
+            if not self.verify_worker("AFTER_EFFECT", contract, step, completion):
+                return False
+            if step.skill.value == "LIFT":
+                config = self.backend._config
+                assert config is not None
+                self.require_continuous_grasp = True
+                try:
+                    # Hold existing actuator targets and use actual later camera
+                    # samples. Native stability remains UNKNOWN without bounds.
+                    self.recapture(
+                        advance_steps=math.ceil(LIFT_OBSERVATION_HOLD_S / config.physics_dt_s),
+                        completion=completion,
+                        purpose="POST_HOLD",
+                    )
+                    if not self.verify_worker("POST_HOLD", contract, step, completion):
+                        return False
+                finally:
+                    self.require_continuous_grasp = False
+            if step.step_id == self.worker_runtime.original.contract.steps[-1].step_id:
+                config = self.backend._config
+                assert config is not None
+                self.recapture(
+                    advance_steps=math.ceil(1.2 / config.physics_dt_s),
+                    completion=completion,
+                    purpose="TERMINAL",
+                )
+                if not self.verify_worker("TERMINAL", contract, step, completion):
+                    return False
+            return result.success
         if not result.success or not post.allowed:
             self.route(
                 [
@@ -873,13 +1442,515 @@ class _VisualEpisode:
             checks.append(ConditionSpec("gripper_released"))
         return self.verify(checks, DecisionEventKind.SKILL_BOUNDARY, {"step_id": step.step_id})
 
+    def refresh_worker_grounding(
+        self,
+        contract: TaskContract,
+        step: TaskStep,
+    ) -> tuple[TaskContract, TaskStep]:
+        """Every durable route invalidates grounding; keep the safety payload exact."""
+        current, grounded = self.prepare_worker_step(step, self._worker_draft)
+        if current.model_dump(mode="json") != contract.model_dump(mode="json"):
+            raise _EpisodeStopped("WORKER_ACTION_PAYLOAD_CHANGED_REQUIRES_RECOMPILATION")
+        return current, grounded
+
+    def worker_dispatch_guard(self, contract: TaskContract, step: TaskStep) -> None:
+        """Recheck the newly published binding and native evidence without clearing it."""
+        from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
+            native_action_context_hash,
+        )
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+
+        assert self.worker_runtime is not None
+        self.check_active()
+        self.validate_role_boundary()
+        current = self.worker_runtime.publication
+        grounding = current.to_payload()["grounding"]
+        cached = getattr(self, "_worker_grounding", None)
+        if grounding is None or cached is None or grounding != cached.to_payload():
+            raise _EpisodeStopped("WORKER_DISPATCH_GROUNDING_INVALIDATED")
+        assert self.observation is not None
+        state = self.robot.get_state()
+        original = self.worker_runtime.original
+        requirement = original.requirements[step.step_id]
+        online = OnlineEvidenceSnapshot(
+            self.observation,
+            state,
+            self.tracker.facts(self.observation, state) if self.tracker is not None else {},
+            contract.plan_version,
+            contract.command_seq,
+            native_action_context_hash(original.role_bundle_hash, contract, step.step_id),
+        )
+        native = native_action_contract(online, contract, step)
+        action = ActionEvidenceContract(
+            native.evidence,
+            requirement.expected_duration_s,
+            requirement.allowed_error_m,
+            requirement.sensor_requirements,
+            requirement.preconditions,
+            requirement.postconditions,
+            contract.plan_version,
+            contract.command_seq,
+            online.context_hash,
+        )
+        verdict = validate_evidence(
+            action,
+            datetime.now(UTC),
+            online.context_hash,
+            self.observation.calibration_version or "",
+            online_evidence=online,
+        )
+        self.records.append(
+            {
+                "layer": "WORKER_DISPATCH_NATIVE_RECHECK",
+                "status": verdict.status,
+                "reasons": list(verdict.reasons),
+                "step_id": step.step_id,
+                "checkpoint_hash": current.checkpoint.checkpoint_hash,
+                "grounding_hash": cached.binding_hash,
+                "execution_admitted": False,
+            }
+        )
+        if verdict.status != "VALID":
+            raise _EpisodeStopped("WORKER_DISPATCH_NATIVE_EVIDENCE_INVALIDATED")
+        self.check_native_hard_stop("PRE_SKILL")
+        self.check_active()
+
+    def require_native_action_evidence(
+        self,
+        contract: TaskContract,
+        step: TaskStep,
+        *,
+        boundary: str,
+    ) -> None:
+        """Apply T10 at action return/commit boundaries on actual current evidence."""
+        if self.policy.device_pipeline != "OPENCV":
+            return
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+
+        while True:
+            self.check_active()
+            self.validate_role_boundary()
+            self.check_native_hard_stop(boundary)
+            assert self.observation is not None and self.policy.role_binding is not None
+            role_hash = self.policy.role_binding.bundle.digest()
+            action_context_hash = hashlib.sha256(
+                json.dumps(
+                    {
+                        "role_bundle_hash": role_hash,
+                        "contract": contract.model_dump(mode="json"),
+                        "step": step.model_dump(mode="json"),
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode()
+            ).hexdigest()
+            online = OnlineEvidenceSnapshot(
+                self.observation,
+                self.robot.get_state(),
+                self.tracker.facts(self.observation, self.robot.get_state())
+                if self.tracker is not None
+                else {},
+                contract.plan_version,
+                contract.command_seq,
+                action_context_hash,
+            )
+            action = native_action_contract(online, contract, step)
+            now = datetime.now(UTC)
+            verdict = validate_evidence(
+                action,
+                now,
+                online.context_hash,
+                self.observation.calibration_version or "",
+                online_evidence=online,
+            )
+            self.records.append(
+                {
+                    "layer": "ACTION_EVIDENCE_GATE",
+                    "boundary": boundary,
+                    "step_id": step.step_id,
+                    "status": verdict.status,
+                    "reasons": list(verdict.reasons),
+                    "bound_at_completion_m": verdict.bound_at_completion_m,
+                    "observation_id": self.observation.observation_id,
+                    "observation_hash": self.observation.checksum_sha256,
+                    "captured_at": self.observation.captured_at.isoformat(),
+                    "context_hash": online.context_hash,
+                    "role_bundle_hash": role_hash,
+                    "plan_version": action.plan_version,
+                    "command_seq": action.command_seq,
+                    "expected_duration_s": action.expected_duration_s,
+                    "allowed_error_m": action.allowed_error_m,
+                    "geometry_bound_m": action.evidence.geometric_error_bound_m,
+                    "motion_bound_m_s": action.evidence.motion_bound_m_s,
+                    "physical_acceptance": False,
+                }
+            )
+            if self.worker_runtime is not None:
+                phase = {
+                    "CLOUD_RETURN": "CLOUD_RETURN",
+                    "PRE_SAFETY": "NATIVE_PRE_SAFETY",
+                    "PRE_SKILL": "NATIVE_PRE_SKILL",
+                }[boundary]
+                route = self.worker_route(phase, contract, step)
+                if route == DecisionAction.CONTINUE:
+                    if verdict.status != "VALID":
+                        raise _EpisodeStopped("WORKER_NATIVE_VERDICT_MISMATCH")
+                    return
+                if route != DecisionAction.REOBSERVE:
+                    raise _EpisodeStopped(f"ACTION_EVIDENCE_{verdict.status}")
+                self.recapture(advance_steps=1)
+                # A grounded payload is tied to its old frame. Recompile it and
+                # rerun SafetyShield rather than reuse it after reobservation.
+                if boundary != "CLOUD_RETURN":
+                    raise _EpisodeStopped("ACTION_GROUNDING_RECAPTURED_REQUIRES_RECOMPILATION")
+                continue
+            if verdict.status == "VALID":
+                return
+            if boundary == "PRE_SKILL":
+                # A recapture here would reuse the earlier resolved SafetyShield
+                # context. Restarting action compilation/safety is required.
+                raise _EpisodeStopped("ACTION_EVIDENCE_POST_SAFETY_INVALIDATED")
+            status = (
+                ConditionStatus.UNKNOWN if verdict.status == "UNKNOWN" else ConditionStatus.FAIL
+            )
+            route = self.route(
+                [
+                    ConditionVerdict(
+                        status,
+                        "action_submit_evidence",
+                        self.observation.observation_id,
+                        reasons=verdict.reasons,
+                    ),
+                ],
+                DecisionEventKind.EVIDENCE_INVALIDATED,
+                {"boundary": boundary, "step_id": step.step_id},
+            )
+            if route != DecisionAction.REOBSERVE:
+                raise _EpisodeStopped(f"ACTION_EVIDENCE_{verdict.status}")
+            self.check_active()
+            self.check_native_hard_stop(boundary)
+            self.backend.step(steps=1)
+            self.recapture()
+
+    def check_native_hard_stop(self, boundary: str) -> None:
+        """Hard stops take precedence over an unavailable visual proof and its budget."""
+        state = self.robot.get_state()
+        reasons = [
+            name
+            for name, active in (
+                ("estop_engaged", state.estop_engaged),
+                ("collision_detected", state.collision_detected),
+                ("disconnected", not state.connected),
+            )
+            if active
+        ]
+        if reasons:
+            self.records.append(
+                {
+                    "layer": "HARD_SAFETY_STOP",
+                    "boundary": boundary,
+                    "reasons": reasons,
+                    "physical_acceptance": False,
+                }
+            )
+            raise _EpisodeStopped("HARD_SAFETY_STOP:" + ",".join(reasons))
+
     def monitor_physics_state(self) -> None:
         """Proprioceptive contact checks only; detached oracle samples stay separate."""
         self.check_active()
+        if self._supervision_started and self.supervision is not None:
+            self.supervision.poll(atomic_action_active=True)
         if self.require_continuous_grasp:
             state = self.robot.get_state()
             if state.gripper_open or state.holding_object_id != "object":
                 raise _EpisodeStopped("GRASP_LOST_DURING_LIFT_HOLD")
+
+    def supervision_context(self, observation: RGBDObservation) -> Any:
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+
+        state = self.robot.get_state()
+        if observation.episode_id is None:
+            raise _EpisodeStopped("SUPERVISION_FRAME_MISSING_EPISODE")
+        runtime = getattr(self, "worker_runtime", None)
+        if runtime is not None:
+            publication = runtime.supervision_source_publication
+            contract = runtime.original.contract
+            step_id = publication.checkpoint.current_step_id
+            step = next((item for item in contract.steps if item.step_id == step_id), None)
+            if step is None or step_id in publication.checkpoint.completed_step_ids:
+                raise _EpisodeStopped("WORKER_SUPERVISION_STEP_UNAVAILABLE")
+            plan_version, state_version = contract.plan_version, publication.state_generation
+            next_step_id, next_skill = step.step_id, step.skill.value
+        else:
+            plan_version, state_version = self._plan_version, self._state_version
+            next_step_id, next_skill = self._active_step_id, self._active_skill
+        return SupervisionContext(
+            episode_id=observation.episode_id,
+            plan_version=plan_version,
+            state_version=state_version,
+            next_step_id=next_step_id,
+            next_skill=next_skill,
+            observation_id=observation.observation_id,
+            task_instruction=self.policy.instruction,
+            captured_at=observation.captured_at,
+            proprioception={
+                "gripper_open": state.gripper_open,
+                "holding_object_id": state.holding_object_id,
+                "estop_engaged": state.estop_engaged,
+                "collision_detected": state.collision_detected,
+            },
+        )
+
+    def capture_supervision_frame(self) -> Any:
+        from cloud_edge_robot_arm.vision.supervision import SupervisionFrame
+
+        # This is invoked on the MuJoCo owner thread, including within read-only step hooks.
+        runtime = getattr(self, "worker_runtime", None)
+        claim = None
+        if runtime is not None:
+            self.check_active()
+            self.validate_role_boundary()
+            period = self.policy.supervision_period_s
+            if period is None:
+                raise _EpisodeStopped("WORKER_SUPERVISION_PERIOD_MISSING")
+            cursor = math.floor(
+                (datetime.now(UTC) - runtime.source.task_started_at).total_seconds() / period
+            )
+            claim = self.worker_call(
+                lambda: runtime.reserve_supervision_capture(cursor, self.robot.get_state())
+            )
+        recorder = getattr(self.policy, "raw_recorder", None)
+        observation = recorder.capture() if recorder is not None else self.capture.capture()
+        if runtime is not None:
+            self.check_active()
+            self.validate_role_boundary()
+        context = self.supervision_context(observation)
+        frame: Any = SupervisionFrame(observation, context)
+        if runtime is not None:
+            self.worker_call(
+                lambda: runtime.complete_supervision_capture(
+                    claim, observation, context, self.robot.get_state()
+                )
+            )
+            frame = self.worker_call(
+                lambda: runtime.reserve_supervision_plan(claim, self.robot.get_state())
+            )
+            self._worker_supervision_frames[frame.claim_id] = frame
+        self.records.append(
+            {
+                "layer": "SUPERVISION_TICK",
+                **observation.evidence(),
+                "ordinary_result_deferred_until_skill_boundary": True,
+            }
+        )
+        if self.policy.output_dir:
+            save_observation(
+                observation, self.policy.output_dir / "supervision-frames" / observation.frame_id
+            )
+        return frame
+
+    def _advance_wait_steps(self, steps: int) -> None:
+        """Advance the existing passive wait only under its owned planning claim."""
+        self.check_active()
+        runtime = getattr(self, "worker_runtime", None)
+        claim_id = getattr(self, "_worker_plan_wait_claim", None)
+        if runtime is not None:
+            if claim_id is None:
+                raise _EpisodeStopped("WORKER_WAIT_SOURCE_MISSING")
+            self.worker_call(
+                lambda: runtime.assert_owned_plan_wait(claim_id, self.robot.get_state())
+            )
+        recorder = getattr(self.policy, "raw_recorder", None)
+        with recorder.purpose("WAIT") if recorder is not None else nullcontext():
+            self.backend.step(steps=steps)
+        self.check_active()
+        if runtime is not None:
+            self.worker_call(
+                lambda: runtime.assert_owned_plan_wait(claim_id, self.robot.get_state())
+            )
+
+    def supervise_frame(self, frame: Any) -> dict[str, Any]:
+        from cloud_edge_robot_arm.vision.request_control import bounded_model_call
+
+        self.validate_role_boundary()
+        runtime = getattr(self, "worker_runtime", None)
+        if runtime is not None:
+            self.worker_call(lambda: runtime.assert_supervision_plan_pending(frame))
+        planner = copy.copy(self.planner)
+        planner.model_role = "SUPERVISOR"
+        observation = frame.observation
+        decision = bounded_model_call(
+            partial(planner.supervise, observation, frame.context),
+            timeout_s=max(0.001, self.deadline - time.monotonic()),
+            resource_key=planner.base_url,
+            cancelled=lambda: bool(self.supervision and self.supervision.snapshot()["closed"]),
+        )
+        self.validate_role_boundary()
+        if runtime is not None:
+            self.worker_call(lambda: runtime.assert_supervision_plan_pending(frame))
+        response = {
+            "observation_id": observation.observation_id,
+            "episode_id": observation.episode_id,
+            "captured_at": observation.captured_at,
+            "context": frame.context.model_dump(mode="json"),
+            "decision": decision.model_dump(mode="json"),
+            "evidence": observation.evidence(),
+        }
+        if runtime is not None:
+            response["worker_claim_id"] = frame.claim_id
+        return response
+
+    def apply_supervision(self) -> None:
+        from cloud_edge_robot_arm.vision.supervision import (
+            SupervisionContext,
+            SupervisionDecision,
+            decide_supervision,
+        )
+
+        if self.supervision is None:
+            return
+        self.validate_role_boundary()
+        for response in self.supervision.poll(atomic_action_active=False):
+            if isinstance(response, Exception):
+                self.records.append({"layer": "SUPERVISION_ERROR", "type": type(response).__name__})
+                raise _EpisodeStopped("SUPERVISION_UNAVAILABLE")
+            if not isinstance(response, dict) or response.get("episode_id") != (
+                self.observation.episode_id if self.observation else None
+            ):
+                raise _EpisodeStopped("SUPERVISION_FOREIGN_RESPONSE")
+            age = (datetime.now(UTC) - response["captured_at"]).total_seconds()
+            self.records.append(
+                {
+                    "layer": "SUPERVISION_RETURN",
+                    **response,
+                    "age_s": age,
+                    "can_replace_active_contract": False,
+                }
+            )
+            assert self.observation is not None
+            runtime = getattr(self, "worker_runtime", None)
+            worker_frame = None
+            if runtime is not None:
+                self.check_active()
+                claim_id = response.get("worker_claim_id")
+                if type(claim_id) is not str:
+                    raise _EpisodeStopped("WORKER_SUPERVISION_RESPONSE_UNOWNED")
+                worker_frame = self._worker_supervision_frames.pop(claim_id, None)
+                if worker_frame is None:
+                    raise _EpisodeStopped("WORKER_SUPERVISION_RESPONSE_UNOWNED")
+                if (
+                    SupervisionContext.model_validate(response["context"]) != worker_frame.context
+                    or response["captured_at"] != worker_frame.observation.captured_at
+                ):
+                    raise _EpisodeStopped("WORKER_SUPERVISION_CONTEXT_CHANGED")
+                if worker_frame.publication_hash != runtime.supervision_source_publication.digest():
+                    self.records.append(
+                        {
+                            "layer": "SUPERVISION_DECISION",
+                            "action": "STOP",
+                            "reason": "source_publication_changed",
+                            "worker_claim_id": claim_id,
+                        }
+                    )
+                    raise _EpisodeStopped("WORKER_SUPERVISION_SOURCE_CHANGED")
+                reply_state = self.worker_call(
+                    partial(runtime.classify_supervision_reply, worker_frame)
+                )
+                if reply_state == "EXPIRED":
+                    self.records.append(
+                        {
+                            "layer": "SUPERVISION_DECISION",
+                            "action": "DISCARD",
+                            "reason": "original_frame_ttl_expired",
+                            "worker_claim_id": claim_id,
+                        }
+                    )
+                    continue
+            action = decide_supervision(
+                SupervisionDecision.model_validate(response["decision"]),
+                SupervisionContext.model_validate(response["context"]),
+                self.supervision_context(self.observation),
+                maximum_age_s=5,
+            )
+            decision_record: dict[str, Any] = {
+                "layer": "SUPERVISION_DECISION",
+                "action": action,
+                "state_version": self._state_version,
+            }
+            if action == "DISCARD":
+                if runtime is not None:
+                    assert worker_frame is not None
+                    if (
+                        self.worker_call(partial(runtime.classify_supervision_reply, worker_frame))
+                        != "EXPIRED"
+                    ):
+                        raise _EpisodeStopped("WORKER_SUPERVISION_CONTEXT_CHANGED")
+                    decision_record.update(
+                        reason="original_frame_ttl_expired",
+                        worker_claim_id=worker_frame.claim_id,
+                    )
+                self.records.append(decision_record)
+                continue
+            self.records.append(decision_record)
+            if runtime is not None:
+                assert worker_frame is not None
+                try:
+                    self.worker_call(
+                        partial(
+                            runtime.complete_supervision_plan,
+                            worker_frame,
+                            SupervisionDecision.model_validate(response["decision"]),
+                            self.robot.get_state(),
+                        )
+                    )
+                except _EpisodeStopped as source_error:
+                    from cloud_edge_robot_arm.vision.worker_runtime import (
+                        VisualSupervisionReplyExpired,
+                    )
+
+                    if not isinstance(source_error.__cause__, VisualSupervisionReplyExpired):
+                        raise
+                    self.records.append(
+                        {
+                            "layer": "SUPERVISION_DECISION",
+                            "action": "DISCARD",
+                            "reason": "original_frame_ttl_expired_before_commit",
+                            "worker_claim_id": worker_frame.claim_id,
+                        }
+                    )
+                    continue
+            if action in {"REJECT", "STOP"}:
+                raise _EpisodeStopped("SUPERVISION_STOPPED_SEQUENCE")
+            if action == "REOBSERVE":
+                if runtime is not None:
+                    assert worker_frame is not None
+                    completion = getattr(self, "_worker_completion", None)
+                    if (
+                        completion is None
+                        or completion.step_id != worker_frame.context.next_step_id
+                    ):
+                        raise _EpisodeStopped("WORKER_SUPERVISION_REOBSERVATION_SOURCE_REQUIRED")
+                    # At the atomic action boundary a fresh actual AFTER_EFFECT
+                    # acquisition is mandatory anyway. Fulfill the request only
+                    # after that owned source returns, before another action.
+                    self._worker_supervision_reobserve_pending = (completion, datetime.now(UTC))
+                    continue
+                verdict = ConditionVerdict(
+                    ConditionStatus.UNKNOWN,
+                    "supervision_evidence",
+                    self.observation.observation_id,
+                    reasons=("supervisor_requested_new_frame",),
+                )
+                if self.route([verdict], DecisionEventKind.CLOUD_RETURN) != (
+                    DecisionAction.REOBSERVE
+                ):
+                    raise _EpisodeStopped("SUPERVISION_REOBSERVATION_EXHAUSTED")
+                self.recapture()
+                self._state_version += 1
 
     def hold_lift(self) -> bool:
         """Hold existing actuator targets and observe actual RGB-D lift stability."""
@@ -898,7 +1969,7 @@ class _VisualEpisode:
                 {
                     "observation_id": observation.observation_id,
                     "sim_time_s": observation.sim_time_s,
-                    "center": visible["measured_values"]["center"] if visible else None,
+                    "center": visible.get("measured_values", {}).get("center") if visible else None,
                 }
             )
 
@@ -970,7 +2041,7 @@ class _VisualEpisode:
                 ],
                 DecisionEventKind.SKILL_BOUNDARY,
                 {"phase": "post_lift_passive_hold", "hold_samples": samples},
-                facts_transform=held_facts,
+                facts_transform=held_facts if self.policy.device_pipeline == "LEGACY" else None,
             )
         finally:
             self.require_continuous_grasp = False
@@ -999,6 +2070,8 @@ class _VisualEpisode:
             raise _EpisodeStopped("SAFETY_REJECTED")
         draft = self.plan()
         assert self.observation is not None
+        if self.worker_runtime is not None:
+            return self.run_worker_online(draft)
         evidence = draft.observation_evidence or {}
         contract = grounded_contract(draft, self.observation, self.policy)
         self.records.append(
@@ -1020,9 +2093,21 @@ class _VisualEpisode:
                 "contract": contract.model_dump(mode="json"),
             }
         )
-        self.tracker = RGBDTargetTracker(self.observation, evidence)
+        self.tracker = make_target_tracker(self.observation, evidence, self.policy)
+        self._plan_version = contract.plan_version
+        self._supervision_started = True
         self.recapture()  # Revalidate after inference, even when inference was fast.
+        if contract.steps:
+            self.require_native_action_evidence(
+                contract,
+                contract.steps[0],
+                boundary="CLOUD_RETURN",
+            )
         for original in contract.steps:
+            self._state_version += 1
+            self._active_step_id = original.step_id
+            self._active_skill = original.skill.value
+            self.apply_supervision()
             skill = original.skill.value
             if skill in {"MOVE_ABOVE", "APPROACH"} and not self.verify(
                 [
@@ -1066,6 +2151,7 @@ class _VisualEpisode:
                 raise _EpisodeStopped(f"{skill}_EFFECT_NOT_VERIFIED")
             if skill == "LIFT" and not self.hold_lift():
                 raise _EpisodeStopped("LIFT_HOLD_NOT_VERIFIED")
+            self.apply_supervision()
         self.check_active()
         config = self.backend._config
         assert config is not None
@@ -1082,13 +2168,55 @@ class _VisualEpisode:
         )
         self.recapture()
         return self.verify(
-            [
-                ConditionSpec("object_inside_target_region", target_id="object"),
-                ConditionSpec("gripper_released"),
-                ConditionSpec("robot_in_safe_pose", tolerances={"minimum_safe_height": 0.08}),
-            ],
+            terminal_conditions(self.policy),
             DecisionEventKind.RESULT_VERIFIED,
         )
+
+    def run_worker_online(self, draft: PlannerDraft) -> bool:
+        """Adopt the full source plan before any ordinary verification or dispatch."""
+        assert self.worker_runtime is not None and self.observation is not None
+        runtime = self.worker_runtime
+        contract, publication = self.worker_call(lambda: runtime.adopt_plan(self.robot.get_state()))
+        self.records.append(
+            {
+                "layer": "WORKER_ORIGINAL_PLAN_ADOPTED",
+                "contract": contract.model_dump(mode="json"),
+                "source_publication": publication.to_payload(),
+                "execution_admitted": False,
+            }
+        )
+        recorder = self.policy.raw_recorder
+        if recorder is not None:
+            self.worker_call(lambda: recorder.bind_worker_source(runtime))
+        self.tracker = make_target_tracker(
+            self.observation,
+            draft.observation_evidence or {},
+            self.policy,
+        )
+        self._plan_version = contract.plan_version
+        if self.policy.supervision_period_s is not None or self.policy.advance_physics_during_wait:
+            self.worker_call(
+                lambda: runtime.initialize_supervision(
+                    self.policy.supervision_period_s, self.robot.get_state()
+                )
+            )
+        self._supervision_started = True
+        if not contract.steps:
+            raise _EpisodeStopped("WORKER_ORIGINAL_PLAN_EMPTY")
+        self.require_native_action_evidence(contract, contract.steps[0], boundary="CLOUD_RETURN")
+        for original_step in contract.steps:
+            self._active_step_id = original_step.step_id
+            self._active_skill = original_step.skill.value
+            self._state_version += 1
+            if not self.verify_worker("PRECONDITION", contract, original_step):
+                raise _EpisodeStopped("WORKER_ORIGINAL_PRECONDITIONS_NOT_VERIFIED")
+            current_contract, step = self.prepare_worker_step(original_step, draft)
+            if not self.execute(current_contract, step):
+                raise _EpisodeStopped("WORKER_FULL_EFFECT_NOT_VERIFIED")
+            # The coordinator advances the prefix only from its stored canonical
+            # complete-effect route. A skill success boolean is insufficient.
+            self.worker_call(partial(runtime.complete_step, step.step_id, self.robot.get_state()))
+        return True
 
 
 def run_visual_episode(
@@ -1114,11 +2242,16 @@ def run_visual_episode(
         run.monitor_physics_state()
 
     try:
-        with robot._backend.observe_physics_steps(collect):
+        with (
+            run.supervision if run.supervision is not None else nullcontext(),
+            robot._backend.observe_physics_steps(collect),
+        ):
             try:
                 online_complete = run.run_online()
                 if not online_complete:
                     reason = "FINAL_VERIFICATION_NOT_PASSED"
+            except RGBDModelCallFailed:
+                reason = "MODEL_REQUEST_FAILED"
             except RGBDModelUnavailable:
                 reason = "BLOCKED_BY_ENV_MODEL_UNAVAILABLE"
             except ModelCallCancelled:
@@ -1144,12 +2277,27 @@ def run_visual_episode(
             "used_for_online_routing": False,
         }
     )
+    if run.supervision is not None:
+        run.records.append({"layer": "SUPERVISION_SUMMARY", **run.supervision.snapshot()})
+    if run.wait_clock is not None:
+        run.records.append(
+            {
+                "layer": "CLOCK_MAPPING",
+                **run.wait_clock.mapping(),
+                "actual_episode_sim_s": robot._backend.get_sim_time(),
+                "action_steps_mapping": "unpaced fixed-step actuator execution",
+            }
+        )
     outcome = combine_outcome(
         physical,
         online_complete=online_complete,
         records=tuple(run.records),
         terminal_reason=reason,
-        model_calls=run.calls,
+        model_calls=(
+            planner.cost_ledger.snapshot().model_requests
+            if planner.cost_ledger is not None
+            else run.calls
+        ),
         executed_actions=run.actions,
         observation_count=run.count,
         episode_id=robot._backend._episode_id or "",

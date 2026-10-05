@@ -10,6 +10,10 @@ export class BatchPlanBuilder {
   }): BatchExperimentManifest {
     return {
       backend: input.backend,
+      job_type: "SIMULATION",
+      input_mode: "LEGACY_PIPELINE",
+      execution_scope: "VISUAL_PLANNING",
+      user_instruction: "将红色方块放到绿色区域",
       run_type: "MODE_COMPARISON",
       scenarios: [input.scenario],
       control_modes: ["PCSC", "ETEAC", "AUTO"],

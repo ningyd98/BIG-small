@@ -1,0 +1,914 @@
+E501 Line too long (170 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:111:101
+    |
+109 | …
+110 | …
+111 | …n_ms", "timeout_ms", "retry_limit", "current_step_index", "scene_version", "expected_scene_version"):
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+112 | … not int:
+113 | …ed")
+    |
+
+UP047 Generic function `_from_json` should use type parameters
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:130:5
+    |
+130 | def _from_json(stored: str, model: type[Model]) -> Model:
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+131 |     raw = json.loads(stored)
+132 |     if not isinstance(raw, dict) or set(raw) - set(model.model_fields):
+    |
+help: Use type parameters
+
+E501 Line too long (203 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:137:101
+    |
+135 | …
+136 | …
+137 | …meout_ms", "retry_limit", "current_step_index", "scene_version", "expected_scene_version"} and type(item) is not int:
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+138 | …
+139 | …
+    |
+
+E501 Line too long (166 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:155:101
+    |
+153 | ….model_fields):
+154 | …
+155 | …ms", "timeout_ms", "retry_limit", "current_step_index", "scene_version", "expected_scene_version"):
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+156 | …ot int:
+157 | …integer source fields")
+    |
+
+E501 Line too long (114 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:164:101
+    |
+163 | def _condition(condition: ConditionSpec) -> ConditionSpec:
+164 |     if not isinstance(condition, ConditionSpec) or condition.name not in (_VISUAL_CONDITIONS | _ROBOT_CONDITIONS):
+    |                                                                                                     ^^^^^^^^^^^^^^
+165 |         raise ValueError("canonical declared condition required")
+166 |     if condition.target_id is not None and (not isinstance(condition.target_id, str) or not condition.target_id):
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:166:101
+    |
+164 |     if not isinstance(condition, ConditionSpec) or condition.name not in (_VISUAL_CONDITIONS | _ROBOT_CONDITIONS):
+165 |         raise ValueError("canonical declared condition required")
+166 |     if condition.target_id is not None and (not isinstance(condition.target_id, str) or not condition.target_id):
+    |                                                                                                     ^^^^^^^^^^^^^
+167 |         raise ValueError("condition target identity required")
+168 |     sensors = tuple(condition.sensor_requirements)
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:171:101
+    |
+169 |     if not sensors or any(not isinstance(s, str) or not s for s in sensors):
+170 |         raise ValueError("condition sensors required")
+171 |     return ConditionSpec(condition.name, condition.target_id, _freeze(condition.tolerances), sensors)
+    |                                                                                                     ^
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:200:101
+    |
+198 |                 continue
+199 |             value = getattr(self, item.name)
+200 |             if (not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) is None
+    |                                                                                                     ^^^^^^^^^^^
+201 |                     or value.lower() in {"unknown", "robot-unknown", "placeholder", "none"}):
+202 |                 raise ValueError("nonplaceholder factory identity required")
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:220:101
+    |
+219 |     def __init__(self, original_step: TaskStep | None = None,
+220 |                  preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+    |                                                                                                     ^^^^^^^
+221 |                  allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+222 |                  ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:225:101
+    |
+223 |                  policy_source_hashes: Mapping[str, str] | None = None, *,
+224 |                  _original_step_json: str | None = None) -> None:
+225 |         step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+226 |         stored = _model_json(step, TaskStep)
+227 |         pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:227:101
+    |
+225 |         step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+226 |         stored = _model_json(step, TaskStep)
+227 |         pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+    |                                                                                                     ^^^^^^^^^
+228 |         if not pre or not post:
+229 |             raise ValueError("original canonical pre/effect requirements cannot be empty")
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:234:101
+    |
+232 |             raise ValueError("original condition names cannot be removed")
+233 |         sensors = tuple(sensor_requirements)
+234 |         if not sensors or len(sensors) != len(set(sensors)) or any(not isinstance(s, str) or not s for s in sensors):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+235 |             raise ValueError("explicit original sensor policy required")
+236 |         duration = _positive(expected_duration_s)
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:239:101
+    |
+237 |         if duration < max(step.expected_duration_ms, step.timeout_ms) / 1000:
+238 |             raise ValueError("original duration must cover original timeout/expected horizon")
+239 |         for name, value in {"_original_step_json": stored, "preconditions": pre, "postconditions": post,
+    |                                                                                                     ^^^^
+240 |                             "allowed_error_m": _positive(allowed_error_m), "sensor_requirements": sensors,
+241 |                             "ordinary_ttl_s": _positive(ordinary_ttl_s), "expected_duration_s": duration,
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:240:101
+    |
+238 |             raise ValueError("original duration must cover original timeout/expected horizon")
+239 |         for name, value in {"_original_step_json": stored, "preconditions": pre, "postconditions": post,
+240 |                             "allowed_error_m": _positive(allowed_error_m), "sensor_requirements": sensors,
+    |                                                                                                     ^^^^^^
+241 |                             "ordinary_ttl_s": _positive(ordinary_ttl_s), "expected_duration_s": duration,
+242 |                             "policy_source_hashes": _sources(policy_source_hashes or {})}.items():
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:241:101
+    |
+239 |         for name, value in {"_original_step_json": stored, "preconditions": pre, "postconditions": post,
+240 |                             "allowed_error_m": _positive(allowed_error_m), "sensor_requirements": sensors,
+241 |                             "ordinary_ttl_s": _positive(ordinary_ttl_s), "expected_duration_s": duration,
+    |                                                                                                     ^^^^^
+242 |                             "policy_source_hashes": _sources(policy_source_hashes or {})}.items():
+243 |             object.__setattr__(self, name, value)
+    |
+
+E501 Line too long (139 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:251:101
+    |
+249 | …
+250 | …
+251 | …inal_step_json), "original_step_hash": _digest(json.loads(self._original_step_json)),
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+252 | …) for c in self.preconditions],
+253 | …c) for c in self.postconditions],
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:254:101
+    |
+252 |                 "preconditions": [_condition_payload(c) for c in self.preconditions],
+253 |                 "postconditions": [_condition_payload(c) for c in self.postconditions],
+254 |                 "allowed_error_m": self.allowed_error_m, "sensor_requirements": list(self.sensor_requirements),
+    |                                                                                                     ^^^^^^^^^^^
+255 |                 "ordinary_ttl_s": self.ordinary_ttl_s, "expected_duration_s": self.expected_duration_s,
+256 |                 "timeout_ms": step.timeout_ms, "retry_limit": step.retry_limit,
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:255:101
+    |
+253 |                 "postconditions": [_condition_payload(c) for c in self.postconditions],
+254 |                 "allowed_error_m": self.allowed_error_m, "sensor_requirements": list(self.sensor_requirements),
+255 |                 "ordinary_ttl_s": self.ordinary_ttl_s, "expected_duration_s": self.expected_duration_s,
+    |                                                                                                     ^^^
+256 |                 "timeout_ms": step.timeout_ms, "retry_limit": step.retry_limit,
+257 |                 "policy_source_hashes": dict(self.policy_source_hashes)}
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:286:101
+    |
+284 |         for name in ("compiler_source_hashes", "source_hashes"):
+285 |             object.__setattr__(self, name, _sources(getattr(self, name)))
+286 |         copied = {name: OriginalActionRequirements(r.original_step, r.preconditions, r.postconditions,
+    |                                                                                                     ^^
+287 |                   r.allowed_error_m, r.sensor_requirements, r.ordinary_ttl_s,
+288 |                   r.expected_duration_s, r.policy_source_hashes) for name, r in self.requirements.items()}
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:288:101
+    |
+286 |         copied = {name: OriginalActionRequirements(r.original_step, r.preconditions, r.postconditions,
+287 |                   r.allowed_error_m, r.sensor_requirements, r.ordinary_ttl_s,
+288 |                   r.expected_duration_s, r.policy_source_hashes) for name, r in self.requirements.items()}
+    |                                                                                                     ^^^^^^
+289 |         object.__setattr__(self, "requirements", MappingProxyType(copied))
+290 |         if self.identity.task_id != contract.task_id or set(copied) != {step.step_id for step in contract.steps}:
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:290:101
+    |
+288 |                   r.expected_duration_s, r.policy_source_hashes) for name, r in self.requirements.items()}
+289 |         object.__setattr__(self, "requirements", MappingProxyType(copied))
+290 |         if self.identity.task_id != contract.task_id or set(copied) != {step.step_id for step in contract.steps}:
+    |                                                                                                     ^^^^^^^^^^^^^
+291 |             raise ValueError("complete original identity/requirement coverage required")
+292 |         for step in contract.steps:
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:296:101
+    |
+294 | …     if _model_json(requirement.original_step, TaskStep) != _model_json(step, TaskStep):
+295 | …         raise ValueError("direct original requirements differ from original step")
+296 | …     if any(self.source_hashes.get(k) != v for k, v in requirement.policy_source_hashes.items()):
+    |                                                                                               ^^^^
+297 | …         raise ValueError("direct original policy/source mismatch")
+298 | …     if any(c.target_id is not None and c.target_id not in {contract.task_target.object_id, contract.task_target.target_region_id}
+    |
+
+E501 Line too long (137 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:298:101
+    |
+296 | … k, v in requirement.policy_source_hashes.items()):
+297 | …icy/source mismatch")
+298 | …et_id not in {contract.task_target.object_id, contract.task_target.target_region_id}
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+299 | …ns, *requirement.postconditions)):
+300 | …dition target mismatch")
+    |
+
+E501 Line too long (140 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:303:101
+    |
+301 | … in self.compiler_source_hashes.items()):
+302 | …ismatch")
+303 | …nds_on, d.evidence_ids, d.physical_effect_id, d.completed) for d in self.dependencies)
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+304 | … for step in contract.steps]:
+305 | …verage mismatch")
+    |
+
+E501 Line too long (128 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:306:101
+    |
+304 |         if [d.step_id for d in graph] != [step.step_id for step in contract.steps]:
+305 |             raise ValueError("direct original graph coverage mismatch")
+306 |         find_repair_window(graph, set(), expected_plan_version=contract.plan_version, expected_command_seq=contract.command_seq)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+307 |         object.__setattr__(self, "dependencies", graph)
+308 |         for name in ("task_deadline_at", "verification_deadline_at", "registered_at"):
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:310:101
+    |
+308 |         for name in ("task_deadline_at", "verification_deadline_at", "registered_at"):
+309 |             _aware(getattr(self, name))
+310 |         if self.effective_deadline_at <= self.registered_at or self.registered_at < contract.issued_at:
+    |                                                                                                     ^^^
+311 |             raise ValueError("direct original deadline invalid")
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:322:101
+    |
+321 |     def freeze_inputs(self) -> dict[str, Any]:
+322 |         return {"identity": self.identity, "contract": self.contract, "proposal_hash": self.proposal_hash,
+    |                                                                                                     ^^^^^^
+323 |                 "role_bundle_hash": self.role_bundle_hash, "compiler_source_hashes": self.compiler_source_hashes,
+324 |                 "source_hashes": self.source_hashes, "requirements": self.requirements,
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:323:101
+    |
+321 |     def freeze_inputs(self) -> dict[str, Any]:
+322 |         return {"identity": self.identity, "contract": self.contract, "proposal_hash": self.proposal_hash,
+323 |                 "role_bundle_hash": self.role_bundle_hash, "compiler_source_hashes": self.compiler_source_hashes,
+    |                                                                                                     ^^^^^^^^^^^^^
+324 |                 "source_hashes": self.source_hashes, "requirements": self.requirements,
+325 |                 "dependencies": self.dependencies, "task_deadline_at": self.task_deadline_at,
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:326:101
+    |
+324 |                 "source_hashes": self.source_hashes, "requirements": self.requirements,
+325 |                 "dependencies": self.dependencies, "task_deadline_at": self.task_deadline_at,
+326 |                 "verification_deadline_at": self.verification_deadline_at, "registered_at": self.registered_at}
+    |                                                                                                     ^^^^^^^^^^^
+327 |
+328 |     def to_payload(self) -> dict[str, Any]:
+    |
+
+E501 Line too long (119 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:331:101
+    |
+329 |         return {"binding_scope": self.binding_scope, "identity": self.identity.to_payload(),
+330 |                 "contract": json.loads(self._contract_json), "proposal_hash": self.proposal_hash,
+331 |                 "role_bundle_hash": self.role_bundle_hash, "compiler_source_hashes": dict(self.compiler_source_hashes),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+332 |                 "source_hashes": dict(self.source_hashes),
+333 |                 "requirements": {k: v.to_payload() for k, v in self.requirements.items()},
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:334:101
+    |
+332 |                 "source_hashes": dict(self.source_hashes),
+333 |                 "requirements": {k: v.to_payload() for k, v in self.requirements.items()},
+334 |                 "dependencies": [{f.name: _plain(getattr(d, f.name)) for f in fields(d)} for d in self.dependencies],
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+335 |                 "task_deadline_at": self.task_deadline_at.isoformat(),
+336 |                 "verification_deadline_at": self.verification_deadline_at.isoformat(),
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:345:101
+    |
+343 | def freeze_original_visual_plan(*, identity: VisualOwnerIdentity, contract: TaskContract,
+344 |                                 proposal_hash: str, role_bundle_hash: str,
+345 |                                 compiler_source_hashes: Mapping[str, str], source_hashes: Mapping[str, str],
+    |                                                                                                     ^^^^^^^^
+346 |                                 requirements: Mapping[str, OriginalActionRequirements], dependencies: Sequence[StepDependency],
+347 |                                 task_deadline_at: datetime, verification_deadline_at: datetime,
+    |
+
+E501 Line too long (127 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:346:101
+    |
+344 | …                     proposal_hash: str, role_bundle_hash: str,
+345 | …                     compiler_source_hashes: Mapping[str, str], source_hashes: Mapping[str, str],
+346 | …                     requirements: Mapping[str, OriginalActionRequirements], dependencies: Sequence[StepDependency],
+    |                                                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+347 | …                     task_deadline_at: datetime, verification_deadline_at: datetime,
+348 | …                     registered_at: datetime, previous: VisualOriginalPlan | None = None) -> VisualOriginalPlan:
+    |
+
+E501 Line too long (123 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:348:101
+    |
+346 |                                 requirements: Mapping[str, OriginalActionRequirements], dependencies: Sequence[StepDependency],
+347 |                                 task_deadline_at: datetime, verification_deadline_at: datetime,
+348 |                                 registered_at: datetime, previous: VisualOriginalPlan | None = None) -> VisualOriginalPlan:
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+349 |     identity = VisualOwnerIdentity(**identity.to_payload())
+350 |     stored = _model_json(contract, TaskContract)
+    |
+
+E501 Line too long (130 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:358:101
+    |
+356 |     for step in steps:
+357 |         r = requirements[step.step_id]
+358 |         if not isinstance(r, OriginalActionRequirements) or _model_json(r.original_step, TaskStep) != _model_json(step, TaskStep):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+359 |             raise ValueError("requirements must preserve the complete original step")
+360 |         copied[step.step_id] = OriginalActionRequirements(
+    |
+
+E501 Line too long (131 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:372:101
+    |
+370 |     if any(sources.get(k) != v for k, v in compiler.items()):
+371 |         raise ValueError("compiler source not bound to complete original inventory")
+372 |     graph = tuple(StepDependency(d.step_id, d.depends_on, d.evidence_ids, d.physical_effect_id, d.completed) for d in dependencies)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+373 |     if [d.step_id for d in graph] != [s.step_id for s in steps]:
+374 |         raise ValueError("complete ordered dependency graph required")
+    |
+
+E501 Line too long (124 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:375:101
+    |
+373 |     if [d.step_id for d in graph] != [s.step_id for s in steps]:
+374 |         raise ValueError("complete ordered dependency graph required")
+375 |     find_repair_window(graph, set(), expected_plan_version=contract.plan_version, expected_command_seq=contract.command_seq)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+376 |     start, task_end, verify_end = _aware(registered_at), _aware(task_deadline_at), _aware(verification_deadline_at)
+377 |     if min(task_end, verify_end, contract.valid_until) <= start or start < contract.issued_at:
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:376:101
+    |
+374 |         raise ValueError("complete ordered dependency graph required")
+375 |     find_repair_window(graph, set(), expected_plan_version=contract.plan_version, expected_command_seq=contract.command_seq)
+376 |     start, task_end, verify_end = _aware(registered_at), _aware(task_deadline_at), _aware(verification_deadline_at)
+    |                                                                                                     ^^^^^^^^^^^^^^^
+377 |     if min(task_end, verify_end, contract.valid_until) <= start or start < contract.issued_at:
+378 |         raise ValueError("original absolute deadline invalid")
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:379:101
+    |
+377 |     if min(task_end, verify_end, contract.valid_until) <= start or start < contract.issued_at:
+378 |         raise ValueError("original absolute deadline invalid")
+379 |     result = VisualOriginalPlan(identity, stored, _sha(proposal_hash), _sha(role_bundle_hash), compiler, sources,
+    |                                                                                                     ^^^^^^^^^^^^^
+380 |                                 MappingProxyType(copied), graph, task_end, verify_end, start)
+381 |     if previous is not None:
+    |
+
+E501 Line too long (135 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:436:101
+    |
+434 | …
+435 | …
+436 | …ny(type(v) not in {float, int} or not math.isfinite(v) for v in supplied.values()):
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+437 | …ent grounding coordinates required")
+438 | …
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:440:101
+    |
+438 |             pose = Pose.model_validate(supplied)
+439 |             object.__setattr__(self, name, MappingProxyType(pose.model_dump()))
+440 |         if type(self.support_height_m) not in {float, int} or not math.isfinite(self.support_height_m):
+    |                                                                                                     ^^^
+441 |             raise ValueError("finite measured support height required")
+442 |         object.__setattr__(self, "source_hashes", _sources(self.source_hashes))
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:461:101
+    |
+459 |                  checked_at: datetime | None = None, source_hashes: Mapping[str, str] | None = None,
+460 |                  *, _grounded_step_json: str | None = None) -> None:
+461 |         step = grounded_step if grounded_step is not None else TaskStep.model_validate_json(_grounded_step_json or "null")
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+462 |         values = {"_grounded_step_json": _model_json(step, TaskStep), "observation_id": observation_id,
+463 |                   "observation_checksum_sha256": _sha(observation_checksum_sha256),
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:462:101
+    |
+460 |                  *, _grounded_step_json: str | None = None) -> None:
+461 |         step = grounded_step if grounded_step is not None else TaskStep.model_validate_json(_grounded_step_json or "null")
+462 |         values = {"_grounded_step_json": _model_json(step, TaskStep), "observation_id": observation_id,
+    |                                                                                                     ^^^
+463 |                   "observation_checksum_sha256": _sha(observation_checksum_sha256),
+464 |                   "original_plan_hash": _sha(original_plan_hash), "grounding_policy_hash": _sha(grounding_policy_hash),
+    |
+
+E501 Line too long (119 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:464:101
+    |
+462 |         values = {"_grounded_step_json": _model_json(step, TaskStep), "observation_id": observation_id,
+463 |                   "observation_checksum_sha256": _sha(observation_checksum_sha256),
+464 |                   "original_plan_hash": _sha(original_plan_hash), "grounding_policy_hash": _sha(grounding_policy_hash),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+465 |                   "expected_duration_s": _positive(expected_duration_s), "checked_at": _aware(checked_at),
+466 |                   "source_hashes": _sources(source_hashes or {})}
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:465:101
+    |
+463 |                   "observation_checksum_sha256": _sha(observation_checksum_sha256),
+464 |                   "original_plan_hash": _sha(original_plan_hash), "grounding_policy_hash": _sha(grounding_policy_hash),
+465 |                   "expected_duration_s": _positive(expected_duration_s), "checked_at": _aware(checked_at),
+    |                                                                                                     ^^^^^^
+466 |                   "source_hashes": _sources(source_hashes or {})}
+467 |         if not observation_id:
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:495:101
+    |
+494 |     def __post_init__(self) -> None:
+495 |         object.__setattr__(self, "current_identity", VisualOwnerIdentity(**self.current_identity.to_payload()))
+    |                                                                                                     ^^^^^^^^^^^
+496 |         r = self.original_requirements
+497 |         object.__setattr__(self, "original_requirements", OriginalActionRequirements(
+    |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:503:101
+    |
+501 |         object.__setattr__(self, "_grounded_step_json", _model_json(step, TaskStep))
+502 |         expected = r.original_step
+503 |         if (step.step_id != expected.step_id or step.skill != expected.skill or step.timeout_ms != expected.timeout_ms
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+504 |                 or step.retry_limit != expected.retry_limit or step.expected_duration_ms != expected.expected_duration_ms
+505 |                 or step.preconditions or step.success_conditions):
+    |
+
+E501 Line too long (121 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:504:101
+    |
+502 |         expected = r.original_step
+503 |         if (step.step_id != expected.step_id or step.skill != expected.skill or step.timeout_ms != expected.timeout_ms
+504 |                 or step.retry_limit != expected.retry_limit or step.expected_duration_ms != expected.expected_duration_ms
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+505 |                 or step.preconditions or step.success_conditions):
+506 |             raise ValueError("direct binding cannot replace original semantic/action policy")
+    |
+
+E501 Line too long (125 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:507:101
+    |
+505 |                 or step.preconditions or step.success_conditions):
+506 |             raise ValueError("direct binding cannot replace original semantic/action policy")
+507 |         for name in ("original_plan_hash", "source_checkpoint_hash", "observation_checksum_sha256", "grounding_policy_hash"):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+508 |             _sha(getattr(self, name))
+509 |         for name in ("owner_revision", "state_generation", "plan_version", "command_seq"):
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:525:101
+    |
+523 |     def to_payload(self) -> dict[str, Any]:
+524 |         result = {f.name: _plain(getattr(self, f.name)) for f in fields(self)
+525 |                   if f.name not in {"current_identity", "original_requirements", "_grounded_step_json"}}
+    |                                                                                                     ^^^^
+526 |         result.update(binding_scope=self.binding_scope, current_identity=self.current_identity.to_payload(),
+527 |                       original_requirements=self.original_requirements.to_payload(),
+    |
+
+E501 Line too long (108 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:526:101
+    |
+524 |         result = {f.name: _plain(getattr(self, f.name)) for f in fields(self)
+525 |                   if f.name not in {"current_identity", "original_requirements", "_grounded_step_json"}}
+526 |         result.update(binding_scope=self.binding_scope, current_identity=self.current_identity.to_payload(),
+    |                                                                                                     ^^^^^^^^
+527 |                       original_requirements=self.original_requirements.to_payload(),
+528 |                       grounded_step=json.loads(self._grounded_step_json))
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:539:101
+    |
+539 | def _resolved_parameters(step: TaskStep, original: VisualOriginalPlan, online: OnlineEvidenceSnapshot,
+    |                                                                                                     ^^
+540 |                          inputs: GroundingFrameInputs, policy: DeterministicGroundingPolicy) -> dict[str, Any]:
+541 |     grasp, destination = Pose.model_validate(inputs.grasp_tcp), Pose.model_validate(inputs.destination)
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:540:101
+    |
+539 | def _resolved_parameters(step: TaskStep, original: VisualOriginalPlan, online: OnlineEvidenceSnapshot,
+540 |                          inputs: GroundingFrameInputs, policy: DeterministicGroundingPolicy) -> dict[str, Any]:
+    |                                                                                                     ^^^^^^^^^^^
+541 |     grasp, destination = Pose.model_validate(inputs.grasp_tcp), Pose.model_validate(inputs.destination)
+542 |     current = online.robot_state.tcp_pose
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:541:101
+    |
+539 | def _resolved_parameters(step: TaskStep, original: VisualOriginalPlan, online: OnlineEvidenceSnapshot,
+540 |                          inputs: GroundingFrameInputs, policy: DeterministicGroundingPolicy) -> dict[str, Any]:
+541 |     grasp, destination = Pose.model_validate(inputs.grasp_tcp), Pose.model_validate(inputs.destination)
+    |                                                                                                     ^^^
+542 |     current = online.robot_state.tcp_pose
+543 |     skill = step.skill.value
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:549:101
+    |
+547 |         params["object_id"] = original.contract.task_target.object_id
+548 |     if skill == "MOVE_ABOVE":
+549 |         target = Pose(x=grasp.x, y=grasp.y, z=max(policy.minimum_height_m, grasp.z + policy.clearance_m))
+    |                                                                                                     ^^^^^
+550 |     elif skill == "APPROACH":
+551 |         target = grasp
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:553:101
+    |
+551 |         target = grasp
+552 |     elif skill in {"LIFT", "RETREAT"}:
+553 |         target = Pose(x=current.x, y=current.y, z=max(current.z + policy.clearance_m, policy.minimum_height_m))
+    |                                                                                                     ^^^^^^^^^^^
+554 |         params["height_m" if skill == "LIFT" else "distance_m"] = target.z - current.z
+555 |     elif skill in {"MOVE_TO_REGION", "PLACE"}:
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:563:101
+    |
+561 |         raise ValueError("unsupported deterministic visual grounding skill")
+562 |     if target is not None:
+563 |         params.update(target_pose=target.model_dump(), tcp_velocity=policy.tcp_velocity, acceleration=policy.acceleration)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+564 |     return params
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:567:101
+    |
+567 | def bind_step_grounding(original: VisualOriginalPlan, *, original_step_id: str, grounded_step: TaskStep,
+    |                                                                                                     ^^^^
+568 |                         online: OnlineEvidenceSnapshot, source_checkpoint: ExecutionCheckpoint,
+569 |                         current_identity: VisualOwnerIdentity, owner_revision: int, state_generation: int,
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:569:101
+    |
+567 | def bind_step_grounding(original: VisualOriginalPlan, *, original_step_id: str, grounded_step: TaskStep,
+568 |                         online: OnlineEvidenceSnapshot, source_checkpoint: ExecutionCheckpoint,
+569 |                         current_identity: VisualOwnerIdentity, owner_revision: int, state_generation: int,
+    |                                                                                                     ^^^^^^
+570 |                         grounding_inputs: GroundingFrameInputs, grounding_policy: DeterministicGroundingPolicy,
+571 |                         now: datetime, required_duration_s: float | None = None,
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:570:101
+    |
+568 |                         online: OnlineEvidenceSnapshot, source_checkpoint: ExecutionCheckpoint,
+569 |                         current_identity: VisualOwnerIdentity, owner_revision: int, state_generation: int,
+570 |                         grounding_inputs: GroundingFrameInputs, grounding_policy: DeterministicGroundingPolicy,
+    |                                                                                                     ^^^^^^^^^^^
+571 |                         now: datetime, required_duration_s: float | None = None,
+572 |                         duration_check: GroundingDurationCheck | None = None) -> StepGroundingBinding:
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:572:101
+    |
+570 |                         grounding_inputs: GroundingFrameInputs, grounding_policy: DeterministicGroundingPolicy,
+571 |                         now: datetime, required_duration_s: float | None = None,
+572 |                         duration_check: GroundingDurationCheck | None = None) -> StepGroundingBinding:
+    |                                                                                                     ^^
+573 |     original = freeze_original_visual_plan(**original.freeze_inputs())
+574 |     now = _aware(now)
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:577:29
+    |
+575 |     if current_identity != original.identity:
+576 |         raise ValueError("foreign job/epoch/robot owner identity")
+577 |     _counter(owner_revision); _counter(state_generation)
+    |                             ^
+578 |     _counter(online.plan_version)
+579 |     _counter(online.command_seq)
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:580:101
+    |
+578 |     _counter(online.plan_version)
+579 |     _counter(online.command_seq)
+580 |     cp = ExecutionCheckpoint.model_validate_json(_model_json(source_checkpoint, ExecutionCheckpoint))
+    |                                                                                                     ^
+581 |     cp_hash = checkpoint_digest(cp)
+582 |     contract = original.contract
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:583:101
+    |
+581 |     cp_hash = checkpoint_digest(cp)
+582 |     contract = original.contract
+583 |     observation = RGBDObservation.model_validate_json(_model_json(online.observation, RGBDObservation))
+    |                                                                                                     ^^^
+584 |     _model_json(online.robot_state, type(online.robot_state))
+585 |     if (cp.checkpoint_hash != cp_hash or online.context_hash != cp_hash
+    |
+
+E501 Line too long (131 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:586:101
+    |
+584 |     _model_json(online.robot_state, type(online.robot_state))
+585 |     if (cp.checkpoint_hash != cp_hash or online.context_hash != cp_hash
+586 |             or cp.task_id != contract.task_id or cp.plan_id != current_identity.plan_id or cp.robot_id != current_identity.robot_id
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+587 |             or (cp.plan_version, cp.command_seq) != (contract.plan_version, contract.command_seq)
+588 |             or (online.plan_version, online.command_seq) != (contract.plan_version, contract.command_seq)
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:588:101
+    |
+586 |             or cp.task_id != contract.task_id or cp.plan_id != current_identity.plan_id or cp.robot_id != current_identity.robot_id
+587 |             or (cp.plan_version, cp.command_seq) != (contract.plan_version, contract.command_seq)
+588 |             or (online.plan_version, online.command_seq) != (contract.plan_version, contract.command_seq)
+    |                                                                                                     ^^^^^
+589 |             or observation.episode_id != current_identity.episode_id):
+590 |         raise ValueError("current checkpoint/version/episode/context mismatch")
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:595:101
+    |
+593 |     if (ids[:len(completed)] != completed or cp.pending_step_ids != ids[len(completed):]
+594 |             or cp.current_step_index != len(completed) or not cp.pending_step_ids
+595 |             or cp.current_step_id != cp.pending_step_ids[0] or original_step_id != cp.current_step_id
+    |                                                                                                     ^
+596 |             or cp.execution_state in {"COMPLETED", "SAFETY_STOPPED"}):
+597 |         raise ValueError("current pending cursor or completed effects mismatch")
+    |
+
+E501 Line too long (125 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:602:101
+    |
+600 |     if (inputs.observation_id != observation.observation_id
+601 |             or inputs.observation_checksum_sha256 != observation.checksum_sha256
+602 |             or inputs.episode_id != observation.episode_id or inputs.calibration_version != observation.calibration_version):
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+603 |         raise ValueError("grounding frame/checksum/calibration binding mismatch")
+604 |     if any(c.tolerances.get("calibration_version", observation.calibration_version) != observation.calibration_version
+    |
+
+E501 Line too long (118 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:604:101
+    |
+602 |             or inputs.episode_id != observation.episode_id or inputs.calibration_version != observation.calibration_version):
+603 |         raise ValueError("grounding frame/checksum/calibration binding mismatch")
+604 |     if any(c.tolerances.get("calibration_version", observation.calibration_version) != observation.calibration_version
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+605 |            for c in (*requirement.preconditions, *requirement.postconditions)):
+606 |         raise ValueError("registered canonical calibration differs from current frame")
+    |
+
+E501 Line too long (151 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:610:101
+    |
+608 | …n sources.items()):
+609 | … identity mismatch")
+610 | …_tcp_velocity or policy.minimum_height_m < contract.safety_constraints.minimum_safe_height:
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+611 | …fety policy")
+612 | …
+    |
+
+E501 Line too long (122 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:620:101
+    |
+618 |             or step.parameters != _resolved_parameters(expected, original, online, inputs, policy)):
+619 |         raise ValueError("grounded view changed original policy or deterministic parameters")
+620 |     expires = min(original.effective_deadline_at, observation.captured_at + timedelta(seconds=requirement.ordinary_ttl_s))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+621 |     if not original.registered_at <= observation.captured_at <= now < expires:
+622 |         raise ValueError("original absolute/frame deadline expired or future")
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:623:101
+    |
+621 |     if not original.registered_at <= observation.captured_at <= now < expires:
+622 |         raise ValueError("original absolute/frame deadline expired or future")
+623 |     duration = requirement.expected_duration_s if required_duration_s is None else _positive(required_duration_s)
+    |                                                                                                     ^^^^^^^^^^^^^
+624 |     if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+625 |         raise ValueError("duration cannot understate checked original horizon")
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:624:101
+    |
+622 |         raise ValueError("original absolute/frame deadline expired or future")
+623 |     duration = requirement.expected_duration_s if required_duration_s is None else _positive(required_duration_s)
+624 |     if duration < max(requirement.expected_duration_s, max(step.expected_duration_ms, step.timeout_ms) / 1000):
+    |                                                                                                     ^^^^^^^^^^^
+625 |         raise ValueError("duration cannot understate checked original horizon")
+626 |     if duration > requirement.expected_duration_s:
+    |
+
+E501 Line too long (114 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:631:101
+    |
+629 |                 or check.observation_id != observation.observation_id
+630 |                 or check.observation_checksum_sha256 != observation.checksum_sha256
+631 |                 or check.original_plan_hash != original.digest() or check.grounding_policy_hash != policy.digest()
+    |                                                                                                     ^^^^^^^^^^^^^^
+632 |                 or check.expected_duration_s != duration or not observation.captured_at <= check.checked_at <= now
+633 |                 or any(original.source_hashes.get(k) != v for k, v in check.source_hashes.items())):
+    |
+
+E501 Line too long (114 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:632:101
+    |
+630 |                 or check.observation_checksum_sha256 != observation.checksum_sha256
+631 |                 or check.original_plan_hash != original.digest() or check.grounding_policy_hash != policy.digest()
+632 |                 or check.expected_duration_s != duration or not observation.captured_at <= check.checked_at <= now
+    |                                                                                                     ^^^^^^^^^^^^^^
+633 |                 or any(original.source_hashes.get(k) != v for k, v in check.source_hashes.items())):
+634 |             raise ValueError("longer duration requires fresh exact source calculation binding")
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:635:101
+    |
+633 |                 or any(original.source_hashes.get(k) != v for k, v in check.source_hashes.items())):
+634 |             raise ValueError("longer duration requires fresh exact source calculation binding")
+635 |     return StepGroundingBinding(original.digest(), current_identity, requirement, owner_revision, state_generation,
+    |                                                                                                     ^^^^^^^^^^^^^^^
+636 |                                 cp_hash, observation.observation_id, observation.checksum_sha256,
+637 |                                 observation.calibration_version or "", contract.plan_version, contract.command_seq,
+    |
+
+E501 Line too long (115 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:637:101
+    |
+635 |     return StepGroundingBinding(original.digest(), current_identity, requirement, owner_revision, state_generation,
+636 |                                 cp_hash, observation.observation_id, observation.checksum_sha256,
+637 |                                 observation.calibration_version or "", contract.plan_version, contract.command_seq,
+    |                                                                                                     ^^^^^^^^^^^^^^^
+638 |                                 policy.digest(), MappingProxyType(dict(policy.source_hashes)), stored, duration, now, expires)
+    |
+
+E501 Line too long (126 > 100)
+   --> src/cloud_edge_robot_arm/vision/owner_registration.py:638:101
+    |
+636 | …                     cp_hash, observation.observation_id, observation.checksum_sha256,
+637 | …                     observation.calibration_version or "", contract.plan_version, contract.command_seq,
+638 | …                     policy.digest(), MappingProxyType(dict(policy.source_hashes)), stored, duration, now, expires)
+    |                                                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E501 Line too long (110 > 100)
+   --> tests/test_visual_owner_registration.py:191:101
+    |
+189 |     assert result.valid_until <= data["original"].effective_deadline_at
+190 |     with pytest.raises(ValueError):
+191 |         api().bind_step_grounding(**data, duration_check=replace(check, checked_at=NOW-timedelta(seconds=10)))
+    |                                                                                                     ^^^^^^^^^^
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_visual_owner_registration.py:258:101
+    |
+256 |             contract = data["original"].contract
+257 |             contract.steps[0] = contract.steps[0].model_copy(update={"actual_owner_accepted": True})
+258 |             api().freeze_original_visual_plan(**{**data["original"].freeze_inputs(), "contract": contract})
+    |                                                                                                     ^^^^^^^
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_visual_owner_registration.py:285:101
+    |
+285 | @pytest.mark.parametrize("change", ["onlinebool", "checkpointbool", "robotbool", "source", "authorityscope"])
+    |                                                                                                     ^^^^^^^^^
+286 | def test_typed_source_bools_drift_or_scope_flags_cannot_be_coerced(change):
+287 |     data = values()
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_visual_owner_registration.py:290:101
+    |
+288 |     with pytest.raises((TypeError, ValueError)):
+289 |         if change == "onlinebool":
+290 |             api().bind_step_grounding(**{**data, "online": replace(data["online"], plan_version=True)})
+    |                                                                                                     ^^^
+291 |         elif change == "checkpointbool":
+292 |             cp = data["source_checkpoint"].model_copy(update={"current_step_index": False})
+    |
+
+E501 Line too long (108 > 100)
+   --> tests/test_visual_owner_registration.py:295:101
+    |
+293 |             cp = cp.model_copy(update={"checkpoint_hash": checkpoint_digest(cp)})
+294 |             api().bind_step_grounding(**{**data, "source_checkpoint": cp,
+295 |                                         "online": replace(data["online"], context_hash=cp.checkpoint_hash)})
+    |                                                                                                     ^^^^^^^^
+296 |         elif change == "robotbool":
+297 |             robot = data["online"].robot_state.model_copy(update={"connected": 1})
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_visual_owner_registration.py:298:101
+    |
+296 |         elif change == "robotbool":
+297 |             robot = data["online"].robot_state.model_copy(update={"connected": 1})
+298 |             api().bind_step_grounding(**{**data, "online": replace(data["online"], robot_state=robot)})
+    |                                                                                                     ^^^
+299 |         elif change == "source":
+300 |             changed = replace(data["grounding_policy"], source_hashes={"src/software_grounding.py": "b" * 64})
+    |
+
+E501 Line too long (110 > 100)
+   --> tests/test_visual_owner_registration.py:300:101
+    |
+298 |             api().bind_step_grounding(**{**data, "online": replace(data["online"], robot_state=robot)})
+299 |         elif change == "source":
+300 |             changed = replace(data["grounding_policy"], source_hashes={"src/software_grounding.py": "b" * 64})
+    |                                                                                                     ^^^^^^^^^^
+301 |             api().bind_step_grounding(**{**data, "grounding_policy": changed})
+302 |         else:
+    |
+
+Found 86 errors (1 fixed, 85 remaining).
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

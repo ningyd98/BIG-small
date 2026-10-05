@@ -1,0 +1,688 @@
+FFFFFFFFFFFFFFFFFFFFFF                                                   [100%]
+=================================== FAILURES ===================================
+_ test_robot_hard_stop_blocks_authorization_before_any_debit[memory-estop_engaged] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b36bc163c0>
+field = 'estop_engaged'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_authorization_before_any_debit(lifecycle_repo, field):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        robot = proof.online_evidence.robot_state.model_copy(update={field: field != "connected"})
+        proof = replace(proof, online_evidence=replace(proof.online_evidence, robot_state=robot))
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='a494e1f48c8ed3c0004a451c6cbf4b415caff11a94e2293f0bfb10ac3d642fda'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='a494e1f48c8ed3c0004a451c6cbf4b415caff11a94e2293f0bfb10ac3d642fda'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b36bc163c0>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='58f45a5d25e76dd0b614fd4ee339adf6c1547dc121bccaea729838df48c338dd')))
+
+tests/test_recovery_lifecycle_module.py:893: AssertionError
+_ test_robot_hard_stop_blocks_authorization_before_any_debit[memory-collision_detected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b367bc1d00>
+field = 'collision_detected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_authorization_before_any_debit(lifecycle_repo, field):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        robot = proof.online_evidence.robot_state.model_copy(update={field: field != "connected"})
+        proof = replace(proof, online_evidence=replace(proof.online_evidence, robot_state=robot))
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='ff6a529bcbfb4abbcb9665d55d280011a5b49f78738b6630a12feff4f46039a6'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='ff6a529bcbfb4abbcb9665d55d280011a5b49f78738b6630a12feff4f46039a6'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b367bc1d00>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='dbaa85587c2f0acc6126ba72b0742f3fffb3ef4ea9d26c5603cfbaa88bccbf11')))
+
+tests/test_recovery_lifecycle_module.py:893: AssertionError
+_ test_robot_hard_stop_blocks_authorization_before_any_debit[memory-connected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b367bc2420>
+field = 'connected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_authorization_before_any_debit(lifecycle_repo, field):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        robot = proof.online_evidence.robot_state.model_copy(update={field: field != "connected"})
+        proof = replace(proof, online_evidence=replace(proof.online_evidence, robot_state=robot))
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c5d1e63b4d4e4c714cc7928d2d8c4c404aecb7363299539a354182a4efa98d0e'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c5d1e63b4d4e4c714cc7928d2d8c4c404aecb7363299539a354182a4efa98d0e'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b367bc2420>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='0b731fa3d96042f559a2badce68919dec01da256eca8b8a15253951dcf1b92f1')))
+
+tests/test_recovery_lifecycle_module.py:893: AssertionError
+_ test_robot_hard_stop_blocks_authorization_before_any_debit[sqlite-estop_engaged] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff59250>
+field = 'estop_engaged'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_authorization_before_any_debit(lifecycle_repo, field):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        robot = proof.online_evidence.robot_state.model_copy(update={field: field != "connected"})
+        proof = replace(proof, online_evidence=replace(proof.online_evidence, robot_state=robot))
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='81a7b4c1244ab6230cd28985a1f1fed7ef12d33109a8a9aa57497c2a4a557a0f'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='81a7b4c1244ab6230cd28985a1f1fed7ef12d33109a8a9aa57497c2a4a557a0f'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff59250>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='98bfab1ab0473359416b53df3cc1cd6f62c1348ff299a6b828b86b6b77b81bb8')))
+
+tests/test_recovery_lifecycle_module.py:893: AssertionError
+_ test_robot_hard_stop_blocks_authorization_before_any_debit[sqlite-collision_detected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff59820>
+field = 'collision_detected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_authorization_before_any_debit(lifecycle_repo, field):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        robot = proof.online_evidence.robot_state.model_copy(update={field: field != "connected"})
+        proof = replace(proof, online_evidence=replace(proof.online_evidence, robot_state=robot))
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c89ac6e2070330d500599839dc55b4ed913b00aef22e373ccfbc3b77f7f3656c'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c89ac6e2070330d500599839dc55b4ed913b00aef22e373ccfbc3b77f7f3656c'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff59820>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='50d7a4f0ef1fe8628cf56db19f28cce6d3708f0c5ab58018a7a1fc57b744f714')))
+
+tests/test_recovery_lifecycle_module.py:893: AssertionError
+_ test_robot_hard_stop_blocks_authorization_before_any_debit[sqlite-connected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff58cb0>
+field = 'connected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_authorization_before_any_debit(lifecycle_repo, field):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        robot = proof.online_evidence.robot_state.model_copy(update={field: field != "connected"})
+        proof = replace(proof, online_evidence=replace(proof.online_evidence, robot_state=robot))
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='ad8ea1656e7e5fbbbc64b53a1c4e7b45d9e9c2d1dd054d901e79d25699d59af4'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='ad8ea1656e7e5fbbbc64b53a1c4e7b45d9e9c2d1dd054d901e79d25699d59af4'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff58cb0>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='33655285e120a9b0d63ed499657241a8ed016a85e73b8bb4b852d3588163a0e5')))
+
+tests/test_recovery_lifecycle_module.py:893: AssertionError
+______________ test_authorization_must_cover_full_timeout[memory] ______________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff5b500>
+
+    def test_authorization_must_cover_full_timeout(lifecycle_repo):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        proof = replace(proof, action=replace(proof.action, expected_duration_s=1.))
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='f44909968c16870b3395d9c8c1558db6e0cedeb46a77b1f65bcd059513832d6a'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='f44909968c16870b3395d9c8c1558db6e0cedeb46a77b1f65bcd059513832d6a'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff5b500>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='2d70d94304401b48f7607ffbbeb7412fb16d8a541387fcc4e7f8acba2cea88e5')))
+
+tests/test_recovery_lifecycle_module.py:903: AssertionError
+______________ test_authorization_must_cover_full_timeout[sqlite] ______________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b367bc36b0>
+
+    def test_authorization_must_cover_full_timeout(lifecycle_repo):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        proof = authorization_proof(saved)
+        proof = replace(proof, action=replace(proof.action, expected_duration_s=1.))
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='8e922405d56891f2e85a0f7f9e81c8097af2187599d7e4104d9dca0306f63b61'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='8e922405d56891f2e85a0f7f9e81c8097af2187599d7e4104d9dca0306f63b61'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b367bc36b0>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='486a2969394f7fe238fb025f2f3d2e7e48f0c3704ce961f220d9bd5267b81d5f')))
+
+tests/test_recovery_lifecycle_module.py:903: AssertionError
+_ test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[memory-estop_engaged] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b367bc03e0>
+field = 'estop_engaged'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes(lifecycle_repo, field):
+        from dataclasses import replace
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "PASS")
+        source = replace(source, robot_state=source.robot_state.model_copy(
+            update={field: field != "connected"}))
+        actual = verify_round(lifecycle_repo, record, "PASS", snapshot=source)
+>       assert actual == record and not actual.resolution_observation_id
+E       AssertionError: assert (RecoveryRecor...timezone.utc)) == RecoveryRecor...timezone.utc))
+E         
+E         Omitting 21 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'budget_state',
+E          'progress_signature',
+E          'last_verified_at',...
+E         
+E         ...Full output truncated (65 lines hidden), use '-vv' to show)
+
+tests/test_recovery_lifecycle_module.py:915: AssertionError
+_ test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[memory-collision_detected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff1c2f0>
+field = 'collision_detected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes(lifecycle_repo, field):
+        from dataclasses import replace
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "PASS")
+        source = replace(source, robot_state=source.robot_state.model_copy(
+            update={field: field != "connected"}))
+        actual = verify_round(lifecycle_repo, record, "PASS", snapshot=source)
+>       assert actual == record and not actual.resolution_observation_id
+E       AssertionError: assert (RecoveryRecor...timezone.utc)) == RecoveryRecor...timezone.utc))
+E         
+E         Omitting 21 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'budget_state',
+E          'progress_signature',
+E          'last_verified_at',...
+E         
+E         ...Full output truncated (65 lines hidden), use '-vv' to show)
+
+tests/test_recovery_lifecycle_module.py:915: AssertionError
+_ test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[memory-connected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff02660>
+field = 'connected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes(lifecycle_repo, field):
+        from dataclasses import replace
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "PASS")
+        source = replace(source, robot_state=source.robot_state.model_copy(
+            update={field: field != "connected"}))
+        actual = verify_round(lifecycle_repo, record, "PASS", snapshot=source)
+>       assert actual == record and not actual.resolution_observation_id
+E       AssertionError: assert (RecoveryRecor...timezone.utc)) == RecoveryRecor...timezone.utc))
+E         
+E         Omitting 21 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'budget_state',
+E          'progress_signature',
+E          'last_verified_at',...
+E         
+E         ...Full output truncated (65 lines hidden), use '-vv' to show)
+
+tests/test_recovery_lifecycle_module.py:915: AssertionError
+_ test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[sqlite-estop_engaged] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff64290>
+field = 'estop_engaged'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes(lifecycle_repo, field):
+        from dataclasses import replace
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "PASS")
+        source = replace(source, robot_state=source.robot_state.model_copy(
+            update={field: field != "connected"}))
+        actual = verify_round(lifecycle_repo, record, "PASS", snapshot=source)
+>       assert actual == record and not actual.resolution_observation_id
+E       AssertionError: assert (RecoveryRecor...timezone.utc)) == RecoveryRecor...timezone.utc))
+E         
+E         Omitting 21 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'budget_state',
+E          'progress_signature',
+E          'last_verified_at',...
+E         
+E         ...Full output truncated (65 lines hidden), use '-vv' to show)
+
+tests/test_recovery_lifecycle_module.py:915: AssertionError
+_ test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[sqlite-collision_detected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff668a0>
+field = 'collision_detected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes(lifecycle_repo, field):
+        from dataclasses import replace
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "PASS")
+        source = replace(source, robot_state=source.robot_state.model_copy(
+            update={field: field != "connected"}))
+        actual = verify_round(lifecycle_repo, record, "PASS", snapshot=source)
+>       assert actual == record and not actual.resolution_observation_id
+E       AssertionError: assert (RecoveryRecor...timezone.utc)) == RecoveryRecor...timezone.utc))
+E         
+E         Omitting 21 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'budget_state',
+E          'progress_signature',
+E          'last_verified_at',...
+E         
+E         ...Full output truncated (65 lines hidden), use '-vv' to show)
+
+tests/test_recovery_lifecycle_module.py:915: AssertionError
+_ test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[sqlite-connected] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff66630>
+field = 'connected'
+
+    @pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
+    def test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes(lifecycle_repo, field):
+        from dataclasses import replace
+        _, record = executed_recovery(lifecycle_repo)
+        source = verification_snapshot(lifecycle_repo, record, "PASS")
+        source = replace(source, robot_state=source.robot_state.model_copy(
+            update={field: field != "connected"}))
+        actual = verify_round(lifecycle_repo, record, "PASS", snapshot=source)
+>       assert actual == record and not actual.resolution_observation_id
+E       AssertionError: assert (RecoveryRecor...timezone.utc)) == RecoveryRecor...timezone.utc))
+E         
+E         Omitting 21 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'budget_state',
+E          'progress_signature',
+E          'last_verified_at',...
+E         
+E         ...Full output truncated (65 lines hidden), use '-vv' to show)
+
+tests/test_recovery_lifecycle_module.py:915: AssertionError
+_________ test_grasp_visible_alone_cannot_be_recovery_success[memory] __________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff663f0>
+
+    def test_grasp_visible_alone_cannot_be_recovery_success(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        proposal = replace(detected_record(lifecycle_repo),
+                           conditions=(ConditionSpec("target_visible", "obj-1"),))
+        saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
+>       assert not atomic_authorize(lifecycle_repo, saved).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c55e515a2bb4f8eddc296fb5567e1eb48ac468b5224d44d6a9dba4a140297998'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='c55e515a2bb4f8eddc296fb5567e1eb48ac468b5224d44d6a9dba4a140297998'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff663f0>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None))
+
+tests/test_recovery_lifecycle_module.py:924: AssertionError
+_________ test_grasp_visible_alone_cannot_be_recovery_success[sqlite] __________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b367bc1e80>
+
+    def test_grasp_visible_alone_cannot_be_recovery_success(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        proposal = replace(detected_record(lifecycle_repo),
+                           conditions=(ConditionSpec("target_visible", "obj-1"),))
+        saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
+>       assert not atomic_authorize(lifecycle_repo, saved).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='a22e2a695df26b2adb8529b621892d0f42a1d235ea893ee1dcdc91c7e40d1e20'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='a22e2a695df26b2adb8529b621892d0f42a1d235ea893ee1dcdc91c7e40d1e20'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b367bc1e80>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...rvation_id='', last_observation_captured_at=None, last_verification_hash='', authorization_hash='', authorized_at=None))
+
+tests/test_recovery_lifecycle_module.py:924: AssertionError
+_ test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[memory-UNAVAILABLE] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b367bc00e0>
+scope = 'UNAVAILABLE'
+
+    @pytest.mark.parametrize("scope", ["UNAVAILABLE", "ACTUAL_SOURCE"])
+    def test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps(
+            lifecycle_repo, scope):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+>       proof = replace(authorization_proof(saved), scope=scope)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:932: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='16dab64de856d63cad852934485148304b1ffc328522e36fff47136e55ca0bfe'))
+changes = {'action': ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captu..., plan_version=1, command_seq=1, context_hash='16dab64de856d63cad852934485148304b1ffc328522e36fff47136e55ca0bfe'), ...}
+f = Field(name='online_evidence',type='OnlineEvidenceSnapshot',default=<dataclasses._MISSING_TYPE object at 0x71b36d964ce0... 0x71b36d964ce0>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: RecoveryAuthorizationEvidence.__init__() got an unexpected keyword argument 'scope'
+
+/usr/lib/python3.12/dataclasses.py:1581: TypeError
+_ test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[memory-ACTUAL_SOURCE] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff9d910>
+scope = 'ACTUAL_SOURCE'
+
+    @pytest.mark.parametrize("scope", ["UNAVAILABLE", "ACTUAL_SOURCE"])
+    def test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps(
+            lifecycle_repo, scope):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+>       proof = replace(authorization_proof(saved), scope=scope)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:932: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='a8a42079492972b94cc9a75532408b9c5275cd0ae32da3015d88ddd05def0eb0'))
+changes = {'action': ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captu..., plan_version=1, command_seq=1, context_hash='a8a42079492972b94cc9a75532408b9c5275cd0ae32da3015d88ddd05def0eb0'), ...}
+f = Field(name='online_evidence',type='OnlineEvidenceSnapshot',default=<dataclasses._MISSING_TYPE object at 0x71b36d964ce0... 0x71b36d964ce0>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: RecoveryAuthorizationEvidence.__init__() got an unexpected keyword argument 'scope'
+
+/usr/lib/python3.12/dataclasses.py:1581: TypeError
+_ test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[sqlite-UNAVAILABLE] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff9f4d0>
+scope = 'UNAVAILABLE'
+
+    @pytest.mark.parametrize("scope", ["UNAVAILABLE", "ACTUAL_SOURCE"])
+    def test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps(
+            lifecycle_repo, scope):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+>       proof = replace(authorization_proof(saved), scope=scope)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:932: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='581aac54aadb1ace0a32736991343190cfd978b7f4a42d1025bc2715610072fd'))
+changes = {'action': ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captu..., plan_version=1, command_seq=1, context_hash='581aac54aadb1ace0a32736991343190cfd978b7f4a42d1025bc2715610072fd'), ...}
+f = Field(name='online_evidence',type='OnlineEvidenceSnapshot',default=<dataclasses._MISSING_TYPE object at 0x71b36d964ce0... 0x71b36d964ce0>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: RecoveryAuthorizationEvidence.__init__() got an unexpected keyword argument 'scope'
+
+/usr/lib/python3.12/dataclasses.py:1581: TypeError
+_ test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[sqlite-ACTUAL_SOURCE] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b33ff9fc20>
+scope = 'ACTUAL_SOURCE'
+
+    @pytest.mark.parametrize("scope", ["UNAVAILABLE", "ACTUAL_SOURCE"])
+    def test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps(
+            lifecycle_repo, scope):
+        from dataclasses import replace
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+>       proof = replace(authorization_proof(saved), scope=scope)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:932: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...)})}), plan_version=1, command_seq=1, context_hash='45f735d5fdebf353121235b9550119bdcd1fac55b1da5894b798ceee51a40cf8'))
+changes = {'action': ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captu..., plan_version=1, command_seq=1, context_hash='45f735d5fdebf353121235b9550119bdcd1fac55b1da5894b798ceee51a40cf8'), ...}
+f = Field(name='online_evidence',type='OnlineEvidenceSnapshot',default=<dataclasses._MISSING_TYPE object at 0x71b36d964ce0... 0x71b36d964ce0>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=False,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: RecoveryAuthorizationEvidence.__init__() got an unexpected keyword argument 'scope'
+
+/usr/lib/python3.12/dataclasses.py:1581: TypeError
+_____ test_absent_current_state_provider_cannot_reserve_recapture[memory] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71b33ff9e150>
+
+    def test_absent_current_state_provider_cannot_reserve_recapture(lifecycle_repo):
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
+        _, record = executed_recovery(lifecycle_repo)
+        pool = lifecycle_repo.get_verification_budget("task")
+        service = RecoveryLifecycleService(repository=lifecycle_repo)
+>       assert service.reserve_reobservation(record.recovery_id) is None
+E       AssertionError: assert RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...347199584a02be51180e8', authorized_at=datetime.datetime(2026, 10, 4, 11, 47, 57, 539694, tzinfo=datetime.timezone.utc)) is None
+E        +  where RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...347199584a02be51180e8', authorized_at=datetime.datetime(2026, 10, 4, 11, 47, 57, 539694, tzinfo=datetime.timezone.utc)) = reserve_reobservation('recovery-1')
+E        +    where reserve_reobservation = <cloud_edge_robot_arm.edge.recovery.lifecycle.RecoveryLifecycleService object at 0x71b36bc163c0>.reserve_reobservation
+E        +    and   'recovery-1' = RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...347199584a02be51180e8', authorized_at=datetime.datetime(2026, 10, 4, 11, 47, 57, 539694, tzinfo=datetime.timezone.utc)).recovery_id
+
+tests/test_recovery_lifecycle_module.py:941: AssertionError
+_____ test_absent_current_state_provider_cannot_reserve_recapture[sqlite] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71b367bc2120>
+
+    def test_absent_current_state_provider_cannot_reserve_recapture(lifecycle_repo):
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
+        _, record = executed_recovery(lifecycle_repo)
+        pool = lifecycle_repo.get_verification_budget("task")
+        service = RecoveryLifecycleService(repository=lifecycle_repo)
+>       assert service.reserve_reobservation(record.recovery_id) is None
+E       AssertionError: assert RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...9fc5ea3abc3a7e23c7301', authorized_at=datetime.datetime(2026, 10, 4, 11, 47, 57, 781094, tzinfo=datetime.timezone.utc)) is None
+E        +  where RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...9fc5ea3abc3a7e23c7301', authorized_at=datetime.datetime(2026, 10, 4, 11, 47, 57, 781094, tzinfo=datetime.timezone.utc)) = reserve_reobservation('recovery-1')
+E        +    where reserve_reobservation = <cloud_edge_robot_arm.edge.recovery.lifecycle.RecoveryLifecycleService object at 0x71b367bc2bd0>.reserve_reobservation
+E        +    and   'recovery-1' = RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...9fc5ea3abc3a7e23c7301', authorized_at=datetime.datetime(2026, 10, 4, 11, 47, 57, 781094, tzinfo=datetime.timezone.utc)).recovery_id
+
+tests/test_recovery_lifecycle_module.py:941: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_authorization_before_any_debit[memory-estop_engaged]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_authorization_before_any_debit[memory-collision_detected]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_authorization_before_any_debit[memory-connected]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_authorization_before_any_debit[sqlite-estop_engaged]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_authorization_before_any_debit[sqlite-collision_detected]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_authorization_before_any_debit[sqlite-connected]
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_must_cover_full_timeout[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_must_cover_full_timeout[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[memory-estop_engaged]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[memory-collision_detected]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[memory-connected]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[sqlite-estop_engaged]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[sqlite-collision_detected]
+FAILED tests/test_recovery_lifecycle_module.py::test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes[sqlite-connected]
+FAILED tests/test_recovery_lifecycle_module.py::test_grasp_visible_alone_cannot_be_recovery_success[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_grasp_visible_alone_cannot_be_recovery_success[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[memory-UNAVAILABLE]
+FAILED tests/test_recovery_lifecycle_module.py::test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[memory-ACTUAL_SOURCE]
+FAILED tests/test_recovery_lifecycle_module.py::test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[sqlite-UNAVAILABLE]
+FAILED tests/test_recovery_lifecycle_module.py::test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps[sqlite-ACTUAL_SOURCE]
+FAILED tests/test_recovery_lifecycle_module.py::test_absent_current_state_provider_cannot_reserve_recapture[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_absent_current_state_provider_cannot_reserve_recapture[sqlite]
+22 failed, 116 deselected in 3.58s

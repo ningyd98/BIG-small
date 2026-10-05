@@ -1,0 +1,60 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_____________ test_hard_stop_overrides_a_cached_ordinary_decision ______________
+
+    def test_hard_stop_overrides_a_cached_ordinary_decision():
+        for policy in policies()[:2]:
+            ctx=context()
+            assert policy.decide(ctx)==DecisionAction.CONTINUE
+            fault=ctx.online_evidence.robot_state.model_copy(update={'collision_detected':True})
+            same_event=replace(ctx,online_evidence=replace(ctx.online_evidence,robot_state=fault))
+>           assert policy.decide(same_event)==DecisionAction.STOP
+E           AssertionError: assert <DecisionActi...E: 'CONTINUE'> == <DecisionAction.STOP: 'STOP'>
+E             
+E             - STOP
+E             + CONTINUE
+
+tests/test_runtime_auto_baselines.py:180: AssertionError
+_______________ test_event_unknown_verification_cannot_continue ________________
+
+    def test_event_unknown_verification_cannot_continue():
+        for policy in policies()[:2]:
+            ctx=context(event=DecisionEvent('unknown',DecisionEventKind.RESULT_VERIFIED,NOW,'fresh',False,'UNKNOWN'))
+>           assert policy.decide(ctx)==DecisionAction.REOBSERVE
+E           AssertionError: assert <DecisionActi...E: 'CONTINUE'> == <DecisionActi...: 'REOBSERVE'>
+E             
+E             - REOBSERVE
+E             + CONTINUE
+
+tests/test_runtime_auto_baselines.py:186: AssertionError
+__________ test_b2_reuses_original_weights_and_online_mode_selection ___________
+
+    def test_b2_reuses_original_weights_and_online_mode_selection():
+        from cloud_edge_robot_arm.auto_mode.models import AutoModeState
+        from cloud_edge_robot_arm.risk.models import RiskPolicy
+        from cloud_edge_robot_arm.skill_cache.models import SkillCacheLookupResult
+        from tests.test_phase7_auto_mode_repository import _risk_input
+        module=import_module('cloud_edge_robot_arm.auto_mode.baseline_policies')
+        original=_risk_input().model_copy(update={'task_id':'task','current_time':NOW,'scene_updated_at':NOW,
+                            'last_heartbeat_at':NOW,'current_mode':ControlMode.PERIODIC_CLOUD_SUPERVISION})
+        state=AutoModeState(task_id='task',current_mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
+                           mode_version=1,last_switch_at=NOW-timedelta(minutes=10))
+        legacy=module.LegacyRuleEvidence(state,original,SkillCacheLookupResult(match_type='exact_match'),True,True,True,True)
+        snapshot=module.freeze_legacy_rule_snapshot(RiskPolicy(version='risk-v1'))
+        policy=module.FrozenRuleAutoPolicy(snapshot)
+        ctx=context(legacy_rule_evidence=legacy)
+        assert policy.decide(ctx)==DecisionAction.CONTINUE
+        assert policy.last_mode_decision.selected_mode==ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
+>       assert policy.last_mode_decision.risk_score==pytest.approx(17.615)
+E       assert 11.95 == 17.615 ± 1.8e-05
+E         
+E         comparison failed
+E         Obtained: 11.95
+E         Expected: 17.615 ± 1.8e-05
+
+tests/test_runtime_auto_baselines.py:205: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_runtime_auto_baselines.py::test_hard_stop_overrides_a_cached_ordinary_decision
+FAILED tests/test_runtime_auto_baselines.py::test_event_unknown_verification_cannot_continue
+FAILED tests/test_runtime_auto_baselines.py::test_b2_reuses_original_weights_and_online_mode_selection
+3 failed, 31 deselected in 0.31s

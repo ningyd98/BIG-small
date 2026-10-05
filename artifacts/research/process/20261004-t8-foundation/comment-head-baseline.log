@@ -1,0 +1,50 @@
+.F..................................F                                    [100%]
+=================================== FAILURES ===================================
+_______________ test_auto_mode_public_api_has_chinese_docstrings _______________
+
+    def test_auto_mode_public_api_has_chinese_docstrings() -> None:
+        missing = _public_python_api_without_chinese_docstrings(
+            Path("src/cloud_edge_robot_arm/auto_mode")
+        )
+    
+>       assert missing == []
+E       AssertionError: assert ['src/cloud_e...ecisionEvent'] == []
+E         
+E         Left contains 3 more items, first extra item: 'src/cloud_edge_robot_arm/auto_mode/runtime_events.py:12:DecisionAction'
+E         Use -v to get more diff
+
+tests/test_chinese_comment_checker.py:45: AssertionError
+_______________ test_default_paths_cover_all_tracked_code_files ________________
+
+    def test_default_paths_cover_all_tracked_code_files() -> None:
+        tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+        expected: list[Path] = []
+        for name in tracked:
+            path = Path(name)
+            # 覆盖说明：文档中的可执行代码块也要审计，只排除生成的验收 artifacts。
+            if path.parts and path.parts[0] == "artifacts":
+                continue
+            if (
+                path.parts
+                and path.parts[0] == "dashboard"
+                and len(path.parts) > 1
+                and path.parts[1] in {"node_modules", "dist"}
+            ):
+                continue
+            if chinese_comments._is_audited_file(path):
+                expected.append(path)
+    
+        collected = set(_collect_files([Path(value) for value in DEFAULT_AUDIT_PATHS]))
+        missing = [path for path in expected if path not in collected]
+    
+>       assert missing == []
+E       AssertionError: assert [PosixPath('o...t.json'), ...] == []
+E         
+E         Left contains 2309 more items, first extra item: PosixPath('output/doc/20261002-opening-proposal/qa/authoring_audit.json')
+E         Use -v to get more diff
+
+tests/test_chinese_comment_checker.py:509: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_chinese_comment_checker.py::test_auto_mode_public_api_has_chinese_docstrings
+FAILED tests/test_chinese_comment_checker.py::test_default_paths_cover_all_tracked_code_files
+2 failed, 35 passed in 0.35s

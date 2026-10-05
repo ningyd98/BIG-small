@@ -1,0 +1,88 @@
+FF.F.                                                                    [100%]
+=================================== FAILURES ===================================
+___________ test_teacher_completes_frozen_gripper_counterexample[2] ____________
+
+assignment_index = 2
+
+    @pytest.mark.parametrize("assignment_index", [2, 4, 5, 8, 17])
+    def test_teacher_completes_frozen_gripper_counterexample(assignment_index: int) -> None:
+        # Cases cover an undersized box, weak preload, and open-finger overshoot.
+        # Rebind the literal development scenes to the asset under test; never
+        # import the old success labels or let scene truth reach online planning.
+        path = Path(__file__).parent / "fixtures/t5_gripper_dev_cases.json"
+        fixture = json.loads(path.read_text())
+        assignment = next(row for row in fixture["assignments"] if row["index"] == assignment_index)
+        asset_hash = hashlib.sha256(Path("assets/robots/franka_panda/scene.xml").read_bytes()).hexdigest()
+        scene = SceneSpec.from_parameters(
+            assignment["scene_parameters"], asset_hash, assignment["seed"]
+        )
+        with MuJoCoCaptureSession(SimulatorConfig(camera_width=64, camera_height=64)) as session:
+            session.apply_scene(scene)
+            recorder = EpisodeRecorder()
+            outcome = run_teacher_episode(scene, MuJoCoSkillRobot(session._backend), recorder)
+    
+>       assert outcome.success, outcome
+E       AssertionError: EpisodeOutcome(success=False, status='FAILED', safety_violation=False, failure_reason='LIFT_BELOW_THRESHOLD', measured...nk5', 'hand'), ('link5', 'left_finger_geom'), ('link5', 'right_finger_geom')), safety_assessment='SCOPED_NO_VIOLATION')
+E       assert False
+E        +  where False = EpisodeOutcome(success=False, status='FAILED', safety_violation=False, failure_reason='LIFT_BELOW_THRESHOLD', measured...nk5', 'hand'), ('link5', 'left_finger_geom'), ('link5', 'right_finger_geom')), safety_assessment='SCOPED_NO_VIOLATION').success
+
+tests/test_rgbd_gripper_aperture.py:35: AssertionError
+___________ test_teacher_completes_frozen_gripper_counterexample[4] ____________
+
+assignment_index = 4
+
+    @pytest.mark.parametrize("assignment_index", [2, 4, 5, 8, 17])
+    def test_teacher_completes_frozen_gripper_counterexample(assignment_index: int) -> None:
+        # Cases cover an undersized box, weak preload, and open-finger overshoot.
+        # Rebind the literal development scenes to the asset under test; never
+        # import the old success labels or let scene truth reach online planning.
+        path = Path(__file__).parent / "fixtures/t5_gripper_dev_cases.json"
+        fixture = json.loads(path.read_text())
+        assignment = next(row for row in fixture["assignments"] if row["index"] == assignment_index)
+        asset_hash = hashlib.sha256(Path("assets/robots/franka_panda/scene.xml").read_bytes()).hexdigest()
+        scene = SceneSpec.from_parameters(
+            assignment["scene_parameters"], asset_hash, assignment["seed"]
+        )
+        with MuJoCoCaptureSession(SimulatorConfig(camera_width=64, camera_height=64)) as session:
+            session.apply_scene(scene)
+            recorder = EpisodeRecorder()
+            outcome = run_teacher_episode(scene, MuJoCoSkillRobot(session._backend), recorder)
+    
+>       assert outcome.success, outcome
+E       AssertionError: EpisodeOutcome(success=False, status='FAILED', safety_violation=False, failure_reason='LIFT_BELOW_THRESHOLD', measured...nk5', 'hand'), ('link5', 'left_finger_geom'), ('link5', 'right_finger_geom')), safety_assessment='SCOPED_NO_VIOLATION')
+E       assert False
+E        +  where False = EpisodeOutcome(success=False, status='FAILED', safety_violation=False, failure_reason='LIFT_BELOW_THRESHOLD', measured...nk5', 'hand'), ('link5', 'left_finger_geom'), ('link5', 'right_finger_geom')), safety_assessment='SCOPED_NO_VIOLATION').success
+
+tests/test_rgbd_gripper_aperture.py:35: AssertionError
+___________ test_teacher_completes_frozen_gripper_counterexample[8] ____________
+
+assignment_index = 8
+
+    @pytest.mark.parametrize("assignment_index", [2, 4, 5, 8, 17])
+    def test_teacher_completes_frozen_gripper_counterexample(assignment_index: int) -> None:
+        # Cases cover an undersized box, weak preload, and open-finger overshoot.
+        # Rebind the literal development scenes to the asset under test; never
+        # import the old success labels or let scene truth reach online planning.
+        path = Path(__file__).parent / "fixtures/t5_gripper_dev_cases.json"
+        fixture = json.loads(path.read_text())
+        assignment = next(row for row in fixture["assignments"] if row["index"] == assignment_index)
+        asset_hash = hashlib.sha256(Path("assets/robots/franka_panda/scene.xml").read_bytes()).hexdigest()
+        scene = SceneSpec.from_parameters(
+            assignment["scene_parameters"], asset_hash, assignment["seed"]
+        )
+        with MuJoCoCaptureSession(SimulatorConfig(camera_width=64, camera_height=64)) as session:
+            session.apply_scene(scene)
+            recorder = EpisodeRecorder()
+            outcome = run_teacher_episode(scene, MuJoCoSkillRobot(session._backend), recorder)
+    
+>       assert outcome.success, outcome
+E       AssertionError: EpisodeOutcome(success=False, status='SAFETY_VIOLATION', safety_violation=True, failure_reason='PHYSICAL_SAFETY_VIOLAT...om'), ('link5', 'hand'), ('link5', 'left_finger_geom'), ('link5', 'right_finger_geom')), safety_assessment='VIOLATION')
+E       assert False
+E        +  where False = EpisodeOutcome(success=False, status='SAFETY_VIOLATION', safety_violation=True, failure_reason='PHYSICAL_SAFETY_VIOLAT...om'), ('link5', 'hand'), ('link5', 'left_finger_geom'), ('link5', 'right_finger_geom')), safety_assessment='VIOLATION').success
+
+tests/test_rgbd_gripper_aperture.py:35: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_gripper_aperture.py::test_teacher_completes_frozen_gripper_counterexample[2]
+FAILED tests/test_rgbd_gripper_aperture.py::test_teacher_completes_frozen_gripper_counterexample[4]
+FAILED tests/test_rgbd_gripper_aperture.py::test_teacher_completes_frozen_gripper_counterexample[8]
+3 failed, 2 passed in 6.38s

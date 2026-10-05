@@ -1,0 +1,62 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_nominal_freeze_rejects_full_role_and_actual_transport_drift[config_source] _
+
+drift = 'config_source'
+
+    @pytest.mark.parametrize(
+        "drift",
+        [
+            "config_source",
+            "device_source",
+            "edge_source",
+            "bundle_hash",
+            "edge_hash",
+            "device_hash",
+            "endpoint",
+            "chat_path",
+            "timeout",
+            "allow_paid",
+        ],
+    )
+    def test_nominal_freeze_rejects_full_role_and_actual_transport_drift(drift):
+        from scripts import probe_rgbd_roles as probe
+    
+        report = _nominal_gate_fixture_for_rejection_only()
+        if drift == "config_source":
+            report["config_sha256"] = "0" * 64
+        elif drift == "device_source":
+            report["device_source_hashes"]["src/cloud_edge_robot_arm/vision/tracking.py"] = "0" * 64
+        elif drift == "edge_source":
+            report["edge_snapshot"]["source_hashes"][
+                "src/cloud_edge_robot_arm/vision/role_models.py"
+            ] = "0" * 64
+        elif drift == "bundle_hash":
+            report["bundle_hash"] = "0" * 64
+        elif drift == "edge_hash":
+            report["bundle"]["edge_provider_hash"] = "0" * 64
+        elif drift == "device_hash":
+            report["bundle"]["device_pipeline_hash"] = "0" * 64
+        else:
+            key = {
+                "endpoint": "endpoint_hash",
+                "chat_path": "chat_path",
+                "timeout": "timeout_s",
+                "allow_paid": "allow_paid",
+            }[drift]
+            value = {
+                "endpoint": "0" * 64,
+                "chat_path": "/chat/completions",
+                "timeout": 10,
+                "allow_paid": False,
+            }[drift]
+            report["attempts"][0]["actual_request_settings"] = report["request_settings"] | {key: value}
+>       assert probe.validate_role_probe_bindings(report) is False
+E       AssertionError: assert True is False
+E        +  where True = <function validate_role_probe_bindings at 0x79204c11dda0>({'attempts': [{'actual_request_settings': {'allow_paid': True, 'chat_path': '/v1/chat/completions', 'config_version': ...e9dedd79362f23469a87a97bee604bfa49cd6548c17dd5ade52', 'capture': {'image_size': [320, 240], 'synchronized': True}, ...})
+E        +    where <function validate_role_probe_bindings at 0x79204c11dda0> = <module 'scripts.probe_rgbd_roles' from '/home/ningyd/文档/ChatGPT/BIGsmall/scripts/probe_rgbd_roles.py'>.validate_role_probe_bindings
+
+tests/test_rgbd_role_models.py:606: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_nominal_freeze_rejects_full_role_and_actual_transport_drift[config_source]
+1 failed, 44 deselected in 0.21s

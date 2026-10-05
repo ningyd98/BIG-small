@@ -1,0 +1,1041 @@
+FFFFFFFFFFFFFFFFFFFFFFF                                                  [100%]
+=================================== FAILURES ===================================
+_____ test_default_actual_composition_cannot_enable_from_source_validation _____
+
+    def test_default_actual_composition_cannot_enable_from_source_validation():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+________ test_current_native_unknown_bounds_mask_continue_and_recovery _________
+
+    def test_current_native_unknown_bounds_mask_continue_and_recovery():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+____ test_incoherent_authoritative_snapshot_fails_closed[contract_version] _____
+
+field = 'contract_version'
+
+    @pytest.mark.parametrize("field", ["contract_version", "checkpoint_version", "online_sequence",
+                                        "mode_task", "frame", "atomic"])
+    def test_incoherent_authoritative_snapshot_fails_closed(field):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+___ test_incoherent_authoritative_snapshot_fails_closed[checkpoint_version] ____
+
+field = 'checkpoint_version'
+
+    @pytest.mark.parametrize("field", ["contract_version", "checkpoint_version", "online_sequence",
+                                        "mode_task", "frame", "atomic"])
+    def test_incoherent_authoritative_snapshot_fails_closed(field):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+_____ test_incoherent_authoritative_snapshot_fails_closed[online_sequence] _____
+
+field = 'online_sequence'
+
+    @pytest.mark.parametrize("field", ["contract_version", "checkpoint_version", "online_sequence",
+                                        "mode_task", "frame", "atomic"])
+    def test_incoherent_authoritative_snapshot_fails_closed(field):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+________ test_incoherent_authoritative_snapshot_fails_closed[mode_task] ________
+
+field = 'mode_task'
+
+    @pytest.mark.parametrize("field", ["contract_version", "checkpoint_version", "online_sequence",
+                                        "mode_task", "frame", "atomic"])
+    def test_incoherent_authoritative_snapshot_fails_closed(field):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+__________ test_incoherent_authoritative_snapshot_fails_closed[frame] __________
+
+field = 'frame'
+
+    @pytest.mark.parametrize("field", ["contract_version", "checkpoint_version", "online_sequence",
+                                        "mode_task", "frame", "atomic"])
+    def test_incoherent_authoritative_snapshot_fails_closed(field):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+_________ test_incoherent_authoritative_snapshot_fails_closed[atomic] __________
+
+field = 'atomic'
+
+    @pytest.mark.parametrize("field", ["contract_version", "checkpoint_version", "online_sequence",
+                                        "mode_task", "frame", "atomic"])
+    def test_incoherent_authoritative_snapshot_fails_closed(field):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+______________ test_canonical_unknown_overrides_event_caller_pass ______________
+
+    def test_canonical_unknown_overrides_event_caller_pass():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:114: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+____ test_hard_state_skips_policy_and_source_callbacks[estop_engaged-True] _____
+
+field = 'estop_engaged', value = True
+
+    @pytest.mark.parametrize("field,value", [("estop_engaged", True), ("collision_detected", True),
+                                             ("connected", False)])
+    def test_hard_state_skips_policy_and_source_callbacks(field, value):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:125: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+__ test_hard_state_skips_policy_and_source_callbacks[collision_detected-True] __
+
+field = 'collision_detected', value = True
+
+    @pytest.mark.parametrize("field,value", [("estop_engaged", True), ("collision_detected", True),
+                                             ("connected", False)])
+    def test_hard_state_skips_policy_and_source_callbacks(field, value):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:125: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+______ test_hard_state_skips_policy_and_source_callbacks[connected-False] ______
+
+field = 'connected', value = False
+
+    @pytest.mark.parametrize("field,value", [("estop_engaged", True), ("collision_detected", True),
+                                             ("connected", False)])
+    def test_hard_state_skips_policy_and_source_callbacks(field, value):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:125: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+_____________ test_software_math_is_explicit_and_never_submittable _____________
+
+    def test_software_math_is_explicit_and_never_submittable():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+__ test_duplicate_event_returns_one_software_trace_without_second_reservation __
+
+    def test_duplicate_event_returns_one_software_trace_without_second_reservation():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:154: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+__________ test_snapshot_values_are_isolated_from_result_and_provider __________
+
+    def test_snapshot_values_are_isolated_from_result_and_provider():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:166: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+____ test_flag_source_callback_cannot_be_treated_as_verified_binding[True] _____
+
+return_value = True
+
+    @pytest.mark.parametrize("return_value", [True, False, "VALID"])
+    def test_flag_source_callback_cannot_be_treated_as_verified_binding(return_value):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+____ test_flag_source_callback_cannot_be_treated_as_verified_binding[False] ____
+
+return_value = False
+
+    @pytest.mark.parametrize("return_value", [True, False, "VALID"])
+    def test_flag_source_callback_cannot_be_treated_as_verified_binding(return_value):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+____ test_flag_source_callback_cannot_be_treated_as_verified_binding[VALID] ____
+
+return_value = 'VALID'
+
+    @pytest.mark.parametrize("return_value", [True, False, "VALID"])
+    def test_flag_source_callback_cannot_be_treated_as_verified_binding(return_value):
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+__________ test_source_drift_stops_without_calling_policy_or_charging __________
+
+    def test_source_drift_stops_without_calling_policy_or_charging():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:193: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+_____________ test_late_source_ack_cannot_publish_capture_request ______________
+
+    def test_late_source_ack_cannot_publish_capture_request():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:205: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+_______ test_fresh_authoritative_state_after_callback_rejects_new_cancel _______
+
+    def test_fresh_authoritative_state_after_callback_rejects_new_cancel():
+>       initial = snapshot()
+                  ^^^^^^^^^^
+
+tests/test_runtime_composition.py:218: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+____ test_forged_future_envelope_and_policy_identity_never_grant_admission _____
+
+    def test_forged_future_envelope_and_policy_identity_never_grant_admission():
+>       snap = snapshot()
+               ^^^^^^^^^^
+
+tests/test_runtime_composition.py:233: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+__________ test_reader_failure_returns_stop_without_invented_context ___________
+
+    def test_reader_failure_returns_stop_without_invented_context():
+        def missing():
+            raise OSError("no active repository record")
+        result = api().RuntimeCompositionAdapter(missing,
+>           clock=lambda: NOW + timedelta(seconds=.2)).evaluate(event(snapshot()))
+                                                                      ^^^^^^^^^^
+
+tests/test_runtime_composition.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+native_action_contract = <function native_action_contract at 0x7d2ee31420c0>
+_ = RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.datetime(2026, 10, 4, 0, 0, 0, 1000...sode', calibration_version='cal-1', checksum_sha256='6a8370db35dd653e0d9854443791550b4d5a8e6fc7be4a00dd0b259cb431ec5b')
+repair = VisualRepairContext(active_contract=TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.dat...'approach': (ConditionSpec(name='target_visible', target_id='obj-1', tolerances={}, sensor_requirements=('rgbd',)),)}))
+online = OnlineEvidenceSnapshot(observation=RGBDObservation(frame_id='frame-1', observation_id='frame-1', captured_at=datetime.... 'identity_confirmed': True, 'value': True, 'pixel': [0, 0]}}, plan_version=1, command_seq=1, context_hash='context-1')
+contract = TaskContract(task_id='task', plan_version=1, command_seq=1, timestamp=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=date...n_criteria=['object_inside_target_region'], supervision_period_ms=None, command_ttl_ms=None, previous_command_seq=None)
+action = ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...d',), preconditions=(), postconditions=(), plan_version=1, command_seq=1, context_hash='context-1', ordinary_ttl_s=5.0)
+
+    def snapshot(**changes):
+        from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
+    
+        _, repair, _, _ = fixture()
+        online, contract = repair.online_evidence, repair.active_contract
+        action = native_action_contract(online, contract, contract.steps[1])
+        values = dict(
+            active_contract=contract,
+            checkpoint=repair.checkpoint.model_copy(
+                update={"pending_step_ids": ["grasp", "telemetry"]}, deep=True),
+>           mode_status=AutoModeStatus(task_id=contract.task_id, current_mode=ControlMode.ETEA,
+                                                                              ^^^^^^^^^^^^^^^^
+                                       mode_version=1),
+            online_evidence=online,
+            verification_budget=VerificationBudgetState.start(
+                VerificationBudget(2, 2, 5, 60), now=NOW),
+            capabilities=set(DecisionAction),
+            network_cost=NetworkCostSnapshot(observed_rtt_s=None, observed_loss_rate=None,
+                                             observed_bandwidth_bytes_s=None, sampled_at=NOW),
+            condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
+            action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
+        )
+E       AttributeError: type object 'ControlMode' has no attribute 'ETEA'
+
+tests/test_runtime_composition.py:35: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_runtime_composition.py::test_default_actual_composition_cannot_enable_from_source_validation
+FAILED tests/test_runtime_composition.py::test_current_native_unknown_bounds_mask_continue_and_recovery
+FAILED tests/test_runtime_composition.py::test_incoherent_authoritative_snapshot_fails_closed[contract_version]
+FAILED tests/test_runtime_composition.py::test_incoherent_authoritative_snapshot_fails_closed[checkpoint_version]
+FAILED tests/test_runtime_composition.py::test_incoherent_authoritative_snapshot_fails_closed[online_sequence]
+FAILED tests/test_runtime_composition.py::test_incoherent_authoritative_snapshot_fails_closed[mode_task]
+FAILED tests/test_runtime_composition.py::test_incoherent_authoritative_snapshot_fails_closed[frame]
+FAILED tests/test_runtime_composition.py::test_incoherent_authoritative_snapshot_fails_closed[atomic]
+FAILED tests/test_runtime_composition.py::test_canonical_unknown_overrides_event_caller_pass
+FAILED tests/test_runtime_composition.py::test_hard_state_skips_policy_and_source_callbacks[estop_engaged-True]
+FAILED tests/test_runtime_composition.py::test_hard_state_skips_policy_and_source_callbacks[collision_detected-True]
+FAILED tests/test_runtime_composition.py::test_hard_state_skips_policy_and_source_callbacks[connected-False]
+FAILED tests/test_runtime_composition.py::test_software_math_is_explicit_and_never_submittable
+FAILED tests/test_runtime_composition.py::test_duplicate_event_returns_one_software_trace_without_second_reservation
+FAILED tests/test_runtime_composition.py::test_snapshot_values_are_isolated_from_result_and_provider
+FAILED tests/test_runtime_composition.py::test_flag_source_callback_cannot_be_treated_as_verified_binding[True]
+FAILED tests/test_runtime_composition.py::test_flag_source_callback_cannot_be_treated_as_verified_binding[False]
+FAILED tests/test_runtime_composition.py::test_flag_source_callback_cannot_be_treated_as_verified_binding[VALID]
+FAILED tests/test_runtime_composition.py::test_source_drift_stops_without_calling_policy_or_charging
+FAILED tests/test_runtime_composition.py::test_late_source_ack_cannot_publish_capture_request
+FAILED tests/test_runtime_composition.py::test_fresh_authoritative_state_after_callback_rejects_new_cancel
+FAILED tests/test_runtime_composition.py::test_forged_future_envelope_and_policy_identity_never_grant_admission
+FAILED tests/test_runtime_composition.py::test_reader_failure_returns_stop_without_invented_context
+23 failed in 0.64s

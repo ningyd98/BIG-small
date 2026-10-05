@@ -1,0 +1,47 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_network_schedule_content_cannot_change_under_same_id ___________
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_network_schedule_content_cannot_change_under_same_id(scene_pool):
+        import json
+    
+        row = api().build_assignments(frozen(scene_pool), ("JOINT",), scene_pool=scene_pool)[0]
+        schedule = json.loads(row.network_schedule_json)
+        schedule["seed"] += 1
+>       with pytest.raises(ValueError, match="network.*hash"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_assignments.py:144: Failed
+_______ test_infrastructure_rerun_cannot_omit_part_of_frozen_method_pair _______
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-535/test_infrastructure_rerun_cann0')
+
+    def test_infrastructure_rerun_cannot_omit_part_of_frozen_method_pair(scene_pool, tmp_path):
+        import hashlib
+        import json
+    
+        module = api()
+        rows = assignment_api().build_assignments(frozen(scene_pool), ("JOINT", "B0", "B1"),
+                                                  scene_pool=scene_pool)
+        group = rows[0].group_id
+        originals = [record(row, "FAILED") for row in rows if row.group_id == group][:2]
+        note = tmp_path / "partial-incident.json"
+        note.write_text(json.dumps({"incident_id": "infra-partial", "category": "RENDERER_CRASH",
+            "group_id": group, "original_record_hashes": [r.content_hash for r in originals],
+            "affected_methods": [r.assignment.method_id for r in originals],
+            "diagnostic": "crash", "source_hashes": ["a"*64]}))
+        ref = assignment_api().ArtifactReference("incident.v1", hashlib.sha256(note.read_bytes()).hexdigest(),
+                                                 str(note))
+        with pytest.raises(ValueError, match="complete"):
+>           module.authorize_paired_rerun(originals, ref,
+                                         expected_method_ids=("JOINT", "B0", "B1"))
+E           TypeError: authorize_paired_rerun() got an unexpected keyword argument 'expected_method_ids'
+
+tests/test_research_runner.py:190: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_research_assignments.py::test_network_schedule_content_cannot_change_under_same_id
+FAILED tests/test_research_runner.py::test_infrastructure_rerun_cannot_omit_part_of_frozen_method_pair
+2 failed, 28 deselected in 0.66s

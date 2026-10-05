@@ -1,0 +1,23 @@
+F....                                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_sqlite_rehashed_payload_cannot_change_indexed_task_or_revision ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-709/test_sqlite_rehashed_payload_c0')
+
+    def test_sqlite_rehashed_payload_cannot_change_indexed_task_or_revision(tmp_path):
+        import json
+        from dataclasses import replace
+        repo = SQLiteEventAutonomyRepository(tmp_path / "index.sqlite")
+        saved = repo.initialize_recovery_if_absent(detected_record(repo))
+        pool = repo.get_verification_budget("task")
+        changed = replace(saved, task_id="foreign-task")
+        repo._conn.execute("UPDATE recovery_records SET payload_json=?,content_hash=? WHERE recovery_id=?",
+                           (json.dumps(changed.to_payload()), changed.content_hash(), saved.recovery_id))
+        repo._conn.commit()
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_recovery_lifecycle_module.py:777: Failed
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_sqlite_rehashed_payload_cannot_change_indexed_task_or_revision
+1 failed, 4 passed, 103 deselected in 1.39s

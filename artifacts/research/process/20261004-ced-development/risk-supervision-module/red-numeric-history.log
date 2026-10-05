@@ -1,0 +1,43 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_camera_calibration_numeric_boolean_is_not_a_measurement _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-898/test_camera_calibration_numeri0')
+
+    def test_camera_calibration_numeric_boolean_is_not_a_measurement(tmp_path: Path):
+        registration, _, measurements, _ = registered_fixture(tmp_path)
+        payload = json.loads((measurements / "calibration.json").read_bytes())
+        payload["camera_domain"]["camera_to_world"][-1] = True
+        json_file(measurements / "calibration.json", payload)
+        measured = replace(
+            registration.diagnostic_measurements, original_file_hashes=hashes(measurements)
+        )
+        result = audit(replace(registration, diagnostic_measurements=measured))
+>       assert result.diagnostic_status == "INVALID"
+E       AssertionError: assert 'VALID' == 'INVALID'
+E         
+E         - INVALID
+E         ? --
+E         + VALID
+
+tests/test_research_risk_supervision.py:323: AssertionError
+____ test_known_development_history_is_not_erased_by_unknown_extra_history _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-898/test_known_development_history0')
+
+    def test_known_development_history_is_not_erased_by_unknown_extra_history(tmp_path: Path):
+        registration, _, _, _ = registered_fixture(
+            tmp_path, history=("DEVELOPMENT_FEEDBACK", "UNKNOWN"), split="calibration"
+        )
+        result = audit(registration)
+>       assert result.diagnostic_status == "INVALID"
+E       AssertionError: assert 'UNKNOWN' == 'INVALID'
+E         
+E         - INVALID
+E         + UNKNOWN
+
+tests/test_research_risk_supervision.py:538: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_supervision.py::test_camera_calibration_numeric_boolean_is_not_a_measurement
+FAILED tests/test_research_risk_supervision.py::test_known_development_history_is_not_erased_by_unknown_extra_history
+2 failed, 33 deselected in 0.91s

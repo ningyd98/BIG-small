@@ -1,0 +1,104 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_zero_request_rule_proof_recomputes_full_fixed_clocks_and_both_methods __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-755/test_zero_request_rule_proof_r0')
+
+    def test_zero_request_rule_proof_recomputes_full_fixed_clocks_and_both_methods(tmp_path):
+        import json
+        from dataclasses import asdict
+        from pathlib import Path
+    
+        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+        from cloud_edge_robot_arm.research.assignments import _json
+        from cloud_edge_robot_arm.research.protocol import file_hash
+        from cloud_edge_robot_arm.research.runner import run_gate_replay
+        from tests.test_fixed_opportunity_replay import opportunities
+    
+        values = opportunities()
+        ids = [value.opportunity_id for value in values]
+        raw = [_json(value) for value in values]
+        (tmp_path / "opportunities.json").write_text(json.dumps({
+            "schema_version": "ced.opportunity-set.v1", "opportunities": raw, "content_hash": content_digest(raw)}))
+        records = [asdict(row) for method in ("JOINT", "B3") for row in run_gate_replay(values, method)]
+        (tmp_path / "records.json").write_text(json.dumps(records))
+        source = "src/cloud_edge_robot_arm/edge/evidence/opportunities.py"
+        clock = [{"event": "START", "run_id": "SOFTWARE_ONLY", "monotonic_s": 1.},
+                 {"event": "FINISH", "run_id": "SOFTWARE_ONLY", "monotonic_s": 4.}]
+        events = [clock[0], *[{"event": "LOCAL_OPERATION", "run_id": "SOFTWARE_ONLY", "phase": "g3_rules",
+            "source_path": source, "source_sha256": file_hash(Path(source)), "function": "replay_opportunities",
+            "monotonic_s": 2., "opportunity_id": identity, "method_id": method}
+            for identity in ids for method in ("JOINT", "B3")], clock[-1]]
+        (tmp_path / "clock.json").write_text(json.dumps(clock))
+        (tmp_path / "events.json").write_text(json.dumps(events))
+        record = {"phase": "g3_rules", "run_id": "SOFTWARE_ONLY", "clock_path": "clock.json",
+                  "source_hashes": {source: file_hash(Path(source))}, "local_execution_proof": {
+                      "schema_version": "ced.local-cost-proof.v1", "events_path": "events.json",
+                      "opportunities_path": "opportunities.json", "records_path": "records.json"}}
+>       assert api()._local_request_proof(tmp_path, record, ids) is True
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_resource_plan.py:300: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+root = PosixPath('/tmp/pytest-of-ningyd/pytest-755/test_zero_request_rule_proof_r0')
+record = {'clock_path': 'clock.json', 'local_execution_proof': {'events_path': 'events.json', 'opportunities_path': 'opportunit...th': 'records.json', 'schema_version': 'ced.local-cost-proof.v1'}, 'phase': 'g3_rules', 'run_id': 'SOFTWARE_ONLY', ...}
+opportunity_ids = ['opp-safe', 'opp-unsafe', 'opp-unknown']
+
+    def _local_request_proof(root: Path, record: Mapping[str, Any], opportunity_ids: list[str]) -> bool:
+        proof = record["local_execution_proof"]
+        if proof is None:
+            return False
+        if not isinstance(proof, dict) or proof.get("schema_version") != "ced.local-cost-proof.v1":
+            raise ValueError("zero-model costs require typed original closed local execution proof")
+        events = _json(root, proof["events_path"])
+        if not isinstance(events, list) or len(events) < 3 or (
+            events[0].get("event") != "START" or events[-1].get("event") != "FINISH"
+            or any(event.get("run_id") != record["run_id"] for event in events)
+        ):
+            raise ValueError("local request proof must include original whole execution boundaries")
+        if any(event.get("event") not in {"START", "FINISH", "LOCAL_OPERATION"} for event in events):
+            raise ValueError("local request proof contains an unaccounted model/network operation")
+        clock = _json(root, record["clock_path"])
+        if events[0] != clock[0] or events[-1] != clock[-1]:
+            raise ValueError("local no-model execution proof must join the exact whole raw clock span")
+        operations = events[1:-1]
+        expected_path, expected_function = LOCAL_OPERATIONS[record["phase"]]
+        if any(
+            operation["phase"] != record["phase"]
+            or operation["source_path"] not in record["source_hashes"]
+            or operation["source_sha256"] != record["source_hashes"][operation["source_path"]]
+            or operation["source_path"] != expected_path
+            or operation.get("function") != expected_function
+            or not clock[0]["monotonic_s"] <= _number(operation["monotonic_s"]) <= clock[-1]["monotonic_s"]
+            for operation in operations
+        ):
+            raise ValueError("local operation trace does not bind the exact actual source path")
+        if record["phase"] == "g3_rules":
+            from dataclasses import asdict
+    
+            from scripts.run_rgbd_gate_replay import _opportunity
+    
+            from cloud_edge_robot_arm.edge.evidence.opportunities import replay_opportunities
+    
+            payload = _json(root, proof["opportunities_path"])
+            raw = payload["opportunities"]
+            if payload.get("schema_version") != "ced.opportunity-set.v1" or (
+                payload["content_hash"] != content_digest(raw)
+            ):
+                raise ValueError("local replay proof requires untouched fixed opportunity payloads")
+            values = [_opportunity(row) for row in raw]
+            if sorted(v.opportunity_id for v in values) != sorted(opportunity_ids):
+                raise ValueError("zero-model replay proof omitted an assigned fixed opportunity")
+            original = _json(root, proof["records_path"])
+            expected = [
+                asdict(row) for method in ("JOINT", "B3")
+>               for row in replay_opportunities(values, method)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ]
+E           TypeError: replay_opportunities() missing 2 required positional arguments: 'now' and 'calibration_version'
+
+src/cloud_edge_robot_arm/research/resource_plan.py:336: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_research_resource_plan.py::test_zero_request_rule_proof_recomputes_full_fixed_clocks_and_both_methods
+1 failed, 24 deselected in 0.34s

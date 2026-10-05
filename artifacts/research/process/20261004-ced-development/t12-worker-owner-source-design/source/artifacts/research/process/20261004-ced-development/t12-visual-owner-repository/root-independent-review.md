@@ -1,0 +1,17 @@
+# Durable visual owner repository independent review
+
+Verdict: **CHANGES_REQUESTED**, one nested serialized-source validation finding. This is a bounded persistence/source-consistency review, with no actual lease, METHOD, native or execution admission claim.
+
+The complete immutable772 manifest `e86e0a45330cfe5bf58f666628b7240ca0c80923f07e74d4d650a59d1b0db8e4` passed every source SHA256/Python AST check. All five owned live files match. The independent process copied only this exact archive into a new isolated overlay, with the installed interpreter/packages supplied by the environment. It did not overlay moving live sources. All772 archive/overlay hashes and five owned live hashes remained identical after verification.
+
+Independent CPU verification:219 passed,3 backend-only skips in24.18s. Ruff check of all five owned files and fresh-cache cold mypy of four production files pass. Exact commands and results are retained in `root-review-setup.json`, `root-review-cpu.log`, `root-review-ruff.log`, `root-review-mypy.log` and `root-review-post-check.json`. The tests exercise lock/SQLite transactions, rollback, races, restart, original requirements, budget history and stale/current publication behavior. This is not a full repository suite or a physical experiment.
+
+## P2: nested publication payloads are coerced before strict source checks
+
+`VisualOwnerPublicationRecord.__init__` decodes raw checkpoint and retry payloads with Pydantic before `strict_checkpoint`/`strict_retry`, then retains the original unvalidated dictionaries in its serialized envelope. Thus a checkpoint `plan_version=true` or `command_seq=1.0`, retry `retry_count_used=false`, or an unknown top-level field inside either nested model can survive. Typed getters normalize or ignore those fields, while `to_payload` still returns the altered source representation.
+
+The independent `root-counterexamples.py` reconstructs fresh SOFTWARE_ONLY fixtures and first verifies an unchanged initialization/getter. It then modifies a copied publication envelope, recalculates only its public publication hash, and writes that derived software copy into each isolated memory/SQLite repository. Five variants per backend are all accepted by both the public `from_payload` constructor and `get_visual_owner_publication`; retained values remain true,1.0,false or the unregistered string. The original operation/contract/checkpoint and underlying task rows are unchanged. Output is preserved in `root-counterexamples.log`.
+
+This contradicts the released strict integer/schema and exact serialized-source claims. Validate the original nested payload before model coercion, reject unsupported nested model fields and require an exact canonical typed round trip. Preserve arbitrary fields only where the registered model explicitly permits them, such as a defined free-form safety map. Add qualified RED tests covering public construction and rehashed stored reads on both backends. Do not relax freshness, deadlines, pools or original requirements. Original772 archive, review and probes must remain unchanged; freeze a new fix release.
+
+No actual source/lease or admission bypass was demonstrated: all records retain DURABLE_BINDING_ONLY/NOT_INCLUDED and no permission fields, and no worker/model/capture/controller action occurred. Actual worker registration remains pending. Historical operation retry is an explicit source idempotency record, not a current action receipt or proof of execution; that existing documented behavior is not the finding here.

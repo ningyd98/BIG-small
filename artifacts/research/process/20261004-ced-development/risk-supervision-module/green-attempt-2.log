@@ -1,0 +1,880 @@
+.F.....FF............FF                                                  [100%]
+=================================== FAILURES ===================================
+__ test_reconstructed_online_features_and_offline_failure_stay_software_only ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-893/test_reconstructed_online_feat0')
+
+    def test_reconstructed_online_features_and_offline_failure_stay_software_only(tmp_path: Path):
+        registration, _, _, _ = registered_fixture(tmp_path)
+>       result = audit(registration)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_supervision.py:158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_supervision.py:153: in audit
+    return api().RiskSupervisionAuditor({"source": registration}).audit("source")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.risk_supervision.RiskSupervisionAuditor object at 0x7775d0386090>
+evidence_id = 'source'
+
+    def audit(self, evidence_id: str) -> RiskSupervisionAudit:
+        counts = {
+            "assigned_attempts": 0,
+            "allocated_observations": 0,
+            "missing_observations": 0,
+            "task_labels": 0,
+            "feature_rows": 0,
+            "geometric_labels": 0,
+            "motion_labels": 0,
+        }
+        registration = self._sources.get(evidence_id)
+        if registration is None:
+            return RiskSupervisionAudit(
+                "UNKNOWN",
+                "UNKNOWN",
+                "UNKNOWN",
+                ("evidence_id_not_registered",),
+                counts,
+                (),
+                {},
+                {},
+                "SOFTWARE_ONLY",
+            )
+        raw_registration = registration.raw_registration
+        counts["assigned_attempts"] = len(raw_registration.cases)
+        counts["allocated_observations"] = sum(
+            case.expected_counts["frames"] for case in raw_registration.cases
+        )
+        counts["missing_observations"] = counts["allocated_observations"]
+        raw_audit = RiskSourceAuditor({"raw": raw_registration}).audit("raw", scope="RAW_EXECUTION")
+        originals = dict(raw_audit.original_file_hashes)
+        measured = registration.diagnostic_measurements
+        if measured:
+            originals.update(
+                {
+                    f"measurements/{name}": digest
+                    for name, digest in measured.original_file_hashes.items()
+                }
+            )
+        reasons = list(raw_audit.reasons) + list(_MISSING)
+        diagnostic: Status = raw_audit.status
+        actual: Status = "INVALID" if raw_audit.status == "INVALID" else "UNKNOWN"
+        rows: list[Mapping[str, Any]] = []
+        kinds = {case.source_kind for case in raw_registration.cases}
+        scope: Literal["SOFTWARE_ONLY", "RECORDED_RAW_DIAGNOSTICS", "MIXED_DIAGNOSTICS"] = (
+            "SOFTWARE_ONLY"
+            if kinds == {"SOFTWARE_ONLY"}
+            else "RECORDED_RAW_DIAGNOSTICS"
+            if kinds == {"RECORDED_SIMULATION"}
+            else "MIXED_DIAGNOSTICS"
+        )
+        initial = registration.initial_registration
+        if initial is None:
+            reasons.append("initial_source_registration_unavailable")
+        else:
+            initial_result = InitialSourceAdmissionAuditor({"initial": initial}).audit("initial")
+            reasons.extend(f"initial:{reason}" for reason in initial_result.reasons)
+            if initial_result.status == "INVALID":
+                actual = "INVALID"
+            binding = raw_registration.current_role_binding
+            if binding is None:
+                reasons.append("raw_current_role_binding_unavailable")
+            else:
+                baseline = initial.current_role_binding
+                if binding.bundle.cloud_snapshot != baseline.bundle.cloud_snapshot or dict(
+                    binding.device_source_hashes
+                ) != dict(baseline.device_source_hashes):
+                    actual = "INVALID"
+                    reasons.append("raw_initial_common_role_source_binding_mismatch")
+        if raw_audit.status == "VALID":
+            try:
+                cases: dict[str, tuple[Any, list[RGBDObservation]]] = {}
+                before = {}
+                for case in raw_registration.cases:
+                    directory = _safe(raw_registration.artifact_root, case.relative_directory)
+                    before[case.case_id] = _inventory(
+                        directory, case.original_file_hashes, complete=True
+                    )
+                    physics = _physics(
+                        _json(directory / "physical-observations.json")
+                        if case.layout == "CED_PILOT_RAW_V2"
+                        else _rows(directory / "raw-physics.jsonl"),
+                        case,
+                    )
+                    cases[case.case_id] = (physics, _raw_frames(directory))
+                _allocation_closure(registration, {key: value[1] for key, value in cases.items()})
+                history_missing = _histories(registration, cases)
+                if history_missing:
+                    diagnostic = "UNKNOWN"
+                    reasons.append("original_usage_history_unavailable")
+                residuals: tuple[float, ...] | None = None
+                measurement_before = None
+                if measured is None:
+                    diagnostic = "UNKNOWN"
+                    reasons.extend(
+                        ("diagnostic_clock_unavailable", "diagnostic_calibration_unavailable")
+                    )
+                else:
+                    measurement_before = _inventory(
+                        measured.artifact_root, measured.original_file_hashes, complete=True
+                    )
+                    if measured.clock_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_clock_unavailable")
+                    else:
+                        _clock(_json(_safe(measured.artifact_root, measured.clock_path)), cases)
+                    if measured.calibration_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_calibration_unavailable")
+                    else:
+                        residuals = _calibration(
+                            _json(_safe(measured.artifact_root, measured.calibration_path)),
+                            [frame for _, frames in cases.values() for frame in frames],
+                        )
+                allocations = {
+                    (item.case_id, item.observation_id): item for item in registration.allocations
+                }
+                outcomes = {
+                    item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results
+                }
+                histories = {
+                    item.group_id: tuple(item.used_purposes) for item in registration.histories
+                }
+                for case in raw_registration.cases:
+                    physics, frames = cases[case.case_id]
+                    scene = _reset(physics, case)
+                    try:
+                        local = _marker_point(raw_registration, case)
+                    except FileNotFoundError as error:
+                        local = None
+                        diagnostic = "UNKNOWN"
+                        reasons.append(f"{case.case_id}:{error}")
+                    for index, frame in enumerate(frames):
+                        allocation = allocations[(case.case_id, frame.observation_id)]
+                        previous = frames[index - 1] if index else None
+                        features = (
+                            extract_risk_features(frame, previous, residuals)
+                            if residuals is not None and measured and measured.clock_path
+                            else None
+                        )
+                        point_error = None
+                        if local is not None and case.marker_registration is not None:
+                            estimate = detect_pose_marker(frame, case.marker_registration)
+                            if estimate.status == "OBSERVED":
+                                sample = next(
+                                    item
+                                    for item in physics
+                                    if abs(item.sim_time_s - frame.sim_time_s) <= 1e-9
+                                )
+                                point_error = math.dist(
+>                                   estimate.mean_world[:3], _truth_point(sample, local)
+                                    ^^^^^^^^^^^^^^^^^^^
+                                )
+E                               AttributeError: 'PoseMarkerEstimate' object has no attribute 'mean_world'
+
+src/cloud_edge_robot_arm/research/risk_supervision.py:632: AttributeError
+_________ test_authorized_development_train_preserves_original_history _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-893/test_authorized_development_tr0')
+
+    def test_authorized_development_train_preserves_original_history(tmp_path: Path):
+        registration, _, _, _ = registered_fixture(tmp_path, history=("DEVELOPMENT_FEEDBACK",))
+>       result = audit(registration)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_supervision.py:211: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_supervision.py:153: in audit
+    return api().RiskSupervisionAuditor({"source": registration}).audit("source")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.risk_supervision.RiskSupervisionAuditor object at 0x777602a37650>
+evidence_id = 'source'
+
+    def audit(self, evidence_id: str) -> RiskSupervisionAudit:
+        counts = {
+            "assigned_attempts": 0,
+            "allocated_observations": 0,
+            "missing_observations": 0,
+            "task_labels": 0,
+            "feature_rows": 0,
+            "geometric_labels": 0,
+            "motion_labels": 0,
+        }
+        registration = self._sources.get(evidence_id)
+        if registration is None:
+            return RiskSupervisionAudit(
+                "UNKNOWN",
+                "UNKNOWN",
+                "UNKNOWN",
+                ("evidence_id_not_registered",),
+                counts,
+                (),
+                {},
+                {},
+                "SOFTWARE_ONLY",
+            )
+        raw_registration = registration.raw_registration
+        counts["assigned_attempts"] = len(raw_registration.cases)
+        counts["allocated_observations"] = sum(
+            case.expected_counts["frames"] for case in raw_registration.cases
+        )
+        counts["missing_observations"] = counts["allocated_observations"]
+        raw_audit = RiskSourceAuditor({"raw": raw_registration}).audit("raw", scope="RAW_EXECUTION")
+        originals = dict(raw_audit.original_file_hashes)
+        measured = registration.diagnostic_measurements
+        if measured:
+            originals.update(
+                {
+                    f"measurements/{name}": digest
+                    for name, digest in measured.original_file_hashes.items()
+                }
+            )
+        reasons = list(raw_audit.reasons) + list(_MISSING)
+        diagnostic: Status = raw_audit.status
+        actual: Status = "INVALID" if raw_audit.status == "INVALID" else "UNKNOWN"
+        rows: list[Mapping[str, Any]] = []
+        kinds = {case.source_kind for case in raw_registration.cases}
+        scope: Literal["SOFTWARE_ONLY", "RECORDED_RAW_DIAGNOSTICS", "MIXED_DIAGNOSTICS"] = (
+            "SOFTWARE_ONLY"
+            if kinds == {"SOFTWARE_ONLY"}
+            else "RECORDED_RAW_DIAGNOSTICS"
+            if kinds == {"RECORDED_SIMULATION"}
+            else "MIXED_DIAGNOSTICS"
+        )
+        initial = registration.initial_registration
+        if initial is None:
+            reasons.append("initial_source_registration_unavailable")
+        else:
+            initial_result = InitialSourceAdmissionAuditor({"initial": initial}).audit("initial")
+            reasons.extend(f"initial:{reason}" for reason in initial_result.reasons)
+            if initial_result.status == "INVALID":
+                actual = "INVALID"
+            binding = raw_registration.current_role_binding
+            if binding is None:
+                reasons.append("raw_current_role_binding_unavailable")
+            else:
+                baseline = initial.current_role_binding
+                if binding.bundle.cloud_snapshot != baseline.bundle.cloud_snapshot or dict(
+                    binding.device_source_hashes
+                ) != dict(baseline.device_source_hashes):
+                    actual = "INVALID"
+                    reasons.append("raw_initial_common_role_source_binding_mismatch")
+        if raw_audit.status == "VALID":
+            try:
+                cases: dict[str, tuple[Any, list[RGBDObservation]]] = {}
+                before = {}
+                for case in raw_registration.cases:
+                    directory = _safe(raw_registration.artifact_root, case.relative_directory)
+                    before[case.case_id] = _inventory(
+                        directory, case.original_file_hashes, complete=True
+                    )
+                    physics = _physics(
+                        _json(directory / "physical-observations.json")
+                        if case.layout == "CED_PILOT_RAW_V2"
+                        else _rows(directory / "raw-physics.jsonl"),
+                        case,
+                    )
+                    cases[case.case_id] = (physics, _raw_frames(directory))
+                _allocation_closure(registration, {key: value[1] for key, value in cases.items()})
+                history_missing = _histories(registration, cases)
+                if history_missing:
+                    diagnostic = "UNKNOWN"
+                    reasons.append("original_usage_history_unavailable")
+                residuals: tuple[float, ...] | None = None
+                measurement_before = None
+                if measured is None:
+                    diagnostic = "UNKNOWN"
+                    reasons.extend(
+                        ("diagnostic_clock_unavailable", "diagnostic_calibration_unavailable")
+                    )
+                else:
+                    measurement_before = _inventory(
+                        measured.artifact_root, measured.original_file_hashes, complete=True
+                    )
+                    if measured.clock_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_clock_unavailable")
+                    else:
+                        _clock(_json(_safe(measured.artifact_root, measured.clock_path)), cases)
+                    if measured.calibration_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_calibration_unavailable")
+                    else:
+                        residuals = _calibration(
+                            _json(_safe(measured.artifact_root, measured.calibration_path)),
+                            [frame for _, frames in cases.values() for frame in frames],
+                        )
+                allocations = {
+                    (item.case_id, item.observation_id): item for item in registration.allocations
+                }
+                outcomes = {
+                    item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results
+                }
+                histories = {
+                    item.group_id: tuple(item.used_purposes) for item in registration.histories
+                }
+                for case in raw_registration.cases:
+                    physics, frames = cases[case.case_id]
+                    scene = _reset(physics, case)
+                    try:
+                        local = _marker_point(raw_registration, case)
+                    except FileNotFoundError as error:
+                        local = None
+                        diagnostic = "UNKNOWN"
+                        reasons.append(f"{case.case_id}:{error}")
+                    for index, frame in enumerate(frames):
+                        allocation = allocations[(case.case_id, frame.observation_id)]
+                        previous = frames[index - 1] if index else None
+                        features = (
+                            extract_risk_features(frame, previous, residuals)
+                            if residuals is not None and measured and measured.clock_path
+                            else None
+                        )
+                        point_error = None
+                        if local is not None and case.marker_registration is not None:
+                            estimate = detect_pose_marker(frame, case.marker_registration)
+                            if estimate.status == "OBSERVED":
+                                sample = next(
+                                    item
+                                    for item in physics
+                                    if abs(item.sim_time_s - frame.sim_time_s) <= 1e-9
+                                )
+                                point_error = math.dist(
+>                                   estimate.mean_world[:3], _truth_point(sample, local)
+                                    ^^^^^^^^^^^^^^^^^^^
+                                )
+E                               AttributeError: 'PoseMarkerEstimate' object has no attribute 'mean_world'
+
+src/cloud_edge_robot_arm/research/risk_supervision.py:632: AttributeError
+__________ test_unknown_history_is_unavailable_instead_of_independent __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-893/test_unknown_history_is_unavai0')
+
+    def test_unknown_history_is_unavailable_instead_of_independent(tmp_path: Path):
+        registration, _, _, _ = registered_fixture(tmp_path, history=("UNKNOWN",))
+>       result = audit(registration)
+                 ^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_supervision.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_supervision.py:153: in audit
+    return api().RiskSupervisionAuditor({"source": registration}).audit("source")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.risk_supervision.RiskSupervisionAuditor object at 0x7775cc11cc80>
+evidence_id = 'source'
+
+    def audit(self, evidence_id: str) -> RiskSupervisionAudit:
+        counts = {
+            "assigned_attempts": 0,
+            "allocated_observations": 0,
+            "missing_observations": 0,
+            "task_labels": 0,
+            "feature_rows": 0,
+            "geometric_labels": 0,
+            "motion_labels": 0,
+        }
+        registration = self._sources.get(evidence_id)
+        if registration is None:
+            return RiskSupervisionAudit(
+                "UNKNOWN",
+                "UNKNOWN",
+                "UNKNOWN",
+                ("evidence_id_not_registered",),
+                counts,
+                (),
+                {},
+                {},
+                "SOFTWARE_ONLY",
+            )
+        raw_registration = registration.raw_registration
+        counts["assigned_attempts"] = len(raw_registration.cases)
+        counts["allocated_observations"] = sum(
+            case.expected_counts["frames"] for case in raw_registration.cases
+        )
+        counts["missing_observations"] = counts["allocated_observations"]
+        raw_audit = RiskSourceAuditor({"raw": raw_registration}).audit("raw", scope="RAW_EXECUTION")
+        originals = dict(raw_audit.original_file_hashes)
+        measured = registration.diagnostic_measurements
+        if measured:
+            originals.update(
+                {
+                    f"measurements/{name}": digest
+                    for name, digest in measured.original_file_hashes.items()
+                }
+            )
+        reasons = list(raw_audit.reasons) + list(_MISSING)
+        diagnostic: Status = raw_audit.status
+        actual: Status = "INVALID" if raw_audit.status == "INVALID" else "UNKNOWN"
+        rows: list[Mapping[str, Any]] = []
+        kinds = {case.source_kind for case in raw_registration.cases}
+        scope: Literal["SOFTWARE_ONLY", "RECORDED_RAW_DIAGNOSTICS", "MIXED_DIAGNOSTICS"] = (
+            "SOFTWARE_ONLY"
+            if kinds == {"SOFTWARE_ONLY"}
+            else "RECORDED_RAW_DIAGNOSTICS"
+            if kinds == {"RECORDED_SIMULATION"}
+            else "MIXED_DIAGNOSTICS"
+        )
+        initial = registration.initial_registration
+        if initial is None:
+            reasons.append("initial_source_registration_unavailable")
+        else:
+            initial_result = InitialSourceAdmissionAuditor({"initial": initial}).audit("initial")
+            reasons.extend(f"initial:{reason}" for reason in initial_result.reasons)
+            if initial_result.status == "INVALID":
+                actual = "INVALID"
+            binding = raw_registration.current_role_binding
+            if binding is None:
+                reasons.append("raw_current_role_binding_unavailable")
+            else:
+                baseline = initial.current_role_binding
+                if binding.bundle.cloud_snapshot != baseline.bundle.cloud_snapshot or dict(
+                    binding.device_source_hashes
+                ) != dict(baseline.device_source_hashes):
+                    actual = "INVALID"
+                    reasons.append("raw_initial_common_role_source_binding_mismatch")
+        if raw_audit.status == "VALID":
+            try:
+                cases: dict[str, tuple[Any, list[RGBDObservation]]] = {}
+                before = {}
+                for case in raw_registration.cases:
+                    directory = _safe(raw_registration.artifact_root, case.relative_directory)
+                    before[case.case_id] = _inventory(
+                        directory, case.original_file_hashes, complete=True
+                    )
+                    physics = _physics(
+                        _json(directory / "physical-observations.json")
+                        if case.layout == "CED_PILOT_RAW_V2"
+                        else _rows(directory / "raw-physics.jsonl"),
+                        case,
+                    )
+                    cases[case.case_id] = (physics, _raw_frames(directory))
+                _allocation_closure(registration, {key: value[1] for key, value in cases.items()})
+                history_missing = _histories(registration, cases)
+                if history_missing:
+                    diagnostic = "UNKNOWN"
+                    reasons.append("original_usage_history_unavailable")
+                residuals: tuple[float, ...] | None = None
+                measurement_before = None
+                if measured is None:
+                    diagnostic = "UNKNOWN"
+                    reasons.extend(
+                        ("diagnostic_clock_unavailable", "diagnostic_calibration_unavailable")
+                    )
+                else:
+                    measurement_before = _inventory(
+                        measured.artifact_root, measured.original_file_hashes, complete=True
+                    )
+                    if measured.clock_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_clock_unavailable")
+                    else:
+                        _clock(_json(_safe(measured.artifact_root, measured.clock_path)), cases)
+                    if measured.calibration_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_calibration_unavailable")
+                    else:
+                        residuals = _calibration(
+                            _json(_safe(measured.artifact_root, measured.calibration_path)),
+                            [frame for _, frames in cases.values() for frame in frames],
+                        )
+                allocations = {
+                    (item.case_id, item.observation_id): item for item in registration.allocations
+                }
+                outcomes = {
+                    item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results
+                }
+                histories = {
+                    item.group_id: tuple(item.used_purposes) for item in registration.histories
+                }
+                for case in raw_registration.cases:
+                    physics, frames = cases[case.case_id]
+                    scene = _reset(physics, case)
+                    try:
+                        local = _marker_point(raw_registration, case)
+                    except FileNotFoundError as error:
+                        local = None
+                        diagnostic = "UNKNOWN"
+                        reasons.append(f"{case.case_id}:{error}")
+                    for index, frame in enumerate(frames):
+                        allocation = allocations[(case.case_id, frame.observation_id)]
+                        previous = frames[index - 1] if index else None
+                        features = (
+                            extract_risk_features(frame, previous, residuals)
+                            if residuals is not None and measured and measured.clock_path
+                            else None
+                        )
+                        point_error = None
+                        if local is not None and case.marker_registration is not None:
+                            estimate = detect_pose_marker(frame, case.marker_registration)
+                            if estimate.status == "OBSERVED":
+                                sample = next(
+                                    item
+                                    for item in physics
+                                    if abs(item.sim_time_s - frame.sim_time_s) <= 1e-9
+                                )
+                                point_error = math.dist(
+>                                   estimate.mean_world[:3], _truth_point(sample, local)
+                                    ^^^^^^^^^^^^^^^^^^^
+                                )
+E                               AttributeError: 'PoseMarkerEstimate' object has no attribute 'mean_world'
+
+src/cloud_edge_robot_arm/research/risk_supervision.py:632: AttributeError
+__ test_caller_copy_mutation_cannot_change_registered_sources_or_allocations ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-893/test_caller_copy_mutation_cann0')
+
+    def test_caller_copy_mutation_cannot_change_registered_sources_or_allocations(tmp_path: Path):
+        registration, _, _, _ = registered_fixture(tmp_path)
+        auditor = api().RiskSupervisionAuditor({"source": registration})
+        allocations = list(registration.allocations)
+        allocations.clear()
+>       assert auditor.audit("source").counts["allocated_observations"] == 2
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_supervision.py:301: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.risk_supervision.RiskSupervisionAuditor object at 0x7775cfba6e70>
+evidence_id = 'source'
+
+    def audit(self, evidence_id: str) -> RiskSupervisionAudit:
+        counts = {
+            "assigned_attempts": 0,
+            "allocated_observations": 0,
+            "missing_observations": 0,
+            "task_labels": 0,
+            "feature_rows": 0,
+            "geometric_labels": 0,
+            "motion_labels": 0,
+        }
+        registration = self._sources.get(evidence_id)
+        if registration is None:
+            return RiskSupervisionAudit(
+                "UNKNOWN",
+                "UNKNOWN",
+                "UNKNOWN",
+                ("evidence_id_not_registered",),
+                counts,
+                (),
+                {},
+                {},
+                "SOFTWARE_ONLY",
+            )
+        raw_registration = registration.raw_registration
+        counts["assigned_attempts"] = len(raw_registration.cases)
+        counts["allocated_observations"] = sum(
+            case.expected_counts["frames"] for case in raw_registration.cases
+        )
+        counts["missing_observations"] = counts["allocated_observations"]
+        raw_audit = RiskSourceAuditor({"raw": raw_registration}).audit("raw", scope="RAW_EXECUTION")
+        originals = dict(raw_audit.original_file_hashes)
+        measured = registration.diagnostic_measurements
+        if measured:
+            originals.update(
+                {
+                    f"measurements/{name}": digest
+                    for name, digest in measured.original_file_hashes.items()
+                }
+            )
+        reasons = list(raw_audit.reasons) + list(_MISSING)
+        diagnostic: Status = raw_audit.status
+        actual: Status = "INVALID" if raw_audit.status == "INVALID" else "UNKNOWN"
+        rows: list[Mapping[str, Any]] = []
+        kinds = {case.source_kind for case in raw_registration.cases}
+        scope: Literal["SOFTWARE_ONLY", "RECORDED_RAW_DIAGNOSTICS", "MIXED_DIAGNOSTICS"] = (
+            "SOFTWARE_ONLY"
+            if kinds == {"SOFTWARE_ONLY"}
+            else "RECORDED_RAW_DIAGNOSTICS"
+            if kinds == {"RECORDED_SIMULATION"}
+            else "MIXED_DIAGNOSTICS"
+        )
+        initial = registration.initial_registration
+        if initial is None:
+            reasons.append("initial_source_registration_unavailable")
+        else:
+            initial_result = InitialSourceAdmissionAuditor({"initial": initial}).audit("initial")
+            reasons.extend(f"initial:{reason}" for reason in initial_result.reasons)
+            if initial_result.status == "INVALID":
+                actual = "INVALID"
+            binding = raw_registration.current_role_binding
+            if binding is None:
+                reasons.append("raw_current_role_binding_unavailable")
+            else:
+                baseline = initial.current_role_binding
+                if binding.bundle.cloud_snapshot != baseline.bundle.cloud_snapshot or dict(
+                    binding.device_source_hashes
+                ) != dict(baseline.device_source_hashes):
+                    actual = "INVALID"
+                    reasons.append("raw_initial_common_role_source_binding_mismatch")
+        if raw_audit.status == "VALID":
+            try:
+                cases: dict[str, tuple[Any, list[RGBDObservation]]] = {}
+                before = {}
+                for case in raw_registration.cases:
+                    directory = _safe(raw_registration.artifact_root, case.relative_directory)
+                    before[case.case_id] = _inventory(
+                        directory, case.original_file_hashes, complete=True
+                    )
+                    physics = _physics(
+                        _json(directory / "physical-observations.json")
+                        if case.layout == "CED_PILOT_RAW_V2"
+                        else _rows(directory / "raw-physics.jsonl"),
+                        case,
+                    )
+                    cases[case.case_id] = (physics, _raw_frames(directory))
+                _allocation_closure(registration, {key: value[1] for key, value in cases.items()})
+                history_missing = _histories(registration, cases)
+                if history_missing:
+                    diagnostic = "UNKNOWN"
+                    reasons.append("original_usage_history_unavailable")
+                residuals: tuple[float, ...] | None = None
+                measurement_before = None
+                if measured is None:
+                    diagnostic = "UNKNOWN"
+                    reasons.extend(
+                        ("diagnostic_clock_unavailable", "diagnostic_calibration_unavailable")
+                    )
+                else:
+                    measurement_before = _inventory(
+                        measured.artifact_root, measured.original_file_hashes, complete=True
+                    )
+                    if measured.clock_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_clock_unavailable")
+                    else:
+                        _clock(_json(_safe(measured.artifact_root, measured.clock_path)), cases)
+                    if measured.calibration_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_calibration_unavailable")
+                    else:
+                        residuals = _calibration(
+                            _json(_safe(measured.artifact_root, measured.calibration_path)),
+                            [frame for _, frames in cases.values() for frame in frames],
+                        )
+                allocations = {
+                    (item.case_id, item.observation_id): item for item in registration.allocations
+                }
+                outcomes = {
+                    item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results
+                }
+                histories = {
+                    item.group_id: tuple(item.used_purposes) for item in registration.histories
+                }
+                for case in raw_registration.cases:
+                    physics, frames = cases[case.case_id]
+                    scene = _reset(physics, case)
+                    try:
+                        local = _marker_point(raw_registration, case)
+                    except FileNotFoundError as error:
+                        local = None
+                        diagnostic = "UNKNOWN"
+                        reasons.append(f"{case.case_id}:{error}")
+                    for index, frame in enumerate(frames):
+                        allocation = allocations[(case.case_id, frame.observation_id)]
+                        previous = frames[index - 1] if index else None
+                        features = (
+                            extract_risk_features(frame, previous, residuals)
+                            if residuals is not None and measured and measured.clock_path
+                            else None
+                        )
+                        point_error = None
+                        if local is not None and case.marker_registration is not None:
+                            estimate = detect_pose_marker(frame, case.marker_registration)
+                            if estimate.status == "OBSERVED":
+                                sample = next(
+                                    item
+                                    for item in physics
+                                    if abs(item.sim_time_s - frame.sim_time_s) <= 1e-9
+                                )
+                                point_error = math.dist(
+>                                   estimate.mean_world[:3], _truth_point(sample, local)
+                                    ^^^^^^^^^^^^^^^^^^^
+                                )
+E                               AttributeError: 'PoseMarkerEstimate' object has no attribute 'mean_world'
+
+src/cloud_edge_robot_arm/research/risk_supervision.py:632: AttributeError
+_________ test_original_measurement_change_is_rechecked_on_every_audit _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-893/test_original_measurement_chan0')
+
+    def test_original_measurement_change_is_rechecked_on_every_audit(tmp_path: Path):
+        registration, _, measurements, _ = registered_fixture(tmp_path)
+        auditor = api().RiskSupervisionAuditor({"source": registration})
+>       assert auditor.audit("source").diagnostic_status == "VALID"
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_supervision.py:307: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <cloud_edge_robot_arm.research.risk_supervision.RiskSupervisionAuditor object at 0x7775cc10a4e0>
+evidence_id = 'source'
+
+    def audit(self, evidence_id: str) -> RiskSupervisionAudit:
+        counts = {
+            "assigned_attempts": 0,
+            "allocated_observations": 0,
+            "missing_observations": 0,
+            "task_labels": 0,
+            "feature_rows": 0,
+            "geometric_labels": 0,
+            "motion_labels": 0,
+        }
+        registration = self._sources.get(evidence_id)
+        if registration is None:
+            return RiskSupervisionAudit(
+                "UNKNOWN",
+                "UNKNOWN",
+                "UNKNOWN",
+                ("evidence_id_not_registered",),
+                counts,
+                (),
+                {},
+                {},
+                "SOFTWARE_ONLY",
+            )
+        raw_registration = registration.raw_registration
+        counts["assigned_attempts"] = len(raw_registration.cases)
+        counts["allocated_observations"] = sum(
+            case.expected_counts["frames"] for case in raw_registration.cases
+        )
+        counts["missing_observations"] = counts["allocated_observations"]
+        raw_audit = RiskSourceAuditor({"raw": raw_registration}).audit("raw", scope="RAW_EXECUTION")
+        originals = dict(raw_audit.original_file_hashes)
+        measured = registration.diagnostic_measurements
+        if measured:
+            originals.update(
+                {
+                    f"measurements/{name}": digest
+                    for name, digest in measured.original_file_hashes.items()
+                }
+            )
+        reasons = list(raw_audit.reasons) + list(_MISSING)
+        diagnostic: Status = raw_audit.status
+        actual: Status = "INVALID" if raw_audit.status == "INVALID" else "UNKNOWN"
+        rows: list[Mapping[str, Any]] = []
+        kinds = {case.source_kind for case in raw_registration.cases}
+        scope: Literal["SOFTWARE_ONLY", "RECORDED_RAW_DIAGNOSTICS", "MIXED_DIAGNOSTICS"] = (
+            "SOFTWARE_ONLY"
+            if kinds == {"SOFTWARE_ONLY"}
+            else "RECORDED_RAW_DIAGNOSTICS"
+            if kinds == {"RECORDED_SIMULATION"}
+            else "MIXED_DIAGNOSTICS"
+        )
+        initial = registration.initial_registration
+        if initial is None:
+            reasons.append("initial_source_registration_unavailable")
+        else:
+            initial_result = InitialSourceAdmissionAuditor({"initial": initial}).audit("initial")
+            reasons.extend(f"initial:{reason}" for reason in initial_result.reasons)
+            if initial_result.status == "INVALID":
+                actual = "INVALID"
+            binding = raw_registration.current_role_binding
+            if binding is None:
+                reasons.append("raw_current_role_binding_unavailable")
+            else:
+                baseline = initial.current_role_binding
+                if binding.bundle.cloud_snapshot != baseline.bundle.cloud_snapshot or dict(
+                    binding.device_source_hashes
+                ) != dict(baseline.device_source_hashes):
+                    actual = "INVALID"
+                    reasons.append("raw_initial_common_role_source_binding_mismatch")
+        if raw_audit.status == "VALID":
+            try:
+                cases: dict[str, tuple[Any, list[RGBDObservation]]] = {}
+                before = {}
+                for case in raw_registration.cases:
+                    directory = _safe(raw_registration.artifact_root, case.relative_directory)
+                    before[case.case_id] = _inventory(
+                        directory, case.original_file_hashes, complete=True
+                    )
+                    physics = _physics(
+                        _json(directory / "physical-observations.json")
+                        if case.layout == "CED_PILOT_RAW_V2"
+                        else _rows(directory / "raw-physics.jsonl"),
+                        case,
+                    )
+                    cases[case.case_id] = (physics, _raw_frames(directory))
+                _allocation_closure(registration, {key: value[1] for key, value in cases.items()})
+                history_missing = _histories(registration, cases)
+                if history_missing:
+                    diagnostic = "UNKNOWN"
+                    reasons.append("original_usage_history_unavailable")
+                residuals: tuple[float, ...] | None = None
+                measurement_before = None
+                if measured is None:
+                    diagnostic = "UNKNOWN"
+                    reasons.extend(
+                        ("diagnostic_clock_unavailable", "diagnostic_calibration_unavailable")
+                    )
+                else:
+                    measurement_before = _inventory(
+                        measured.artifact_root, measured.original_file_hashes, complete=True
+                    )
+                    if measured.clock_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_clock_unavailable")
+                    else:
+                        _clock(_json(_safe(measured.artifact_root, measured.clock_path)), cases)
+                    if measured.calibration_path is None:
+                        diagnostic = "UNKNOWN"
+                        reasons.append("diagnostic_calibration_unavailable")
+                    else:
+                        residuals = _calibration(
+                            _json(_safe(measured.artifact_root, measured.calibration_path)),
+                            [frame for _, frames in cases.values() for frame in frames],
+                        )
+                allocations = {
+                    (item.case_id, item.observation_id): item for item in registration.allocations
+                }
+                outcomes = {
+                    item["case_id"]: item["physical_outcome"] for item in raw_audit.case_results
+                }
+                histories = {
+                    item.group_id: tuple(item.used_purposes) for item in registration.histories
+                }
+                for case in raw_registration.cases:
+                    physics, frames = cases[case.case_id]
+                    scene = _reset(physics, case)
+                    try:
+                        local = _marker_point(raw_registration, case)
+                    except FileNotFoundError as error:
+                        local = None
+                        diagnostic = "UNKNOWN"
+                        reasons.append(f"{case.case_id}:{error}")
+                    for index, frame in enumerate(frames):
+                        allocation = allocations[(case.case_id, frame.observation_id)]
+                        previous = frames[index - 1] if index else None
+                        features = (
+                            extract_risk_features(frame, previous, residuals)
+                            if residuals is not None and measured and measured.clock_path
+                            else None
+                        )
+                        point_error = None
+                        if local is not None and case.marker_registration is not None:
+                            estimate = detect_pose_marker(frame, case.marker_registration)
+                            if estimate.status == "OBSERVED":
+                                sample = next(
+                                    item
+                                    for item in physics
+                                    if abs(item.sim_time_s - frame.sim_time_s) <= 1e-9
+                                )
+                                point_error = math.dist(
+>                                   estimate.mean_world[:3], _truth_point(sample, local)
+                                    ^^^^^^^^^^^^^^^^^^^
+                                )
+E                               AttributeError: 'PoseMarkerEstimate' object has no attribute 'mean_world'
+
+src/cloud_edge_robot_arm/research/risk_supervision.py:632: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_supervision.py::test_reconstructed_online_features_and_offline_failure_stay_software_only
+FAILED tests/test_research_risk_supervision.py::test_authorized_development_train_preserves_original_history
+FAILED tests/test_research_risk_supervision.py::test_unknown_history_is_unavailable_instead_of_independent
+FAILED tests/test_research_risk_supervision.py::test_caller_copy_mutation_cannot_change_registered_sources_or_allocations
+FAILED tests/test_research_risk_supervision.py::test_original_measurement_change_is_rechecked_on_every_audit
+5 failed, 18 passed in 4.38s

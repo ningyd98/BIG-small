@@ -25,6 +25,8 @@ const defaultDraft: ExperimentDraft = {
   backend: "MUJOCO",
   run_type: "SINGLE",
   input_mode: "RGBD",
+  job_type: "SIMULATION",
+  execution_scope: "VISUAL_PLANNING",
   user_instruction: "将红色方块放到绿色区域",
   scenarios: ["S01_NORMAL_STATIC"],
   control_modes: ["PCSC"],
@@ -76,6 +78,10 @@ export class ExperimentConfigBuilder {
 
   instruction(user_instruction: string): ExperimentConfigBuilder {
     return this.next({ user_instruction });
+  }
+
+  executionScope(execution_scope: ExperimentDraft["execution_scope"]): ExperimentConfigBuilder {
+    return this.next({ execution_scope });
   }
 
   scenario(scenario: string): ExperimentConfigBuilder {

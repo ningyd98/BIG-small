@@ -1,0 +1,184 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_____ test_duplicate_event_rejects_replaced_calibrated_risk[changed_risk0] _____
+
+changed_risk = RiskEstimate(failure_probability=None, failure_probability_by_action={'CONTINUE': None}, geometric_error_bound_m=None, motion_bound_m_s=None, status='UNKNOWN')
+
+    @pytest.mark.parametrize("changed_risk", [
+        RiskEstimate(None, {"CONTINUE": None}, None, None, "UNKNOWN"),
+        RiskEstimate(0.9, {"CONTINUE": 0.9}, 0.02, 0.05, "VALID"),
+    ])
+    def test_duplicate_event_rejects_replaced_calibrated_risk(changed_risk):
+        module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
+        policy = module.ThresholdPolicy(0.5)
+        ctx = context()
+        assert policy.decide(ctx) == DecisionAction.CONTINUE
+        altered = replace(ctx, risk_estimate=changed_risk)
+>       assert policy.decide(altered) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...E: 'CONTINUE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + CONTINUE
+
+tests/test_runtime_auto_baselines.py:645: AssertionError
+_____ test_duplicate_event_rejects_replaced_calibrated_risk[changed_risk1] _____
+
+changed_risk = RiskEstimate(failure_probability=0.9, failure_probability_by_action={'CONTINUE': 0.9}, geometric_error_bound_m=0.02, motion_bound_m_s=0.05, status='VALID')
+
+    @pytest.mark.parametrize("changed_risk", [
+        RiskEstimate(None, {"CONTINUE": None}, None, None, "UNKNOWN"),
+        RiskEstimate(0.9, {"CONTINUE": 0.9}, 0.02, 0.05, "VALID"),
+    ])
+    def test_duplicate_event_rejects_replaced_calibrated_risk(changed_risk):
+        module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
+        policy = module.ThresholdPolicy(0.5)
+        ctx = context()
+        assert policy.decide(ctx) == DecisionAction.CONTINUE
+        altered = replace(ctx, risk_estimate=changed_risk)
+>       assert policy.decide(altered) == DecisionAction.STOP
+E       AssertionError: assert <DecisionActi...E: 'CONTINUE'> == <DecisionAction.STOP: 'STOP'>
+E         
+E         - STOP
+E         + CONTINUE
+
+tests/test_runtime_auto_baselines.py:645: AssertionError
+_ test_mode_selection_rejects_impossible_initial_or_chained_state[chain_from_mode] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-563/test_mode_selection_rejects_im0')
+damage = 'chain_from_mode'
+
+    @pytest.mark.parametrize("damage", ["chain_from_mode", "initial_mode", "initial_version", "missing_initial_mode"])
+    def test_mode_selection_rejects_impossible_initial_or_chained_state(tmp_path: Path, damage):
+        import json
+        module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
+        snapshot = mode_policy_snapshot(tmp_path / "mode")
+        raw = Path(snapshot.selection_directory) / "candidate"
+        assignment = json.loads((raw / "assignments.json").read_text())[0]
+        path = raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json"
+        log = json.loads(path.read_text())
+        if damage == "chain_from_mode":
+            row = dict(log["committed_transitions"][0])
+            row.update(transition_id="second", idempotency_key="second", expected_mode_version=2, new_mode_version=3,
+                prepared_at=(NOW + timedelta(seconds=599)).isoformat(), committed_at=(NOW + timedelta(seconds=600)).isoformat())
+            cp = dict(log["checkpoints"][0])
+            cp.update(checkpoint_id="second", mode_version=2, persisted_at=(NOW + timedelta(seconds=600)).isoformat())
+            log["committed_transitions"].append(row)
+            log["checkpoints"].append(cp)
+        elif damage == "initial_mode":
+            log["initial_current_mode"] = ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY.value
+        elif damage == "initial_version":
+            log["initial_mode_version"] = 2
+        else:
+            log.pop("initial_current_mode", None)
+        path.write_text(json.dumps(log))
+>       assert module.verify_mode_switch_policy(snapshot)["accepted"] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:676: AssertionError
+_ test_mode_selection_rejects_impossible_initial_or_chained_state[initial_mode] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-563/test_mode_selection_rejects_im1')
+damage = 'initial_mode'
+
+    @pytest.mark.parametrize("damage", ["chain_from_mode", "initial_mode", "initial_version", "missing_initial_mode"])
+    def test_mode_selection_rejects_impossible_initial_or_chained_state(tmp_path: Path, damage):
+        import json
+        module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
+        snapshot = mode_policy_snapshot(tmp_path / "mode")
+        raw = Path(snapshot.selection_directory) / "candidate"
+        assignment = json.loads((raw / "assignments.json").read_text())[0]
+        path = raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json"
+        log = json.loads(path.read_text())
+        if damage == "chain_from_mode":
+            row = dict(log["committed_transitions"][0])
+            row.update(transition_id="second", idempotency_key="second", expected_mode_version=2, new_mode_version=3,
+                prepared_at=(NOW + timedelta(seconds=599)).isoformat(), committed_at=(NOW + timedelta(seconds=600)).isoformat())
+            cp = dict(log["checkpoints"][0])
+            cp.update(checkpoint_id="second", mode_version=2, persisted_at=(NOW + timedelta(seconds=600)).isoformat())
+            log["committed_transitions"].append(row)
+            log["checkpoints"].append(cp)
+        elif damage == "initial_mode":
+            log["initial_current_mode"] = ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY.value
+        elif damage == "initial_version":
+            log["initial_mode_version"] = 2
+        else:
+            log.pop("initial_current_mode", None)
+        path.write_text(json.dumps(log))
+>       assert module.verify_mode_switch_policy(snapshot)["accepted"] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:676: AssertionError
+_ test_mode_selection_rejects_impossible_initial_or_chained_state[initial_version] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-563/test_mode_selection_rejects_im2')
+damage = 'initial_version'
+
+    @pytest.mark.parametrize("damage", ["chain_from_mode", "initial_mode", "initial_version", "missing_initial_mode"])
+    def test_mode_selection_rejects_impossible_initial_or_chained_state(tmp_path: Path, damage):
+        import json
+        module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
+        snapshot = mode_policy_snapshot(tmp_path / "mode")
+        raw = Path(snapshot.selection_directory) / "candidate"
+        assignment = json.loads((raw / "assignments.json").read_text())[0]
+        path = raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json"
+        log = json.loads(path.read_text())
+        if damage == "chain_from_mode":
+            row = dict(log["committed_transitions"][0])
+            row.update(transition_id="second", idempotency_key="second", expected_mode_version=2, new_mode_version=3,
+                prepared_at=(NOW + timedelta(seconds=599)).isoformat(), committed_at=(NOW + timedelta(seconds=600)).isoformat())
+            cp = dict(log["checkpoints"][0])
+            cp.update(checkpoint_id="second", mode_version=2, persisted_at=(NOW + timedelta(seconds=600)).isoformat())
+            log["committed_transitions"].append(row)
+            log["checkpoints"].append(cp)
+        elif damage == "initial_mode":
+            log["initial_current_mode"] = ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY.value
+        elif damage == "initial_version":
+            log["initial_mode_version"] = 2
+        else:
+            log.pop("initial_current_mode", None)
+        path.write_text(json.dumps(log))
+>       assert module.verify_mode_switch_policy(snapshot)["accepted"] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:676: AssertionError
+_ test_mode_selection_rejects_impossible_initial_or_chained_state[missing_initial_mode] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-563/test_mode_selection_rejects_im3')
+damage = 'missing_initial_mode'
+
+    @pytest.mark.parametrize("damage", ["chain_from_mode", "initial_mode", "initial_version", "missing_initial_mode"])
+    def test_mode_selection_rejects_impossible_initial_or_chained_state(tmp_path: Path, damage):
+        import json
+        module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
+        snapshot = mode_policy_snapshot(tmp_path / "mode")
+        raw = Path(snapshot.selection_directory) / "candidate"
+        assignment = json.loads((raw / "assignments.json").read_text())[0]
+        path = raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json"
+        log = json.loads(path.read_text())
+        if damage == "chain_from_mode":
+            row = dict(log["committed_transitions"][0])
+            row.update(transition_id="second", idempotency_key="second", expected_mode_version=2, new_mode_version=3,
+                prepared_at=(NOW + timedelta(seconds=599)).isoformat(), committed_at=(NOW + timedelta(seconds=600)).isoformat())
+            cp = dict(log["checkpoints"][0])
+            cp.update(checkpoint_id="second", mode_version=2, persisted_at=(NOW + timedelta(seconds=600)).isoformat())
+            log["committed_transitions"].append(row)
+            log["checkpoints"].append(cp)
+        elif damage == "initial_mode":
+            log["initial_current_mode"] = ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY.value
+        elif damage == "initial_version":
+            log["initial_mode_version"] = 2
+        else:
+            log.pop("initial_current_mode", None)
+        path.write_text(json.dumps(log))
+>       assert module.verify_mode_switch_policy(snapshot)["accepted"] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:676: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_runtime_auto_baselines.py::test_duplicate_event_rejects_replaced_calibrated_risk[changed_risk0]
+FAILED tests/test_runtime_auto_baselines.py::test_duplicate_event_rejects_replaced_calibrated_risk[changed_risk1]
+FAILED tests/test_runtime_auto_baselines.py::test_mode_selection_rejects_impossible_initial_or_chained_state[chain_from_mode]
+FAILED tests/test_runtime_auto_baselines.py::test_mode_selection_rejects_impossible_initial_or_chained_state[initial_mode]
+FAILED tests/test_runtime_auto_baselines.py::test_mode_selection_rejects_impossible_initial_or_chained_state[initial_version]
+FAILED tests/test_runtime_auto_baselines.py::test_mode_selection_rejects_impossible_initial_or_chained_state[missing_initial_mode]
+6 failed, 40 deselected in 9.37s

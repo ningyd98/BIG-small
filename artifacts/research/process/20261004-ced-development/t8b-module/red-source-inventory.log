@@ -1,0 +1,46 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_stage_source_inventory_cannot_be_narrowed_before_raw_audit ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-699/test_stage_source_inventory_ca0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x71c6da7ffc20>
+
+    def test_stage_source_inventory_cannot_be_narrowed_before_raw_audit(tmp_path, monkeypatch):
+        import hashlib
+    
+        module = api()
+        (tmp_path / "summary.json").write_text(json.dumps({
+            "schema_version": "ced.pilot-stage.v1", "protocol_version": "ced.research.v2",
+            "stage": "selection", "scope": "UNVERIFIED", "execution_mode": "REAL_RUNTIME"}))
+        name = "src/cloud_edge_robot_arm/research/pilot.py"
+        original = __import__("pathlib").Path(name).read_bytes()
+        archived = tmp_path / "source" / name
+        archived.parent.mkdir(parents=True)
+        archived.write_bytes(original)
+        (tmp_path / "source-hashes.json").write_text(json.dumps({
+            name: hashlib.sha256(original).hexdigest()}))
+    
+        def should_not_reach_probe(_):
+            raise AssertionError("narrow source inventory reached the role probe")
+    
+        monkeypatch.setattr(module, "verify_role_probe_evidence", should_not_reach_probe)
+>       result = module.audit_ced_pilot_stage(tmp_path, "selection")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ced_initial_freeze.py:207: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/freeze_evidence.py:599: in audit_ced_pilot_stage
+    probe_audit = verify_role_probe_evidence(_inside(directory, "role-probe"))
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_ = PosixPath('/tmp/pytest-of-ningyd/pytest-699/test_stage_source_inventory_ca0/role-probe')
+
+    def should_not_reach_probe(_):
+>       raise AssertionError("narrow source inventory reached the role probe")
+E       AssertionError: narrow source inventory reached the role probe
+
+tests/test_ced_initial_freeze.py:204: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ced_initial_freeze.py::test_stage_source_inventory_cannot_be_narrowed_before_raw_audit
+1 failed, 16 deselected in 0.26s

@@ -1,0 +1,232 @@
+.FF.........FFF....FF                                                    [100%]
+=================================== FAILURES ===================================
+_____ test_static_software_trace_recomputed_failure_with_full_denominator ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-823/test_static_software_trace_rec0')
+
+    def test_static_software_trace_recomputed_failure_with_full_denominator(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+        result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+>       assert result.status == "VALID"
+E       AssertionError: assert 'INVALID' == 'VALID'
+E         
+E         - VALID
+E         + INVALID
+E         ? ++
+
+tests/test_research_risk_sources.py:97: AssertionError
+_____ test_risk_scope_does_not_accept_flag_receipt_or_valid_raw_execution ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-823/test_risk_scope_does_not_accep0')
+
+    def test_risk_scope_does_not_accept_flag_receipt_or_valid_raw_execution(tmp_path: Path) -> None:
+        case, directory = fixture_case(tmp_path)
+        json_file(directory / "risk-accepted.json", {"source_accepted": True, "status": "VALID"})
+        case = replace(case, original_file_hashes=hashes(directory))
+        result = registered(tmp_path, case).audit("fixture")
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'INVALID' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + INVALID
+
+tests/test_research_risk_sources.py:110: AssertionError
+_________ test_registration_copies_nested_source_inventory_and_context _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-823/test_registration_copies_neste0')
+
+    def test_registration_copies_nested_source_inventory_and_context(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+>       context = json.loads(json.dumps(dict(case.context)))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_sources.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/json/__init__.py:231: in dumps
+    return _default_encoder.encode(obj)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x7a5aac77b8f0>
+o = mappingproxy({'joints_rad': (-0.8, 0, 0, 0, 0, 0, 0), 'fingers_m': (0.039, 0.039)})
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type mappingproxy is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+__ test_original_inventory_changes_and_extra_files_do_not_shrink_denominator ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-823/test_original_inventory_change0')
+
+    def test_original_inventory_changes_and_extra_files_do_not_shrink_denominator(tmp_path: Path) -> None:
+        case, directory = fixture_case(tmp_path)
+        auditor = registered(tmp_path, case)
+>       assert auditor.audit("fixture", scope="RAW_EXECUTION").status == "VALID"
+E       AssertionError: assert 'INVALID' == 'VALID'
+E         
+E         - VALID
+E         + INVALID
+E         ? ++
+
+tests/test_research_risk_sources.py:171: AssertionError
+__________ test_missing_attempt_retained_in_all_assigned_denominator ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-823/test_missing_attempt_retained_0')
+
+    def test_missing_attempt_retained_in_all_assigned_denominator(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+        missing = replace(case, case_id="failed-original", relative_directory="absent")
+        registration = RiskSourceRegistration(
+            tmp_path, ROOT, sources(), (case, missing), CompletionCriteria("object", "target_region")
+        )
+        result = RiskSourceAuditor({"fixture": registration}).audit("fixture", scope="RAW_EXECUTION")
+>       assert result.status == "UNKNOWN"
+E       AssertionError: assert 'INVALID' == 'UNKNOWN'
+E         
+E         - UNKNOWN
+E         + INVALID
+
+tests/test_research_risk_sources.py:185: AssertionError
+__________ test_actual_excluded_saved_motion_raw_only_reconstruction ___________
+
+    def test_actual_excluded_saved_motion_raw_only_reconstruction() -> None:
+        directory = MOTION / "attempt-1"
+        header = json.loads((MOTION / "header.json").read_bytes())
+        summary = json.loads((directory / "summary.json").read_bytes())
+        context = {
+            "episode_id": summary["episode_id"], "physics_dt_s": header["config"]["physics_dt_s"],
+            "evaluation_start_step": 120,
+            "initial_controller_targets": {"joints_rad": [-.8, 0, 0, 0, 0, 0, 0],
+                                           "fingers_m": [.039, .039]},
+            "actuator_delay_steps": 0,
+        }
+        case = RawCaseRegistration(
+            "actual-excluded-motion", "attempt-1", "MARKER_MOTION_DEVELOPMENT_RAW_V1",
+            hashes(directory), header["scene"], context,
+            {"physics_steps": 4806, "commands": 743, "actions": 9, "frames": 10},
+            marker_registration=PoseMarkerRegistration(
+                7, .045, "2ba368bb5150becd1c021fe52495f3c59bd155f862502ec590b2ecd3a57899e4"
+            ),
+            source_kind="RECORDED_SIMULATION",
+        )
+        inventory = sources()
+        asset = "assets/robots/franka_panda/scene_pose_marker_color_v2.xml"
+        inventory[asset] = hashlib.sha256((ROOT / asset).read_bytes()).hexdigest()
+        registration = RiskSourceRegistration(
+            MOTION, ROOT, inventory, (case,), CompletionCriteria("object", "target_region")
+        )
+        auditor = RiskSourceAuditor({"actual": registration})
+        raw = auditor.audit("actual", scope="RAW_EXECUTION")
+>       assert raw.status == "VALID", raw.reasons
+E       AssertionError: ('actual-excluded-motion:invalid:unsupported initial controller state/delay',)
+E       assert 'INVALID' == 'VALID'
+E         
+E         - VALID
+E         + INVALID
+E         ? ++
+
+tests/test_research_risk_sources.py:247: AssertionError
+____________ test_ced_raw_layout_recomputes_failed_no_action_source ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-823/test_ced_raw_layout_recomputes0')
+
+    def test_ced_raw_layout_recomputes_failed_no_action_source(tmp_path: Path) -> None:
+        marker, directory = fixture_case(tmp_path)
+        physics = [json.loads(row) for row in (directory / "raw-physics.jsonl").read_text().splitlines()]
+        controls = [json.loads(row) for row in (directory / "raw-actuators.jsonl").read_text().splitlines()]
+        json_file(directory / "physical-observations.json", physics)
+        json_file(directory / "actuator-steps.json", controls)
+        assignment = {"scene": dict(marker.assignment)}
+        context = {**dict(marker.context), "schema_version": "rgbd.raw-episode.v2",
+                   "reset_step": 0, "reset_sim_time_s": 0, "terminal_step": 121,
+                   "terminal_sim_time_s": physics[-1]["sim_time_s"],
+                   "reset_observation_hash": hashlib.sha256(
+                       json.dumps(physics[0], sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+                   "terminal_observation_hash": hashlib.sha256(
+                       json.dumps(physics[-1], sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
+        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+>       context.update(assignment_hash=content_digest(assignment),
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+                       group_id=assignment["scene"]["group_id"],
+                       scene_hash=assignment["scene"]["scene_hash"])
+
+tests/test_research_risk_sources.py:273: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/rgbd/models.py:27: in content_digest
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+                          ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/rgbd/models.py:21: in canonical_json
+    return json.dumps(
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x7a5a7fc55490>
+o = mappingproxy({'target': mappingproxy({'position': (0.45, 0.0, 0.043), 'half_size': (0.035, 0.035, 0.035), 'rgba': (0.9...n': (1.0, 0.0, 0.0, 0.0), 'fovy': 50.0}), 'light_intensity': 0.8, 'depth_noise_m': 0.0, 'invalid_depth_fraction': 0.0})
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type mappingproxy is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_static_software_trace_recomputed_failure_with_full_denominator
+FAILED tests/test_research_risk_sources.py::test_risk_scope_does_not_accept_flag_receipt_or_valid_raw_execution
+FAILED tests/test_research_risk_sources.py::test_registration_copies_nested_source_inventory_and_context
+FAILED tests/test_research_risk_sources.py::test_original_inventory_changes_and_extra_files_do_not_shrink_denominator
+FAILED tests/test_research_risk_sources.py::test_missing_attempt_retained_in_all_assigned_denominator
+FAILED tests/test_research_risk_sources.py::test_actual_excluded_saved_motion_raw_only_reconstruction
+FAILED tests/test_research_risk_sources.py::test_ced_raw_layout_recomputes_failed_no_action_source
+7 failed, 14 passed in 2.23s

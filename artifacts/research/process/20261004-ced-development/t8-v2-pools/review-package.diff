@@ -1,0 +1,78 @@
+--- a/src/cloud_edge_robot_arm/research/protocol.py
++++ b/src/cloud_edge_robot_arm/research/protocol.py
+@@ -120,10 +120,18 @@
+     return frozen
+ 
+ 
+-def build_scene_pools(seed: int, excluded_groups: set[str]) -> dict[str, list[dict[str, Any]]]:
++def build_scene_pools(
++    seed: int, excluded_groups: set[str], *, protocol_version: str = "rgbd.research.v1",
++) -> dict[str, list[dict[str, Any]]]:
+     """Freeze scenes before runs, matching physical group identity across all pools."""
++    if protocol_version not in {"rgbd.research.v1", "ced.research.v2"}:
++        raise ValueError("unsupported explicit scene pool protocol version")
++    sizes: tuple[tuple[str, int], ...] = (("foundation", 120), ("power", 120), ("formal", 2400),
++             ("recovery", 200), ("ood", 300))
++    if protocol_version == "ced.research.v2":
++        sizes = (("selection", 120), *sizes)
+     config = DatasetConfig(
+-        dataset_id="research-pools", groups=3140, seed=seed,
++        dataset_id="research-pools", groups=sum(count for _, count in sizes), seed=seed,
+         target_x=(.34, .43), target_y=(-.07, .08), half_size=(.032, .037),
+         camera_height=(1.4, 1.4), camera_x=(.35, .35), camera_y=(0., 0.),
+         camera_fovy=(45., 45.), distractor_count=(0, 0),
+@@ -132,12 +140,13 @@
+     pools: dict[str, list[dict[str, Any]]] = {}
+     seen = set(excluded_groups)
+     cursor = seed
+-    for name, count in (("foundation", 120), ("power", 120), ("formal", 2400),
+-                        ("recovery", 200), ("ood", 300)):
++    for name, count in sizes:
+         rows = []
+         local = config if name != "ood" else config.model_copy(update={"camera_fovy": (60., 65.)})
+         for index in range(count):
+-            for _attempt in range(5):
++            for _attempt in range(
++                max(5, len(seen) + 1) if protocol_version == "ced.research.v2" else 5
++            ):
+                 scene = sample_scene(local, cursor)
+                 cursor += 1
+                 if scene.group_id not in seen:
+--- /dev/null
++++ b/tests/test_ced_scene_pool_topology.py
+@@ -0,0 +1,35 @@
++"""The v2 selection pool is separate from every pilot/formal/recovery source group."""
++
++from collections import Counter
++
++import pytest
++
++from cloud_edge_robot_arm.research.protocol import STRATA, build_scene_pools
++
++
++def test_ced_v2_has_independent_selection_and_complete_fixed_topology():
++    pools = build_scene_pools(2026100411, set(), protocol_version="ced.research.v2")
++    assert {key: len(rows) for key, rows in pools.items()} == {
++        "selection": 120,
++        "foundation": 120,
++        "power": 120,
++        "formal": 2400,
++        "recovery": 200,
++        "ood": 300,
++    }
++    groups = [row["scene"]["group_id"] for rows in pools.values() for row in rows]
++    assert len(groups) == len(set(groups)) == 3260
++    assert Counter(row["stratum_id"] for row in pools["selection"]) == {
++        stratum: 10 for stratum in STRATA
++    }
++    assert pools["selection"][0]["assignment_id"] == "selection-0001"
++    excluded = set(groups)
++    second = build_scene_pools(2026100411, excluded, protocol_version="ced.research.v2")
++    assert not excluded.intersection(
++        row["scene"]["group_id"] for rows in second.values() for row in rows
++    )
++
++
++def test_unknown_protocol_version_cannot_silently_build_legacy_pools():
++    with pytest.raises(ValueError, match="version"):
++        build_scene_pools(11, set(), protocol_version="typo")

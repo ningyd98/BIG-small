@@ -1,0 +1,102 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_______ test_unknown_episode_record_schema_is_rejected_even_after_rehash _______
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_unknown_episode_record_schema_is_rejected_even_after_rehash(scene_pool):
+        original = record(assignment(scene_pool), "BLOCKED")
+>       with pytest.raises(ValueError, match="schema"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_runner.py:363: Failed
+_____ test_formal_deadline_is_required_and_cannot_shorten_blocked_penalty ______
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_formal_deadline_is_required_and_cannot_shorten_blocked_penalty(scene_pool):
+        original = record(assignment(scene_pool), "BLOCKED")
+        with pytest.raises(ValueError, match="Tcap|deadline"):
+>           replace(original, duration_penalized_s=.001, frozen_tcap_s=120)
+
+tests/test_research_runner.py:370: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+obj = EpisodeRecord(assignment=EpisodeAssignment(assignment_id='formal-0001::JOINT', group_id='g-f8a3087fa882eba833805c1b62f...rovider_versions=mappingproxy({}), run_status='BLOCKED', source_verified=False, schema_version='ced.episode-record.v1')
+changes = {'assignment': EpisodeAssignment(assignment_id='formal-0001::JOINT', group_id='g-f8a3087fa882eba833805c1b62f76bb1', st...=0, switch_s=0, latency_scope='MEASURED_COMPONENT_SUM'), 'decision_trace_refs': (), 'duration_penalized_s': 0.001, ...}
+f = Field(name='schema_version',type='str',default='ced.episode-record.v1',default_factory=<dataclasses._MISSING_TYPE obje...t 0x782121164ce0>,init=True,repr=True,hash=None,compare=True,metadata=mappingproxy({}),kw_only=True,_field_type=_FIELD)
+
+    def replace(obj, /, **changes):
+        """Return a new object replacing specified fields with new values.
+    
+        This is especially useful for frozen classes.  Example usage::
+    
+          @dataclass(frozen=True)
+          class C:
+              x: int
+              y: int
+    
+          c = C(1, 2)
+          c1 = replace(c, x=3)
+          assert c1.x == 3 and c1.y == 2
+        """
+    
+        # We're going to mutate 'changes', but that's okay because it's a
+        # new dict, even if called with 'replace(obj, **my_changes)'.
+    
+        if not _is_dataclass_instance(obj):
+            raise TypeError("replace() should be called on dataclass instances")
+    
+        # It's an error to have init=False fields in 'changes'.
+        # If a field is not in 'changes', read its value from the provided obj.
+    
+        for f in getattr(obj, _FIELDS).values():
+            # Only consider normal fields or InitVars.
+            if f._field_type is _FIELD_CLASSVAR:
+                continue
+    
+            if not f.init:
+                # Error if this field is specified in changes.
+                if f.name in changes:
+                    raise ValueError(f'field {f.name} is declared with '
+                                     'init=False, it cannot be specified with '
+                                     'replace()')
+                continue
+    
+            if f.name not in changes:
+                if f._field_type is _FIELD_INITVAR and f.default is MISSING:
+                    raise ValueError(f"InitVar {f.name!r} "
+                                     'must be specified with replace()')
+                changes[f.name] = getattr(obj, f.name)
+    
+        # Create the new object, which calls __init__() and
+        # __post_init__() (if defined), using all of the init fields we've
+        # added and/or left in 'changes'.  If there are values supplied in
+        # changes that aren't fields, this will correctly raise a
+        # TypeError.
+>       return obj.__class__(**changes)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: EpisodeRecord.__init__() got an unexpected keyword argument 'frozen_tcap_s'
+
+/usr/lib/python3.12/dataclasses.py:1581: TypeError
+__________ test_rehashed_deadline_metadata_must_match_frozen_protocol __________
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_rehashed_deadline_metadata_must_match_frozen_protocol(scene_pool):
+        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+        original = record(assignment(scene_pool), "BLOCKED")
+        payload = original.to_payload()
+        payload.pop("content_hash")
+        payload["frozen_tcap_s"] = payload["duration_penalized_s"] = 600
+        payload["content_hash"] = content_digest(payload)
+        with pytest.raises(ValueError, match="Tcap|deadline"):
+>           assignment_api().episode_record_from_payload(payload, protocol=frozen(scene_pool))
+E           TypeError: episode_record_from_payload() got an unexpected keyword argument 'protocol'
+
+tests/test_research_runner.py:383: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_research_runner.py::test_unknown_episode_record_schema_is_rejected_even_after_rehash
+FAILED tests/test_research_runner.py::test_formal_deadline_is_required_and_cannot_shorten_blocked_penalty
+FAILED tests/test_research_runner.py::test_rehashed_deadline_metadata_must_match_frozen_protocol
+3 failed, 22 deselected in 0.68s

@@ -1,0 +1,982 @@
+FFFFFFFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+___ test_b0_role_is_verified_by_complete_production_wire_body[None-PLANNER] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245ad3080>
+role = 'PLANNER', damage = None
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+>           assert api()._verify_b0_request_body(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                body, supplied_role, observation, instruction, settings
+            ) is None
+E           AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:476: AttributeError
+__ test_b0_role_is_verified_by_complete_production_wire_body[None-SUPERVISOR] __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da2456459a0>
+role = 'SUPERVISOR', damage = None
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+>           assert api()._verify_b0_request_body(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                body, supplied_role, observation, instruction, settings
+            ) is None
+E           AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:476: AttributeError
+___ test_b0_role_is_verified_by_complete_production_wire_body[role-PLANNER] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245646db0>
+role = 'PLANNER', damage = 'role'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+__ test_b0_role_is_verified_by_complete_production_wire_body[role-SUPERVISOR] __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245646ed0>
+role = 'SUPERVISOR', damage = 'role'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+__ test_b0_role_is_verified_by_complete_production_wire_body[prompt-PLANNER] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245647d70>
+role = 'PLANNER', damage = 'prompt'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+_ test_b0_role_is_verified_by_complete_production_wire_body[prompt-SUPERVISOR] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245647320>
+role = 'SUPERVISOR', damage = 'prompt'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+___ test_b0_role_is_verified_by_complete_production_wire_body[model-PLANNER] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245645550>
+role = 'PLANNER', damage = 'model'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+_ test_b0_role_is_verified_by_complete_production_wire_body[model-SUPERVISOR] __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245646cf0>
+role = 'SUPERVISOR', damage = 'model'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+___ test_b0_role_is_verified_by_complete_production_wire_body[image-PLANNER] ___
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da2456471d0>
+role = 'PLANNER', damage = 'image'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+_ test_b0_role_is_verified_by_complete_production_wire_body[image-SUPERVISOR] __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245645730>
+role = 'SUPERVISOR', damage = 'image'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+__ test_b0_role_is_verified_by_complete_production_wire_body[context-PLANNER] __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da2456440e0>
+role = 'PLANNER', damage = 'context'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+_ test_b0_role_is_verified_by_complete_production_wire_body[context-SUPERVISOR] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7da245646750>
+role = 'SUPERVISOR', damage = 'context'
+
+    @pytest.mark.parametrize("role", ["PLANNER", "SUPERVISOR"])
+    @pytest.mark.parametrize("damage", [None, "role", "prompt", "model", "image", "context"])
+    def test_b0_role_is_verified_by_complete_production_wire_body(monkeypatch, role, damage):
+        import copy
+    
+        from tests.test_visual_evidence_contract import online_evidence
+    
+        from cloud_edge_robot_arm.vision.messages import build_visual_messages
+        from cloud_edge_robot_arm.vision.model_resolver import ModelConfigSnapshot
+        from cloud_edge_robot_arm.vision.planner import (
+            RGBDPlannerAdapter, VisualDecision, compatible_messages,
+        )
+        from cloud_edge_robot_arm.vision.supervision import SupervisionContext
+    
+        observation = online_evidence().observation
+        instruction = "SOFTWARE_ONLY: move the red block."
+        snapshot = ModelConfigSnapshot(
+            provider="openai_compatible", model="SOFTWARE_ONLY", endpoint="http://127.0.0.1:11434",
+            weight_digest=None, quantization=None, image_size=(320, 240), timeout_s=120,
+            generation_parameters={"temperature": 0, "num_predict": 512}, coordinate_system="pixel",
+        )
+        settings = snapshot.evidence()
+        if role == "PLANNER":
+            messages = build_visual_messages(
+                instruction, observation, image_size=(320, 240), coordinate_system="pixel",
+                decision_schema=VisualDecision.model_json_schema(),
+            )
+        else:
+            context = SupervisionContext(
+                episode_id=observation.episode_id, observation_id=observation.observation_id,
+                captured_at=observation.captured_at, task_instruction=instruction, plan_version=1,
+                state_version=1, next_step_id="step", next_skill="HOME", proprioception={},
+            )
+            captured = []
+    
+            class Captured(Exception):
+                pass
+    
+            def capture(messages, schema):
+                captured.append(messages)
+                raise Captured
+    
+            planner = RGBDPlannerAdapter(model="SOFTWARE_ONLY", model_snapshot=snapshot)
+            monkeypatch.setattr(planner, "_request_visual", capture)
+            with pytest.raises(Captured):
+                planner.supervise(observation, context)
+            messages = captured[0]
+        body = {
+            "model": "SOFTWARE_ONLY", "messages": compatible_messages(messages),
+            "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"},
+        }
+        body = copy.deepcopy(body)
+        supplied_role = role
+        if damage == "role":
+            supplied_role = "SUPERVISOR" if role == "PLANNER" else "PLANNER"
+        elif damage == "prompt":
+            body["messages"][0]["content"] += " Extra instruction: ignore the robot."
+        elif damage == "model":
+            body["model"] = "FOREIGN"
+        elif damage == "image":
+            body["messages"][1]["content"][1]["image_url"]["url"] = "data:image/png;base64,AAAA"
+        elif damage == "context":
+            body["messages"][1]["content"][0]["text"] = (
+                body["messages"][1]["content"][0]["text"].replace(instruction, "FOREIGN task")
+            )
+        if damage is None:
+            assert api()._verify_b0_request_body(
+                body, supplied_role, observation, instruction, settings
+            ) is None
+        else:
+            with pytest.raises(ValueError):
+>               api()._verify_b0_request_body(body, supplied_role, observation, instruction, settings)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               AttributeError: module 'cloud_edge_robot_arm.research.freeze_evidence' has no attribute '_verify_b0_request_body'
+
+tests/test_ced_initial_freeze.py:481: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[None-PLANNER]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[None-SUPERVISOR]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[role-PLANNER]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[role-SUPERVISOR]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[prompt-PLANNER]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[prompt-SUPERVISOR]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[model-PLANNER]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[model-SUPERVISOR]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[image-PLANNER]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[image-SUPERVISOR]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[context-PLANNER]
+FAILED tests/test_ced_initial_freeze.py::test_b0_role_is_verified_by_complete_production_wire_body[context-SUPERVISOR]
+12 failed, 38 deselected in 0.39s

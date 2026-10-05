@@ -1,0 +1,98 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_reset_complete_command_history_cannot_omit_its_first_dispatch[shifted] __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-525/test_reset_complete_command_hi0')
+change = 'shifted'
+
+    @pytest.mark.parametrize("change", ["shifted", "omitted_first", "empty"])
+    def test_reset_complete_command_history_cannot_omit_its_first_dispatch(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        commands = json.loads((source / "commands.json").read_text())
+        actions = json.loads((source / "teacher-actions.json").read_text())
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+        if change == "empty":
+            commands = []
+            for action in actions:
+                action["command_seq_start"] = action["command_seq_end"] = 1
+        else:
+            for command in commands:
+                command["backend_record"]["command_seq"] += 1
+            for action in actions:
+                action["command_seq_start"] += 1
+                action["command_seq_end"] += 1
+            if change == "omitted_first":
+                # Two actual same-step dispatches apply identical targets. The retained
+                # second command accounts for every control row, so actuator matching
+                # alone cannot expose removal of the first command from episode history.
+                omitted = json.loads(json.dumps(commands[0]))
+                omitted["command_id"] = "omitted-first-dispatch"
+                omitted["backend_record"]["command_seq"] = 1
+                actions[0]["command_seq_start"] = 1
+                write_json(source / "commands.json", [omitted, *commands])
+                write_json(source / "teacher-actions.json", actions)
+                assert api().prepare_protocol_evidence(pools, tmp_path / "complete-history")[
+                    "recovery_proven"
+                ] == 1
+                # Remove actual command1 and consistently shift only its first action
+                # range start. Physical steps/controls and all other ranges stay exact.
+                actions[0]["command_seq_start"] = 2
+        write_json(source / "commands.json", commands)
+        write_json(source / "teacher-actions.json", actions)
+        report = api().prepare_protocol_evidence(pools, tmp_path / "output")
+>       assert report["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:1102: AssertionError
+_ test_reset_complete_command_history_cannot_omit_its_first_dispatch[omitted_first] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-525/test_reset_complete_command_hi1')
+change = 'omitted_first'
+
+    @pytest.mark.parametrize("change", ["shifted", "omitted_first", "empty"])
+    def test_reset_complete_command_history_cannot_omit_its_first_dispatch(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        commands = json.loads((source / "commands.json").read_text())
+        actions = json.loads((source / "teacher-actions.json").read_text())
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+        if change == "empty":
+            commands = []
+            for action in actions:
+                action["command_seq_start"] = action["command_seq_end"] = 1
+        else:
+            for command in commands:
+                command["backend_record"]["command_seq"] += 1
+            for action in actions:
+                action["command_seq_start"] += 1
+                action["command_seq_end"] += 1
+            if change == "omitted_first":
+                # Two actual same-step dispatches apply identical targets. The retained
+                # second command accounts for every control row, so actuator matching
+                # alone cannot expose removal of the first command from episode history.
+                omitted = json.loads(json.dumps(commands[0]))
+                omitted["command_id"] = "omitted-first-dispatch"
+                omitted["backend_record"]["command_seq"] = 1
+                actions[0]["command_seq_start"] = 1
+                write_json(source / "commands.json", [omitted, *commands])
+                write_json(source / "teacher-actions.json", actions)
+                assert api().prepare_protocol_evidence(pools, tmp_path / "complete-history")[
+                    "recovery_proven"
+                ] == 1
+                # Remove actual command1 and consistently shift only its first action
+                # range start. Physical steps/controls and all other ranges stay exact.
+                actions[0]["command_seq_start"] = 2
+        write_json(source / "commands.json", commands)
+        write_json(source / "teacher-actions.json", actions)
+        report = api().prepare_protocol_evidence(pools, tmp_path / "output")
+>       assert report["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:1102: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_reset_complete_command_history_cannot_omit_its_first_dispatch[shifted]
+FAILED tests/test_protocol_evidence_generation.py::test_reset_complete_command_history_cannot_omit_its_first_dispatch[omitted_first]
+2 failed, 1 passed, 49 deselected in 4.49s

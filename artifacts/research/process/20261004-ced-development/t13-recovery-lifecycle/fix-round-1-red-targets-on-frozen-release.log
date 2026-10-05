@@ -1,0 +1,52 @@
+.F.F                                                                     [100%]
+=================================== FAILURES ===================================
+__ test_required_precondition_cannot_bind_an_unselected_object[memory-decoy] ___
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7c2c787839b0>
+target = 'decoy'
+
+    @pytest.mark.parametrize("target", [None, "decoy"])
+    def test_required_precondition_cannot_bind_an_unselected_object(lifecycle_repo, target):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("target_visible",)))
+        proof = authorization_proof(saved)
+        proof = replace(proof, action=replace(proof.action,
+            preconditions=(ConditionSpec("target_visible", target),)),
+            online_evidence=replace(proof.online_evidence, visual_facts={
+                "target_visible": {**proof.online_evidence.visual_facts["target_visible"],
+                                   "target_id": "decoy"}}))
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='dffa1a7a748e443aca04cafe99e5a3c21f20d230508e275c4b661711021796f2'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='dffa1a7a748e443aca04cafe99e5a3c21f20d230508e275c4b661711021796f2'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7c2c787839b0>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='f0c86648094d1a30abe54c4e0ca5108fdf22f48bab44a7e9694b0abe16a3d1df'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1446: AssertionError
+__ test_required_precondition_cannot_bind_an_unselected_object[sqlite-decoy] ___
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7c2c773b7b90>
+target = 'decoy'
+
+    @pytest.mark.parametrize("target", [None, "decoy"])
+    def test_required_precondition_cannot_bind_an_unselected_object(lifecycle_repo, target):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("target_visible",)))
+        proof = authorization_proof(saved)
+        proof = replace(proof, action=replace(proof.action,
+            preconditions=(ConditionSpec("target_visible", target),)),
+            online_evidence=replace(proof.online_evidence, visual_facts={
+                "target_visible": {**proof.online_evidence.visual_facts["target_visible"],
+                                   "target_id": "decoy"}}))
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='ce5804149154c0c7eca418b195af1e538aeaaa8ba3a262c73ee5e7cea7e56316'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='ce5804149154c0c7eca418b195af1e538aeaaa8ba3a262c73ee5e7cea7e56316'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7c2c773b7b90>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='e7ba2a58b0d451dfdba9952c165e2912dcbe38890867e22b10d084c157e1847e'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1446: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_required_precondition_cannot_bind_an_unselected_object[memory-decoy]
+FAILED tests/test_recovery_lifecycle_module.py::test_required_precondition_cannot_bind_an_unselected_object[sqlite-decoy]
+2 failed, 2 passed, 161 deselected in 0.92s

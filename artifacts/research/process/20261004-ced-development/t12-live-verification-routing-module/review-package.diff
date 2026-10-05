@@ -1,0 +1,2893 @@
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
+@@ -43,6 +43,11 @@
+     from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+         VisualOwnerPublicationRecord,
+     )
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++        VisualVerificationRouteInput,
++        VisualVerificationRouteRecord,
++        VisualVerificationRouteWriteResult,
++    )
+     from cloud_edge_robot_arm.vision.owner_registration import (
+         StepGroundingBinding,
+         VisualOriginalPlan,
+@@ -98,6 +103,22 @@
+         """CAS checkpoint/publication only, with no physical or mode authority."""
+         ...
+ 
++    def route_visual_verification_if_current(
++        self,
++        *,
++        request: VisualVerificationRouteInput,
++    ) -> VisualVerificationRouteWriteResult | None:
++        """Atomic SOURCE_ROUTE_ONLY pool/publication routing; no effect authority."""
++        ...
++
++    def get_visual_verification_route(
++        self,
++        task_id: str,
++        event_key: str,
++    ) -> VisualVerificationRouteRecord | None:
++        """Detached history only; duplicates never authorize another capture."""
++        ...
++
+     # ── Events ──────────────────────────────────────────────────────────
+ 
+     def save_event(self, event: EdgeEvent) -> EdgeEvent:
+@@ -142,7 +163,9 @@
+         ...
+ 
+     def initialize_verification_budget_if_absent(
+-        self, task_id: str, state: VerificationBudgetState,
++        self,
++        task_id: str,
++        state: VerificationBudgetState,
+     ) -> VerificationBudgetRecord:
+         """Create the task verification pool once without refilling allowances."""
+         ...
+@@ -155,8 +178,7 @@
+         """Persist DETECTED only, preserving exact same-identity initialization."""
+         ...
+ 
+-    def get_recovery(self, recovery_id: str) -> RecoveryRecord | None:
+-        ...
++    def get_recovery(self, recovery_id: str) -> RecoveryRecord | None: ...
+ 
+     def list_unresolved_recoveries(self, task_id: str) -> list[RecoveryRecord]:
+         """Exclude only evidence-verified resolved records, not exhausted failures."""
+@@ -167,22 +189,36 @@
+         ...
+ 
+     def advance_recovery_if_current(
+-        self, record: RecoveryRecord, *, expected_state: str, expected_revision: int,
+-        expected_budget_revision: int, verified_transition: RecoveryTransitionEvidence,
+-    ) -> RecoveryRecord | None:
+-        ...
++        self,
++        record: RecoveryRecord,
++        *,
++        expected_state: str,
++        expected_revision: int,
++        expected_budget_revision: int,
++        verified_transition: RecoveryTransitionEvidence,
++    ) -> RecoveryRecord | None: ...
+ 
+     def reserve_reobservation_if_current(
+-        self, *, recovery_id: str, expected_revision: int, expected_budget_revision: int,
++        self,
++        *,
++        recovery_id: str,
++        expected_revision: int,
++        expected_budget_revision: int,
+         reservation: RecoveryReservationEvidence | None = None,
+     ) -> RecoveryRecord | None:
+         """Reserve a durable task allowance before the caller captures a new frame."""
+         ...
+ 
+     def consume_retry_and_authorize_recovery_if_current(
+-        self, *, recovery_id: str, expected_recovery_revision: int,
+-        expected_verification_budget_revision: int, expected_retry_count: int,
+-        step_id: str, skill: str, authorization: RecoveryAuthorizationEvidence,
++        self,
++        *,
++        recovery_id: str,
++        expected_recovery_revision: int,
++        expected_verification_budget_revision: int,
++        expected_retry_count: int,
++        step_id: str,
++        skill: str,
++        authorization: RecoveryAuthorizationEvidence,
+     ) -> RecoveryAuthorizationResult:
+         """Atomically authorize and consume the existing task retry authority once."""
+         ...
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
+@@ -78,6 +78,11 @@
+     from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+     from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+         VisualOwnerPublicationRecord,
++    )
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++        VisualVerificationRouteInput,
++        VisualVerificationRouteRecord,
++        VisualVerificationRouteWriteResult,
+     )
+     from cloud_edge_robot_arm.vision.owner_registration import (
+         StepGroundingBinding,
+@@ -125,6 +130,8 @@
+         self._audit: dict[str, list[dict[str, object]]] = {}
+         self._visual_originals: dict[tuple[str, int], tuple[str, str]] = {}
+         self._visual_publications: dict[tuple[str, int], str] = {}
++        self._visual_verification_routes: dict[tuple[str, str], str] = {}
++        self._visual_verification_sources: dict[tuple[str, str], str] = {}
+ 
+     def _visual_original_locked(self, task_id: str, plan_version: int) -> VisualOriginalPlan | None:
+         from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+@@ -436,6 +443,83 @@
+             )
+             return saved.detached()
+ 
++    def get_visual_verification_route(
++        self,
++        task_id: str,
++        event_key: str,
++    ) -> VisualVerificationRouteRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++            VisualVerificationRouteRecord,
++        )
++
++        with self._lock:
++            raw = self._visual_verification_routes.get((task_id, event_key))
++            if raw is None:
++                return None
++            record = VisualVerificationRouteRecord.from_json(raw)
++            if record.to_payload()["input"]["original"]["identity"]["task_id"] != task_id:
++                raise ValueError("stored verification task differs")
++            return record
++
++    def route_visual_verification_if_current(
++        self,
++        *,
++        request: VisualVerificationRouteInput,
++    ) -> VisualVerificationRouteWriteResult | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import canonical
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++            VisualVerificationRouteInput,
++            VisualVerificationRouteRecord,
++            VisualVerificationRouteWriteResult,
++            derive_route,
++            historical_duplicate,
++        )
++
++        if type(request) is not VisualVerificationRouteInput:
++            raise ValueError("concrete source routing input required")
++        request = VisualVerificationRouteInput.from_json(request.to_json())
++        task_id = request.task_id
++        with self._lock:
++            raw = self._visual_verification_routes.get((task_id, request.event_key))
++            same_event = raw is not None
++            if raw is None:
++                raw = self._visual_verification_sources.get((task_id, request.source_key()))
++            if raw is not None:
++                return historical_duplicate(
++                    request, VisualVerificationRouteRecord.from_json(raw), same_event=same_event
++                )
++            prior = self._visual_record_locked(task_id)
++            if prior is None:
++                return None
++            original = self._visual_original_locked(task_id, prior.checkpoint.plan_version)
++            if original is None or not self._visual_versions_match(original):
++                return None
++            ancestor = (
++                self._visual_record_locked(task_id, prior.owner_revision - 1)
++                if prior.owner_revision > 1
++                else None
++            )
++            values = derive_route(
++                request,
++                original,
++                prior,
++                ancestor,
++                *self._visual_group_locked(task_id),
++                cancelled=self._replan_cancelled_locked(task_id),
++                now=_utc_now(),
++            )
++            if values is None:
++                return None
++            record, pool, produced = values
++            # Validate and encode every immutable row before the first mutation.
++            history = record.to_json()
++            saved = canonical(produced.to_payload())
++            self._verification_budgets[task_id] = pool
++            self._visual_publications[(task_id, produced.owner_revision)] = saved
++            self._visual_verification_routes[(task_id, request.event_key)] = history
++            self._visual_verification_sources[(task_id, request.source_key())] = history
++            return VisualVerificationRouteWriteResult(record, "NEW_COMMIT")
++
+     # ── generic idempotency helpers ───────────────────────────────────────
+ 
+     @staticmethod
+@@ -508,8 +592,14 @@
+             return self._consume_retry_locked(task_id, step_id, skill, expected_count, event_id)
+ 
+     def _consume_retry_locked(
+-        self, task_id: str, step_id: str, skill: str, expected_count: int,
+-        event_id: str = "", *, persist: bool = True,
++        self,
++        task_id: str,
++        step_id: str,
++        skill: str,
++        expected_count: int,
++        event_id: str = "",
++        *,
++        persist: bool = True,
+     ) -> tuple[bool, RecoveryBudget | None]:
+         budget = self._budgets.get(task_id)
+         if budget is None:
+@@ -560,7 +650,9 @@
+         return True, updated.model_copy(deep=True)
+ 
+     def initialize_verification_budget_if_absent(
+-        self, task_id: str, state: VerificationBudgetState,
++        self,
++        task_id: str,
++        state: VerificationBudgetState,
+     ) -> VerificationBudgetRecord:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
+ 
+@@ -572,13 +664,17 @@
+                 existing = VerificationBudgetRecord.create(task_id, state)
+                 retry = self._budgets.get(task_id)
+                 existing.state.remaining_retries = min(
+-                    max(0, existing.state.limits.max_retries
+-                        - retry.task_retry_count) if retry else 0,
++                    max(0, existing.state.limits.max_retries - retry.task_retry_count)
++                    if retry
++                    else 0,
+                     retry.remaining_retries if retry else 0,
+                     max(0, retry.task_total_retry_limit - retry.task_retry_count) if retry else 0,
+                 )
+-                if (retry and retry.retry_deadline
+-                        and existing.state.deadline_at > retry.retry_deadline):
++                if (
++                    retry
++                    and retry.retry_deadline
++                    and existing.state.deadline_at > retry.retry_deadline
++                ):
+                     copied = existing.state
+                     copied.deadline_at = retry.retry_deadline
+                     existing = VerificationBudgetRecord.create(task_id, copied)
+@@ -598,17 +694,25 @@
+         with self._lock:
+             existing = self._recoveries.get(record.recovery_id)
+             if existing is not None:
+-                self._ensure_same_hash("RecoveryRecord", record.recovery_id,
+-                                       self._recovery_initial_hashes[record.recovery_id],
+-                                       record.content_hash())
++                self._ensure_same_hash(
++                    "RecoveryRecord",
++                    record.recovery_id,
++                    self._recovery_initial_hashes[record.recovery_id],
++                    record.content_hash(),
++                )
+                 return existing.detached()
+             if any(item.event_id == record.event_id for item in self._recoveries.values()):
+                 raise IdempotencyConflictError("event already has a recovery record")
+-            if any(item.attempt_id == record.attempt_id and item.task_id == record.task_id
+-                   for item in self._recoveries.values()):
++            if any(
++                item.attempt_id == record.attempt_id and item.task_id == record.task_id
++                for item in self._recoveries.values()
++            ):
+                 raise ValueError("execution attempt already belongs to a failure event")
+-            validate_detected(record, self._events.get(record.event_id),
+-                              self._verification_budgets.get(record.task_id))
++            validate_detected(
++                record,
++                self._events.get(record.event_id),
++                self._verification_budgets.get(record.task_id),
++            )
+             self._recoveries[record.recovery_id] = record
+             self._recovery_initial_hashes[record.recovery_id] = record.content_hash()
+             return record.detached()
+@@ -620,37 +724,62 @@
+ 
+     def list_unresolved_recoveries(self, task_id: str) -> list[RecoveryRecord]:
+         with self._lock:
+-            return [record.detached() for record in self._recoveries.values()
+-                    if record.task_id == task_id
+-                    and not (record.state == "VERIFIED_RESOLVED"
+-                             and record.evidence_scope == "ACTUAL_SOURCE")]
++            return [
++                record.detached()
++                for record in self._recoveries.values()
++                if record.task_id == task_id
++                and not (
++                    record.state == "VERIFIED_RESOLVED" and record.evidence_scope == "ACTUAL_SOURCE"
++                )
++            ]
+ 
+     def list_recoveries(self, task_id: str) -> list[RecoveryRecord]:
+         with self._lock:
+-            return [record.detached() for record in self._recoveries.values()
+-                    if record.task_id == task_id]
++            return [
++                record.detached()
++                for record in self._recoveries.values()
++                if record.task_id == task_id
++            ]
+ 
+     def advance_recovery_if_current(
+-        self, record: RecoveryRecord, *, expected_state: str, expected_revision: int,
+-        expected_budget_revision: int, verified_transition: RecoveryTransitionEvidence,
++        self,
++        record: RecoveryRecord,
++        *,
++        expected_state: str,
++        expected_revision: int,
++        expected_budget_revision: int,
++        verified_transition: RecoveryTransitionEvidence,
+     ) -> RecoveryRecord | None:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import transition_values
+ 
+         with self._lock:
+             current = self._recoveries.get(record.recovery_id)
+             pool = self._verification_budgets.get(current.task_id) if current else None
+-            if not (all(type(value) is int and value >= 0 for value in (
+-                    expected_revision, expected_budget_revision)) and current and pool
+-                    and current.state == expected_state and current.revision == expected_revision
+-                    and pool.revision == expected_budget_revision):
++            if not (
++                all(
++                    type(value) is int and value >= 0
++                    for value in (expected_revision, expected_budget_revision)
++                )
++                and current
++                and pool
++                and current.state == expected_state
++                and current.revision == expected_revision
++                and pool.revision == expected_budget_revision
++            ):
+                 return None
+             if current.content_hash() != record.content_hash():
+                 raise ValueError("caller cannot overwrite immutable recovery source")
+             ids = self._checkpoints_by_task.get(current.task_id, [])
+             checkpoint = self._checkpoints.get(ids[-1]) if ids else None
+-            values = transition_values(current, pool, verified_transition,
+-                self._active_contracts.get(current.task_id), checkpoint,
+-                self._replan_cancelled_locked(current.task_id), _utc_now())
++            values = transition_values(
++                current,
++                pool,
++                verified_transition,
++                self._active_contracts.get(current.task_id),
++                checkpoint,
++                self._replan_cancelled_locked(current.task_id),
++                _utc_now(),
++            )
+             if values is None:
+                 return current.detached()
+             updated, next_pool = values
+@@ -659,7 +788,11 @@
+             return updated.detached()
+ 
+     def reserve_reobservation_if_current(
+-        self, *, recovery_id: str, expected_revision: int, expected_budget_revision: int,
++        self,
++        *,
++        recovery_id: str,
++        expected_revision: int,
++        expected_budget_revision: int,
+         reservation: RecoveryReservationEvidence | None = None,
+     ) -> RecoveryRecord | None:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+@@ -670,17 +803,28 @@
+         with self._lock:
+             current = self._recoveries.get(recovery_id)
+             pool = self._verification_budgets.get(current.task_id) if current else None
+-            if not (all(type(value) is int and value >= 0 for value in (
+-                    expected_revision, expected_budget_revision)) and current and pool
+-                    and current.revision == expected_revision
+-                    and pool.revision == expected_budget_revision
+-                    and not self._replan_cancelled_locked(current.task_id)):
++            if not (
++                all(
++                    type(value) is int and value >= 0
++                    for value in (expected_revision, expected_budget_revision)
++                )
++                and current
++                and pool
++                and current.revision == expected_revision
++                and pool.revision == expected_budget_revision
++                and not self._replan_cancelled_locked(current.task_id)
++            ):
+                 return None
+             ids = self._checkpoints_by_task.get(current.task_id, [])
+             checkpoint = self._checkpoints.get(ids[-1]) if ids else None
+-            if not reservation_available(current, reservation,
+-                    self._active_contracts.get(current.task_id), checkpoint,
+-                    self._replan_cancelled_locked(current.task_id), _utc_now()):
++            if not reservation_available(
++                current,
++                reservation,
++                self._active_contracts.get(current.task_id),
++                checkpoint,
++                self._replan_cancelled_locked(current.task_id),
++                _utc_now(),
++            ):
+                 return None
+             values = reserved_values(current, pool, _utc_now())
+             if values is None:
+@@ -691,9 +835,15 @@
+             return updated.detached()
+ 
+     def consume_retry_and_authorize_recovery_if_current(
+-        self, *, recovery_id: str, expected_recovery_revision: int,
+-        expected_verification_budget_revision: int, expected_retry_count: int,
+-        step_id: str, skill: str, authorization: RecoveryAuthorizationEvidence,
++        self,
++        *,
++        recovery_id: str,
++        expected_recovery_revision: int,
++        expected_verification_budget_revision: int,
++        expected_retry_count: int,
++        step_id: str,
++        skill: str,
++        authorization: RecoveryAuthorizationEvidence,
+     ) -> RecoveryAuthorizationResult:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+             RecoveryAuthorizationResult,
+@@ -706,25 +856,46 @@
+             pool = self._verification_budgets.get(record.task_id) if record else None
+             budget = self._budgets.get(record.task_id) if record else None
+             reasons: tuple[str, ...] = ("authorization_compare_and_set_conflict",)
+-            if (all(type(value) is int and value >= 0 for value in (
+-                    expected_recovery_revision, expected_verification_budget_revision,
+-                    expected_retry_count))
+-                    and record and pool and budget and record.revision == expected_recovery_revision
+-                    and pool.revision == expected_verification_budget_revision
+-                    and budget.retry_count_used == expected_retry_count):
++            if (
++                all(
++                    type(value) is int and value >= 0
++                    for value in (
++                        expected_recovery_revision,
++                        expected_verification_budget_revision,
++                        expected_retry_count,
++                    )
++                )
++                and record
++                and pool
++                and budget
++                and record.revision == expected_recovery_revision
++                and pool.revision == expected_verification_budget_revision
++                and budget.retry_count_used == expected_retry_count
++            ):
+                 ids = self._checkpoints_by_task.get(record.task_id, [])
+                 checkpoint = self._checkpoints.get(ids[-1]) if ids else None
+                 now = _utc_now()
+                 reasons = authorization_reasons(
+-                    record, pool, budget, self._events.get(record.event_id),
+-                    self._active_contracts.get(record.task_id), checkpoint,
+-                    self._replan_cancelled_locked(record.task_id), authorization,
+-                    step_id, skill, now,
++                    record,
++                    pool,
++                    budget,
++                    self._events.get(record.event_id),
++                    self._active_contracts.get(record.task_id),
++                    checkpoint,
++                    self._replan_cancelled_locked(record.task_id),
++                    authorization,
++                    step_id,
++                    skill,
++                    now,
+                 )
+                 if not reasons:
+                     consumed, retry = self._consume_retry_locked(
+-                        record.task_id, step_id, skill, expected_retry_count,
+-                        record.event_id, persist=False,
++                        record.task_id,
++                        step_id,
++                        skill,
++                        expected_retry_count,
++                        record.event_id,
++                        persist=False,
+                     )
+                     if consumed and retry:
+                         updated, next_pool = authorized_values(
+@@ -733,12 +904,21 @@
+                         self._budgets[record.task_id] = retry
+                         self._recoveries[recovery_id] = updated
+                         self._verification_budgets[record.task_id] = next_pool
+-                        return RecoveryAuthorizationResult(True, updated.detached(),
+-                            retry.model_copy(deep=True), next_pool.detached(), ())
++                        return RecoveryAuthorizationResult(
++                            True,
++                            updated.detached(),
++                            retry.model_copy(deep=True),
++                            next_pool.detached(),
++                            (),
++                        )
+                     reasons = ("retry_authority_exhausted",)
+-            return RecoveryAuthorizationResult(False, record.detached() if record else None,
+-                budget.model_copy(deep=True) if budget else None, pool.detached() if pool else None,
+-                reasons)
++            return RecoveryAuthorizationResult(
++                False,
++                record.detached() if record else None,
++                budget.model_copy(deep=True) if budget else None,
++                pool.detached() if pool else None,
++                reasons,
++            )
+ 
+     # ── State Machine ───────────────────────────────────────────────────
+ 
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
+@@ -81,6 +81,11 @@
+     from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+         VisualOwnerPublicationRecord,
+     )
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++        VisualVerificationRouteInput,
++        VisualVerificationRouteRecord,
++        VisualVerificationRouteWriteResult,
++    )
+     from cloud_edge_robot_arm.vision.owner_registration import (
+         StepGroundingBinding,
+         VisualOriginalPlan,
+@@ -104,6 +109,15 @@
+     def _create_schema(self) -> None:
+         self._conn.executescript(
+             """
++            CREATE TABLE IF NOT EXISTS visual_verification_routes (
++                task_id TEXT NOT NULL,
++                event_key TEXT NOT NULL,
++                source_key TEXT NOT NULL,
++                payload_json TEXT NOT NULL,
++                record_hash TEXT NOT NULL,
++                PRIMARY KEY (task_id, event_key),
++                UNIQUE (task_id, source_key)
++            );
+             CREATE TABLE IF NOT EXISTS visual_original_plans (
+                 task_id TEXT NOT NULL,
+                 plan_version INTEGER NOT NULL,
+@@ -672,8 +686,14 @@
+             return self._consume_retry_locked(task_id, step_id, skill, expected_count, event_id)
+ 
+     def _consume_retry_locked(
+-        self, task_id: str, step_id: str, skill: str, expected_count: int,
+-        event_id: str = "", *, commit: bool = True,
++        self,
++        task_id: str,
++        step_id: str,
++        skill: str,
++        expected_count: int,
++        event_id: str = "",
++        *,
++        commit: bool = True,
+     ) -> tuple[bool, RecoveryBudget | None]:
+         now = _iso_now()
+         budget = self.get_retry_budget(task_id)
+@@ -735,9 +755,10 @@
+             self._conn.commit()
+         return True, self.get_retry_budget(task_id)
+ 
+-
+     def initialize_verification_budget_if_absent(
+-        self, task_id: str, state: VerificationBudgetState,
++        self,
++        task_id: str,
++        state: VerificationBudgetState,
+     ) -> VerificationBudgetRecord:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
+ 
+@@ -750,21 +771,29 @@
+                 existing = VerificationBudgetRecord.create(task_id, state)
+                 retry = self.get_retry_budget(task_id)
+                 existing.state.remaining_retries = min(
+-                    max(0, existing.state.limits.max_retries
+-                        - retry.task_retry_count) if retry else 0,
++                    max(0, existing.state.limits.max_retries - retry.task_retry_count)
++                    if retry
++                    else 0,
+                     retry.remaining_retries if retry else 0,
+                     max(0, retry.task_total_retry_limit - retry.task_retry_count) if retry else 0,
+                 )
+-                if (retry and retry.retry_deadline
+-                        and existing.state.deadline_at > retry.retry_deadline):
++                if (
++                    retry
++                    and retry.retry_deadline
++                    and existing.state.deadline_at > retry.retry_deadline
++                ):
+                     copied = existing.state
+                     copied.deadline_at = retry.retry_deadline
+                     existing = VerificationBudgetRecord.create(task_id, copied)
+                 existing = VerificationBudgetRecord.create(task_id, existing.state)
+                 self._conn.execute(
+                     "INSERT INTO verification_budgets VALUES (?, ?, ?, ?)",
+-                    (task_id, existing.revision, self._json(existing.to_payload()),
+-                     existing.content_hash),
++                    (
++                        task_id,
++                        existing.revision,
++                        self._json(existing.to_payload()),
++                        existing.content_hash,
++                    ),
+                 )
+             return existing.detached()
+ 
+@@ -778,8 +807,11 @@
+         if row is None:
+             return None
+         result = VerificationBudgetRecord.from_payload(json.loads(row["payload_json"]))
+-        if (result.content_hash != row["content_hash"] or result.task_id != row["task_id"]
+-                or result.revision != row["revision"]):
++        if (
++            result.content_hash != row["content_hash"]
++            or result.task_id != row["task_id"]
++            or result.revision != row["revision"]
++        ):
+             raise ValueError("verification budget stored hash mismatch")
+         return result
+ 
+@@ -794,55 +826,85 @@
+                 (record.recovery_id,),
+             ).fetchone()
+             if row is not None:
+-                _same_or_conflict("RecoveryRecord", record.recovery_id,
+-                                  row["initial_hash"], record.content_hash())
++                _same_or_conflict(
++                    "RecoveryRecord", record.recovery_id, row["initial_hash"], record.content_hash()
++                )
+                 existing = self.get_recovery(record.recovery_id)
+                 assert existing is not None
+                 return existing
+-            if self._conn.execute("SELECT 1 FROM recovery_records WHERE event_id=?",
+-                                  (record.event_id,)).fetchone():
++            if self._conn.execute(
++                "SELECT 1 FROM recovery_records WHERE event_id=?", (record.event_id,)
++            ).fetchone():
+                 raise IdempotencyConflictError("event already has a recovery record")
+-            if any(item.attempt_id == record.attempt_id
+-                   for item in self.list_recoveries(record.task_id)):
++            if any(
++                item.attempt_id == record.attempt_id
++                for item in self.list_recoveries(record.task_id)
++            ):
+                 raise ValueError("execution attempt already belongs to a failure event")
+-            validate_detected(record, self.get_event(record.event_id),
+-                              self.get_verification_budget(record.task_id))
+-            self._conn.execute("INSERT INTO recovery_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+-                               (record.recovery_id, record.event_id, record.task_id,
+-                                record.revision,
+-                                record.state, self._json(record.to_payload()),
+-                                record.content_hash(),
+-                                record.content_hash()))
++            validate_detected(
++                record,
++                self.get_event(record.event_id),
++                self.get_verification_budget(record.task_id),
++            )
++            self._conn.execute(
++                "INSERT INTO recovery_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
++                (
++                    record.recovery_id,
++                    record.event_id,
++                    record.task_id,
++                    record.revision,
++                    record.state,
++                    self._json(record.to_payload()),
++                    record.content_hash(),
++                    record.content_hash(),
++                ),
++            )
+             return record.detached()
+ 
+     def get_recovery(self, recovery_id: str) -> RecoveryRecord | None:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
+ 
+-        row = self._conn.execute("SELECT * FROM recovery_records WHERE recovery_id=?",
+-                                 (recovery_id,)).fetchone()
++        row = self._conn.execute(
++            "SELECT * FROM recovery_records WHERE recovery_id=?", (recovery_id,)
++        ).fetchone()
+         if row is None:
+             return None
+         record = RecoveryRecord.from_payload(json.loads(row["payload_json"]))
+-        if (record.content_hash() != row["content_hash"] or record.revision != row["revision"]
+-                or record.state != row["state"] or record.task_id != row["task_id"]
+-                or record.event_id != row["event_id"] or record.recovery_id != row["recovery_id"]):
++        if (
++            record.content_hash() != row["content_hash"]
++            or record.revision != row["revision"]
++            or record.state != row["state"]
++            or record.task_id != row["task_id"]
++            or record.event_id != row["event_id"]
++            or record.recovery_id != row["recovery_id"]
++        ):
+             raise ValueError("stored recovery content mismatch")
+         return record
+ 
+     def list_unresolved_recoveries(self, task_id: str) -> list[RecoveryRecord]:
+-        return [record for record in self.list_recoveries(task_id)
+-                if not (record.state == "VERIFIED_RESOLVED"
+-                        and record.evidence_scope == "ACTUAL_SOURCE")]
++        return [
++            record
++            for record in self.list_recoveries(task_id)
++            if not (
++                record.state == "VERIFIED_RESOLVED" and record.evidence_scope == "ACTUAL_SOURCE"
++            )
++        ]
+ 
+     def list_recoveries(self, task_id: str) -> list[RecoveryRecord]:
+         rows = self._conn.execute(
+-            "SELECT recovery_id FROM recovery_records WHERE task_id=? ORDER BY rowid", (task_id,),
++            "SELECT recovery_id FROM recovery_records WHERE task_id=? ORDER BY rowid",
++            (task_id,),
+         ).fetchall()
+         return [record for row in rows if (record := self.get_recovery(row["recovery_id"]))]
+ 
+     def advance_recovery_if_current(
+-        self, record: RecoveryRecord, *, expected_state: str, expected_revision: int,
+-        expected_budget_revision: int, verified_transition: RecoveryTransitionEvidence,
++        self,
++        record: RecoveryRecord,
++        *,
++        expected_state: str,
++        expected_revision: int,
++        expected_budget_revision: int,
++        verified_transition: RecoveryTransitionEvidence,
+     ) -> RecoveryRecord | None:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import transition_values
+ 
+@@ -850,17 +912,29 @@
+             self._conn.execute("BEGIN IMMEDIATE")
+             current = self.get_recovery(record.recovery_id)
+             pool = self.get_verification_budget(current.task_id) if current else None
+-            if not (all(type(value) is int and value >= 0 for value in (
+-                    expected_revision, expected_budget_revision)) and current and pool
+-                    and current.state == expected_state and current.revision == expected_revision
+-                    and pool.revision == expected_budget_revision):
++            if not (
++                all(
++                    type(value) is int and value >= 0
++                    for value in (expected_revision, expected_budget_revision)
++                )
++                and current
++                and pool
++                and current.state == expected_state
++                and current.revision == expected_revision
++                and pool.revision == expected_budget_revision
++            ):
+                 return None
+             if current.content_hash() != record.content_hash():
+                 raise ValueError("caller cannot overwrite immutable recovery source")
+-            values = transition_values(current, pool, verified_transition,
++            values = transition_values(
++                current,
++                pool,
++                verified_transition,
+                 self.get_active_contract(current.task_id),
+                 self.get_latest_execution_checkpoint(current.task_id),
+-                self._replan_cancelled_locked(current.task_id), datetime.now(UTC))
++                self._replan_cancelled_locked(current.task_id),
++                datetime.now(UTC),
++            )
+             if values is None:
+                 return current
+             updated, next_pool = values
+@@ -868,7 +942,11 @@
+             return updated
+ 
+     def reserve_reobservation_if_current(
+-        self, *, recovery_id: str, expected_revision: int, expected_budget_revision: int,
++        self,
++        *,
++        recovery_id: str,
++        expected_revision: int,
++        expected_budget_revision: int,
+         reservation: RecoveryReservationEvidence | None = None,
+     ) -> RecoveryRecord | None:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+@@ -880,16 +958,26 @@
+             self._conn.execute("BEGIN IMMEDIATE")
+             current = self.get_recovery(recovery_id)
+             pool = self.get_verification_budget(current.task_id) if current else None
+-            if not (all(type(value) is int and value >= 0 for value in (
+-                    expected_revision, expected_budget_revision)) and current and pool
+-                    and current.revision == expected_revision
+-                    and pool.revision == expected_budget_revision
+-                    and not self._replan_cancelled_locked(current.task_id)):
++            if not (
++                all(
++                    type(value) is int and value >= 0
++                    for value in (expected_revision, expected_budget_revision)
++                )
++                and current
++                and pool
++                and current.revision == expected_revision
++                and pool.revision == expected_budget_revision
++                and not self._replan_cancelled_locked(current.task_id)
++            ):
+                 return None
+-            if not reservation_available(current, reservation,
+-                    self.get_active_contract(current.task_id),
+-                    self.get_latest_execution_checkpoint(current.task_id),
+-                    self._replan_cancelled_locked(current.task_id), datetime.now(UTC)):
++            if not reservation_available(
++                current,
++                reservation,
++                self.get_active_contract(current.task_id),
++                self.get_latest_execution_checkpoint(current.task_id),
++                self._replan_cancelled_locked(current.task_id),
++                datetime.now(UTC),
++            ):
+                 return None
+             values = reserved_values(current, pool, datetime.now(UTC))
+             if values is None:
+@@ -899,9 +987,15 @@
+             return updated
+ 
+     def consume_retry_and_authorize_recovery_if_current(
+-        self, *, recovery_id: str, expected_recovery_revision: int,
+-        expected_verification_budget_revision: int, expected_retry_count: int,
+-        step_id: str, skill: str, authorization: RecoveryAuthorizationEvidence,
++        self,
++        *,
++        recovery_id: str,
++        expected_recovery_revision: int,
++        expected_verification_budget_revision: int,
++        expected_retry_count: int,
++        step_id: str,
++        skill: str,
++        authorization: RecoveryAuthorizationEvidence,
+     ) -> RecoveryAuthorizationResult:
+         from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+             RecoveryAuthorizationResult,
+@@ -915,24 +1009,44 @@
+             pool = self.get_verification_budget(record.task_id) if record else None
+             budget = self.get_retry_budget(record.task_id) if record else None
+             reasons: tuple[str, ...] = ("authorization_compare_and_set_conflict",)
+-            if (all(type(value) is int and value >= 0 for value in (
+-                    expected_recovery_revision, expected_verification_budget_revision,
+-                    expected_retry_count))
+-                    and record and pool and budget and record.revision == expected_recovery_revision
+-                    and pool.revision == expected_verification_budget_revision
+-                    and budget.retry_count_used == expected_retry_count):
++            if (
++                all(
++                    type(value) is int and value >= 0
++                    for value in (
++                        expected_recovery_revision,
++                        expected_verification_budget_revision,
++                        expected_retry_count,
++                    )
++                )
++                and record
++                and pool
++                and budget
++                and record.revision == expected_recovery_revision
++                and pool.revision == expected_verification_budget_revision
++                and budget.retry_count_used == expected_retry_count
++            ):
+                 now = datetime.now(UTC)
+                 reasons = authorization_reasons(
+-                    record, pool, budget, self.get_event(record.event_id),
++                    record,
++                    pool,
++                    budget,
++                    self.get_event(record.event_id),
+                     self.get_active_contract(record.task_id),
+                     self.get_latest_execution_checkpoint(record.task_id),
+-                    self._replan_cancelled_locked(record.task_id), authorization,
+-                    step_id, skill, now,
++                    self._replan_cancelled_locked(record.task_id),
++                    authorization,
++                    step_id,
++                    skill,
++                    now,
+                 )
+                 if not reasons:
+                     consumed, retry = self._consume_retry_locked(
+-                        record.task_id, step_id, skill, expected_retry_count,
+-                        record.event_id, commit=False,
++                        record.task_id,
++                        step_id,
++                        skill,
++                        expected_retry_count,
++                        record.event_id,
++                        commit=False,
+                     )
+                     if consumed and retry:
+                         updated, next_pool = authorized_values(
+@@ -944,13 +1058,20 @@
+             return RecoveryAuthorizationResult(False, record, budget, pool, reasons)
+ 
+     def _update_recovery_locked(
+-        self, record: RecoveryRecord, pool: VerificationBudgetRecord,
++        self,
++        record: RecoveryRecord,
++        pool: VerificationBudgetRecord,
+     ) -> None:
+         self._conn.execute(
+             "UPDATE recovery_records SET revision=?,state=?,payload_json=?,content_hash=? "
+             "WHERE recovery_id=?",
+-            (record.revision, record.state, self._json(record.to_payload()),
+-             record.content_hash(), record.recovery_id),
++            (
++                record.revision,
++                record.state,
++                self._json(record.to_payload()),
++                record.content_hash(),
++                record.recovery_id,
++            ),
+         )
+         self._conn.execute(
+             "UPDATE verification_budgets SET revision=?,payload_json=?,content_hash=? "
+@@ -2244,6 +2365,156 @@
+                 retry.updated_at.isoformat(),
+             ),
+         )
++
++    def _visual_verification_group_locked(self, task_id: str) -> tuple[Any, Any, Any, Any]:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import counter
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++            _load,
++            _pool,
++            strict_source_json_model,
++        )
++
++        for table, column, model in (
++            ("active_task_contracts", "record_json", ActiveTaskContractRecord),
++            ("execution_checkpoints", "payload_json", ExecutionCheckpoint),
++        ):
++            order = " ORDER BY id DESC" if table == "execution_checkpoints" else ""
++            row = self._conn.execute(
++                f"SELECT {column} FROM {table} WHERE task_id=?{order} LIMIT 1",
++                (task_id,),
++            ).fetchone()
++            if row is not None:
++                strict_source_json_model(row[0], model)
++        row = self._conn.execute(
++            "SELECT payload_json FROM verification_budgets WHERE task_id=?",
++            (task_id,),
++        ).fetchone()
++        if row is not None:
++            _pool(_load(row[0]))
++        row = self._conn.execute(
++            "SELECT * FROM recovery_budgets WHERE task_id=?",
++            (task_id,),
++        ).fetchone()
++        if row is not None:
++            for name in (
++                "step_retry_counts_json",
++                "skill_retry_counts_json",
++                "event_retry_counts_json",
++            ):
++                for value in _load(row[name]).values():
++                    counter(value)
++        return self._visual_group_locked(task_id)
++
++    def _visual_verification_record_locked(
++        self,
++        task_id: str,
++        *,
++        event_key: str | None = None,
++        source_key: str | None = None,
++    ) -> VisualVerificationRouteRecord | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++            VisualVerificationRouteRecord,
++        )
++
++        column, key = (
++            ("event_key", event_key) if event_key is not None else ("source_key", source_key)
++        )
++        row = self._conn.execute(
++            f"SELECT * FROM visual_verification_routes WHERE task_id=? AND {column}=?",
++            (task_id, key),
++        ).fetchone()
++        if row is None:
++            return None
++        record = VisualVerificationRouteRecord.from_json(row["payload_json"])
++        payload = record.to_payload()
++        if (
++            record.digest() != row["record_hash"]
++            or payload["source_key"] != row["source_key"]
++            or payload["input"]["event_key"] != row["event_key"]
++            or payload["input"]["original"]["identity"]["task_id"] != task_id
++        ):
++            raise ValueError("stored verification row/hash differs")
++        return record
++
++    def get_visual_verification_route(
++        self,
++        task_id: str,
++        event_key: str,
++    ) -> VisualVerificationRouteRecord | None:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN")
++            return self._visual_verification_record_locked(task_id, event_key=event_key)
++
++    def route_visual_verification_if_current(
++        self,
++        *,
++        request: VisualVerificationRouteInput,
++    ) -> VisualVerificationRouteWriteResult | None:
++        from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
++            VisualVerificationRouteInput,
++            VisualVerificationRouteWriteResult,
++            derive_route,
++            historical_duplicate,
++        )
++
++        if type(request) is not VisualVerificationRouteInput:
++            raise ValueError("concrete source routing input required")
++        request = VisualVerificationRouteInput.from_json(request.to_json())
++        task_id = request.task_id
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            stored = self._visual_verification_record_locked(task_id, event_key=request.event_key)
++            same_event = stored is not None
++            if stored is None:
++                stored = self._visual_verification_record_locked(
++                    task_id, source_key=request.source_key()
++                )
++            if stored is not None:
++                return historical_duplicate(request, stored, same_event=same_event)
++            prior = self._visual_record_locked(task_id)
++            if prior is None:
++                return None
++            original = self._visual_original_locked(task_id, prior.checkpoint.plan_version)
++            if original is None or not self._visual_versions_match(original):
++                return None
++            ancestor = (
++                self._visual_record_locked(task_id, prior.owner_revision - 1)
++                if prior.owner_revision > 1
++                else None
++            )
++            try:
++                group = self._visual_verification_group_locked(task_id)
++                values = derive_route(
++                    request,
++                    original,
++                    prior,
++                    ancestor,
++                    *group,
++                    cancelled=self._replan_cancelled_locked(task_id),
++                    now=datetime.now(UTC),
++                )
++            except (ValueError, TypeError):
++                return None
++            if values is None:
++                return None
++            record, pool, produced = values
++            self._conn.execute(
++                "UPDATE verification_budgets SET revision=?,payload_json=?,content_hash=? "
++                "WHERE task_id=?",
++                (pool.revision, self._json(pool.to_payload()), pool.content_hash, task_id),
++            )
++            self._visual_store_record_locked(produced)
++            self._conn.execute(
++                "INSERT INTO visual_verification_routes VALUES (?,?,?,?,?)",
++                (
++                    task_id,
++                    request.event_key,
++                    request.source_key(),
++                    record.to_json(),
++                    record.digest(),
++                ),
++            )
++            return VisualVerificationRouteWriteResult(record, "NEW_COMMIT")
+ 
+     def get_visual_original_plan(
+         self, task_id: str, plan_version: int
+--- a/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py
++++ b/src/cloud_edge_robot_arm/repositories/event_autonomy/visual_verification.py
+@@ -0,0 +1,1067 @@
++"""Pure SOURCE_ROUTE_ONLY verification records. No source authentication or execution.
++
++The repository samples the transaction clock. No callback, provider, sensor or
++executor is called here. LEGACY's router and pool behavior remain unchanged.
++"""
++
++from __future__ import annotations
++
++import json
++import math
++from collections.abc import Mapping
++from dataclasses import asdict, replace
++from datetime import datetime
++from enum import StrEnum
++from typing import Any, ClassVar, Literal, cast
++
++from pydantic import BaseModel
++
++from cloud_edge_robot_arm.contracts.models import (
++    ActiveTaskContractRecord,
++    ExecutionCheckpoint,
++    RecoveryBudget,
++    RobotState,
++    SkillExecutionResult,
++    TaskContract,
++)
++from cloud_edge_robot_arm.edge.evidence.conditions import (
++    ConditionStatus,
++    ConditionVerdict,
++    OnlineEvidenceSnapshot,
++    evaluate_conditions,
++)
++from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract
++from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
++from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord, copy_budget
++from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
++from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
++    VisualOwnerPublicationRecord,
++    aware,
++    canonical,
++    counter,
++    current_publication,
++    digest,
++    grounding_from_payload,
++    operation_hash,
++    original_from_payload,
++    publication,
++    serialized_model,
++    sha,
++)
++from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.owner_registration import VisualOriginalPlan
++
++PHASES = frozenset(
++    {
++        "PRECONDITION",
++        "NATIVE_PRE_SAFETY",
++        "NATIVE_PRE_SKILL",
++        "CLOUD_RETURN",
++        "AFTER_EFFECT",
++        "POST_HOLD",
++        "TERMINAL",
++    }
++)
++NATIVE_PHASES = frozenset({"NATIVE_PRE_SAFETY", "NATIVE_PRE_SKILL", "CLOUD_RETURN"})
++EFFECT_PHASES = frozenset({"AFTER_EFFECT", "POST_HOLD", "TERMINAL"})
++
++
++def _plain(value: Any) -> Any:
++    if isinstance(value, Mapping):
++        if any(type(k) is not str for k in value):
++            raise ValueError("string source keys required")
++        return {k: _plain(v) for k, v in value.items()}
++    if isinstance(value, (tuple, list)):
++        return [_plain(v) for v in value]
++    if isinstance(value, StrEnum):
++        return value.value
++    if isinstance(value, datetime):
++        return aware(value).isoformat()
++    if value is None or type(value) in (str, bool):
++        return value
++    if type(value) is int and abs(value) <= 2**63 - 1:
++        return value
++    if type(value) is float and math.isfinite(value):
++        return value
++    raise ValueError("finite strict JSON source required")
++
++
++def _load(raw: str) -> dict[str, Any]:
++    def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
++        result: dict[str, Any] = {}
++        for key, value in items:
++            if key in result:
++                raise ValueError("duplicate source JSON key")
++            result[key] = value
++        return result
++
++    def bad(value: str) -> None:
++        raise ValueError(f"nonfinite JSON token {value}")
++
++    if type(raw) is not str:
++        raise ValueError("original source JSON string required")
++    result = json.loads(raw, object_pairs_hook=pairs, parse_constant=bad)
++    if type(result) is not dict:
++        raise ValueError("full source envelope required")
++    return cast(dict[str, Any], _plain(result))
++
++
++def _identifier(value: Any) -> str:
++    if type(value) is not str or not value.strip() or len(value) > 200:
++        raise ValueError("bounded source identity required")
++    return value
++
++
++def _pool(raw: dict[str, Any]) -> VerificationBudgetRecord:
++    raw = _plain(raw)
++    if set(raw) != {
++        "schema_version",
++        "task_id",
++        "state",
++        "revision",
++        "created_at",
++        "updated_at",
++        "content_hash",
++    }:
++        raise ValueError("complete verification pool required")
++    state = raw["state"]
++    if set(state) != {
++        "remaining_reobservations",
++        "remaining_retries",
++        "consecutive_no_progress",
++        "deadline_at",
++        "limits",
++        "previous_conditions",
++        "exhausted_reason",
++        "verification_rounds",
++    }:
++        raise ValueError("complete verification state required")
++    for name in (
++        "remaining_reobservations",
++        "remaining_retries",
++        "consecutive_no_progress",
++        "verification_rounds",
++    ):
++        counter(state[name])
++    if set(state["limits"]) != {
++        "max_reobservations",
++        "max_retries",
++        "max_no_progress",
++        "deadline_s",
++    }:
++        raise ValueError("complete original verification limits required")
++    for name in ("max_reobservations", "max_retries", "max_no_progress"):
++        counter(state["limits"][name])
++    for key, pair in state["previous_conditions"].items():
++        _identifier(key)
++        if (
++            not isinstance(pair, list)
++            or len(pair) != 2
++            or pair[0] not in {"UNKNOWN", "FAIL", "PASS"}
++        ):
++            raise ValueError("strict best verified condition history required")
++        if pair[1] is not None and (type(pair[1]) not in (float, int) or pair[1] < 0):
++            raise ValueError("finite nonnegative progress residual required")
++    result = VerificationBudgetRecord.from_payload(raw)
++    if canonical(result.to_payload()) != canonical(raw):
++        raise ValueError("pool source types changed")
++    return result
++
++
++def strict_source_json_model(raw: str, model: type[BaseModel]) -> BaseModel:
++    """Read current source bytes before Pydantic can discard unknown/coerced fields."""
++    return serialized_model(_load(raw), model)
++
++
++def current_models_exact(*models: BaseModel | None) -> bool:
++    def walk(value: Any) -> None:
++        if isinstance(value, BaseModel):
++            if set(vars(value)) - set(type(value).model_fields):
++                raise ValueError("undeclared current source model fields")
++            serialized_model(value.model_dump(mode="json"), type(value))
++            for name in type(value).model_fields:
++                walk(getattr(value, name))
++        elif isinstance(value, Mapping):
++            for item in value.values():
++                walk(item)
++        elif isinstance(value, (tuple, list)):
++            for item in value:
++                walk(item)
++
++    try:
++        for model in models:
++            if model is None:
++                return False
++            walk(model)
++    except (ValueError, TypeError):
++        return False
++    return True
++
++
++def evidence_content_hash(online: OnlineEvidenceSnapshot) -> str:
++    """v1 exact frozen evidence body excluding its separately named context domain."""
++    return digest(
++        dict(
++            schema_version="visual.verification.evidence-content.v1",
++            observation=online.observation.model_dump(mode="json"),
++            robot_state=online.robot_state.model_dump(mode="json"),
++            visual_facts=_plain(online.visual_facts),
++            plan_version=online.plan_version,
++            command_seq=online.command_seq,
++        )
++    )
++
++
++def native_action_context_hash(role_bundle_hash: str, contract: TaskContract, step_id: str) -> str:
++    """Existing native v1 hash payload; domain name lives in the route schema."""
++    step = next((s for s in contract.steps if s.step_id == step_id), None)
++    if step is None:
++        raise ValueError("current native step missing")
++    return digest(
++        dict(
++            role_bundle_hash=sha(role_bundle_hash),
++            contract=contract.model_dump(mode="json"),
++            step=step.model_dump(mode="json"),
++        )
++    )
++
++
++def camera_source_descriptor_sha256(observation: RGBDObservation) -> str:
++    """Fixed v1 descriptor content identity; never calibration authentication."""
++    return digest(
++        dict(
++            schema_version="visual.rgbd.camera-source-descriptor.v1",
++            **{
++                k: observation.model_dump(mode="json")[k]
++                for k in (
++                    "source",
++                    "width",
++                    "height",
++                    "intrinsics",
++                    "camera_to_world",
++                    "depth_convention",
++                    "calibration_version",
++                )
++            },
++        )
++    )
++
++
++class _FrozenJSON:
++    __slots__ = ("_json",)
++    _json: str
++    scope: ClassVar[str] = "SOURCE_ROUTE_ONLY"
++
++    def __setattr__(self, name: str, value: Any) -> None:
++        raise TypeError("immutable source record")
++
++    def to_payload(self) -> dict[str, Any]:
++        return cast(dict[str, Any], json.loads(self._json))
++
++    def to_json(self) -> str:
++        return self._json
++
++    def digest(self) -> str:
++        return digest(self.to_payload())
++
++
++class VisualEffectCompletion(_FrozenJSON):
++    """Typed result/return source carrier only; public construction authenticates nothing."""
++
++    def __init__(
++        self,
++        *,
++        result: SkillExecutionResult,
++        task_id: str,
++        plan_id: str,
++        robot_id: str,
++        step_id: str,
++        attempt: int,
++        plan_version: int,
++        command_seq: int,
++        started_at: datetime,
++        returned_at: datetime,
++        before_observation_id: str,
++        execution_payload_hash: str,
++        source_checkpoint_hash: str,
++        source_hashes: Mapping[str, str],
++    ) -> None:
++        raw = dict(
++            schema_version="visual.verification.effect-completion.v1",
++            scope=self.scope,
++            result=result.model_dump(mode="json"),
++            task_id=task_id,
++            plan_id=plan_id,
++            robot_id=robot_id,
++            step_id=step_id,
++            attempt=attempt,
++            plan_version=plan_version,
++            command_seq=command_seq,
++            started_at=aware(started_at).isoformat(),
++            returned_at=aware(returned_at).isoformat(),
++            before_observation_id=before_observation_id,
++            execution_payload_hash=execution_payload_hash,
++            source_checkpoint_hash=source_checkpoint_hash,
++            source_hashes=_plain(source_hashes),
++        )
++        self._store(raw)
++
++    def _store(self, raw: dict[str, Any]) -> None:
++        if (
++            set(raw)
++            != {
++                "schema_version",
++                "scope",
++                "result",
++                "task_id",
++                "plan_id",
++                "robot_id",
++                "step_id",
++                "attempt",
++                "plan_version",
++                "command_seq",
++                "started_at",
++                "returned_at",
++                "before_observation_id",
++                "execution_payload_hash",
++                "source_checkpoint_hash",
++                "source_hashes",
++            }
++            or raw["schema_version"] != "visual.verification.effect-completion.v1"
++            or raw["scope"] != "SOURCE_ROUTE_ONLY"
++        ):
++            raise ValueError("strict effect completion source schema required")
++        serialized_model(raw["result"], SkillExecutionResult)
++        for name in ("task_id", "plan_id", "robot_id", "step_id", "before_observation_id"):
++            _identifier(raw[name])
++        for name in ("attempt", "plan_version", "command_seq"):
++            counter(raw[name])
++        if raw["attempt"] < 1 or raw["command_seq"] < 1:
++            raise ValueError("positive attempt/sequence required")
++        if aware(datetime.fromisoformat(raw["started_at"])) > aware(
++            datetime.fromisoformat(raw["returned_at"])
++        ):
++            raise ValueError("effect return predates start")
++        for name in ("execution_payload_hash", "source_checkpoint_hash"):
++            sha(raw[name])
++        if not raw["source_hashes"]:
++            raise ValueError("effect source inventory required")
++        for name, value in raw["source_hashes"].items():
++            _identifier(name)
++            sha(value)
++        object.__setattr__(self, "_json", canonical(_plain(raw)))
++
++    @classmethod
++    def from_payload(cls, raw: dict[str, Any]) -> VisualEffectCompletion:
++        result = object.__new__(cls)
++        result._store(_plain(raw))
++        return result
++
++
++class VisualVerificationRouteInput(_FrozenJSON):
++    def __init__(
++        self,
++        *,
++        original: VisualOriginalPlan,
++        publication: VisualOwnerPublicationRecord,
++        online: OnlineEvidenceSnapshot,
++        step_id: str,
++        attempt: int,
++        phase: str,
++        event_key: str,
++        execution_contract: TaskContract,
++        completion: VisualEffectCompletion | None = None,
++    ) -> None:
++        raw = dict(
++            schema_version="visual.verification.route-input.v1",
++            scope=self.scope,
++            original=original.to_payload(),
++            publication=publication.to_payload(),
++            online=dict(
++                observation=online.observation.model_dump(mode="json"),
++                robot_state=online.robot_state.model_dump(mode="json"),
++                visual_facts=_plain(online.visual_facts),
++                plan_version=online.plan_version,
++                command_seq=online.command_seq,
++                context_hash=online.context_hash,
++            ),
++            step_id=step_id,
++            attempt=attempt,
++            phase=phase,
++            event_key=event_key,
++            execution_contract=execution_contract.model_dump(mode="json"),
++            completion=completion.to_payload() if completion is not None else None,
++        )
++        self._store(raw)
++
++    def _store(self, raw: dict[str, Any]) -> None:
++        if (
++            set(raw)
++            != {
++                "schema_version",
++                "scope",
++                "original",
++                "publication",
++                "online",
++                "step_id",
++                "attempt",
++                "phase",
++                "event_key",
++                "execution_contract",
++                "completion",
++            }
++            or raw["schema_version"] != "visual.verification.route-input.v1"
++            or raw["scope"] != "SOURCE_ROUTE_ONLY"
++        ):
++            raise ValueError("strict source route input/scope required")
++        original = original_from_payload(raw["original"])
++        publication_ = VisualOwnerPublicationRecord.from_payload(raw["publication"])
++        _pool(raw["publication"]["verification_budget"])
++        _identifier(raw["step_id"])
++        _identifier(raw["event_key"])
++        counter(raw["attempt"])
++        if raw["attempt"] < 1 or raw["phase"] not in PHASES:
++            raise ValueError("registered routing phase/attempt required")
++        online = raw["online"]
++        if set(online) != {
++            "observation",
++            "robot_state",
++            "visual_facts",
++            "plan_version",
++            "command_seq",
++            "context_hash",
++        }:
++            raise ValueError("complete evidence body required")
++        serialized_model(online["observation"], RGBDObservation)
++        serialized_model(online["robot_state"], RobotState)
++        if type(online["visual_facts"]) is not dict:
++            raise ValueError("full online facts required")
++        counter(online["plan_version"])
++        counter(online["command_seq"])
++        sha(online["context_hash"])
++        serialized_model(raw["execution_contract"], TaskContract)
++        if raw["completion"] is not None:
++            VisualEffectCompletion.from_payload(raw["completion"])
++        if original.identity.task_id != publication_.identity.task_id:
++            raise ValueError("foreign original/publication task")
++        object.__setattr__(self, "_json", canonical(_plain(raw)))
++
++    @classmethod
++    def from_json(cls, raw: str) -> VisualVerificationRouteInput:
++        result = object.__new__(cls)
++        result._store(_load(raw))
++        return result
++
++    @classmethod
++    def from_payload(cls, raw: dict[str, Any]) -> VisualVerificationRouteInput:
++        return cls.from_json(canonical(_plain(raw)))
++
++    @property
++    def task_id(self) -> str:
++        return str(self.to_payload()["original"]["identity"]["task_id"])
++
++    @property
++    def event_key(self) -> str:
++        return str(self.to_payload()["event_key"])
++
++    def source_key(self) -> str:
++        p = self.to_payload()
++        obs = p["online"]["observation"]
++        o = p["original"]
++        c = o["contract"]
++        requirement = o["requirements"].get(p["step_id"])
++        return digest(
++            dict(
++                schema_version="visual.verification.source-key.v1",
++                task_id=self.task_id,
++                original_plan_hash=digest(o),
++                plan_version=c["plan_version"],
++                command_seq=c["command_seq"],
++                step_id=p["step_id"],
++                attempt=p["attempt"],
++                phase=p["phase"],
++                frame_id=obs["observation_id"],
++                frame_checksum=obs["checksum_sha256"],
++                requirements_hash=digest(requirement),
++            )
++        )
++
++    def semantic_hash(self) -> str:
++        p = self.to_payload()
++        return digest(
++            {
++                k: p[k]
++                for k in (
++                    "original",
++                    "online",
++                    "step_id",
++                    "attempt",
++                    "phase",
++                    "execution_contract",
++                    "completion",
++                )
++            }
++        )
++
++    def online(self) -> OnlineEvidenceSnapshot:
++        p = self.to_payload()["online"]
++        return OnlineEvidenceSnapshot(
++            serialized_model(p["observation"], RGBDObservation),
++            serialized_model(p["robot_state"], RobotState),
++            p["visual_facts"],
++            p["plan_version"],
++            p["command_seq"],
++            p["context_hash"],
++        )
++
++
++class VisualVerificationRouteRecord(_FrozenJSON):
++    def __init__(self, raw: dict[str, Any]) -> None:
++        fields = {
++            "schema_version",
++            "scope",
++            "input",
++            "input_hash",
++            "semantic_hash",
++            "source_key",
++            "route",
++            "reasons",
++            "verdicts",
++            "created_at",
++            "before_verification_budget",
++            "after_verification_budget",
++            "produced_publication",
++            "produced_publication_hash",
++            "source_context_hash",
++            "native_context_hash",
++            "evidence_content_hash",
++            "context_domains",
++            "capture_claim_id",
++            "camera_source_descriptor_sha256",
++        }
++        if (
++            set(raw) != fields
++            or raw["schema_version"] != "visual.verification.route.v1"
++            or raw["scope"] != "SOURCE_ROUTE_ONLY"
++        ):
++            raise ValueError("strict source route history schema required")
++        request = VisualVerificationRouteInput.from_payload(raw["input"])
++        if (
++            raw["input_hash"] != request.digest()
++            or raw["semantic_hash"] != request.semantic_hash()
++            or raw["source_key"] != request.source_key()
++        ):
++            raise ValueError("routing original input hash differs")
++        if raw["route"] not in {"CONTINUE", "REOBSERVE", "STOP"}:
++            raise ValueError("no execution/recovery route available")
++        if type(raw["reasons"]) is not list or any(type(s) is not str for s in raw["reasons"]):
++            raise ValueError("exact routing reasons required")
++        aware(datetime.fromisoformat(raw["created_at"]))
++        before, after = (
++            _pool(raw["before_verification_budget"]),
++            _pool(raw["after_verification_budget"]),
++        )
++        produced = VisualOwnerPublicationRecord.from_payload(raw["produced_publication"])
++        p = request.to_payload()
++        prior = VisualOwnerPublicationRecord.from_payload(p["publication"])
++        original = original_from_payload(p["original"])
++        if (
++            raw["produced_publication_hash"] != produced.digest()
++            or before.content_hash != prior.verification_budget.content_hash
++            or after.content_hash != produced.verification_budget.content_hash
++            or after.revision != before.revision + 1
++            or produced.owner_revision != prior.owner_revision + 1
++            or produced.state_generation != prior.state_generation + 1
++            or canonical(produced.checkpoint.model_dump(mode="json"))
++            != canonical(prior.checkpoint.model_dump(mode="json"))
++            or produced.original_plan_hash != original.digest()
++            or after.state.limits != before.state.limits
++            or after.state.deadline_at != before.state.deadline_at
++            or after.state.remaining_reobservations > before.state.remaining_reobservations
++            or after.state.remaining_retries != before.state.remaining_retries
++            or canonical(produced.retry_budget.model_dump(mode="json"))
++            != canonical(prior.retry_budget.model_dump(mode="json"))
++        ):
++            raise ValueError("route/pool/publication transition differs")
++        online = request.online()
++        contract = serialized_model(p["execution_contract"], TaskContract)
++        if (
++            raw["source_context_hash"] != online.context_hash
++            or raw["native_context_hash"]
++            != native_action_context_hash(original.role_bundle_hash, contract, p["step_id"])
++            or raw["evidence_content_hash"] != evidence_content_hash(online)
++            or raw["camera_source_descriptor_sha256"]
++            != camera_source_descriptor_sha256(online.observation)
++            or raw["context_domains"]
++            != {
++                "source": "visual.checkpoint-context.v1",
++                "native": "visual.native-action-context.v1",
++                "evidence": "visual.verification.evidence-content.v1",
++            }
++        ):
++            raise ValueError("separate current context domains changed")
++        route, state, verdicts, reasons = _computed_route(
++            request, original, before, aware(datetime.fromisoformat(raw["created_at"]))
++        )
++        expected_pool = replace(
++            before,
++            state=state,
++            revision=before.revision + 1,
++            updated_at=aware(datetime.fromisoformat(raw["created_at"])),
++            content_hash="",
++        )
++        if (
++            raw["route"] != route
++            or raw["reasons"] != reasons
++            or canonical(raw["verdicts"]) != canonical([_plain(asdict(v)) for v in verdicts])
++            or canonical(after.to_payload()) != canonical(expected_pool.to_payload())
++        ):
++            raise ValueError("history must recompute canonical routing transition")
++        claim = raw["capture_claim_id"]
++        if (raw["route"] == "REOBSERVE") != (claim is not None):
++            raise ValueError("capture claim iff reobservation route")
++        if claim is not None and (
++            claim
++            != digest(
++                dict(
++                    schema_version="visual.verification.capture-claim.v1",
++                    source_key=request.source_key(),
++                )
++            )
++            or after.state.remaining_reobservations != before.state.remaining_reobservations - 1
++        ):
++            raise ValueError("capture claim/debit changed")
++        if (
++            claim is None
++            and after.state.remaining_reobservations != before.state.remaining_reobservations
++        ):
++            raise ValueError("unclaimed observation debit")
++        for verdict in raw["verdicts"]:
++            if set(verdict) != {
++                "status",
++                "condition_name",
++                "observation_id",
++                "measured_values",
++                "reasons",
++            } or verdict["status"] not in {"PASS", "FAIL", "UNKNOWN"}:
++                raise ValueError("canonical verdict schema required")
++        object.__setattr__(self, "_json", canonical(_plain(raw)))
++
++    @classmethod
++    def from_json(cls, raw: str) -> VisualVerificationRouteRecord:
++        return cls(_load(raw))
++
++    @property
++    def route(self) -> str:
++        return str(self.to_payload()["route"])
++
++    @property
++    def reasons(self) -> tuple[str, ...]:
++        return tuple(self.to_payload()["reasons"])
++
++
++class VisualVerificationRouteWriteResult:
++    __slots__ = ("record", "write_disposition")
++
++    def __init__(
++        self,
++        record: VisualVerificationRouteRecord,
++        write_disposition: Literal["NEW_COMMIT", "HISTORICAL_DUPLICATE"],
++    ) -> None:
++        if type(record) is not VisualVerificationRouteRecord or write_disposition not in {
++            "NEW_COMMIT",
++            "HISTORICAL_DUPLICATE",
++        }:
++            raise ValueError("strict source write result required")
++        object.__setattr__(
++            self, "record", VisualVerificationRouteRecord.from_json(record.to_json())
++        )
++        object.__setattr__(self, "write_disposition", write_disposition)
++
++    def __setattr__(self, name: str, value: Any) -> None:
++        raise TypeError("immutable source write result")
++
++
++def historical_duplicate(
++    request: VisualVerificationRouteInput,
++    stored: VisualVerificationRouteRecord,
++    *,
++    same_event: bool,
++) -> VisualVerificationRouteWriteResult:
++    p = stored.to_payload()
++    if p["semantic_hash"] != request.semantic_hash() or (
++        same_event and p["input_hash"] != request.digest()
++    ):
++        from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
++            IdempotencyConflictError,
++        )
++
++        raise IdempotencyConflictError("visual verification source/key changed bytes")
++    return VisualVerificationRouteWriteResult(stored, "HISTORICAL_DUPLICATE")
++
++
++def _authorized_execution(
++    request: VisualVerificationRouteInput,
++    original: VisualOriginalPlan,
++    prior: VisualOwnerPublicationRecord,
++) -> bool:
++    p = request.to_payload()
++    contract = serialized_model(p["execution_contract"], TaskContract)
++    expected = original.contract.model_dump(mode="json")
++    grounding = prior.to_payload()["grounding"]
++    if grounding is not None:
++        binding = grounding_from_payload(grounding)
++        if (
++            binding.grounded_step.step_id != p["step_id"]
++            or binding.original_requirements.digest()
++            != original.requirements[p["step_id"]].digest()
++        ):
++            return False
++        expected["steps"] = [
++            binding.grounded_step.model_dump(mode="json") if s["step_id"] == p["step_id"] else s
++            for s in expected["steps"]
++        ]
++    return canonical(contract.model_dump(mode="json")) == canonical(expected)
++
++
++def _phase_verdicts(
++    request: VisualVerificationRouteInput, original: VisualOriginalPlan, now: datetime
++) -> tuple[list[ConditionVerdict], list[str]]:
++    p = request.to_payload()
++    phase = p["phase"]
++    online = request.online()
++    requirement = original.requirements[p["step_id"]]
++    if phase in NATIVE_PHASES:
++        contract = serialized_model(p["execution_contract"], TaskContract)
++        step = next(s for s in contract.steps if s.step_id == p["step_id"])
++        native_online = replace(
++            online,
++            context_hash=native_action_context_hash(
++                original.role_bundle_hash, contract, p["step_id"]
++            ),
++        )
++        native = native_action_contract(native_online, contract, step)
++        action = ActionEvidenceContract(
++            native.evidence,
++            requirement.expected_duration_s,
++            requirement.allowed_error_m,
++            requirement.sensor_requirements,
++            requirement.preconditions,
++            requirement.postconditions,
++            online.plan_version,
++            online.command_seq,
++            native_online.context_hash,
++        )
++        verdict = validate_evidence(
++            action,
++            now,
++            native_online.context_hash,
++            online.observation.calibration_version or "",
++            online_evidence=native_online,
++        )
++        status = (
++            ConditionStatus.PASS
++            if verdict.status == "VALID"
++            else ConditionStatus.UNKNOWN
++            if verdict.status == "UNKNOWN"
++            else ConditionStatus.FAIL
++        )
++        return [
++            ConditionVerdict(
++                status,
++                "action_submit_evidence",
++                online.observation.observation_id,
++                reasons=verdict.reasons,
++            )
++        ], list(verdict.reasons)
++    if phase in EFFECT_PHASES:
++        completion = p["completion"]
++        if completion is None:
++            return [], ["effect_completion_source_unavailable"]
++        result = serialized_model(completion["result"], SkillExecutionResult)
++        if (
++            completion["task_id"] != request.task_id
++            or completion["step_id"] != p["step_id"]
++            or completion["attempt"] != p["attempt"]
++            or (completion["plan_version"], completion["command_seq"])
++            != (online.plan_version, online.command_seq)
++            or completion["source_checkpoint_hash"] != online.context_hash
++            or completion["execution_payload_hash"] != digest(p["execution_contract"])
++            or result.task_id != request.task_id
++            or result.step_id != p["step_id"]
++            or result.skill != requirement.original_step.skill
++            or completion["plan_id"] != original.identity.plan_id
++            or completion["robot_id"] != original.identity.robot_id
++            or result.scene_version != original.contract.scene_version
++            or not original.registered_at
++            <= aware(datetime.fromisoformat(completion["started_at"]))
++            <= result.timestamp
++            <= aware(datetime.fromisoformat(completion["returned_at"]))
++            or result.plan_version != online.plan_version
++            or result.command_seq != online.command_seq
++            or completion["before_observation_id"] == online.observation.observation_id
++            or not aware(datetime.fromisoformat(completion["returned_at"]))
++            < online.observation.captured_at
++            <= now
++            or any(
++                original.source_hashes.get(k) != v for k, v in completion["source_hashes"].items()
++            )
++        ):
++            return [], ["effect_completion_source_binding_changed"]
++        if not result.success:
++            return [], ["effect_execution_failed"]
++        names = {c.name for c in requirement.postconditions}
++        if phase == "POST_HOLD" and not {"object_held", "object_lifted", "object_stable"} <= names:
++            return [], ["phase_full_requirements_unregistered"]
++        if phase == "TERMINAL" and (
++            p["step_id"] != original.contract.steps[-1].step_id
++            or not set(original.contract.completion_criteria) <= names
++        ):
++            return [], ["phase_full_requirements_unregistered"]
++        return evaluate_conditions(requirement.postconditions, online, now=now), []
++    return evaluate_conditions(requirement.preconditions, online, now=now), []
++
++
++def _route_state(
++    verdicts: list[ConditionVerdict], state: VerificationBudgetState, namespace: str, phase: str
++) -> str:
++    if state.exhausted_reason:
++        return "STOP"
++    current = {}
++    for index, verdict in enumerate(verdicts):
++        residual = verdict.measured_values.get("residual_m")
++        if (
++            not isinstance(residual, (int, float))
++            or isinstance(residual, bool)
++            or residual < 0
++            or not math.isfinite(residual)
++            or verdict.measured_values.get("source") != "rgbd_estimate"
++        ):
++            residual = None
++        key = namespace + f":{index}:" + verdict.condition_name
++        current[key] = (str(verdict.status), residual)
++    all_pass = bool(verdicts) and all(v.status == ConditionStatus.PASS for v in verdicts)
++    progress = False
++    for key, (status, residual) in current.items():
++        previous = state.previous_conditions.get(key)
++        if previous:
++            old, old_residual = previous
++            progress |= (
++                (old == "UNKNOWN" and status in {"FAIL", "PASS"})
++                or (old == "FAIL" and status == "PASS")
++                or (
++                    status != "UNKNOWN"
++                    and residual is not None
++                    and old_residual is not None
++                    and residual < old_residual - 1e-6
++                )
++            )
++    if state.verification_rounds > 0 and not all_pass:
++        state.consecutive_no_progress = 0 if progress else state.consecutive_no_progress + 1
++    state.verification_rounds += 1
++    rank = {"UNKNOWN": 0, "FAIL": 1, "PASS": 2}
++    for key, (status, residual) in current.items():
++        old, old_residual = state.previous_conditions.get(key, ("UNKNOWN", None))
++        candidates = [v for v in (old_residual, residual) if v is not None]
++        state.previous_conditions[key] = (
++            status if rank[status] > rank[old] else old,
++            min(candidates) if candidates else None,
++        )
++    if state.consecutive_no_progress >= state.limits.max_no_progress:
++        state.exhausted_reason = "no_progress_exhausted"
++        return "STOP"
++    if all_pass:
++        return "CONTINUE"
++    if phase == "NATIVE_PRE_SKILL":
++        state.exhausted_reason = "post_safety_evidence_invalidated"
++        return "STOP"
++    if not verdicts or any(v.status == ConditionStatus.UNKNOWN for v in verdicts):
++        if state.remaining_reobservations > 0:
++            state.remaining_reobservations -= 1
++            return "REOBSERVE"
++        state.exhausted_reason = "reobservation_unavailable_or_exhausted"
++        return "STOP"
++    state.exhausted_reason = "recovery_unavailable_or_exhausted"
++    return "STOP"
++
++
++def _computed_route(
++    request: VisualVerificationRouteInput,
++    original: VisualOriginalPlan,
++    pool: VerificationBudgetRecord,
++    now: datetime,
++) -> tuple[str, VerificationBudgetState, list[ConditionVerdict], list[str]]:
++    p, online = request.to_payload(), request.online()
++    requirement = original.requirements[p["step_id"]]
++    state = copy_budget(pool.state)
++    verdicts: list[ConditionVerdict] = []
++    reasons: list[str] = []
++    if (
++        online.robot_state.estop_engaged
++        or online.robot_state.collision_detected
++        or not online.robot_state.connected
++    ):
++        route = "STOP"
++        state.exhausted_reason = state.exhausted_reason or "hard_safety_fault"
++        reasons = ["hard_safety_fault"]
++    elif now >= min(state.deadline_at, original.effective_deadline_at):
++        route = "STOP"
++        state.exhausted_reason = state.exhausted_reason or "deadline_exhausted"
++        reasons = ["deadline_exhausted"]
++    elif (now - online.observation.captured_at).total_seconds() > requirement.ordinary_ttl_s:
++        route = "STOP"
++        state.exhausted_reason = state.exhausted_reason or "frame_ttl_expired"
++        reasons = ["frame_ttl_expired"]
++    elif state.exhausted_reason:
++        route = "STOP"
++        reasons = [state.exhausted_reason]
++    else:
++        verdicts, reasons = _phase_verdicts(request, original, now)
++        if reasons and p["phase"] in EFFECT_PHASES:
++            route = "STOP"
++            state.exhausted_reason = reasons[0]
++        else:
++            namespace = digest(
++                dict(
++                    schema_version="visual.verification.progress-context.v1",
++                    original_plan_hash=original.digest(),
++                    step_id=p["step_id"],
++                    attempt=p["attempt"],
++                    phase=p["phase"],
++                    requirements=requirement.to_payload(),
++                )
++            )
++            route = _route_state(verdicts, state, namespace, p["phase"])
++            if state.exhausted_reason:
++                reasons.append(state.exhausted_reason)
++    return route, state, verdicts, list(dict.fromkeys(reasons))
++
++
++def derive_route(
++    request: VisualVerificationRouteInput,
++    original: VisualOriginalPlan,
++    prior: VisualOwnerPublicationRecord,
++    ancestor: VisualOwnerPublicationRecord | None,
++    active: ActiveTaskContractRecord | None,
++    checkpoint: ExecutionCheckpoint | None,
++    pool: VerificationBudgetRecord | None,
++    retry: RecoveryBudget | None,
++    *,
++    cancelled: bool,
++    now: datetime,
++) -> (
++    tuple[VisualVerificationRouteRecord, VerificationBudgetRecord, VisualOwnerPublicationRecord]
++    | None
++):
++    """Transaction-current pure source producer; does not authorize capture or movement."""
++    now = aware(now)
++    if not current_models_exact(active, checkpoint, retry):
++        return None
++    p = request.to_payload()
++    online = request.online()
++    if (
++        cancelled
++        or original.digest() != digest(p["original"])
++        or prior.digest()
++        != digest({k: v for k, v in p["publication"].items() if k != "publication_hash"})
++        or not current_publication(
++            prior, original, active, checkpoint, pool, retry, previous=ancestor
++        )
++        or checkpoint is None
++        or pool is None
++        or retry is None
++        or p["step_id"] != checkpoint.current_step_id
++        or p["step_id"] not in original.requirements
++        or p["step_id"] in checkpoint.completed_step_ids
++        or p["attempt"] > original.requirements[p["step_id"]].original_step.retry_limit + 1
++        or (online.plan_version, online.command_seq)
++        != (checkpoint.plan_version, checkpoint.command_seq)
++        or online.context_hash != checkpoint.checkpoint_hash
++        or online.observation.episode_id != original.identity.episode_id
++        or online.observation.captured_at > now
++        or checkpoint.updated_at > now
++        or not online.observation.calibration_version
++        or not _authorized_execution(request, original, prior)
++    ):
++        return None
++    requirement = original.requirements[p["step_id"]]
++    descriptor = camera_source_descriptor_sha256(online.observation)
++    for spec in (*requirement.preconditions, *requirement.postconditions):
++        expected = spec.tolerances.get("camera_source_descriptor_sha256")
++        if expected is not None and (sha(expected) != descriptor):
++            return None
++        calibration = spec.tolerances.get("calibration_version")
++        if calibration is not None and calibration != online.observation.calibration_version:
++            return None
++    grounding = prior.to_payload()["grounding"]
++    if (
++        grounding is not None
++        and grounding["calibration_version"] != online.observation.calibration_version
++    ):
++        return None
++    route, state, verdicts, reasons = _computed_route(request, original, pool, now)
++    next_pool = replace(
++        pool, state=state, revision=pool.revision + 1, updated_at=now, content_hash=""
++    )
++    key = operation_hash(
++        task_id=request.task_id,
++        owner_epoch=prior.identity.owner_epoch,
++        expected_owner_revision=prior.owner_revision,
++        expected_contract_hash=prior.to_payload()["contract_hash"],
++        expected_checkpoint_hash=checkpoint.checkpoint_hash,
++        checkpoint=checkpoint,
++        grounding=None,
++        state_generation=prior.state_generation + 1,
++    )
++    produced = publication(
++        original,
++        checkpoint,
++        next_pool,
++        retry,
++        revision=prior.owner_revision + 1,
++        generation=prior.state_generation + 1,
++        source_revision=prior.owner_revision,
++        operation_hash=key,
++        grounding=None,
++    )
++    record = VisualVerificationRouteRecord(
++        dict(
++            schema_version="visual.verification.route.v1",
++            scope="SOURCE_ROUTE_ONLY",
++            input=p,
++            input_hash=request.digest(),
++            semantic_hash=request.semantic_hash(),
++            source_key=request.source_key(),
++            route=route,
++            reasons=list(dict.fromkeys(reasons)),
++            verdicts=[_plain(asdict(v)) for v in verdicts],
++            created_at=now.isoformat(),
++            before_verification_budget=pool.to_payload(),
++            after_verification_budget=next_pool.to_payload(),
++            produced_publication=produced.to_payload(),
++            produced_publication_hash=produced.digest(),
++            source_context_hash=online.context_hash,
++            native_context_hash=native_action_context_hash(
++                original.role_bundle_hash,
++                serialized_model(p["execution_contract"], TaskContract),
++                p["step_id"],
++            ),
++            evidence_content_hash=evidence_content_hash(online),
++            context_domains={
++                "source": "visual.checkpoint-context.v1",
++                "native": "visual.native-action-context.v1",
++                "evidence": "visual.verification.evidence-content.v1",
++            },
++            capture_claim_id=digest(
++                dict(
++                    schema_version="visual.verification.capture-claim.v1",
++                    source_key=request.source_key(),
++                )
++            )
++            if route == "REOBSERVE"
++            else None,
++            camera_source_descriptor_sha256=descriptor,
++        )
++    )
++    return record, next_pool, produced
+--- a/tests/test_visual_verification_repository.py
++++ b/tests/test_visual_verification_repository.py
+@@ -0,0 +1,732 @@
++"""SOFTWARE_ONLY real repositories; zero source authentication or physical actions."""
++
++from __future__ import annotations
++
++import importlib
++import json
++from concurrent.futures import ThreadPoolExecutor
++from dataclasses import replace
++from datetime import UTC, datetime, timedelta
++
++import pytest
++
++from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++from cloud_edge_robot_arm.edge.recovery.verification_router import (
++    VerificationBudget,
++    VerificationBudgetState,
++)
++from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
++from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
++from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import SQLiteEventAutonomyRepository
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from tests.test_visual_owner_repository import fresh_source_values
++
++
++def api():
++    return importlib.import_module(
++        "cloud_edge_robot_arm.repositories.event_autonomy.visual_verification"
++    )
++
++
++@pytest.fixture(params=["memory", "sqlite"])
++def source(request, tmp_path):
++    repo = (
++        InMemoryEventAutonomyRepository()
++        if request.param == "memory"
++        else SQLiteEventAutonomyRepository(tmp_path / "event.db")
++    )
++    data = fresh_source_values()
++    original = data["original"]
++    retry = RecoveryBudget(
++        budget_id="routing-fixture",
++        task_id=original.identity.task_id,
++        task_total_retry_limit=2,
++        per_step_retry_limit=1,
++        per_skill_retry_limit=2,
++        effective_retry_limit=2,
++        remaining_retries=2,
++        retry_deadline=original.verification_deadline_at,
++        scene_version=original.contract.scene_version,
++        created_at=original.registered_at,
++        updated_at=original.registered_at,
++    )
++    state = VerificationBudgetState(
++        3, 2, 0, original.verification_deadline_at, VerificationBudget(3, 2, 3, 40.0)
++    )
++    publication = repo.initialize_visual_owner_if_absent(
++        original, data["source_checkpoint"], state, retry
++    )
++    data["publication"] = publication
++    # This creates a NEW synthetic input; never retimestamps a saved real image.
++    raw = data["online"].observation.model_dump(mode="json")
++    raw.update(captured_at=datetime.now(UTC).isoformat(), checksum_sha256="")
++    data["online"] = replace(
++        data["online"],
++        observation=RGBDObservation.model_validate(raw),
++        context_hash=publication.checkpoint.checkpoint_hash,
++    )
++    yield repo, data
++    if request.param == "sqlite":
++        repo.close()
++
++
++def request_for(data, *, unknown=True, event_key="route-1", phase="PRECONDITION", **changes):
++    online = data["online"]
++    if unknown:
++        online = replace(online, visual_facts={})
++    arguments = dict(
++        original=data["original"],
++        publication=data["publication"],
++        online=online,
++        step_id="move",
++        attempt=1,
++        phase=phase,
++        event_key=event_key,
++        execution_contract=data["original"].contract,
++        completion=None,
++    )
++    arguments.update(changes)
++    return api().VisualVerificationRouteInput(**arguments)
++
++
++def next_frame(data, publication, index):
++    raw = data["online"].observation.model_dump(mode="json")
++    raw.update(
++        frame_id=f"frame-{index}",
++        observation_id=f"frame-{index}",
++        captured_at=datetime.now(UTC).isoformat(),
++        checksum_sha256="",
++    )
++    return {
++        **data,
++        "publication": publication,
++        "online": replace(
++            data["online"],
++            observation=RGBDObservation.model_validate(raw),
++            context_hash=publication.checkpoint.checkpoint_hash,
++        ),
++    }
++
++
++def test_missing_api_then_unknown_debits_pool_and_publication_atomically(source):
++    repo, data = source
++    result = repo.route_visual_verification_if_current(request=request_for(data))
++    assert result.write_disposition == "NEW_COMMIT"
++    assert result.record.scope == "SOURCE_ROUTE_ONLY"
++    assert result.record.route == "REOBSERVE"
++    current = repo.get_visual_owner_publication(data["original"].identity.task_id)
++    assert current.owner_revision == 2 and current.state_generation == 1
++    assert current.verification_budget.state.remaining_reobservations == 2
++    assert current.verification_budget.state.remaining_retries == 2
++    assert current.retry_budget.remaining_retries == 2
++    assert (
++        current.verification_budget.state.deadline_at == data["original"].verification_deadline_at
++    )
++    assert (
++        repo.get_verification_budget(current.identity.task_id).content_hash
++        == current.verification_budget.content_hash
++    )
++    assert result.record.to_payload()["produced_publication_hash"] == current.digest()
++    assert (
++        repo.get_visual_verification_route(current.identity.task_id, "route-1").digest()
++        == result.record.digest()
++    )
++
++
++def test_pass_is_local_only_does_not_refund_or_debit_retry(source):
++    repo, data = source
++    result = repo.route_visual_verification_if_current(request=request_for(data, unknown=False))
++    assert result.record.route == "CONTINUE"
++    assert result.record.scope == "SOURCE_ROUTE_ONLY"
++    assert not hasattr(result.record, "execution_admitted")
++    current = repo.get_visual_owner_publication(data["original"].identity.task_id)
++    assert current.verification_budget.state.remaining_reobservations == 3
++    assert current.verification_budget.state.remaining_retries == 2
++    assert current.retry_budget.remaining_retries == 2
++
++
++def test_identical_retry_and_random_key_new_generation_cannot_charge_twice(source):
++    repo, data = source
++    request = request_for(data)
++    first = repo.route_visual_verification_if_current(request=request)
++    repeated = repo.route_visual_verification_if_current(request=request)
++    assert repeated.write_disposition == "HISTORICAL_DUPLICATE"
++    assert repeated.record.digest() == first.record.digest()
++    current = repo.get_visual_owner_publication(data["original"].identity.task_id)
++    changed = {**data, "publication": current}
++    repeated = repo.route_visual_verification_if_current(
++        request=request_for(changed, event_key="new-uuid")
++    )
++    assert repeated.write_disposition == "HISTORICAL_DUPLICATE"
++    assert (
++        repo.get_verification_budget(current.identity.task_id).state.remaining_reobservations == 2
++    )
++
++
++def test_same_key_changed_payload_or_same_frame_changed_facts_conflicts(source):
++    repo, data = source
++    repo.route_visual_verification_if_current(request=request_for(data))
++    with pytest.raises(IdempotencyConflictError):
++        repo.route_visual_verification_if_current(request=request_for(data, unknown=False))
++    with pytest.raises(IdempotencyConflictError):
++        repo.route_visual_verification_if_current(
++            request=request_for(data, unknown=False, event_key="new-key")
++        )
++
++
++@pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
++def test_hard_stop_precedes_observation_debit_even_with_unknown_conditions(source, field):
++    repo, data = source
++    robot = data["online"].robot_state.model_copy(update={field: field != "connected"})
++    online = replace(data["online"], robot_state=robot, visual_facts={})
++    result = repo.route_visual_verification_if_current(request=request_for(data, online=online))
++    assert result.record.route == "STOP"
++    assert "hard_safety_fault" in result.record.reasons
++    assert (
++        repo.get_verification_budget(
++            data["original"].identity.task_id
++        ).state.remaining_reobservations
++        == 3
++    )
++
++
++def test_future_frame_or_wrong_context_or_versions_do_not_write(source):
++    repo, data = source
++    raw = data["online"].observation.model_dump(mode="json")
++    raw.update(
++        captured_at=(datetime.now(UTC) + timedelta(seconds=2)).isoformat(), checksum_sha256=""
++    )
++    bad = replace(data["online"], observation=RGBDObservation.model_validate(raw))
++    for online in [
++        bad,
++        replace(data["online"], context_hash="b" * 64),
++        replace(data["online"], plan_version=99),
++    ]:
++        result = repo.route_visual_verification_if_current(request=request_for(data, online=online))
++        assert result is None
++    assert repo.get_visual_owner_publication(data["original"].identity.task_id).owner_revision == 1
++
++
++def test_expired_frame_stops_without_spending_a_capture(source):
++    repo, data = source
++    raw = data["online"].observation.model_dump(mode="json")
++    raw.update(
++        captured_at=(datetime.now(UTC) - timedelta(seconds=6)).isoformat(), checksum_sha256=""
++    )
++    online = replace(data["online"], observation=RGBDObservation.model_validate(raw))
++    result = repo.route_visual_verification_if_current(request=request_for(data, online=online))
++    assert result.record.route == "STOP"
++    assert "frame_ttl_expired" in result.record.reasons
++    assert (
++        repo.get_verification_budget(
++            data["original"].identity.task_id
++        ).state.remaining_reobservations
++        == 3
++    )
++
++
++def test_three_allowances_then_sticky_exhaustion_no_restart_or_frame_refund(source):
++    repo, data = source
++    for index, expected in [(1, 2), (2, 1), (3, 0), (4, 0), (5, 0)]:
++        result = repo.route_visual_verification_if_current(
++            request=request_for(data, event_key=f"route-{index}")
++        )
++        assert result.record.route == ("REOBSERVE" if index <= 3 else "STOP")
++        publication = repo.get_visual_owner_publication(data["original"].identity.task_id)
++        assert publication.verification_budget.state.remaining_reobservations == expected
++        data = next_frame(data, publication, index + 1)
++    assert publication.verification_budget.state.exhausted_reason == "no_progress_exhausted"
++    assert (
++        publication.verification_budget.state.deadline_at
++        == data["original"].verification_deadline_at
++    )
++
++
++@pytest.mark.parametrize("phase", ["NATIVE_PRE_SAFETY", "NATIVE_PRE_SKILL", "CLOUD_RETURN"])
++def test_native_bounds_remain_unknown_and_pre_skill_cannot_recapture_into_old_safety_context(
++    source, phase
++):
++    repo, data = source
++    result = repo.route_visual_verification_if_current(
++        request=request_for(data, unknown=False, phase=phase)
++    )
++    assert result.record.route == ("STOP" if phase == "NATIVE_PRE_SKILL" else "REOBSERVE")
++    assert result.record.scope == "SOURCE_ROUTE_ONLY"
++    assert (
++        result.record.to_payload()["native_context_hash"]
++        != result.record.to_payload()["source_context_hash"]
++    )
++
++
++@pytest.mark.parametrize("phase", ["AFTER_EFFECT", "POST_HOLD", "TERMINAL"])
++def test_future_effect_requirements_without_actual_completion_source_cannot_pass(source, phase):
++    repo, data = source
++    result = repo.route_visual_verification_if_current(
++        request=request_for(data, unknown=False, phase=phase)
++    )
++    assert result.record.route == "STOP"
++    assert "effect_completion_source_unavailable" in result.record.reasons
++
++
++def test_external_legal_retry_debit_invalidates_old_source_no_pool_reconstruction(source):
++    repo, data = source
++    assert repo.consume_retry_if_available(
++        data["original"].identity.task_id, "move", "MOVE_ABOVE", 0, "event"
++    )[0]
++    assert repo.route_visual_verification_if_current(request=request_for(data)) is None
++    assert (
++        repo.get_verification_budget(
++            data["original"].identity.task_id
++        ).state.remaining_reobservations
++        == 3
++    )
++
++
++def test_full_execution_policy_cannot_weaken_original_timeout_or_conditions(source):
++    repo, data = source
++    contract = data["original"].contract
++    changed_step = contract.steps[0].model_copy(update={"timeout_ms": 20000})
++    bad = contract.model_copy(update={"steps": [changed_step, *contract.steps[1:]]})
++    request = request_for(data, execution_contract=bad)
++    assert repo.route_visual_verification_if_current(request=request) is None
++
++
++def test_input_snapshot_and_detached_history_ignore_caller_mutations(source):
++    repo, data = source
++    request = request_for(data)
++    original_hash = request.digest()
++    data["online"].visual_facts["extra"] = {"caller": True}
++    data["publication"].verification_budget.state.remaining_reobservations = 0
++    assert request.digest() == original_hash
++    result = repo.route_visual_verification_if_current(request=request)
++    payload = result.record.to_payload()
++    payload["route"] = "CONTINUE"
++    assert (
++        repo.get_visual_verification_route(data["original"].identity.task_id, "route-1").route
++        == "REOBSERVE"
++    )
++
++
++@pytest.mark.parametrize(
++    "mutation",
++    [
++        lambda p: p.update(scope="ACTUAL_SOURCE"),
++        lambda p: p.update(attempt=True),
++        lambda p: p.update(attempt=1.0),
++        lambda p: p.update(accepted=True),
++        lambda p: p["publication"]["checkpoint"].update(plan_version=True),
++        lambda p: p["publication"]["retry_budget"].update(retry_count_used=False),
++        lambda p: p["online"]["robot_state"].update(connected=1),
++        lambda p: p["online"].update(plan_version=True),
++        lambda p: p["online"]["visual_facts"].update(bad=float("nan")),
++    ],
++)
++def test_raw_schema_rejects_coercion_unknown_fields_and_scope_forgery(source, mutation):
++    _, data = source
++    payload = request_for(data).to_payload()
++    mutation(payload)
++    with pytest.raises(ValueError):
++        api().VisualVerificationRouteInput.from_json(json.dumps(payload))
++
++
++def test_duplicate_json_and_unknown_phase_cannot_construct_input(source):
++    _, data = source
++    raw = json.dumps(request_for(data).to_payload())
++    with pytest.raises(ValueError):
++        api().VisualVerificationRouteInput.from_json(raw[:-1] + ',"attempt":1}')
++    with pytest.raises(ValueError):
++        request_for(data, phase="ACCEPTED_EXECUTION")
++
++
++def test_two_sqlite_connections_commit_one_capture_claim_and_restart_preserves_history(tmp_path):
++    path = tmp_path / "race.db"
++    repos = [SQLiteEventAutonomyRepository(path), SQLiteEventAutonomyRepository(path)]
++    data = fresh_source_values()
++    original = data["original"]
++    state = VerificationBudgetState(
++        3, 2, 0, original.verification_deadline_at, VerificationBudget(3, 2, 3, 40)
++    )
++    retry = RecoveryBudget(
++        budget_id="race",
++        task_id=original.identity.task_id,
++        task_total_retry_limit=2,
++        per_step_retry_limit=1,
++        per_skill_retry_limit=2,
++        effective_retry_limit=2,
++        remaining_retries=2,
++        retry_deadline=original.verification_deadline_at,
++        scene_version=original.contract.scene_version,
++        created_at=original.registered_at,
++        updated_at=original.registered_at,
++    )
++    data["publication"] = repos[0].initialize_visual_owner_if_absent(
++        original, data["source_checkpoint"], state, retry
++    )
++    raw = data["online"].observation.model_dump(mode="json")
++    raw.update(captured_at=datetime.now(UTC).isoformat(), checksum_sha256="")
++    data["online"] = replace(
++        data["online"],
++        observation=RGBDObservation.model_validate(raw),
++        context_hash=data["source_checkpoint"].checkpoint_hash,
++    )
++    request = request_for(data)
++    with ThreadPoolExecutor(max_workers=2) as pool:
++        results = list(
++            pool.map(lambda repo: repo.route_visual_verification_if_current(request=request), repos)
++        )
++    assert sorted(r.write_disposition for r in results) == ["HISTORICAL_DUPLICATE", "NEW_COMMIT"]
++    for repo in repos:
++        repo.close()
++    reopened = SQLiteEventAutonomyRepository(path)
++    assert (
++        reopened.get_verification_budget(original.identity.task_id).state.remaining_reobservations
++        == 2
++    )
++    assert (
++        reopened.route_visual_verification_if_current(request=request).write_disposition
++        == "HISTORICAL_DUPLICATE"
++    )
++    assert reopened.get_visual_verification_route("foreign-task", "route-1") is None
++    reopened.close()
++
++
++def software_completion(data, *, success=True):
++    """Synthetic typed result, never actual execution source authentication."""
++    from cloud_edge_robot_arm.contracts.models import SkillExecutionResult
++    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import digest
++
++    original = data["original"]
++    observation = data["online"].observation
++    returned = observation.captured_at - timedelta(milliseconds=1)
++    result = SkillExecutionResult(
++        task_id=original.identity.task_id,
++        plan_version=original.contract.plan_version,
++        command_seq=original.contract.command_seq,
++        timestamp=returned,
++        step_id="move",
++        skill=original.contract.steps[0].skill,
++        scene_version=original.contract.scene_version,
++        success=success,
++        duration_ms=1,
++        details={"fixture_scope": "SOFTWARE_ONLY"},
++    )
++    return api().VisualEffectCompletion(
++        result=result,
++        task_id=original.identity.task_id,
++        plan_id=original.identity.plan_id,
++        robot_id=original.identity.robot_id,
++        step_id="move",
++        attempt=1,
++        plan_version=original.contract.plan_version,
++        command_seq=original.contract.command_seq,
++        started_at=original.registered_at,
++        returned_at=returned,
++        before_observation_id="before-software-attempt",
++        execution_payload_hash=digest(original.contract.model_dump(mode="json")),
++        source_checkpoint_hash=data["publication"].checkpoint.checkpoint_hash,
++        source_hashes=original.source_hashes,
++    )
++
++
++def test_after_effect_with_full_typed_software_completion_recomputes_missing_effect_as_unknown(
++    source,
++):
++    repo, data = source
++    request = request_for(
++        data, unknown=False, phase="AFTER_EFFECT", completion=software_completion(data)
++    )
++    result = repo.route_visual_verification_if_current(request=request)
++    assert result.record.route == "REOBSERVE"
++    assert result.record.scope == "SOURCE_ROUTE_ONLY"
++    assert result.record.to_payload()["verdicts"][0]["status"] == "UNKNOWN"
++
++
++def test_failed_completion_or_registered_hold_mapping_gap_cannot_be_positive(source):
++    repo, data = source
++    completion = software_completion(data, success=False)
++    result = repo.route_visual_verification_if_current(
++        request=request_for(data, phase="AFTER_EFFECT", completion=completion)
++    )
++    assert result.record.route == "STOP" and "effect_execution_failed" in result.record.reasons
++
++
++def test_history_route_cannot_be_rehashed_to_continue_without_recomputing_native_or_canonical_state(
++    source,
++):
++    repo, data = source
++    result = repo.route_visual_verification_if_current(
++        request=request_for(data, phase="NATIVE_PRE_SKILL")
++    )
++    payload = result.record.to_payload()
++    payload["route"] = "CONTINUE"
++    with pytest.raises(ValueError):
++        api().VisualVerificationRouteRecord(payload)
++
++
++def test_sqlite_insert_failure_rolls_back_pool_publication_and_claim(source):
++    import sqlite3
++
++    repo, data = source
++    if not isinstance(repo, SQLiteEventAutonomyRepository):
++        pytest.skip("SQLite trigger covers transactional persistence; memory pre-encodes rows")
++    repo._conn.execute(
++        "CREATE TRIGGER reject_route BEFORE INSERT ON visual_verification_routes "
++        "BEGIN SELECT RAISE(ABORT, 'fixture write fault'); END"
++    )
++    repo._conn.commit()
++    with pytest.raises(sqlite3.IntegrityError):
++        repo.route_visual_verification_if_current(request=request_for(data))
++    assert repo.get_visual_owner_publication(data["original"].identity.task_id).owner_revision == 1
++    assert (
++        repo.get_verification_budget(
++            data["original"].identity.task_id
++        ).state.remaining_reobservations
++        == 3
++    )
++    assert repo.get_visual_verification_route(data["original"].identity.task_id, "route-1") is None
++
++
++def test_camera_descriptor_given_in_full_registered_specs_must_match_exact_rgbd(source):
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        OriginalActionRequirements,
++        freeze_original_visual_plan,
++    )
++
++    repo, data = source
++    original = data["original"]
++    requirements = dict(original.requirements)
++    requirement = requirements["move"]
++    pre = tuple(
++        ConditionSpec(
++            c.name,
++            c.target_id,
++            {**dict(c.tolerances), "camera_source_descriptor_sha256": "b" * 64},
++            c.sensor_requirements,
++        )
++        for c in requirement.preconditions
++    )
++    requirements["move"] = OriginalActionRequirements(
++        requirement.original_step,
++        pre,
++        requirement.postconditions,
++        requirement.allowed_error_m,
++        requirement.sensor_requirements,
++        requirement.ordinary_ttl_s,
++        requirement.expected_duration_s,
++        requirement.policy_source_hashes,
++    )
++    changed = freeze_original_visual_plan(
++        **{**original.freeze_inputs(), "requirements": requirements}
++    )
++    # Isolate a NEW coherent source registration; changing an initialized original is forbidden.
++    other = InMemoryEventAutonomyRepository()
++    state = data["publication"].verification_budget.state
++    pub = other.initialize_visual_owner_if_absent(
++        changed, data["source_checkpoint"], state, data["publication"].retry_budget
++    )
++    request = request_for({**data, "original": changed, "publication": pub})
++    assert other.route_visual_verification_if_current(request=request) is None
++
++
++def test_pass_preserves_old_no_progress_and_budgets_while_keeping_best_history(source):
++    repo, data = source
++    first = repo.route_visual_verification_if_current(request=request_for(data))
++    assert first.record.route == "REOBSERVE"
++    pub = repo.get_visual_owner_publication(data["original"].identity.task_id)
++    data = next_frame(data, pub, 2)
++    second = repo.route_visual_verification_if_current(
++        request=request_for(data, event_key="second")
++    )
++    assert second.record.route == "REOBSERVE"
++    pub = repo.get_visual_owner_publication(data["original"].identity.task_id)
++    assert pub.verification_budget.state.consecutive_no_progress == 1
++    data = next_frame(data, pub, 3)
++    observation = data["online"].observation
++    facts = {
++        "target_visible": {
++            "source": "rgbd_estimate",
++            "observation_id": observation.observation_id,
++            "target_id": "obj-1",
++            "identity_confirmed": True,
++            "value": True,
++            "pixel": [0, 0],
++        }
++    }
++    data["online"] = replace(data["online"], visual_facts=facts)
++    result = repo.route_visual_verification_if_current(
++        request=request_for(data, unknown=False, event_key="pass")
++    )
++    assert result.record.route == "CONTINUE"
++    state = repo.get_verification_budget(data["original"].identity.task_id).state
++    assert state.consecutive_no_progress == 1 and state.remaining_reobservations == 1
++    assert any(status == "PASS" for status, _ in state.previous_conditions.values())
++
++
++@pytest.mark.parametrize("row_kind", ["checkpoint", "active"])
++def test_current_repository_source_rows_cannot_hide_unknown_serialized_fields(source, row_kind):
++    repo, data = source
++    task = data["original"].identity.task_id
++    if isinstance(repo, InMemoryEventAutonomyRepository):
++        if row_kind == "checkpoint":
++            checkpoint = repo._checkpoints[data["source_checkpoint"].checkpoint_id]
++            repo._checkpoints[checkpoint.checkpoint_id] = checkpoint.model_copy(
++                update={"undeclared_source": True}
++            )
++        else:
++            repo._active_contracts[task] = repo._active_contracts[task].model_copy(
++                update={"undeclared_source": True}
++            )
++    else:
++        table, column = (
++            ("execution_checkpoints", "payload_json")
++            if row_kind == "checkpoint"
++            else ("active_task_contracts", "record_json")
++        )
++        row = repo._conn.execute(
++            f"SELECT {column} FROM {table} WHERE task_id=?", (task,)
++        ).fetchone()
++        payload = json.loads(row[0])
++        payload["undeclared_source"] = True
++        repo._conn.execute(
++            f"UPDATE {table} SET {column}=? WHERE task_id=?", (json.dumps(payload), task)
++        )
++        repo._conn.commit()
++    assert repo.route_visual_verification_if_current(request=request_for(data)) is None
++    assert repo.get_verification_budget(task).state.remaining_reobservations == 3
++
++
++def test_changed_camera_descriptor_and_calibration_are_bound_to_original_full_specs(source):
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        OriginalActionRequirements,
++        freeze_original_visual_plan,
++    )
++
++    _, data = source
++    original = data["original"]
++    old = original.requirements["move"]
++    descriptor = api().camera_source_descriptor_sha256(data["online"].observation)
++    pre = tuple(
++        ConditionSpec(
++            c.name,
++            c.target_id,
++            {
++                **dict(c.tolerances),
++                "camera_source_descriptor_sha256": descriptor,
++                "calibration_version": data["online"].observation.calibration_version,
++            },
++            c.sensor_requirements,
++        )
++        for c in old.preconditions
++    )
++    requirements = {
++        **dict(original.requirements),
++        "move": OriginalActionRequirements(
++            old.original_step,
++            pre,
++            old.postconditions,
++            old.allowed_error_m,
++            old.sensor_requirements,
++            old.ordinary_ttl_s,
++            old.expected_duration_s,
++            old.policy_source_hashes,
++        ),
++    }
++    original = freeze_original_visual_plan(
++        **{**original.freeze_inputs(), "requirements": requirements}
++    )
++    repo = InMemoryEventAutonomyRepository()
++    pub = repo.initialize_visual_owner_if_absent(
++        original,
++        data["source_checkpoint"],
++        data["publication"].verification_budget.state,
++        data["publication"].retry_budget,
++    )
++    data = {**data, "original": original, "publication": pub}
++    assert repo.route_visual_verification_if_current(request=request_for(data)) is not None
++    # Same descriptor-inventory source, NEW synthetic frame with changed intrinsics.
++    pub = repo.get_visual_owner_publication(original.identity.task_id)
++    data = next_frame(data, pub, 8)
++    raw = data["online"].observation.model_dump(mode="json")
++    raw.update(intrinsics=[120.0, 120.0, 1.0, 1.0], checksum_sha256="")
++    online = replace(data["online"], observation=RGBDObservation.model_validate(raw))
++    assert (
++        repo.route_visual_verification_if_current(
++            request=request_for(data, online=online, event_key="changed-camera")
++        )
++        is None
++    )
++
++
++def test_stale_pool_cancel_and_completed_step_do_not_authorize_new_route(source):
++    repo, data = source
++    task = data["original"].identity.task_id
++    repo.save_state(task, "CANCELLED", "software cancel")
++    assert repo.route_visual_verification_if_current(request=request_for(data)) is None
++    assert repo.get_verification_budget(task).state.remaining_reobservations == 3
++
++
++def test_transaction_clock_requires_aware_domain_without_writing(source):
++    repo, data = source
++    m = api()
++    publication = data["publication"]
++    with pytest.raises(ValueError):
++        m.derive_route(
++            request_for(data),
++            data["original"],
++            publication,
++            None,
++            repo.get_active_contract(data["original"].identity.task_id),
++            data["source_checkpoint"],
++            repo.get_verification_budget(data["original"].identity.task_id),
++            publication.retry_budget,
++            cancelled=False,
++            now=datetime(2026, 10, 5),
++        )
++    assert repo.get_verification_budget(data["original"].identity.task_id).revision == 0
++
++
++def test_same_named_conditions_keep_separate_target_spec_progress_histories(source):
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.vision.owner_registration import (
++        OriginalActionRequirements,
++        freeze_original_visual_plan,
++    )
++
++    _, data = source
++    original = data["original"]
++    old = original.requirements["move"]
++    pre = (
++        *old.preconditions,
++        ConditionSpec("target_visible", original.contract.task_target.target_region_id),
++    )
++    requirements = {
++        **dict(original.requirements),
++        "move": OriginalActionRequirements(
++            old.original_step,
++            pre,
++            old.postconditions,
++            old.allowed_error_m,
++            old.sensor_requirements,
++            old.ordinary_ttl_s,
++            old.expected_duration_s,
++            old.policy_source_hashes,
++        ),
++    }
++    original = freeze_original_visual_plan(
++        **{**original.freeze_inputs(), "requirements": requirements}
++    )
++    repo = InMemoryEventAutonomyRepository()
++    pub = repo.initialize_visual_owner_if_absent(
++        original,
++        data["source_checkpoint"],
++        data["publication"].verification_budget.state,
++        data["publication"].retry_budget,
++    )
++    result = repo.route_visual_verification_if_current(
++        request=request_for({**data, "original": original, "publication": pub})
++    )
++    assert result.record.route == "REOBSERVE"
++    state = repo.get_verification_budget(original.identity.task_id).state
++    assert len(state.previous_conditions) == 2

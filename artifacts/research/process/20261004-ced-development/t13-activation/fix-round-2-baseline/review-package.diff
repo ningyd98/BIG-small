@@ -1,0 +1,2892 @@
+--- baseline/src/cloud_edge_robot_arm/contracts/models.py
++++ source/src/cloud_edge_robot_arm/contracts/models.py
+@@ -2,12 +2,14 @@
+ 
+ from __future__ import annotations
+ 
++import hashlib
++import json
+ from datetime import UTC, datetime
+ from enum import StrEnum
+ from math import hypot, isfinite
+ from typing import Any
+ 
+-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
++from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+ 
+ from cloud_edge_robot_arm.errors import StructuredError
+ 
+@@ -382,6 +384,12 @@
+ class ReplanApplyStatus(StrEnum):
+     """重规划应用状态，描述应用、拒绝、等待观察、安全停止或版本冲突。"""
+ 
++    PREPARED = "PREPARED"
++    EDGE_ACCEPTED = "EDGE_ACCEPTED"
++    ACTIVATED = "ACTIVATED"
++    EXECUTION_STARTED = "EXECUTION_STARTED"
++    EXPIRED = "EXPIRED"
++    # Legacy diagnostics remain readable, never imply staged activation.
+     APPLIED = "APPLIED"
+     REJECTED = "REJECTED"
+     WAITING_FOR_NEW_OBSERVATION = "WAITING_FOR_NEW_OBSERVATION"
+@@ -569,9 +577,39 @@
+     checkpoint_hash: str = Field(default="")
+ 
+ 
++def replan_payload_hash(value: BaseModel | dict[str, Any]) -> str:
++    """Canonical complete content hash; callers cannot substitute a declared digest."""
++    payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
++    return hashlib.sha256(
++        json.dumps(payload, sort_keys=True, default=str, separators=(",", ":")).encode()
++    ).hexdigest()
++
++
++class ReplanExecutionReceipt(BaseModel):
++    """Actual edge start notification, distinct from a resume acknowledgement."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
++    repair_id: str = Field(min_length=1)
++    task_id: str = Field(min_length=1)
++    plan_version: int = Field(ge=0)
++    command_seq: int = Field(ge=1)
++    activation_token: str = Field(min_length=1)
++    payload_hash: str = Field(min_length=1)
++    event_id: str = Field(min_length=1)
++    started_at: datetime = Field(validation_alias=AliasChoices("started_at", "occurred_at"))
++
++    @field_validator("started_at")
++    @classmethod
++    def aware_start(cls, value: datetime) -> datetime:
++        if value.tzinfo is None or value.utcoffset() is None:
++            raise ValueError("execution receipt requires an acquisition clock")
++        return value
++
++
+ class ReplanApplyRecord(BaseModel):
+-    """重规划应用记录，保存旧新版本、应用步骤和确认状态。"""
+-
++    """Durable candidate identity and monotonic stage/activation/start evidence."""
++
++    model_config = ConfigDict(frozen=True, extra="forbid")
+     apply_id: str = Field(min_length=1)
+     request_id: str = Field(min_length=1)
+     task_id: str = Field(min_length=1)
+@@ -581,15 +619,195 @@
+     previous_command_seq: int = Field(ge=1)
+     new_plan_version: int = Field(ge=0)
+     new_command_seq: int = Field(ge=1)
+-    checkpoint_id: str = Field(default="")
+-    status: str = Field(default=ReplanApplyStatus.APPLIED.value)
+-    reason: str = Field(default="")
++    checkpoint_id: str = ""
++    checkpoint_hash: str = ""
++    status: str = ReplanApplyStatus.APPLIED.value
++    reason: str = ""
+     completed_step_ids: list[str] = Field(default_factory=list)
+     applied_step_ids: list[str] = Field(default_factory=list)
+-    ack_status: str = Field(default="")
++    ack_status: str = ""
+     created_at: datetime = Field(default_factory=utc_now)
+-    correlation_id: str = Field(default="")
+-    apply_hash: str = Field(default="")
++    correlation_id: str = ""
++    apply_hash: str = ""
++    repair_id: str = ""
++    payload_hash: str = ""
++    request_payload_hash: str = ""
++    response_payload_hash: str = ""
++    candidate_contract: TaskContract | None = None
++    candidate_plan_version: int | None = Field(default=None, ge=0)
++    candidate_command_seq: int | None = Field(default=None, ge=1)
++    accepted_plan_version: int | None = Field(default=None, ge=0)
++    accepted_command_seq: int | None = Field(default=None, ge=1)
++    executing_plan_version: int | None = Field(default=None, ge=0)
++    executing_command_seq: int | None = Field(default=None, ge=1)
++    stage_attempt_id: str = ""
++    activation_token: str = ""
++    stage_ack: CommandAck | None = None
++    resume_ack: CommandAck | None = None
++    start_receipt: ReplanExecutionReceipt | None = None
++
++    def content_hash(self) -> str:
++        payload = self.model_dump(mode="json")
++        payload["apply_hash"] = ""
++        return replan_payload_hash(payload)
++
++    def identity_hash(self) -> str:
++        payload = self.model_dump(mode="json")
++        for key in (
++            "status",
++            "reason",
++            "ack_status",
++            "apply_hash",
++            "accepted_plan_version",
++            "accepted_command_seq",
++            "executing_plan_version",
++            "executing_command_seq",
++            "activation_token",
++            "stage_attempt_id",
++            "stage_ack",
++            "resume_ack",
++            "start_receipt",
++        ):
++            payload.pop(key)
++        return replan_payload_hash(payload)
++
++    def validate_ack(
++        self,
++        ack: CommandAck,
++        *,
++        token: str | None = None,
++        require_acceptance: bool = True,
++    ) -> None:
++        if (
++            type(ack.accepted) is not bool
++            or (require_acceptance and (not ack.accepted or ack.status != "ACCEPTED"))
++            or ack.task_id != self.task_id
++            or ack.plan_version != self.new_plan_version
++            or ack.command_seq != self.new_command_seq
++            or ack.details.get("repair_id") != self.repair_id
++            or ack.details.get("payload_hash") != self.payload_hash
++            or not isinstance(ack.details.get("activation_token"), str)
++            or not ack.details["activation_token"].strip()
++            or (token is not None and ack.details["activation_token"] != token)
++            or ack.timestamp.tzinfo is None
++            or ack.timestamp < self.created_at
++        ):
++            raise ValueError("stage/resume acknowledgement identity mismatch")
++
++    @model_validator(mode="after")
++    def verify_candidate_and_evidence(self) -> ReplanApplyRecord:
++        if self.status not in {status.value for status in ReplanApplyStatus}:
++            raise ValueError("unsupported replan status")
++        if self.apply_hash and self.apply_hash != self.content_hash():
++            raise ValueError("replan content hash mismatch")
++        if self.candidate_contract is None:
++            if self.status in {"PREPARED", "EDGE_ACCEPTED", "ACTIVATED", "EXECUTION_STARTED"}:
++                raise ValueError("staged record requires candidate contract")
++            if any((self.activation_token, self.stage_ack, self.resume_ack, self.start_receipt)):
++                raise ValueError("diagnostic record cannot assert edge effects")
++            return self
++        candidate = self.candidate_contract
++        if (
++            not self.repair_id
++            or not self.checkpoint_hash
++            or not self.request_payload_hash
++            or not self.response_payload_hash
++            or candidate.task_id != self.task_id
++            or self.payload_hash != replan_payload_hash(candidate)
++            or self.new_plan_version != candidate.plan_version
++            or self.new_command_seq != candidate.command_seq
++            or self.candidate_plan_version != candidate.plan_version
++            or self.candidate_command_seq != candidate.command_seq
++            or self.new_plan_version != self.previous_plan_version + 1
++            or self.new_command_seq <= self.previous_command_seq
++        ):
++            raise ValueError("candidate binding mismatch")
++        accepted = self.accepted_plan_version is not None or self.accepted_command_seq is not None
++        if accepted:
++            if self.stage_ack is None:
++                raise ValueError("accepted candidate requires actual stage acknowledgement")
++            self.validate_ack(self.stage_ack, token=self.activation_token)
++            if (
++                self.accepted_plan_version != candidate.plan_version
++                or self.accepted_command_seq != candidate.command_seq
++            ):
++                raise ValueError("accepted version mismatch")
++        elif any(
++            (
++                self.activation_token,
++                self.accepted_plan_version is not None,
++                self.accepted_command_seq is not None,
++                self.resume_ack,
++                self.start_receipt,
++            )
++        ):
++            raise ValueError("unaccepted candidate cannot assert edge state")
++        if self.stage_ack is not None and not accepted and self.status != "REJECTED":
++            raise ValueError("unbound/unaccepted stage response is rejection evidence only")
++        if self.stage_ack is not None and not self.stage_attempt_id:
++            raise ValueError("stage response requires actual claimed attempt")
++        if self.status in {"EDGE_ACCEPTED", "ACTIVATED", "EXECUTION_STARTED"} and not accepted:
++            raise ValueError("stage acknowledgement required")
++        if self.status == "PREPARED" and accepted:
++            raise ValueError("PREPARED cannot assert stage acceptance")
++        if self.resume_ack is not None:
++            self.validate_ack(
++                self.resume_ack, token=self.activation_token, require_acceptance=False
++            )
++            if self.status not in {"ACTIVATED", "EXECUTION_STARTED"}:
++                raise ValueError("resume requires activation")
++        if self.start_receipt is not None:
++            receipt = self.start_receipt
++            if (
++                receipt.repair_id != self.repair_id
++                or receipt.task_id != self.task_id
++                or receipt.plan_version != candidate.plan_version
++                or receipt.command_seq != candidate.command_seq
++                or receipt.activation_token != self.activation_token
++                or receipt.payload_hash != self.payload_hash
++                or self.executing_plan_version != candidate.plan_version
++                or self.executing_command_seq != candidate.command_seq
++                or self.status != "EXECUTION_STARTED"
++            ):
++                raise ValueError("execution receipt binding mismatch")
++        elif (
++            self.status == "EXECUTION_STARTED"
++            or self.executing_plan_version is not None
++            or self.executing_command_seq is not None
++        ):
++            raise ValueError("execution start requires actual receipt")
++        return self
++
++    def validate_transition(self, previous: ReplanApplyRecord, *, activation: bool = False) -> None:
++        if self.identity_hash() != previous.identity_hash():
++            raise ValueError("immutable candidate identity changed")
++        for key in (
++            "stage_attempt_id",
++            "stage_ack",
++            "activation_token",
++            "resume_ack",
++            "start_receipt",
++        ):
++            old = getattr(previous, key)
++            if old and getattr(self, key) != old:
++                raise ValueError("persisted edge evidence changed")
++        allowed = {
++            "PREPARED": {"PREPARED", "EDGE_ACCEPTED", "REJECTED", "EXPIRED"},
++            "EDGE_ACCEPTED": {"ACTIVATED", "REJECTED", "EXPIRED"}
++            if activation
++            else {"REJECTED", "EXPIRED"},
++            "ACTIVATED": {"ACTIVATED", "EXECUTION_STARTED"},
++        }
++        if self.status not in allowed.get(previous.status, set()):
++            raise ValueError("nonmonotonic replan transition")
++        if previous.status == "PREPARED" and self.status == "PREPARED":
++            if previous.stage_attempt_id or not self.stage_attempt_id:
++                raise ValueError("PREPARED update requires first durable stage claim")
++        if self.status == "EDGE_ACCEPTED" and not previous.stage_attempt_id:
++            raise ValueError("actual staging requires a durable stage attempt claim")
++        if previous.status == "ACTIVATED" and self.status == "ACTIVATED":
++            if previous.resume_ack is not None or self.resume_ack is None:
++                raise ValueError("ACTIVATED update requires first actual resume acknowledgement")
+ 
+ 
+ class EdgeEvent(TraceableMessage):
+--- baseline/src/cloud_edge_robot_arm/cloud/replanning/apply_service.py
++++ source/src/cloud_edge_robot_arm/cloud/replanning/apply_service.py
+@@ -5,11 +5,15 @@
+ 
+ from __future__ import annotations
+ 
+-from collections.abc import Callable
+-from dataclasses import dataclass
++from collections.abc import Callable, Mapping
++from copy import deepcopy
++from dataclasses import dataclass, replace
+ from datetime import UTC, datetime
+-from typing import Protocol
+-
++from types import MappingProxyType
++from typing import Any, Protocol, cast
++from uuid import uuid4
++
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
+ from cloud_edge_robot_arm.cloud.replanning.merge import (
+     ReplanContractAssembler,
+     ReplanMergeValidator,
+@@ -17,24 +21,83 @@
+ from cloud_edge_robot_arm.contracts.models import (
+     ActiveTaskContractRecord,
+     CommandAck,
+-    CommandAckStatus,
+     ExecutionCheckpoint,
+     FailureSummary,
+     LocalReplanningRequest,
+     LocalReplanningResponse,
+     ReplanApplyRecord,
+     ReplanApplyStatus,
++    ReplanExecutionReceipt,
+     ReplanScope,
+     TaskContract,
++    replan_payload_hash,
+ )
+ from cloud_edge_robot_arm.edge.contract_validator import EdgeContractValidator
+-from cloud_edge_robot_arm.errors import StructuredError
++from cloud_edge_robot_arm.edge.evidence.conditions import OnlineEvidenceSnapshot
++from cloud_edge_robot_arm.edge.evidence.models import (
++    ActionEvidenceContract,
++    CommitContext,
++    DecisionEnvelope,
++    EvidenceVerdict,
++)
++from cloud_edge_robot_arm.edge.evidence.validator import validate_decision_commit, validate_evidence
+ from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
+ from cloud_edge_robot_arm.repositories.event_autonomy.protocol import EventAutonomyRepository
+ 
+ 
++def _checkpoint_digest(checkpoint: ExecutionCheckpoint) -> str:
++    payload = checkpoint.model_dump(mode="json")
++    payload["checkpoint_hash"] = ""
++    return replan_payload_hash(payload)
++
++
+ class ReplanDispatchGateway(Protocol):
+-    def dispatch(self, contract: TaskContract) -> object: ...
++    """Actual edge staging, distinct from legacy execute-on-dispatch gateways."""
++
++    def stage(self, contract: TaskContract, repair_id: str) -> CommandAck: ...
++    def resume(self, repair_id: str, activation_token: str) -> CommandAck: ...
++
++
++def _freeze_mapping(value: object) -> object:
++    if isinstance(value, Mapping):
++        return MappingProxyType({key: _freeze_mapping(item) for key, item in value.items()})
++    if isinstance(value, (tuple, list)):
++        return tuple(_freeze_mapping(item) for item in value)
++    return deepcopy(value)
++
++
++@dataclass(frozen=True)
++class ReplanSubmitEvidence:
++    """Typed canonical T10 inputs, not a caller-supplied VALID assertion.
++
++    In this v1 boundary candidate_set_hash identifies the complete candidate
++    TaskContract payload. A T12 adapter must map its own candidate-set/choice ID
++    explicitly; its candidate-set hash must never be overwritten or conflated.
++    """
++
++    decision: DecisionEnvelope
++    current: CommitContext
++    action: ActionEvidenceContract
++    online_evidence: OnlineEvidenceSnapshot
++
++    def __post_init__(self) -> None:
++        if not isinstance(self.online_evidence, OnlineEvidenceSnapshot):
++            raise ValueError("actual online evidence snapshot required")
++        facts = _freeze_mapping(self.online_evidence.visual_facts)
++        object.__setattr__(
++            self,
++            "online_evidence",
++            replace(
++                self.online_evidence,
++                robot_state=self.online_evidence.robot_state.model_copy(deep=True),
++                visual_facts=cast(Mapping[str, Any], facts),
++            ),
++        )
++
++
++ReplanSubmitGuard = Callable[
++    [ReplanApplyRecord, TaskContract, ExecutionCheckpoint], ReplanSubmitEvidence
++]
+ 
+ 
+ @dataclass(frozen=True)
+@@ -57,9 +120,11 @@
+         merge_validator: ReplanMergeValidator | None = None,
+         assembler: ReplanContractAssembler | None = None,
+         clock: Callable[[], datetime] | None = None,
++        submit_guard: ReplanSubmitGuard | None = None,
+     ) -> None:
+         self._repo = repository
+         self._dispatcher = dispatcher
++        self._submit_guard = submit_guard
+         self._clock = clock if clock is not None else lambda: datetime.now(UTC)
+         self._merge_validator = merge_validator or ReplanMergeValidator()
+         self._assembler = assembler or ReplanContractAssembler(clock=self._clock)
+@@ -74,6 +139,26 @@
+         checkpoint: ExecutionCheckpoint | None = None,
+         dispatch: bool = True,
+     ) -> ReplanApplyResult:
++        request = LocalReplanningRequest.model_validate(request.model_dump())
++        response = LocalReplanningResponse.model_validate(response.model_dump())
++        existing = self._repo.get_replan_apply_record_for_request(request.request_id)
++        if existing is not None:
++            if existing.request_payload_hash != stable_payload_hash(
++                request
++            ) or existing.response_payload_hash != stable_payload_hash(response):
++                raise ValueError(
++                    "replan request/response identity conflicts with durable candidate"
++                )
++            # Restart/retry coordinates persisted state; never replay stage/resume.
++            return ReplanApplyResult(
++                existing.status in {"ACTIVATED", "EXECUTION_STARTED"},
++                existing,
++                existing.candidate_contract.model_copy(deep=True)
++                if existing.candidate_contract
++                else None,
++                existing.resume_ack or existing.stage_ack,
++                [] if existing.status in {"ACTIVATED", "EXECUTION_STARTED"} else [existing.reason],
++            )
+         active_record = active_record or self._repo.get_active_contract(request.task_id)
+         failure_summary = failure_summary or self._repo.get_failure_summary(
+             request.failure_summary_id
+@@ -96,8 +181,8 @@
+                 response,
+                 active_record,
+                 checkpoint,
+-                status=ReplanApplyStatus.VERSION_CONFLICT.value,
+-                reason="active contract version changed before apply",
++                status=ReplanApplyStatus.REJECTED.value,
++                reason="VERSION_CONFLICT: active contract version changed before apply",
+                 contract=None,
+                 ack=None,
+             )
+@@ -117,7 +202,7 @@
+                 response,
+                 active_record,
+                 checkpoint,
+-                status=ReplanApplyStatus.WAITING_FOR_NEW_OBSERVATION.value,
++                status=ReplanApplyStatus.REJECTED.value,
+                 reason="more observation required",
+                 contract=None,
+                 ack=None,
+@@ -138,7 +223,7 @@
+                 response,
+                 active_record,
+                 checkpoint,
+-                status=ReplanApplyStatus.SAFETY_STOPPED.value,
++                status=ReplanApplyStatus.REJECTED.value,
+                 reason="safety stop requested",
+                 contract=None,
+                 ack=None,
+@@ -171,81 +256,346 @@
+         if contract_errors:
+             return self._reject(request, response, active_record, checkpoint, contract_errors)
+ 
++        prepared = self._record(
++            request,
++            response,
++            active_record,
++            checkpoint,
++            status="PREPARED",
++            reason="candidate prepared; awaiting guarded edge staging",
++            contract=new_contract,
++            ack=None,
++        )
++        if (
++            not dispatch
++            or self._submit_guard is None
++            or self._dispatcher is None
++            or not callable(getattr(self._dispatcher, "stage", None))
++            or not callable(getattr(self._dispatcher, "resume", None))
++        ):
++            return ReplanApplyResult(False, prepared, new_contract, None, [])
++        active_now = self._repo.get_active_contract(request.task_id)
++        if (
++            active_now is None
++            or active_now.plan_version != prepared.previous_plan_version
++            or active_now.command_seq != prepared.previous_command_seq
++            or active_now.plan_id != prepared.plan_id
++            or active_now.robot_id != prepared.robot_id
++        ):
++            return ReplanApplyResult(
++                False, prepared, new_contract, None, ["active contract changed before stage"]
++            )
++        try:
++            prepared = self._transition(
++                prepared, status="PREPARED", reason=prepared.reason, stage_attempt_id=uuid4().hex
++            )
++            current_checkpoint = self._repo.get_latest_execution_checkpoint(request.task_id)
++            active_now = self._repo.get_active_contract(request.task_id)
++            if (
++                current_checkpoint is None
++                or active_now is None
++                or active_now.plan_version != prepared.previous_plan_version
++                or active_now.command_seq != prepared.previous_command_seq
++            ):
++                return ReplanApplyResult(
++                    False,
++                    prepared,
++                    new_contract,
++                    None,
++                    ["checkpoint/active version unavailable after stage claim"],
++                )
++            verdict = self._submit_verdict(
++                prepared, current_checkpoint, self._cancelled(request.task_id)
++            )
++            if verdict.status != "VALID":
++                return ReplanApplyResult(False, prepared, new_contract, None, list(verdict.reasons))
++            stage_ack = self._dispatcher.stage(
++                new_contract.model_copy(deep=True), prepared.repair_id
++            )
++            if not isinstance(stage_ack, CommandAck):
++                raise ValueError("stage gateway did not return an actual CommandAck")
++            stage_ack = CommandAck.model_validate(stage_ack.model_dump(), strict=True)
++        except (ValueError, TimeoutError, OSError) as exc:
++            durable = self._repo.get_replan_apply_record(prepared.apply_id) or prepared
++            return ReplanApplyResult(False, durable, new_contract, None, [str(exc)])
++        try:
++            prepared.validate_ack(stage_ack)
++            if stage_ack.timestamp > self._clock():
++                raise ValueError("future stage acknowledgement")
++        except ValueError as exc:
++            rejected = self._transition(
++                prepared,
++                status="REJECTED",
++                reason=str(exc),
++                stage_ack=stage_ack,
++                ack_status=stage_ack.status,
++            )
++            return ReplanApplyResult(False, rejected, new_contract, stage_ack, [str(exc)])
++        accepted = self._transition(
++            prepared,
++            status="EDGE_ACCEPTED",
++            reason="edge staged candidate",
++            stage_ack=stage_ack,
++            activation_token=stage_ack.details["activation_token"],
++            accepted_plan_version=new_contract.plan_version,
++            accepted_command_seq=new_contract.command_seq,
++            ack_status=stage_ack.status,
++        )
++        activated = self._updated(
++            accepted, status="ACTIVATED", reason="active contract advanced after guarded stage"
++        )
+         updated = self._repo.advance_active_contract_if_current(
+             task_id=request.task_id,
+             expected_plan_version=request.current_plan_version,
+             expected_command_seq=request.current_command_seq,
+             new_contract=new_contract,
+-            plan_id=request.plan_id or active_record.plan_id,
+-            robot_id=request.robot_id,
++            plan_id=prepared.plan_id,
++            robot_id=prepared.robot_id,
+             based_on_plan_version=checkpoint.plan_version,
+             correlation_id=request.correlation_id,
++            replan_record=activated,
++            activation_guard=self._submit_verdict,
+         )
+         if updated is None:
+-            record = self._record(
+-                request,
+-                response,
+-                active_record,
+-                checkpoint,
+-                status=ReplanApplyStatus.VERSION_CONFLICT.value,
+-                reason="active contract version changed before apply",
+-                contract=None,
+-                ack=None,
+-            )
+-            return ReplanApplyResult(False, record, None, None, [record.reason])
+-
+-        ack = self._edge_ack(request, updated.contract, checkpoint, dispatch=dispatch)
+-        status = (
+-            ReplanApplyStatus.APPLIED.value if ack.accepted else ReplanApplyStatus.REJECTED.value
+-        )
+-        record = self._record(
+-            request,
+-            response,
+-            active_record,
+-            checkpoint,
+-            status=status,
+-            reason="applied" if ack.accepted else ack.status,
+-            contract=updated.contract,
+-            ack=ack,
+-        )
+-        self._repo.save_state_transition(
+-            request.task_id,
+-            "WAITING_CLOUD_REPLAN",
+-            "REPLAN_RECEIVED",
+-            "replan result received",
+-            request.trigger_event_id,
+-        )
+-        self._repo.save_state_transition(
+-            request.task_id,
+-            "REPLAN_RECEIVED",
+-            "VALIDATING_REPLAN",
+-            "validating replan",
+-            request.trigger_event_id,
+-        )
+-        self._repo.save_state_transition(
+-            request.task_id,
+-            "VALIDATING_REPLAN",
+-            "APPLYING_REPLAN",
+-            "applying replan",
+-            request.trigger_event_id,
+-        )
+-        self._repo.save_state_transition(
+-            request.task_id,
+-            "APPLYING_REPLAN",
+-            "WAITING_EDGE_ACK",
+-            "waiting edge ack",
+-            request.trigger_event_id,
+-        )
+-        if ack.accepted:
+-            self._repo.save_state_transition(
+-                request.task_id,
+-                "WAITING_EDGE_ACK",
+-                "READY_TO_RESUME",
+-                "edge ack accepted",
+-                request.trigger_event_id,
+-            )
+-            return ReplanApplyResult(True, record, updated.contract, ack, [])
+-        return ReplanApplyResult(False, record, None, ack, [ack.status])
++            return ReplanApplyResult(
++                False,
++                accepted,
++                new_contract,
++                stage_ack,
++                ["activation guard/checkpoint/version/cancellation conflict"],
++            )
++        activated_record = self._repo.get_replan_apply_record(prepared.apply_id)
++        assert activated_record is not None
++        durable = activated_record
++        # Resume is a second physical boundary: re-read checkpoint, cancel and proof.
++        current_checkpoint = self._repo.get_latest_execution_checkpoint(request.task_id)
++        active_now = self._repo.get_active_contract(request.task_id)
++        if (
++            current_checkpoint is None
++            or active_now is None
++            or active_now.contract_hash != durable.payload_hash
++        ):
++            return ReplanApplyResult(
++                True,
++                durable,
++                new_contract,
++                stage_ack,
++                ["activation awaits edge checkpoint coordination"],
++            )
++        verdict = self._submit_verdict(
++            durable, current_checkpoint, self._cancelled(request.task_id)
++        )
++        if verdict.status != "VALID":
++            return ReplanApplyResult(True, durable, new_contract, stage_ack, list(verdict.reasons))
++        try:
++            resume_ack = self._dispatcher.resume(durable.repair_id, durable.activation_token)
++            if not isinstance(resume_ack, CommandAck):
++                raise ValueError("resume gateway did not return an actual CommandAck")
++            resume_ack = CommandAck.model_validate(resume_ack.model_dump(), strict=True)
++            durable.validate_ack(
++                resume_ack, token=durable.activation_token, require_acceptance=False
++            )
++            if resume_ack.timestamp > self._clock():
++                raise ValueError("future resume acknowledgement")
++            durable = self._transition(
++                durable, status="ACTIVATED", reason=durable.reason, resume_ack=resume_ack
++            )
++            return ReplanApplyResult(
++                True,
++                durable,
++                new_contract,
++                resume_ack,
++                []
++                if resume_ack.accepted and resume_ack.status == "ACCEPTED"
++                else ["actual resume acknowledgement rejected; coordination required"],
++            )
++        except (ValueError, TimeoutError, OSError) as exc:
++            # The activated version is durable. No rollback or automatic replay.
++            return ReplanApplyResult(True, durable, new_contract, stage_ack, [str(exc)])
++
++    def _cancelled(self, task_id: str) -> bool:
++        return self._repo.get_state(task_id) in {
++            "CANCELLED",
++            "ABORTED",
++            "STOPPED",
++            "SAFETY_STOPPED",
++            "COMPLETED",
++        } or any(
++            event.severity == "CRITICAL" or event.event_type.value == "MANUAL_INTERRUPT"
++            for event in self._repo.list_events(task_id)
++        )
++
++    def _submit_verdict(
++        self,
++        record: ReplanApplyRecord,
++        checkpoint: ExecutionCheckpoint,
++        cancelled: bool,
++    ) -> EvidenceVerdict:
++        """Pure repository-CAS callback: no repository reads or writes inside it."""
++        if self._submit_guard is None or record.candidate_contract is None or cancelled:
++            return EvidenceVerdict("INVALID", ("submit_guard_missing_or_cancelled",))
++        checkpoint_hash = _checkpoint_digest(checkpoint)
++        if (
++            checkpoint.checkpoint_id != record.checkpoint_id
++            or checkpoint_hash != record.checkpoint_hash
++            or checkpoint.execution_state in {"COMPLETED", "SAFETY_STOPPED"}
++            or checkpoint.task_id != record.task_id
++            or checkpoint.plan_id != record.plan_id
++            or checkpoint.robot_id != record.robot_id
++            or checkpoint.plan_version != record.previous_plan_version
++            or checkpoint.command_seq != record.previous_command_seq
++        ):
++            return EvidenceVerdict("INVALID", ("current_checkpoint_changed",))
++        candidate = record.candidate_contract.model_copy(deep=True)
++        guard_record = record.model_copy(deep=True)
++        guard_checkpoint = checkpoint.model_copy(deep=True)
++        try:
++            proof = self._submit_guard(guard_record, candidate, guard_checkpoint)
++            if (
++                not isinstance(proof, ReplanSubmitEvidence)
++                or stable_payload_hash(candidate) != record.payload_hash
++                or guard_record.content_hash() != record.content_hash()
++                or _checkpoint_digest(guard_checkpoint) != checkpoint_hash
++            ):
++                return EvidenceVerdict("INVALID", ("typed_submit_proof_missing_or_input_mutated",))
++            current, decision, action, online = (
++                proof.current,
++                proof.decision,
++                proof.action,
++                proof.online_evidence,
++            )
++            pending = [
++                step for step in candidate.steps if step.step_id not in record.completed_step_ids
++            ]
++            if (
++                not pending
++                or current.task_id != record.task_id
++                or current.candidate_set_hash != record.payload_hash
++                or current.context_hash != checkpoint_hash
++                or current.cancelled
++                or current.plan_version != candidate.plan_version
++                or current.command_seq != candidate.command_seq
++                or decision.action != DecisionAction.LOCAL_RECOVER
++                or current.episode_id != online.observation.episode_id
++                or current.observation_id != online.observation.observation_id
++                or action.plan_version != candidate.plan_version
++                or action.command_seq != candidate.command_seq
++                or action.context_hash != checkpoint_hash
++                or tuple(spec.name for spec in action.preconditions)
++                != tuple(pending[0].preconditions)
++                or tuple(spec.name for spec in action.postconditions)
++                != tuple(pending[0].success_conditions)
++                or action.expected_duration_s
++                < sum(step.expected_duration_ms for step in pending) / 1000
++            ):
++                return EvidenceVerdict(
++                    "INVALID", ("submit_proof_candidate_context_action_binding_mismatch",)
++                )
++            object_target = pending[0].parameters.get("object_id", candidate.task_target.object_id)
++            region_target = pending[0].parameters.get(
++                "region_id", candidate.task_target.target_region_id
++            )
++            for condition in (*action.preconditions, *action.postconditions):
++                if condition.target_id is not None:
++                    expected_target = (
++                        region_target if condition.name == "tcp_above_region" else object_target
++                    )
++                    if not expected_target or condition.target_id != expected_target:
++                        return EvidenceVerdict(
++                            "INVALID", ("condition_target_not_bound_to_candidate",)
++                        )
++                elif condition.name in {
++                    "target_visible",
++                    "target_reachable",
++                    "tcp_above_target",
++                    "tcp_near_target",
++                    "tcp_above_region",
++                    "object_inside_target_region",
++                    "object_grasped",
++                    "object_held",
++                    "object_attached",
++                    "object_lifted",
++                    "object_stable",
++                    "robot_clear_of_object",
++                }:
++                    return EvidenceVerdict(
++                        "INVALID", ("candidate_visual_condition_target_missing",)
++                    )
++            now = self._clock()
++            if now >= candidate.valid_until:
++                return EvidenceVerdict("INVALID", ("candidate_expired",))
++            verdict = validate_decision_commit(decision, current, now)
++            if verdict.status != "VALID":
++                return verdict
++            return validate_evidence(
++                action,
++                now,
++                checkpoint_hash,
++                online.observation.calibration_version or "",
++                online_evidence=online,
++            )
++        except (ValueError, TypeError, AttributeError, KeyError):
++            return EvidenceVerdict("INVALID", ("submit_proof_invalid",))
++
++    @staticmethod
++    def _updated(record: ReplanApplyRecord, **changes: object) -> ReplanApplyRecord:
++        payload = {**record.model_dump(), **changes, "apply_hash": ""}
++        return ReplanApplyRecord.model_validate(payload)
++
++    def _transition(self, record: ReplanApplyRecord, **changes: object) -> ReplanApplyRecord:
++        updated = self._updated(record, **changes)
++        saved = self._repo.update_replan_apply_record_if_current(
++            updated, expected_status=record.status
++        )
++        if saved is None:
++            raise ValueError("replan stage transition conflict")
++        return saved
++
++    def confirm_execution_started(self, receipt: ReplanExecutionReceipt) -> ReplanApplyResult:
++        receipt = ReplanExecutionReceipt.model_validate(receipt.model_dump())
++        record = self._repo.get_replan_apply_record(receipt.repair_id)
++        if record is None or record.repair_id != receipt.repair_id:
++            raise ValueError("unknown repair execution receipt")
++        active = self._repo.get_active_contract(receipt.task_id)
++        if (
++            active is None
++            or active.plan_version != receipt.plan_version
++            or active.command_seq != receipt.command_seq
++            or active.contract_hash != receipt.payload_hash
++        ):
++            raise ValueError("execution receipt references an old active contract")
++        if record.start_receipt is not None:
++            if record.start_receipt == receipt:
++                saved = self._repo.update_replan_apply_record_if_current(
++                    record, expected_status=record.status
++                )
++                if saved is None:
++                    raise ValueError("execution receipt references an old active contract")
++                return self._started_result(saved)
++            raise ValueError("conflicting execution start receipt")
++        if (
++            record.status != "ACTIVATED"
++            or receipt.started_at < record.created_at
++            or receipt.started_at > self._clock()
++        ):
++            raise ValueError("execution receipt is not current activated start")
++        started = self._transition(
++            record,
++            status="EXECUTION_STARTED",
++            reason="edge execution start received",
++            start_receipt=receipt,
++            executing_plan_version=receipt.plan_version,
++            executing_command_seq=receipt.command_seq,
++        )
++        return self._started_result(started)
++
++    @staticmethod
++    def _started_result(record: ReplanApplyRecord) -> ReplanApplyResult:
++        return ReplanApplyResult(
++            True, record,
++            record.candidate_contract.model_copy(deep=True) if record.candidate_contract else None,
++            record.resume_ack or record.stage_ack, [],
++        )
+ 
+     def _validate_presence(
+         self,
+@@ -278,6 +628,19 @@
+             errors.append("trigger event not found")
+         elif event.task_id != request.task_id:
+             errors.append("event task_id mismatch")
++        if event is not None and (
++            event.plan_version != request.current_plan_version
++            or event.command_seq != request.current_command_seq
++            or event.step_id != request.failed_step_id
++        ):
++            errors.append("trigger event version/step mismatch")
++        if (
++            failure_summary.plan_version != request.current_plan_version
++            or failure_summary.command_seq != request.current_command_seq
++            or failure_summary.failed_step_id != request.failed_step_id
++            or list(failure_summary.completed_step_ids) != list(checkpoint.completed_step_ids)
++        ):
++            errors.append("failure summary version/step/completed-prefix mismatch")
+         if failure_summary.task_id != request.task_id:
+             errors.append("failure summary task_id mismatch")
+         if failure_summary.failure_event_id != request.trigger_event_id:
+@@ -345,48 +708,6 @@
+             errors.append("completed step prefix changed")
+         return errors
+ 
+-    def _edge_ack(
+-        self,
+-        request: LocalReplanningRequest,
+-        contract: TaskContract,
+-        checkpoint: ExecutionCheckpoint,
+-        *,
+-        dispatch: bool,
+-    ) -> CommandAck:
+-        now = self._clock()
+-        status = CommandAckStatus.ACCEPTED.value
+-        accepted = True
+-        if not dispatch:
+-            status = CommandAckStatus.ACCEPTED.value
+-        elif self._dispatcher is None:
+-            status = CommandAckStatus.REJECTED_SAFETY_CONFLICT.value
+-            accepted = False
+-        else:
+-            result = self._dispatcher.dispatch(contract)
+-            edge_accepted = bool(
+-                getattr(result, "edge_accepted", getattr(result, "accepted", False))
+-            )
+-            dispatched = bool(getattr(result, "dispatched", edge_accepted))
+-            accepted = dispatched and edge_accepted
+-            status = (
+-                CommandAckStatus.ACCEPTED.value
+-                if accepted
+-                else CommandAckStatus.REJECTED_SAFETY_CONFLICT.value
+-            )
+-        ack = CommandAck(
+-            task_id=request.task_id,
+-            plan_version=contract.plan_version,
+-            command_seq=contract.command_seq,
+-            timestamp=now,
+-            accepted=accepted,
+-            status=status,
+-            request_id=request.request_id,
+-            checkpoint_id=checkpoint.checkpoint_id,
+-            correlation_id=request.correlation_id,
+-            details={"plan_id": request.plan_id},
+-        )
+-        return self._repo.save_command_ack(ack)
+-
+     def _record(
+         self,
+         request: LocalReplanningRequest,
+@@ -416,9 +737,18 @@
+             applied_step_ids=[step.step_id for step in contract.steps] if contract else [],
+             ack_status=ack.status if ack else "",
+             correlation_id=request.correlation_id,
++            created_at=self._clock(),
++            repair_id=f"apply-{request.request_id}" if contract else "",
++            candidate_contract=contract.model_copy(deep=True) if contract else None,
++            candidate_plan_version=contract.plan_version if contract else None,
++            candidate_command_seq=contract.command_seq if contract else None,
++            payload_hash=stable_payload_hash(contract) if contract else "",
++            checkpoint_hash=_checkpoint_digest(checkpoint) if checkpoint else "",
++            request_payload_hash=stable_payload_hash(request),
++            response_payload_hash=stable_payload_hash(response),
+         )
+         record = record.model_copy(
+-            update={"apply_hash": stable_payload_hash(record, ignore_fields={"apply_hash"})},
++            update={"apply_hash": record.content_hash()},
+             deep=True,
+         )
+         return self._repo.save_replan_apply_record(record)
+@@ -431,27 +761,7 @@
+         checkpoint: ExecutionCheckpoint | None,
+         errors: list[str],
+     ) -> ReplanApplyResult:
+-        now = self._clock()
+         ack = None
+-        if checkpoint is not None:
+-            ack = self._repo.save_command_ack(
+-                CommandAck(
+-                    task_id=request.task_id,
+-                    plan_version=response.new_plan_version or request.current_plan_version,
+-                    command_seq=response.new_command_seq or request.current_command_seq,
+-                    timestamp=now,
+-                    accepted=False,
+-                    status=CommandAckStatus.REJECTED_SEMANTIC_INVALID.value,
+-                    error=StructuredError(
+-                        code="REPLAN_APPLY_REJECTED",
+-                        message="; ".join(errors),
+-                        category="REPLAN_APPLY",
+-                    ),
+-                    request_id=request.request_id,
+-                    checkpoint_id=checkpoint.checkpoint_id,
+-                    correlation_id=request.correlation_id,
+-                )
+-            )
+         record = self._record(
+             request,
+             response,
+--- baseline/src/cloud_edge_robot_arm/cloud/replanning/service.py
++++ source/src/cloud_edge_robot_arm/cloud/replanning/service.py
+@@ -96,7 +96,7 @@
+             and context is not None
+             and context.checkpoint is not None
+         ):
+-            applied = self._apply.apply(
++            self._apply.apply(
+                 request=persisted_request,
+                 response=saved,
+                 active_record=self._repo.get_active_contract(persisted_request.task_id),
+@@ -104,23 +104,8 @@
+                 checkpoint=context.checkpoint,
+                 dispatch=dispatch,
+             )
+-            if not applied.applied:
+-                conflict = LocalReplanningResponse(
+-                    request_id=persisted_request.request_id,
+-                    outcome=(
+-                        "VERSION_CONFLICT"
+-                        if applied.record.status == "VERSION_CONFLICT"
+-                        else "REJECTED"
+-                    ),
+-                    reason="; ".join(applied.errors) or applied.record.reason,
+-                    new_plan_version=persisted_request.current_plan_version,
+-                    new_command_seq=persisted_request.current_command_seq,
+-                    validation_errors=applied.errors,
+-                    planner_name=saved.planner_name,
+-                    prompt_version=saved.prompt_version,
+-                    created_at=self._clock(),
+-                )
+-                return self._repo.save_replan_result(conflict)
++            # Cloud response is immutable; candidate/activation state is a separate
++            # durable apply record, including rejection and unavailable coordination.
+         return saved
+ 
+     def process_and_apply(
+--- baseline/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
++++ source/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
+@@ -10,8 +10,9 @@
+ 
+ from __future__ import annotations
+ 
++from collections.abc import Callable
+ from datetime import datetime
+-from typing import Protocol, runtime_checkable
++from typing import TYPE_CHECKING, Protocol, runtime_checkable
+ 
+ from cloud_edge_robot_arm.contracts.models import (
+     ActiveTaskContractRecord,
+@@ -28,6 +29,9 @@
+     TaskContract,
+ )
+ 
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++
+ 
+ class RepositoryConflictError(RuntimeError):
+     """Base class for repository conflicts that must surface to callers."""
+@@ -67,6 +71,10 @@
+ 
+     def save_retry_budget(self, budget: RecoveryBudget) -> RecoveryBudget:
+         """Persist or update a retry budget. Upsert on task_id."""
++        ...
++
++    def initialize_retry_budget_if_absent(self, budget: RecoveryBudget) -> RecoveryBudget:
++        """Atomically create the task pool once, preserving any existing complete budget."""
+         ...
+ 
+     def get_retry_budget(self, task_id: str) -> RecoveryBudget | None:
+@@ -181,6 +189,9 @@
+         robot_id: str,
+         based_on_plan_version: int,
+         correlation_id: str = "",
++        replan_record: ReplanApplyRecord | None = None,
++        activation_guard: Callable[[ReplanApplyRecord, ExecutionCheckpoint, bool], EvidenceVerdict]
++        | None = None,
+     ) -> ActiveTaskContractRecord | None:
+         """CAS update active contract and retain historical versions."""
+         ...
+@@ -217,6 +228,15 @@
+ 
+     def save_replan_apply_record(self, record: ReplanApplyRecord) -> ReplanApplyRecord:
+         """Persist a replan apply record with payload-hash idempotency."""
++        ...
++
++    def update_replan_apply_record_if_current(
++        self,
++        record: ReplanApplyRecord,
++        *,
++        expected_status: str,
++    ) -> ReplanApplyRecord | None:
++        """CAS actual stage/resume/start evidence; activation uses active-contract CAS."""
+         ...
+ 
+     def get_replan_apply_record(self, apply_id: str) -> ReplanApplyRecord | None:
+--- baseline/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
++++ source/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
+@@ -8,9 +8,10 @@
+ import hashlib
+ import json
+ import threading
++from collections.abc import Callable
+ from copy import deepcopy
+ from datetime import UTC, datetime, timedelta
+-from typing import Any
++from typing import TYPE_CHECKING, Any
+ 
+ from pydantic import BaseModel
+ 
+@@ -62,6 +63,10 @@
+     payload = record.model_dump(mode="json")
+     payload["apply_hash"] = ""
+     return _canonical_hash(payload)
++
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
+ 
+ 
+ class InMemoryEventAutonomyRepository:
+@@ -149,6 +154,16 @@
+         with self._lock:
+             budget = self._budgets.get(task_id)
+             return None if budget is None else budget.model_copy(deep=True)
++
++    def initialize_retry_budget_if_absent(self, budget: RecoveryBudget) -> RecoveryBudget:
++        """Create a frozen task pool once without resetting spent counts or its deadline."""
++        budget = RecoveryBudget.model_validate(budget.model_dump())
++        with self._lock:
++            existing = self._budgets.get(budget.task_id)
++            if existing is None:
++                existing = budget.model_copy(deep=True)
++                self._budgets[budget.task_id] = existing
++            return existing.model_copy(deep=True)
+ 
+     def consume_retry_if_available(
+         self,
+@@ -431,7 +446,11 @@
+         robot_id: str,
+         based_on_plan_version: int,
+         correlation_id: str = "",
++        replan_record: ReplanApplyRecord | None = None,
++        activation_guard: Callable[[ReplanApplyRecord, ExecutionCheckpoint, bool], EvidenceVerdict]
++        | None = None,
+     ) -> ActiveTaskContractRecord | None:
++        new_contract = TaskContract.model_validate(new_contract.model_dump())
+         with self._lock:
+             active = self._active_contracts.get(task_id)
+             if active is None:
+@@ -445,42 +464,85 @@
+                 return None
+             if new_contract.command_seq <= expected_command_seq:
+                 return None
+-            # Reuse save logic while holding the same lock by writing directly.
++            if new_contract.task_id != task_id:
++                return None
++            staged = None
++            if replan_record is not None:
++                staged = ReplanApplyRecord.model_validate(replan_record.model_dump())
++                previous = self._apply_records.get(staged.apply_id)
++                ids = self._checkpoints_by_task.get(task_id, [])
++                checkpoint = self._checkpoints[ids[-1]] if ids else None
++                cancelled = self._replan_cancelled_locked(task_id)
++                if (
++                    previous is None
++                    or previous.status != "EDGE_ACCEPTED"
++                    or staged.status != "ACTIVATED"
++                    or staged.previous_plan_version != expected_plan_version
++                    or staged.previous_command_seq != expected_command_seq
++                    or based_on_plan_version != staged.previous_plan_version
++                    or checkpoint is None
++                    or _checkpoint_hash(checkpoint) != staged.checkpoint_hash
++                    or checkpoint.checkpoint_id != staged.checkpoint_id
++                    or staged.payload_hash != _contract_hash(new_contract)
++                    or staged.task_id != task_id
++                    or staged.plan_id != plan_id
++                    or staged.robot_id != robot_id
++                    or cancelled
++                    or activation_guard is None
++                ):
++                    return None
++                staged.validate_transition(previous, activation=True)
++                from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++
++                verdict = activation_guard(
++                    previous.model_copy(deep=True), checkpoint.model_copy(deep=True), cancelled
++                )
++                if not isinstance(verdict, EvidenceVerdict) or verdict.status != "VALID":
++                    return None
++                if self._replan_cancelled_locked(task_id):
++                    return None
++            h = _contract_hash(new_contract)
++            existing = self._version_record(task_id, new_contract.plan_version)
++            if existing is not None:
++                self._ensure_same_hash(
++                    "ActiveTaskContract",
++                    f"{task_id}:{new_contract.plan_version}",
++                    existing.contract_hash,
++                    h,
++                )
++            # All conflict checks precede the first mutation under the same lock.
+             now = _utc_now()
+             superseded = active.model_copy(
+                 update={"status": ActiveContractStatus.SUPERSEDED.value, "superseded_at": now},
+                 deep=True,
+             )
+             self._replace_version_record(superseded)
+-            h = _contract_hash(new_contract)
+-            existing = self._version_record(task_id, new_contract.plan_version)
+-            if existing is not None:
+-                self._ensure_same_hash(
+-                    "ActiveTaskContract",
+-                    f"{task_id}:{new_contract.plan_version}",
+-                    existing.contract_hash,
+-                    h,
+-                )
+-                self._active_contracts[task_id] = existing
+-                return existing.model_copy(deep=True)
+-            record = ActiveTaskContractRecord(
+-                task_id=task_id,
+-                plan_id=plan_id,
+-                robot_id=robot_id,
+-                plan_version=new_contract.plan_version,
+-                command_seq=new_contract.command_seq,
+-                scene_version=new_contract.scene_version,
+-                contract=new_contract.model_copy(deep=True),
+-                status=ActiveContractStatus.ACTIVE.value,
+-                based_on_plan_version=based_on_plan_version,
+-                created_at=now,
+-                activated_at=now,
+-                correlation_id=correlation_id,
+-                contract_hash=h,
+-            )
+-            self._contract_versions.setdefault(task_id, []).append(record)
++            if existing is not None:
++                record = existing.model_copy(
++                    update={"status": "ACTIVE", "superseded_at": None}, deep=True
++                )
++                self._replace_version_record(record)
++            else:
++                record = ActiveTaskContractRecord(
++                    task_id=task_id,
++                    plan_id=plan_id,
++                    robot_id=robot_id,
++                    plan_version=new_contract.plan_version,
++                    command_seq=new_contract.command_seq,
++                    scene_version=new_contract.scene_version,
++                    contract=new_contract.model_copy(deep=True),
++                    status=ActiveContractStatus.ACTIVE.value,
++                    based_on_plan_version=based_on_plan_version,
++                    created_at=now,
++                    activated_at=now,
++                    correlation_id=correlation_id,
++                    contract_hash=h,
++                )
++                self._contract_versions.setdefault(task_id, []).append(record)
+             self._active_contracts[task_id] = record
+             self._plan_versions[task_id] = (new_contract.plan_version, new_contract.command_seq)
++            if staged is not None:
++                self._store_apply_locked(staged)
+             return record.model_copy(deep=True)
+ 
+     def list_contract_versions(self, task_id: str) -> list[ActiveTaskContractRecord]:
+@@ -565,26 +627,79 @@
+ 
+     # ── Replan apply and ACK ────────────────────────────────────────────
+ 
++    def _replan_cancelled_locked(self, task_id: str) -> bool:
++        return self._states.get(task_id) in {
++            "CANCELLED",
++            "ABORTED",
++            "STOPPED",
++            "SAFETY_STOPPED",
++            "COMPLETED",
++        } or any(
++            self._events[key].severity == "CRITICAL"
++            or self._events[key].event_type.value == "MANUAL_INTERRUPT"
++            for key in self._events_by_task.get(task_id, [])
++        )
++
++    def _store_apply_locked(self, record: ReplanApplyRecord) -> ReplanApplyRecord:
++        saved = record.model_copy(update={"apply_hash": record.content_hash()}, deep=True)
++        self._apply_records[saved.apply_id] = saved
++        self._apply_by_request[saved.request_id] = saved.apply_id
++        self._apply_hashes[saved.apply_id] = saved.apply_hash
++        return saved.model_copy(deep=True)
++
+     def save_replan_apply_record(self, record: ReplanApplyRecord) -> ReplanApplyRecord:
+-        with self._lock:
+-            h = record.apply_hash or _apply_hash(record)
+-            existing = self._apply_records.get(record.apply_id)
+-            if existing is not None:
+-                self._ensure_same_hash(
+-                    "ReplanApplyRecord", record.apply_id, self._apply_hashes[record.apply_id], h
++        record = ReplanApplyRecord.model_validate(record.model_dump())
++        with self._lock:
++            existing_id = self._apply_by_request.get(record.request_id, record.apply_id)
++            existing = self._apply_records.get(existing_id)
++            if existing is not None:
++                self._ensure_same_hash(
++                    "ReplanApplyRecord",
++                    record.apply_id,
++                    existing.content_hash(),
++                    record.content_hash(),
+                 )
+                 return existing.model_copy(deep=True)
+-            existing_id = self._apply_by_request.get(record.request_id)
+-            if existing_id is not None:
+-                self._ensure_same_hash(
+-                    "ReplanApplyRecord", record.request_id, self._apply_hashes[existing_id], h
+-                )
+-                return self._apply_records[existing_id].model_copy(deep=True)
+-            saved = record.model_copy(update={"apply_hash": h}, deep=True)
+-            self._apply_records[saved.apply_id] = saved
+-            self._apply_by_request[saved.request_id] = saved.apply_id
+-            self._apply_hashes[saved.apply_id] = h
+-            return saved.model_copy(deep=True)
++            if record.status in {"EDGE_ACCEPTED", "ACTIVATED", "EXECUTION_STARTED"}:
++                raise ValueError("public insert cannot assert edge activation")
++            if record.stage_attempt_id:
++                raise ValueError("public insert cannot assert edge activation")
++            return self._store_apply_locked(record)
++
++    def update_replan_apply_record_if_current(
++        self,
++        record: ReplanApplyRecord,
++        *,
++        expected_status: str,
++    ) -> ReplanApplyRecord | None:
++        record = ReplanApplyRecord.model_validate(record.model_dump())
++        with self._lock:
++            previous = self._apply_records.get(record.apply_id)
++            if previous is None:
++                return None
++            if record.status == "EXECUTION_STARTED":
++                assert record.start_receipt is not None
++                for other in self._apply_records.values():
++                    if (
++                        other.apply_id != record.apply_id
++                        and other.start_receipt is not None
++                        and other.start_receipt.event_id == record.start_receipt.event_id
++                    ):
++                        raise ValueError("execution start event already belongs to another repair")
++                active = self._active_contracts.get(record.task_id)
++                if (
++                    active is None
++                    or active.plan_version != record.new_plan_version
++                    or active.command_seq != record.new_command_seq
++                    or active.contract_hash != record.payload_hash
++                ):
++                    return None
++            if previous.content_hash() == record.content_hash():
++                return previous.model_copy(deep=True)
++            if previous.status != expected_status:
++                return None
++            record.validate_transition(previous)
++            return self._store_apply_locked(record)
+ 
+     def get_replan_apply_record(self, apply_id: str) -> ReplanApplyRecord | None:
+         with self._lock:
+--- baseline/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
++++ source/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
+@@ -8,10 +8,11 @@
+ import hashlib
+ import json
+ import sqlite3
++from collections.abc import Callable
+ from datetime import UTC, datetime, timedelta
+ from pathlib import Path
+ from threading import Lock
+-from typing import Any
++from typing import TYPE_CHECKING, Any
+ 
+ from pydantic import BaseModel
+ 
+@@ -64,6 +65,10 @@
+ def _same_or_conflict(entity: str, key: str, existing_hash: str, new_hash: str) -> None:
+     if existing_hash != new_hash:
+         raise IdempotencyConflictError(f"{entity} idempotency conflict for key {key!r}")
++
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
+ 
+ 
+ class SQLiteEventAutonomyRepository:
+@@ -565,6 +570,48 @@
+             updated_at=datetime.fromisoformat(row["updated_at"]),
+         )
+ 
++    def initialize_retry_budget_if_absent(self, budget: RecoveryBudget) -> RecoveryBudget:
++        """Create once under BEGIN IMMEDIATE; restarts retain every stored field."""
++        budget = RecoveryBudget.model_validate(budget.model_dump())
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            existing = self.get_retry_budget(budget.task_id)
++            if existing is not None:
++                return existing.model_copy(deep=True)
++            self._conn.execute(
++                """INSERT INTO recovery_budgets (
++                    budget_id, task_id, per_step_retry_limit, per_skill_retry_limit,
++                    task_total_retry_limit, retry_count_used, task_retry_count,
++                    step_retry_counts_json, skill_retry_counts_json, event_retry_counts_json,
++                    retry_cooldown_ms, retry_deadline, retry_backoff_policy,
++                    effective_retry_limit, remaining_retries, scene_version,
++                    created_at, updated_at
++                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
++                (
++                    budget.budget_id,
++                    budget.task_id,
++                    budget.per_step_retry_limit,
++                    budget.per_skill_retry_limit,
++                    budget.task_total_retry_limit,
++                    budget.retry_count_used,
++                    budget.task_retry_count,
++                    self._json(budget.step_retry_counts),
++                    self._json(budget.skill_retry_counts),
++                    self._json(budget.event_retry_counts),
++                    budget.retry_cooldown_ms,
++                    budget.retry_deadline.isoformat() if budget.retry_deadline else None,
++                    budget.retry_backoff_policy,
++                    budget.effective_retry_limit,
++                    budget.remaining_retries,
++                    budget.scene_version,
++                    budget.created_at.isoformat(),
++                    budget.updated_at.isoformat(),
++                ),
++            )
++            saved = self.get_retry_budget(budget.task_id)
++            assert saved is not None
++            return saved.model_copy(deep=True)
++
+     def consume_retry_if_available(
+         self,
+         task_id: str,
+@@ -967,6 +1014,7 @@
+         status: str,
+         based_on_plan_version: int | None,
+         correlation_id: str,
++        commit: bool = True,
+     ) -> ActiveTaskContractRecord:
+         now = datetime.now(UTC)
+         contract_hash = _canonical_hash(contract)
+@@ -985,7 +1033,8 @@
+             record = ActiveTaskContractRecord.model_validate_json(existing["record_json"])
+             if status == ActiveContractStatus.ACTIVE.value:
+                 self._set_active_locked(record)
+-            self._conn.commit()
++            if commit:
++                self._conn.commit()
+             return record
+         record = ActiveTaskContractRecord(
+             task_id=contract.task_id,
+@@ -1041,7 +1090,8 @@
+                        updated_at = excluded.updated_at""",
+                 (record.task_id, record.plan_version, record.command_seq, _iso_now()),
+             )
+-        self._conn.commit()
++        if commit:
++            self._conn.commit()
+         return record
+ 
+     def _set_active_locked(self, record: ActiveTaskContractRecord) -> None:
+@@ -1122,30 +1172,69 @@
+         robot_id: str,
+         based_on_plan_version: int,
+         correlation_id: str = "",
++        replan_record: ReplanApplyRecord | None = None,
++        activation_guard: Callable[[ReplanApplyRecord, ExecutionCheckpoint, bool], EvidenceVerdict]
++        | None = None,
+     ) -> ActiveTaskContractRecord | None:
+-        with self._write_lock:
+-            row = self._conn.execute(
+-                """SELECT record_json FROM active_task_contracts
+-                   WHERE task_id = ? AND plan_version = ? AND command_seq = ?""",
+-                (task_id, expected_plan_version, expected_command_seq),
+-            ).fetchone()
+-            if row is None:
+-                return None
++        new_contract = TaskContract.model_validate(new_contract.model_dump())
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            active = self.get_active_contract(task_id)
+             if (
+-                new_contract.plan_version <= expected_plan_version
++                active is None
++                or active.plan_version != expected_plan_version
++                or active.command_seq != expected_command_seq
++                or new_contract.task_id != task_id
++                or new_contract.plan_version <= expected_plan_version
+                 or new_contract.command_seq <= expected_command_seq
+             ):
+                 return None
+-            self._supersede_version_locked(task_id, expected_plan_version, datetime.now(UTC))
++            staged = None
++            if replan_record is not None:
++                staged = ReplanApplyRecord.model_validate(replan_record.model_dump())
++                previous = self.get_replan_apply_record(staged.apply_id)
++                checkpoint = self.get_latest_execution_checkpoint(task_id)
++                cancelled = self._replan_cancelled_locked(task_id)
++                if (
++                    previous is None
++                    or previous.status != "EDGE_ACCEPTED"
++                    or staged.status != "ACTIVATED"
++                    or staged.previous_plan_version != expected_plan_version
++                    or staged.previous_command_seq != expected_command_seq
++                    or based_on_plan_version != staged.previous_plan_version
++                    or checkpoint is None
++                    or _checkpoint_hash(checkpoint) != staged.checkpoint_hash
++                    or checkpoint.checkpoint_id != staged.checkpoint_id
++                    or staged.payload_hash != _canonical_hash(new_contract)
++                    or staged.task_id != task_id
++                    or staged.plan_id != plan_id
++                    or staged.robot_id != robot_id
++                    or cancelled
++                    or activation_guard is None
++                ):
++                    return None
++                staged.validate_transition(previous, activation=True)
++                from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++
++                verdict = activation_guard(
++                    previous.model_copy(deep=True), checkpoint.model_copy(deep=True), cancelled
++                )
++                if not isinstance(verdict, EvidenceVerdict) or verdict.status != "VALID":
++                    return None
++                if self._replan_cancelled_locked(task_id):
++                    return None
+             record = self._save_active_contract_locked(
+                 new_contract,
+                 plan_id=plan_id,
+                 robot_id=robot_id,
+-                status=ActiveContractStatus.ACTIVE.value,
++                status="ACTIVE",
+                 based_on_plan_version=based_on_plan_version,
+                 correlation_id=correlation_id,
+-            )
+-            return record
++                commit=False,
++            )
++            if staged is not None:
++                self._update_apply_locked(staged)
++            return record.model_copy(deep=True)
+ 
+     def list_contract_versions(self, task_id: str) -> list[ActiveTaskContractRecord]:
+         rows = self._conn.execute(
+@@ -1285,11 +1374,34 @@
+ 
+     # ── Replan apply and ACK ────────────────────────────────────────────
+ 
++    def _replan_cancelled_locked(self, task_id: str) -> bool:
++        return self.get_state(task_id) in {
++            "CANCELLED",
++            "ABORTED",
++            "STOPPED",
++            "SAFETY_STOPPED",
++            "COMPLETED",
++        } or any(
++            event.severity == "CRITICAL" or event.event_type.value == "MANUAL_INTERRUPT"
++            for event in self.list_events(task_id)
++        )
++
++    def _update_apply_locked(self, record: ReplanApplyRecord) -> ReplanApplyRecord:
++        saved = record.model_copy(update={"apply_hash": record.content_hash()}, deep=True)
++        self._conn.execute(
++            "UPDATE replan_apply_records SET status=?, reason=?, payload_json=?, apply_hash=? "
++            "WHERE apply_id=?",
++            (saved.status, saved.reason, saved.model_dump_json(), saved.apply_hash, saved.apply_id),
++        )
++        return saved.model_copy(deep=True)
++
+     def save_replan_apply_record(self, record: ReplanApplyRecord) -> ReplanApplyRecord:
+-        h = record.apply_hash or _apply_hash(record)
++        record = ReplanApplyRecord.model_validate(record.model_dump())
++        h = record.content_hash()
+         saved = record.model_copy(update={"apply_hash": h}, deep=True)
+         payload = saved.model_dump_json()
+-        with self._write_lock:
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
+             row = self._conn.execute(
+                 """SELECT payload_json, apply_hash FROM replan_apply_records
+                    WHERE apply_id = ? OR request_id = ?""",
+@@ -1298,6 +1410,10 @@
+             if row is not None:
+                 _same_or_conflict("ReplanApplyRecord", saved.apply_id, row["apply_hash"], h)
+                 return ReplanApplyRecord.model_validate_json(row["payload_json"])
++            if saved.status in {"EDGE_ACCEPTED", "ACTIVATED", "EXECUTION_STARTED"}:
++                raise ValueError("public insert cannot assert edge activation")
++            if record.stage_attempt_id:
++                raise ValueError("public insert cannot assert edge activation")
+             self._conn.execute(
+                 """INSERT INTO replan_apply_records (
+                     apply_id, request_id, task_id, plan_id, robot_id,
+@@ -1323,8 +1439,48 @@
+                     saved.created_at.isoformat(),
+                 ),
+             )
+-            self._conn.commit()
+             return saved
++
++    def update_replan_apply_record_if_current(
++        self,
++        record: ReplanApplyRecord,
++        *,
++        expected_status: str,
++    ) -> ReplanApplyRecord | None:
++        record = ReplanApplyRecord.model_validate(record.model_dump())
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            previous = self.get_replan_apply_record(record.apply_id)
++            if previous is None:
++                return None
++            if record.status == "EXECUTION_STARTED":
++                assert record.start_receipt is not None
++                rows = self._conn.execute(
++                    "SELECT payload_json FROM replan_apply_records "
++                    "WHERE status='EXECUTION_STARTED' AND apply_id != ?",
++                    (record.apply_id,),
++                ).fetchall()
++                for row in rows:
++                    other = ReplanApplyRecord.model_validate_json(row["payload_json"])
++                    if (
++                        other.start_receipt is not None
++                        and other.start_receipt.event_id == record.start_receipt.event_id
++                    ):
++                        raise ValueError("execution start event already belongs to another repair")
++                active = self.get_active_contract(record.task_id)
++                if (
++                    active is None
++                    or active.plan_version != record.new_plan_version
++                    or active.command_seq != record.new_command_seq
++                    or active.contract_hash != record.payload_hash
++                ):
++                    return None
++            if previous.content_hash() == record.content_hash():
++                return previous.model_copy(deep=True)
++            if previous.status != expected_status:
++                return None
++            record.validate_transition(previous)
++            return self._update_apply_locked(record)
+ 
+     def get_replan_apply_record(self, apply_id: str) -> ReplanApplyRecord | None:
+         row = self._conn.execute(
+--- /dev/null
++++ source/tests/test_replan_activation.py
+@@ -0,0 +1,1154 @@
++"""Software-only staged replan contracts and persistent recovery-budget boundaries."""
++
++from concurrent.futures import ThreadPoolExecutor
++from datetime import UTC, datetime, timedelta
++from threading import Barrier
++
++import pytest
++
++from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
++from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import SQLiteEventAutonomyRepository
++
++NOW = datetime(2026, 10, 4, tzinfo=UTC)
++
++
++def spent_budget():
++    return RecoveryBudget(
++        budget_id="original",
++        task_id="task",
++        per_step_retry_limit=3,
++        per_skill_retry_limit=5,
++        task_total_retry_limit=8,
++        retry_count_used=2,
++        task_retry_count=2,
++        step_retry_counts={"step": 2},
++        skill_retry_counts={"GRASP": 2},
++        event_retry_counts={"event-1": 1, "event-2": 1},
++        remaining_retries=1,
++        retry_deadline=NOW + timedelta(seconds=60),
++        created_at=NOW,
++        updated_at=NOW,
++    )
++
++
++@pytest.mark.parametrize("sqlite", [False, True])
++def test_atomic_budget_initialize_preserves_original_limits_counts_deadline(tmp_path, sqlite):
++    repo = (
++        SQLiteEventAutonomyRepository(tmp_path / "event.sqlite")
++        if sqlite
++        else (InMemoryEventAutonomyRepository())
++    )
++    original = repo.initialize_retry_budget_if_absent(spent_budget())
++    if sqlite:
++        before_bytes = tuple(
++            repo._conn.execute("SELECT * FROM recovery_budgets WHERE task_id='task'").fetchone()
++        )
++        repo.close()
++        repo = SQLiteEventAutonomyRepository(tmp_path / "event.sqlite")
++    reset = spent_budget().model_copy(
++        update={
++            "budget_id": "new",
++            "per_step_retry_limit": 99,
++            "retry_count_used": 0,
++            "task_retry_count": 0,
++            "step_retry_counts": {},
++            "skill_retry_counts": {},
++            "event_retry_counts": {},
++            "remaining_retries": 99,
++            "retry_deadline": NOW + timedelta(days=1),
++            "updated_at": NOW + timedelta(days=1),
++        }
++    )
++    result = repo.initialize_retry_budget_if_absent(reset)
++    assert result == original
++    assert repo.get_retry_budget("task") == original
++    if sqlite:
++        assert (
++            tuple(
++                repo._conn.execute("SELECT * FROM recovery_budgets WHERE task_id='task'").fetchone()
++            )
++            == before_bytes
++        )
++        repo.close()
++
++
++@pytest.mark.parametrize("sqlite", [False, True])
++def test_atomic_budget_initialize_returns_an_independent_copy(tmp_path, sqlite):
++    repo = (
++        SQLiteEventAutonomyRepository(tmp_path / "event.sqlite")
++        if sqlite
++        else (InMemoryEventAutonomyRepository())
++    )
++    proposed = spent_budget()
++    saved = repo.initialize_retry_budget_if_absent(proposed)
++    proposed.event_retry_counts.clear()
++    saved.event_retry_counts.clear()
++    again = repo.initialize_retry_budget_if_absent(spent_budget())
++    again.step_retry_counts.clear()
++    assert repo.get_retry_budget("task") == spent_budget()
++    if sqlite:
++        repo.close()
++
++
++def test_two_sqlite_initializers_create_one_frozen_budget(tmp_path):
++    path = tmp_path / "event.sqlite"
++    first = SQLiteEventAutonomyRepository(path)
++    second = SQLiteEventAutonomyRepository(path)
++    barrier = Barrier(2)
++
++    def initialize(repo, proposal):
++        barrier.wait(timeout=5)
++        return repo.initialize_retry_budget_if_absent(proposal)
++
++    original = spent_budget()
++    competing = original.model_copy(update={"budget_id": "competing", "remaining_retries": 0})
++    with ThreadPoolExecutor(max_workers=2) as pool:
++        a = pool.submit(initialize, first, original)
++        b = pool.submit(initialize, second, competing)
++        results = [a.result(timeout=10), b.result(timeout=10)]
++    assert results[0] == results[1]
++    assert results[0] in (original, competing)
++    assert first.get_retry_budget("task") == second.get_retry_budget("task") == results[0]
++    assert first._conn.execute("SELECT count(*) FROM recovery_budgets").fetchone()[0] == 1
++    first.close()
++    second.close()
++
++
++def setup_replan(repo):
++    """Build a software-only failed-contract checkpoint; no robot is invoked."""
++    from cloud_edge_robot_arm.contracts.models import (
++        EdgeEvent,
++        EdgeEventType,
++        ExecutionCheckpoint,
++        FailureSummary,
++        LocalReplanningRequest,
++        LocalReplanningResponse,
++    )
++    from tests.test_phase6_2_replan_resume import _contract
++
++    contract = _contract(task_id="task").model_copy(
++        update={
++            "timestamp": NOW,
++            "issued_at": NOW,
++            "valid_until": NOW + timedelta(seconds=60),
++        }
++    )
++    repo.save_active_contract(contract, plan_id="plan", robot_id="robot")
++    repo.save_event(
++        EdgeEvent(
++            task_id="task",
++            plan_version=1,
++            command_seq=1,
++            timestamp=NOW,
++            event_id="failure",
++            event_type=EdgeEventType.GRASP_FAILED,
++            step_id="grasp",
++            severity="ERROR",
++        )
++    )
++    repo.save_failure_summary(
++        FailureSummary(
++            task_id="task",
++            plan_version=1,
++            command_seq=1,
++            timestamp=NOW,
++            summary_id="summary",
++            failure_event_id="failure",
++            failed_step_id="grasp",
++            completed_step_ids=["approach"],
++            reason="software failure fixture",
++            local_retry_count=0,
++            recovery_hint="repair",
++        )
++    )
++    repo.save_execution_checkpoint(
++        ExecutionCheckpoint(
++            checkpoint_id="checkpoint",
++            task_id="task",
++            plan_id="plan",
++            robot_id="robot",
++            plan_version=1,
++            command_seq=1,
++            completed_step_ids=["approach"],
++            failed_step_id="grasp",
++            scene_version=1,
++            execution_state="WAITING_CLOUD_REPLAN",
++            created_at=NOW,
++            updated_at=NOW,
++        )
++    )
++    request = LocalReplanningRequest(
++        request_id="request",
++        task_id="task",
++        plan_id="plan",
++        robot_id="robot",
++        trigger_event_id="failure",
++        failure_summary_id="summary",
++        current_plan_version=1,
++        current_command_seq=1,
++        completed_step_ids=["approach"],
++        failed_step_id="grasp",
++        current_scene_version=1,
++        requested_at=NOW,
++    )
++    response = LocalReplanningResponse(
++        request_id="request",
++        new_plan_version=2,
++        new_command_seq=2,
++        created_at=NOW,
++        new_steps=[contract.steps[1].model_copy(update={"step_id": "repair-grasp"}, deep=True)],
++    )
++    return request, response
++
++
++@pytest.fixture(params=[False, True], ids=["memory", "sqlite"])
++def replan_repo(request, tmp_path):
++    repo = (
++        SQLiteEventAutonomyRepository(tmp_path / "replan.sqlite")
++        if request.param
++        else (InMemoryEventAutonomyRepository())
++    )
++    yield repo
++    if request.param:
++        repo.close()
++
++
++class MockStagedGateway:
++    """MOCK stage/resume receipts test software boundaries, never physical success."""
++
++    def __init__(self, *, stage_change=None, after_stage=None, resume_timeout=False):
++        self.calls = []
++        self.stage_change = stage_change or {}
++        self.after_stage = after_stage
++        self.resume_timeout = resume_timeout
++        self.stage_ack = None
++
++    def stage(self, contract, repair_id):
++        from cloud_edge_robot_arm.contracts.models import CommandAck
++        from cloud_edge_robot_arm.repositories.event_autonomy.hashing import stable_payload_hash
++
++        self.calls.append("stage")
++        self.stage_ack = CommandAck(
++            task_id=contract.task_id,
++            plan_version=contract.plan_version,
++            command_seq=contract.command_seq,
++            timestamp=NOW,
++            accepted=True,
++            status="ACCEPTED",
++            request_id="mock-stage",
++            details={
++                "source": "MOCK",
++                "repair_id": repair_id,
++                "activation_token": "mock-token",
++                "payload_hash": stable_payload_hash(contract),
++                **self.stage_change,
++            },
++        )
++        if self.after_stage:
++            self.after_stage()
++        return self.stage_ack
++
++    def resume(self, repair_id, activation_token):
++        self.calls.append("resume")
++        if self.resume_timeout:
++            raise TimeoutError("MOCK resume timeout")
++        return self.stage_ack.model_copy(
++            update={
++                "request_id": "mock-resume",
++                "details": {
++                    **self.stage_ack.details,
++                    "repair_id": repair_id,
++                    "activation_token": activation_token,
++                },
++            },
++            deep=True,
++        )
++
++
++def submit_proof(record, candidate, checkpoint):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanSubmitEvidence
++    from cloud_edge_robot_arm.edge.evidence.models import (
++        ActionEvidenceContract,
++        CommitContext,
++        DecisionEnvelope,
++        VisualEvidence,
++    )
++    from tests.test_visual_evidence_contract import online_evidence
++
++    online = online_evidence()
++    observation = type(online.observation).model_validate(
++        {
++            **online.observation.model_dump(),
++            "captured_at": NOW,
++            "episode_id": "episode",
++            "checksum_sha256": "",
++        }
++    )
++    online = replace(
++        online,
++        observation=observation,
++        plan_version=2,
++        command_seq=2,
++        context_hash=record.checkpoint_hash,
++    )
++    evidence = VisualEvidence(
++        observation_id=observation.observation_id,
++        calibration_version="cal-1",
++        captured_at=NOW,
++        geometric_error_bound_m=0.001,
++        motion_bound_m_s=0.001,
++        identity_status="CONFIRMED",
++        sensor_status="VALID",
++    )
++    action = ActionEvidenceContract(
++        evidence,
++        6.0,
++        0.01,
++        ("rgbd",),
++        (),
++        (),
++        2,
++        2,
++        record.checkpoint_hash,
++    )
++    decision = DecisionEnvelope(
++        "decision",
++        "task",
++        "episode",
++        observation.observation_id,
++        2,
++        2,
++        1,
++        record.checkpoint_hash,
++        record.payload_hash,
++        "LOCAL_RECOVER",
++        "policy",
++        "provider",
++        NOW,
++        NOW + timedelta(seconds=2),
++    )
++    current = CommitContext(
++        "task",
++        "episode",
++        observation.observation_id,
++        2,
++        2,
++        1,
++        record.checkpoint_hash,
++        record.payload_hash,
++        False,
++    )
++    return ReplanSubmitEvidence(decision, current, action, online)
++
++
++@pytest.mark.parametrize("dispatch", [False, True])
++def test_unavailable_or_dryrun_is_candidate_only_without_any_ack(replan_repo, dispatch):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++
++    class LegacyGateway:
++        def dispatch(self, contract):
++            pytest.fail("legacy dispatch must never be used as staging")
++
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=LegacyGateway(), clock=lambda: NOW
++    ).apply(request=request, response=response, dispatch=dispatch)
++    assert result.record.status == "PREPARED"
++    assert result.record.candidate_contract.plan_version == 2
++    assert result.record.accepted_plan_version is None
++    assert result.record.executing_plan_version is None
++    assert result.record.activation_token == ""
++    assert result.ack is None and not result.applied
++    assert replan_repo.get_active_contract("task").plan_version == 1
++    assert replan_repo.get_command_ack("request") is None
++    assert replan_repo.get_state("task") != "READY_TO_RESUME"
++
++
++def test_mock_stage_activation_ack_is_not_execution_start_and_retry_does_not_replay(replan_repo):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    gateway = MockStagedGateway()
++    service = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    )
++    result = service.apply(request=request, response=response)
++    assert result.record.status == "ACTIVATED"
++    assert result.record.stage_ack == gateway.stage_ack
++    assert result.record.resume_ack.accepted
++    assert result.record.executing_plan_version is None
++    assert result.record.start_receipt is None
++    assert replan_repo.get_active_contract("task").plan_version == 2
++    assert gateway.calls == ["stage", "resume"]
++    again = service.apply(request=request, response=response)
++    assert again.record == result.record
++    assert gateway.calls == ["stage", "resume"]
++
++
++@pytest.mark.parametrize(
++    "details",
++    [
++        {"activation_token": ""},
++        {"repair_id": "other"},
++        {"payload_hash": "wrong"},
++    ],
++)
++def test_mock_stage_wrong_binding_does_not_advance_active(replan_repo, details):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    gateway = MockStagedGateway(stage_change=details)
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert not result.applied
++    assert replan_repo.get_active_contract("task").plan_version == 1
++    assert gateway.calls == ["stage"]
++
++
++@pytest.mark.parametrize("change", ["cancel", "checkpoint"])
++def test_late_cancel_or_checkpoint_change_keeps_old_active(replan_repo, change):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++
++    def late_change():
++        if change == "cancel":
++            replan_repo.save_state("task", "CANCELLED", "MOCK cancellation")
++        else:
++            checkpoint = replan_repo.get_latest_execution_checkpoint("task")
++            replan_repo.save_execution_checkpoint(
++                checkpoint.model_copy(
++                    update={
++                        "checkpoint_id": "new-checkpoint",
++                        "checkpoint_hash": "",
++                        "updated_at": NOW,
++                    }
++                )
++            )
++
++    gateway = MockStagedGateway(after_stage=late_change)
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert not result.applied
++    assert replan_repo.get_active_contract("task").plan_version == 1
++    assert gateway.calls == ["stage"]
++
++
++def test_resume_timeout_preserves_activated_version_and_restart_never_replays(tmp_path):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    path = tmp_path / "restart.sqlite"
++    repo = SQLiteEventAutonomyRepository(path)
++    request, response = setup_replan(repo)
++    gateway = MockStagedGateway(resume_timeout=True)
++    result = ReplanApplyService(
++        repository=repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert result.record.status == "ACTIVATED" and result.record.resume_ack is None
++    assert repo.get_active_contract("task").plan_version == 2
++    repo.close()
++    restarted = SQLiteEventAutonomyRepository(path)
++    again = ReplanApplyService(
++        repository=restarted, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert again.record == result.record
++    assert gateway.calls == ["stage", "resume"]
++    restarted.close()
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("new_plan_version", 9),
++        ("payload_hash", "forged"),
++        ("robot_id", "other"),
++        ("status", "ACTIVATED"),
++    ],
++)
++def test_public_save_rejects_mutated_prepared_with_original_hash(replan_repo, field, value):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
++
++    request, response = setup_replan(replan_repo)
++    original = (
++        ReplanApplyService(repository=replan_repo, clock=lambda: NOW)
++        .apply(request=request, response=response, dispatch=False)
++        .record
++    )
++    with pytest.raises((ValueError, IdempotencyConflictError)):
++        replan_repo.save_replan_apply_record(original.model_copy(update={field: value}))
++    assert replan_repo.get_replan_apply_record(original.apply_id) == original
++
++
++@pytest.mark.parametrize("sqlite", [False, True])
++def test_simultaneous_apply_claims_stage_once(tmp_path, monkeypatch, sqlite):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    path = tmp_path / "claim.sqlite"
++    first = SQLiteEventAutonomyRepository(path) if sqlite else InMemoryEventAutonomyRepository()
++    second = SQLiteEventAutonomyRepository(path) if sqlite else first
++    request, response = setup_replan(first)
++    barrier = Barrier(2)
++    for repo in {first, second}:
++        original = repo.get_replan_apply_record_for_request
++
++        def get_before_both_insert(request_id, original=original):
++            value = original(request_id)
++            barrier.wait(timeout=5)
++            return value
++
++        monkeypatch.setattr(repo, "get_replan_apply_record_for_request", get_before_both_insert)
++        original_save = repo.save_replan_apply_record
++
++        def save_before_both_stage(record, original_save=original_save):
++            saved = original_save(record)
++            barrier.wait(timeout=5)
++            return saved
++
++        monkeypatch.setattr(repo, "save_replan_apply_record", save_before_both_stage)
++    gateway = MockStagedGateway()
++    services = [
++        ReplanApplyService(
++            repository=repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++        )
++        for repo in (first, second)
++    ]
++    with ThreadPoolExecutor(max_workers=2) as pool:
++        futures = [
++            pool.submit(service.apply, request=request, response=response) for service in services
++        ]
++        results = [future.result(timeout=10) for future in futures]
++    assert gateway.calls.count("stage") == 1
++    assert gateway.calls.count("resume") == 1
++    assert any(result.record.status == "ACTIVATED" for result in results)
++    assert first.get_active_contract("task").plan_version == 2
++    if sqlite:
++        first.close()
++        second.close()
++
++
++def test_guard_recomputes_actual_bounds_and_does_not_accept_valid_toggle(replan_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++
++    request, response = setup_replan(replan_repo)
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(
++        repository=replan_repo,
++        dispatcher=gateway,
++        submit_guard=lambda *_: EvidenceVerdict("VALID", ("caller label",)),
++        clock=lambda: NOW,
++    ).apply(request=request, response=response)
++    assert result.record.status == "PREPARED"
++    assert gateway.calls == []
++    request = request.model_copy(update={"request_id": "bounds-request"})
++    response = response.model_copy(update={"request_id": "bounds-request"})
++
++    def missing_motion(*args):
++        proof = submit_proof(*args)
++        return replace(
++            proof,
++            action=replace(
++                proof.action, evidence=replace(proof.action.evidence, motion_bound_m_s=None)
++            ),
++        )
++
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=missing_motion, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert result.record.status == "PREPARED" and gateway.calls == []
++
++
++def test_proof_cancelled_after_activation_does_not_resume_or_rollback(replan_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    gateway = MockStagedGateway()
++    calls = []
++
++    def changing_proof(*args):
++        calls.append(args[0].status)
++        proof = submit_proof(*args)
++        if len(calls) == 3:
++            return replace(proof, current=replace(proof.current, cancelled=True))
++        return proof
++
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=changing_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert calls == ["PREPARED", "EDGE_ACCEPTED", "ACTIVATED"]
++    assert result.record.status == "ACTIVATED" and result.record.resume_ack is None
++    assert gateway.calls == ["stage"]
++    assert replan_repo.get_active_contract("task").plan_version == 2
++
++
++def test_mock_start_receipt_durable_exact_idempotency_and_conflict(tmp_path):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++
++    path = tmp_path / "receipt.sqlite"
++    repo = SQLiteEventAutonomyRepository(path)
++    request, response = setup_replan(repo)
++    result = ReplanApplyService(
++        repository=repo,
++        dispatcher=MockStagedGateway(),
++        submit_guard=submit_proof,
++        clock=lambda: NOW,
++    ).apply(request=request, response=response)
++    receipt = ReplanExecutionReceipt(
++        repair_id=result.record.repair_id,
++        task_id="task",
++        plan_version=2,
++        command_seq=2,
++        activation_token="mock-token",
++        payload_hash=result.record.payload_hash,
++        event_id="MOCK-start-event",
++        occurred_at=NOW,
++    )
++    saved_result = ReplanApplyService(repository=repo, clock=lambda: NOW).confirm_execution_started(
++        receipt
++    )
++    saved = saved_result.record
++    assert saved.status == "EXECUTION_STARTED" and saved.executing_plan_version == 2
++    repo.close()
++    restarted = SQLiteEventAutonomyRepository(path)
++    service = ReplanApplyService(repository=restarted, clock=lambda: NOW)
++    assert service.confirm_execution_started(receipt) == saved_result
++    for change in (
++        {"event_id": "conflicting-event"},
++        {"repair_id": "unknown"},
++        {"plan_version": 1},
++        {"activation_token": "wrong"},
++    ):
++        with pytest.raises(ValueError):
++            service.confirm_execution_started(receipt.model_copy(update=change))
++    assert restarted.get_replan_apply_record(saved.apply_id) == saved
++    restarted.close()
++
++
++def test_start_receipt_for_old_active_version_is_rejected_even_after_previous_start(replan_repo):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++
++    request, response = setup_replan(replan_repo)
++    service = ReplanApplyService(
++        repository=replan_repo,
++        dispatcher=MockStagedGateway(),
++        submit_guard=submit_proof,
++        clock=lambda: NOW,
++    )
++    result = service.apply(request=request, response=response)
++    receipt = ReplanExecutionReceipt(
++        repair_id=result.record.repair_id,
++        task_id="task",
++        plan_version=2,
++        command_seq=2,
++        activation_token="mock-token",
++        payload_hash=result.record.payload_hash,
++        event_id="MOCK-start",
++        occurred_at=NOW,
++    )
++    service.confirm_execution_started(receipt)
++    replan_repo.save_active_contract(
++        result.contract.model_copy(
++            update={
++                "plan_version": 3,
++                "command_seq": 3,
++            }
++        ),
++        plan_id="plan",
++        robot_id="robot",
++    )
++    with pytest.raises(ValueError):
++        service.confirm_execution_started(receipt)
++
++
++@pytest.mark.parametrize("boundary", ["stage", "resume"])
++def test_actual_negative_mock_ack_is_preserved_without_claiming_execution(replan_repo, boundary):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++
++    class NegativeGateway(MockStagedGateway):
++        def stage(self, contract, repair_id):
++            ack = super().stage(contract, repair_id)
++            if boundary == "stage":
++                self.stage_ack = ack.model_copy(
++                    update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"}
++                )
++            return self.stage_ack
++
++        def resume(self, repair_id, activation_token):
++            ack = super().resume(repair_id, activation_token)
++            return ack.model_copy(update={"accepted": False, "status": "REJECTED_SAFETY_CONFLICT"})
++
++    gateway = NegativeGateway()
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert result.record.start_receipt is None and result.record.executing_plan_version is None
++    if boundary == "stage":
++        assert result.record.status == "REJECTED" and result.record.stage_ack == gateway.stage_ack
++        assert result.record.activation_token == "" and result.record.accepted_plan_version is None
++        assert replan_repo.get_active_contract("task").plan_version == 1
++    else:
++        assert result.record.status == "ACTIVATED"
++        assert result.record.resume_ack is not None and not result.record.resume_ack.accepted
++        assert replan_repo.get_active_contract("task").plan_version == 2
++
++
++def test_gateway_ancient_or_future_ack_cannot_activate(replan_repo):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++
++    class AncientGateway(MockStagedGateway):
++        def stage(self, contract, repair_id):
++            ack = super().stage(contract, repair_id)
++            self.stage_ack = ack.model_copy(update={"timestamp": NOW - timedelta(days=1)})
++            return self.stage_ack
++
++    gateway = AncientGateway()
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert not result.applied and replan_repo.get_active_contract("task").plan_version == 1
++    assert gateway.calls == ["stage"]
++
++
++def test_atomic_activation_binds_expected_active_to_frozen_previous_version(replan_repo):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    original = replan_repo.get_active_contract("task")
++
++    def regress_active_for_counterexample():
++        # Diagnostic repository writer simulates a mismatching active row.
++        replan_repo.save_active_contract(
++            original.contract.model_copy(update={"plan_version": 0}),
++            plan_id="plan",
++            robot_id="robot",
++        )
++
++    gateway = MockStagedGateway(after_stage=regress_active_for_counterexample)
++    service = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    )
++    result = service.apply(request=request, response=response)
++    assert result.record.status == "EDGE_ACCEPTED"
++    activated = service._updated(result.record, status="ACTIVATED")
++    changed = replan_repo.advance_active_contract_if_current(
++        task_id="task",
++        expected_plan_version=0,
++        expected_command_seq=1,
++        new_contract=result.contract,
++        plan_id="plan",
++        robot_id="robot",
++        based_on_plan_version=1,
++        replan_record=activated,
++        activation_guard=service._submit_verdict,
++    )
++    assert changed is None
++    assert replan_repo.get_active_contract("task").plan_version == 0
++    assert replan_repo.get_replan_apply_record(result.record.apply_id).status == "EDGE_ACCEPTED"
++
++
++def test_canonical_pass_for_decoy_target_cannot_authorize_candidate(replan_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    request, response = setup_replan(replan_repo)
++    response = response.model_copy(
++        update={
++            "new_steps": [
++                response.new_steps[0].model_copy(
++                    update={"preconditions": ["target_visible"]}, deep=True
++                )
++            ]
++        },
++        deep=True,
++    )
++
++    def decoy_proof(*args):
++        proof = submit_proof(*args)
++        facts = {key: dict(value) for key, value in proof.online_evidence.visual_facts.items()}
++        facts["target_visible"]["target_id"] = "decoy"
++        return replace(
++            proof,
++            action=replace(
++                proof.action, preconditions=(ConditionSpec("target_visible", target_id="decoy"),)
++            ),
++            online_evidence=replace(proof.online_evidence, visual_facts=facts),
++        )
++
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=decoy_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert result.record.status == "PREPARED"
++    assert gateway.calls == [] and replan_repo.get_active_contract("task").plan_version == 1
++
++
++def test_stale_supplied_active_record_cannot_stage_an_old_candidate(replan_repo):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    old = replan_repo.get_active_contract("task")
++    replan_repo.save_active_contract(
++        old.contract.model_copy(
++            update={
++                "plan_version": 2,
++                "command_seq": 2,
++            }
++        ),
++        plan_id="plan",
++        robot_id="robot",
++    )
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response, active_record=old)
++    assert not result.applied and gateway.calls == []
++    assert replan_repo.get_active_contract("task").plan_version == 2
++
++
++def test_typed_submit_proof_copy_retains_frozen_facts(replan_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    result = ReplanApplyService(repository=replan_repo, clock=lambda: NOW).apply(
++        request=request, response=response, dispatch=False
++    )
++    proof = submit_proof(
++        result.record, result.contract, replan_repo.get_latest_execution_checkpoint("task")
++    )
++    copied = replace(proof, current=replace(proof.current, mode_version=2))
++    assert copied.current.mode_version == 2
++    with pytest.raises(TypeError):
++        copied.online_evidence.visual_facts["target_visible"]["target_id"] = "decoy"
++
++
++def test_sqlite_activation_rolls_back_active_if_record_write_fails(tmp_path, monkeypatch):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    path = tmp_path / "atomic-failure.sqlite"
++    repo = SQLiteEventAutonomyRepository(path)
++    request, response = setup_replan(repo)
++    original_update = repo._update_apply_locked
++
++    def fail_only_activation(record):
++        if record.status == "ACTIVATED":
++            raise RuntimeError("MOCK interrupted durable activation write")
++        return original_update(record)
++
++    monkeypatch.setattr(repo, "_update_apply_locked", fail_only_activation)
++    gateway = MockStagedGateway()
++    with pytest.raises(RuntimeError, match="interrupted durable"):
++        ReplanApplyService(
++            repository=repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++        ).apply(request=request, response=response)
++    repo.close()
++    restarted = SQLiteEventAutonomyRepository(path)
++    assert restarted.get_active_contract("task").plan_version == 1
++    assert restarted.get_replan_apply_record_for_request("request").status == "EDGE_ACCEPTED"
++    assert [record.status for record in restarted.list_contract_versions("task")] == ["ACTIVE"]
++    assert gateway.calls == ["stage"]
++    restarted.close()
++
++
++@pytest.mark.parametrize("field", ["candidate", "checkpoint", "record"])
++def test_submit_guard_cannot_mutate_frozen_input_to_authorize_changed_action(replan_repo, field):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++
++    def mutating_guard(record, candidate, checkpoint):
++        proof = submit_proof(record, candidate, checkpoint)
++        if field == "candidate":
++            candidate.steps[1].parameters["object_id"] = "decoy"
++        elif field == "checkpoint":
++            checkpoint.robot_state["cancelled"] = True
++        else:
++            record.completed_step_ids.clear()
++        return proof
++
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=mutating_guard, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert result.record.status == "PREPARED" and gateway.calls == []
++    assert replan_repo.get_active_contract("task").plan_version == 1
++    assert replan_repo.get_latest_execution_checkpoint("task").robot_state == {}
++    assert replan_repo.get_replan_apply_record_for_request("request").completed_step_ids == [
++        "approach"
++    ]
++
++
++def test_start_event_identity_cannot_be_reused_for_another_repair(replan_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++
++    request, response = setup_replan(replan_repo)
++    service = ReplanApplyService(
++        repository=replan_repo,
++        dispatcher=MockStagedGateway(),
++        submit_guard=submit_proof,
++        clock=lambda: NOW,
++    )
++    first = service.apply(request=request, response=response)
++    receipt = ReplanExecutionReceipt(
++        repair_id=first.record.repair_id,
++        task_id="task",
++        plan_version=2,
++        command_seq=2,
++        activation_token="mock-token",
++        payload_hash=first.record.payload_hash,
++        event_id="MOCK-unique-start",
++        occurred_at=NOW,
++    )
++    service.confirm_execution_started(receipt)
++    event = replan_repo.get_event("failure")
++    replan_repo.save_event(
++        event.model_copy(
++            update={
++                "event_id": "failure2",
++                "plan_version": 2,
++                "command_seq": 2,
++                "step_id": "repair-grasp",
++            }
++        )
++    )
++    summary = replan_repo.get_failure_summary("summary")
++    replan_repo.save_failure_summary(
++        summary.model_copy(
++            update={
++                "summary_id": "summary2",
++                "summary_hash": "",
++                "failure_event_id": "failure2",
++                "plan_version": 2,
++                "command_seq": 2,
++                "failed_step_id": "repair-grasp",
++            }
++        )
++    )
++    checkpoint = replan_repo.get_latest_execution_checkpoint("task")
++    replan_repo.save_execution_checkpoint(
++        checkpoint.model_copy(
++            update={
++                "checkpoint_id": "checkpoint2",
++                "checkpoint_hash": "",
++                "plan_version": 2,
++                "command_seq": 2,
++                "failed_step_id": "repair-grasp",
++            }
++        )
++    )
++    second_request = request.model_copy(
++        update={
++            "request_id": "request2",
++            "current_plan_version": 2,
++            "current_command_seq": 2,
++            "trigger_event_id": "failure2",
++            "failure_summary_id": "summary2",
++            "failed_step_id": "repair-grasp",
++        }
++    )
++    second_response = response.model_copy(
++        update={
++            "request_id": "request2",
++            "new_plan_version": 3,
++            "new_command_seq": 3,
++            "new_steps": [response.new_steps[0].model_copy(update={"step_id": "repair-again"})],
++        }
++    )
++
++    def version3_proof(*args):
++        proof = submit_proof(*args)
++        return replace(
++            proof,
++            decision=replace(proof.decision, plan_version=3, command_seq=3),
++            current=replace(proof.current, plan_version=3, command_seq=3),
++            action=replace(proof.action, plan_version=3, command_seq=3),
++            online_evidence=replace(proof.online_evidence, plan_version=3, command_seq=3),
++        )
++
++    second_service = ReplanApplyService(
++        repository=replan_repo,
++        dispatcher=MockStagedGateway(),
++        submit_guard=version3_proof,
++        clock=lambda: NOW,
++    )
++    second = second_service.apply(request=second_request, response=second_response)
++    assert second.record.status == "ACTIVATED"
++    with pytest.raises(ValueError):
++        second_service.confirm_execution_started(
++            receipt.model_copy(
++                update={
++                    "repair_id": second.record.repair_id,
++                    "plan_version": 3,
++                    "command_seq": 3,
++                    "payload_hash": second.record.payload_hash,
++                }
++            )
++        )
++    assert replan_repo.get_replan_apply_record(second.record.apply_id).status == "ACTIVATED"
++
++
++@pytest.mark.parametrize("field", ["event_version", "summary_version", "failed_step"])
++def test_failure_sources_must_match_frozen_request_versions_and_step(replan_repo, field):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    summary = replan_repo.get_failure_summary("summary")
++    changes = {"summary_id": "summary-bad", "summary_hash": ""}
++    if field == "event_version":
++        event = replan_repo.get_event("failure")
++        replan_repo.save_event(
++            event.model_copy(update={"event_id": "failure-bad", "plan_version": 2})
++        )
++        request = request.model_copy(update={"trigger_event_id": "failure-bad"})
++        changes["failure_event_id"] = "failure-bad"
++    elif field == "summary_version":
++        changes["plan_version"] = 2
++    else:
++        changes["failed_step_id"] = "place"
++    replan_repo.save_failure_summary(summary.model_copy(update=changes))
++    request = request.model_copy(update={"failure_summary_id": "summary-bad"})
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert not result.applied and gateway.calls == []
++    assert replan_repo.get_active_contract("task").plan_version == 1
++
++
++@pytest.mark.parametrize("change", ["cancel", "checkpoint"])
++def test_change_during_durable_stage_claim_is_rechecked_before_gateway(
++    replan_repo, monkeypatch, change
++):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++
++    request, response = setup_replan(replan_repo)
++    original_update = replan_repo.update_replan_apply_record_if_current
++
++    def claim_then_change(record, *, expected_status):
++        result = original_update(record, expected_status=expected_status)
++        if result is not None and record.status == "PREPARED":
++            if change == "cancel":
++                replan_repo.save_state("task", "CANCELLED", "MOCK cancellation after claim")
++            else:
++                checkpoint = replan_repo.get_latest_execution_checkpoint("task")
++                replan_repo.save_execution_checkpoint(
++                    checkpoint.model_copy(
++                        update={
++                            "checkpoint_id": "changed-during-claim",
++                            "checkpoint_hash": "",
++                        }
++                    )
++                )
++        return result
++
++    monkeypatch.setattr(replan_repo, "update_replan_apply_record_if_current", claim_then_change)
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(
++        repository=replan_repo, dispatcher=gateway, submit_guard=submit_proof, clock=lambda: NOW
++    ).apply(request=request, response=response)
++    assert not result.applied and gateway.calls == []
++    assert result.record.status == "PREPARED" and result.record.stage_attempt_id
++    assert replan_repo.get_active_contract("task").plan_version == 1
++
++
++def test_receipt_uses_planned_started_at_and_canonical_serialization():
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++    receipt = ReplanExecutionReceipt(
++        repair_id="repair", task_id="task", plan_version=2, command_seq=2,
++        activation_token="MOCK-token", payload_hash="a" * 64, event_id="MOCK-event",
++        started_at=NOW,
++    )
++    assert receipt.started_at == NOW
++    assert receipt.model_dump(mode="json")["started_at"] == NOW.isoformat().replace("+00:00", "Z")
++    assert "occurred_at" not in receipt.model_dump(mode="json")
++    compatibility = ReplanExecutionReceipt.model_validate({
++        **receipt.model_dump(exclude={"started_at"}), "occurred_at": NOW,
++    })
++    assert compatibility == receipt
++    assert "occurred_at" not in compatibility.model_dump(mode="json")
++
++
++def test_confirm_started_returns_planned_replan_apply_result(replan_repo):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import (
++        ReplanApplyResult,
++        ReplanApplyService,
++    )
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++    request, response = setup_replan(replan_repo)
++    service = ReplanApplyService(repository=replan_repo, dispatcher=MockStagedGateway(),
++                                submit_guard=submit_proof, clock=lambda: NOW)
++    activated = service.apply(request=request, response=response)
++    receipt = ReplanExecutionReceipt(
++        repair_id=activated.record.repair_id, task_id="task", plan_version=2, command_seq=2,
++        activation_token="mock-token", payload_hash=activated.record.payload_hash,
++        event_id="MOCK-planned-return", occurred_at=NOW,
++    )
++    result = service.confirm_execution_started(receipt)
++    assert isinstance(result, ReplanApplyResult)
++    assert result.applied and result.record.status == "EXECUTION_STARTED"
++    assert result.contract == activated.contract
++    assert result.ack == activated.record.resume_ack and result.errors == []
++    assert service.confirm_execution_started(receipt) == result
++
++
++@pytest.mark.parametrize("condition,target_id,expected_staged", [
++    ("object_inside_target_region", "obj-1", True),
++    ("object_inside_target_region", "bin-a", False),
++    ("object_inside_target_region", "decoy", False),
++    ("tcp_above_region", "bin-a", True),
++    ("tcp_above_region", "obj-1", False),
++])
++def test_placement_binds_object_extent_and_region_tcp_to_distinct_targets(
++    replan_repo, condition, target_id, expected_staged,
++):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
++    request, response = setup_replan(replan_repo)
++    response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
++        update={"preconditions": [condition]}, deep=True)]}, deep=True)
++    def placement_proof(*args):
++        proof = submit_proof(*args)
++        base = dict(proof.online_evidence.visual_facts["target_visible"])
++        online = replace(proof.online_evidence, visual_facts={
++            condition: {**base, "target_id": target_id, "value": True},
++        })
++        action = replace(
++            proof.action, preconditions=(ConditionSpec(condition, target_id=target_id),)
++        )
++        proof = replace(proof, action=action, online_evidence=online)
++        assert validate_evidence(action, NOW, args[0].checkpoint_hash, "cal-1",
++                                 online_evidence=online).status == "VALID"
++        return proof
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
++                                submit_guard=placement_proof, clock=lambda: NOW).apply(
++        request=request, response=response)
++    assert bool(gateway.calls) is expected_staged
++    assert result.applied is expected_staged
++    assert replan_repo.get_active_contract("task").plan_version == (2 if expected_staged else 1)
+--- baseline/tests/test_phase6_2_replan_resume.py
++++ source/tests/test_phase6_2_replan_resume.py
+@@ -218,7 +218,7 @@
+     return request
+ 
+ 
+-def test_phase62_full_replan_apply_resume_closure() -> None:
++def test_phase62_dryrun_prepares_without_resume() -> None:
+     contract = _contract(retry_limit=1)
+     robot = _robot(grasp_failures=2)
+     runtime_repo = InMemoryRepository()
+@@ -252,41 +252,20 @@
+     assert response.outcome == "REPLANNED"
+     active = event_repo.get_active_contract(contract.task_id)
+     assert active is not None
+-    assert active.plan_version == 2
+-    assert active.command_seq == 2
+-    assert active.contract.steps[0].step_id == "approach"
+-    assert active.contract.steps[1].skill == SkillName.GRASP
+-    assert active.contract.steps[1].step_id != "grasp"
+-    ack = event_repo.get_command_ack(request.request_id)
+-    assert ack is not None and ack.accepted and ack.status == "ACCEPTED"
+-
+-    resumed = TaskExecutor(
+-        robot=robot,
+-        shield=SafetyShield(),
+-        repository=runtime_repo,
+-        event_controller=controller,
+-    ).resume_from_checkpoint(active.contract, failed_checkpoint)
+-
+-    assert resumed.success is True
+-    assert [entry.action_type for entry in robot.history] == [
+-        "APPROACH",
+-        "GRASP",
+-        "GRASP",
+-        "GRASP",
+-        "LIFT",
+-        "MOVE_TO_REGION",
+-        "PLACE",
+-        "RELEASE",
+-        "VERIFY_RESULT",
+-    ]
+-    assert [entry.action_type for entry in robot.history].count("APPROACH") == 1
+-    summary = event_repo.get_completion_summary_for_task(contract.task_id)
+-    assert summary is not None
+-    assert summary.result == "SUCCESS_WITH_RECOVERY"
+-    final_checkpoint = event_repo.get_latest_execution_checkpoint(contract.task_id)
+-    assert final_checkpoint is not None
+-    assert final_checkpoint.execution_state == "COMPLETED"
+-    assert final_checkpoint.plan_version == 2
++    assert active.plan_version == 1
++    assert active.command_seq == 1
++    record = event_repo.get_replan_apply_record_for_request(request.request_id)
++    assert record is not None and record.status == "PREPARED"
++    candidate = record.candidate_contract
++    assert candidate is not None and candidate.plan_version == 2
++    assert candidate.steps[0].step_id == "approach"
++    assert candidate.steps[1].skill == SkillName.GRASP
++    assert candidate.steps[1].step_id != "grasp"
++    assert record.stage_ack is None and record.resume_ack is None and record.start_receipt is None
++    assert event_repo.get_command_ack(request.request_id) is None
++    assert [entry.action_type for entry in robot.history] == ["APPROACH", "GRASP", "GRASP"]
++    assert event_repo.get_completion_summary_for_task(contract.task_id) is None
++    assert event_repo.get_latest_execution_checkpoint(contract.task_id) == failed_checkpoint
+ 
+ 
+ def test_phase62_completed_grasp_not_regenerated_after_place_failure() -> None:
+@@ -369,7 +348,13 @@
+     assert response.outcome == "REPLANNED"
+     active = repo.get_active_contract(contract.task_id)
+     assert active is not None
+-    grasp_steps = [step for step in active.contract.steps if step.skill == SkillName.GRASP]
++    assert active.plan_version == 1
++    record = repo.get_replan_apply_record_for_request(request.request_id)
++    assert record is not None and record.status == "PREPARED"
++    assert record.candidate_contract is not None
++    grasp_steps = [
++        step for step in record.candidate_contract.steps if step.skill == SkillName.GRASP
++    ]
+     assert len(grasp_steps) == 1
+     assert grasp_steps[0].step_id == "grasp"
+ 
+@@ -461,7 +446,13 @@
+         new_command_seq=2,
+     )
+     applied_b = service.apply(request=req_b, response=resp_b, checkpoint=checkpoint, dispatch=False)
+-    assert applied_b.applied
++    assert not applied_b.applied and applied_b.record.status == "PREPARED"
++    assert applied_b.ack is None and applied_b.contract is not None
++    # Advance a diagnostic fixture version explicitly to simulate a separately
++    # accepted newer contract; this fixture does not assert physical staging.
++    repo.save_active_contract(
++        applied_b.contract, plan_id="plan-task-late", robot_id="robot-unknown"
++    )
+     resp_a = resp_b.model_copy(
+         update={
+             "request_id": "req-a",
+@@ -470,7 +461,8 @@
+     )
+     applied_a = service.apply(request=req_a, response=resp_a, checkpoint=checkpoint, dispatch=False)
+     assert not applied_a.applied
+-    assert applied_a.record.status == "VERSION_CONFLICT"
++    assert applied_a.record.status == "REJECTED"
++    assert "VERSION_CONFLICT" in applied_a.record.reason
+     assert repo.get_active_contract(contract.task_id).contract.steps[1].step_id == "grasp-b"  # type: ignore[union-attr]
+ 
+ 

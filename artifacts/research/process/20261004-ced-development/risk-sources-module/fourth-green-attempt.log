@@ -1,0 +1,84 @@
+...................F.                                                    [100%]
+=================================== FAILURES ===================================
+__________ test_actual_excluded_saved_motion_raw_only_reconstruction ___________
+
+    def test_actual_excluded_saved_motion_raw_only_reconstruction() -> None:
+        directory = MOTION / "attempt-1"
+        header = json.loads((MOTION / "header.json").read_bytes())
+        summary = json.loads((directory / "summary.json").read_bytes())
+        context = {
+            "episode_id": summary["episode_id"], "physics_dt_s": header["config"]["physics_dt_s"],
+            "evaluation_start_step": 120,
+            "initial_controller_targets": {"joints_rad": [-.8, 0, 0, 0, 0, 0, 0],
+                                           "fingers_m": [.039, .039]},
+            "actuator_delay_steps": 0,
+        }
+        case = RawCaseRegistration(
+            "actual-excluded-motion", "attempt-1", "MARKER_MOTION_DEVELOPMENT_RAW_V1",
+            hashes(directory), header["scene"], context,
+            {"physics_steps": 4806, "commands": 743, "actions": 9, "frames": 10},
+            marker_registration=PoseMarkerRegistration(
+                7, .045, "2ba368bb5150becd1c021fe52495f3c59bd155f862502ec590b2ecd3a57899e4"
+            ),
+            source_kind="RECORDED_SIMULATION",
+        )
+        inventory = sources()
+        asset = "assets/robots/franka_panda/scene_pose_marker_color_v2.xml"
+        inventory[asset] = hashlib.sha256((ROOT / asset).read_bytes()).hexdigest()
+        registration = RiskSourceRegistration(
+            MOTION, ROOT, inventory, (case,), CompletionCriteria("object", "target_region")
+        )
+        auditor = RiskSourceAuditor({"actual": registration})
+>       raw = auditor.audit("actual", scope="RAW_EXECUTION")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_sources.py:255: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/risk_sources.py:570: in audit
+    result = _case(directory, case, registration)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:514: in _case
+    frame_count, marker_unknown = _frames(directory, raw, scene, case)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:433: in _frames
+    != base64.b64decode(observation.valid_mask_u8_base64)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = RGBDObservation(frame_id='rgbd-b51a4902909d4c6a98fb150d8a71bbc1', observation_id='rgbd-b51a4902909d4c6a98fb150d8a71bbc...bration_version='3a224602f7d34743', checksum_sha256='23268f8d07f47364edd370e32ac75d6a08e749dcd435eba30c2b3906ffaaba1d')
+item = 'valid_mask_u8_base64'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'RGBDObservation' object has no attribute 'valid_mask_u8_base64'. Did you mean: 'valid_mask_base64'?
+
+.venv/lib/python3.12/site-packages/pydantic/main.py:1042: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_actual_excluded_saved_motion_raw_only_reconstruction
+1 failed, 20 passed in 3.41s

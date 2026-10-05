@@ -1,0 +1,50 @@
+..............F                                                          [100%]
+=================================== FAILURES ===================================
+_________________ test_recomputed_metrics_match_saved_results __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-609/test_recomputed_metrics_match_0')
+
+    def test_recomputed_metrics_match_saved_results(tmp_path):
+        from dataclasses import asdict
+    
+        from cloud_edge_robot_arm.datasets.rgbd.models import canonical_json, content_digest
+        from cloud_edge_robot_arm.research.acceptance import analyze_research_runs
+        from cloud_edge_robot_arm.research.assignments import build_assignments
+        from cloud_edge_robot_arm.research.protocol import FrozenProtocol, ProtocolSpec
+        from cloud_edge_robot_arm.research.runner import run_assignment
+        from tests.test_research_assignments import scene_pool
+    
+        pools = {"formal": scene_pool.__wrapped__()}
+        methods = ("JOINT", "B0", "B1", "B2", "NO_UNCERTAINTY", "NO_TIME_VALIDITY",
+                   "NO_LOCAL_REPAIR")
+        spec = ProtocolSpec(selected_n=600, tcap_s=120,
+            pool_hashes={"formal": content_digest(pools["formal"])}, model_snapshot_hash="a" * 64,
+            method_hashes={key: content_digest(key) for key in methods},
+            initial_protocol_hash="b" * 64, opportunity_hash="c" * 64,
+            recovery_fault_manifest_hash="d" * 64)
+        frozen = FrozenProtocol(spec=spec, stage="FINAL", content_hash=content_digest({
+            "spec": spec.model_dump(mode="json"), "stage": "FINAL"}))
+        runs, protocol = tmp_path / "runs", tmp_path / "protocol"
+        runs.mkdir()
+        protocol.mkdir()
+        (protocol / "protocol.json").write_text(frozen.model_dump_json())
+        assignments = build_assignments(frozen, methods, scene_pool=pools["formal"])
+        assigned = {"schema_version": "ced.assignments.v1", "protocol_hash": frozen.content_hash,
+                    "assignments": [asdict(row) for row in assignments]}
+        assigned["content_hash"] = content_digest(assigned)
+        (runs / "assignments.json").write_text(canonical_json(assigned))
+        (runs / "pools.json").write_text(canonical_json(pools))
+        (runs / "records.jsonl").write_text("\n".join(
+            canonical_json(run_assignment(row, frozen).to_payload(protocol=frozen))
+            for row in assignments) + "\n")
+        saved = tmp_path / "saved"
+        original = analyze_research_runs(runs, protocol, saved, software_only=True)
+        assert original["status"] == "SOFTWARE_ONLY"
+>       assert original["metrics"]["assignment_denominator"] == 4200
+               ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'metrics'
+
+tests/test_research_reproducibility.py:220: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_research_reproducibility.py::test_recomputed_metrics_match_saved_results
+1 failed, 14 passed in 4.82s

@@ -1,0 +1,106 @@
+FFFFFFF.F                                                                [100%]
+=================================== FAILURES ===================================
+_ test_every_unresolved_recovery_blocks_completion_even_without_critical_event[DETECTED] _
+
+state = 'DETECTED'
+
+    @pytest.mark.parametrize("state", ["DETECTED", "RECOVERY_AUTHORIZED", "RETRY_EXECUTED",
+                                      "EXHAUSTED", "UNRECOVERABLE"])
+    def test_every_unresolved_recovery_blocks_completion_even_without_critical_event(state):
+        result = evaluate(ReaderFixture(records=[record(state)]))
+>       assert not result.completed
+E       AssertionError: assert not True
+E        +  where True = CompletionEvaluation(completed=True, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED'...026, 10, 4, 11, 35, 56, 530048, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:57: AssertionError
+_ test_every_unresolved_recovery_blocks_completion_even_without_critical_event[RECOVERY_AUTHORIZED] _
+
+state = 'RECOVERY_AUTHORIZED'
+
+    @pytest.mark.parametrize("state", ["DETECTED", "RECOVERY_AUTHORIZED", "RETRY_EXECUTED",
+                                      "EXHAUSTED", "UNRECOVERABLE"])
+    def test_every_unresolved_recovery_blocks_completion_even_without_critical_event(state):
+        result = evaluate(ReaderFixture(records=[record(state)]))
+>       assert not result.completed
+E       AssertionError: assert not True
+E        +  where True = CompletionEvaluation(completed=True, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED'...026, 10, 4, 11, 35, 56, 545097, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:57: AssertionError
+_ test_every_unresolved_recovery_blocks_completion_even_without_critical_event[RETRY_EXECUTED] _
+
+state = 'RETRY_EXECUTED'
+
+    @pytest.mark.parametrize("state", ["DETECTED", "RECOVERY_AUTHORIZED", "RETRY_EXECUTED",
+                                      "EXHAUSTED", "UNRECOVERABLE"])
+    def test_every_unresolved_recovery_blocks_completion_even_without_critical_event(state):
+        result = evaluate(ReaderFixture(records=[record(state)]))
+>       assert not result.completed
+E       AssertionError: assert not True
+E        +  where True = CompletionEvaluation(completed=True, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED'...026, 10, 4, 11, 35, 56, 546878, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:57: AssertionError
+_ test_every_unresolved_recovery_blocks_completion_even_without_critical_event[EXHAUSTED] _
+
+state = 'EXHAUSTED'
+
+    @pytest.mark.parametrize("state", ["DETECTED", "RECOVERY_AUTHORIZED", "RETRY_EXECUTED",
+                                      "EXHAUSTED", "UNRECOVERABLE"])
+    def test_every_unresolved_recovery_blocks_completion_even_without_critical_event(state):
+        result = evaluate(ReaderFixture(records=[record(state)]))
+>       assert not result.completed
+E       AssertionError: assert not True
+E        +  where True = CompletionEvaluation(completed=True, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED'...026, 10, 4, 11, 35, 56, 548576, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:57: AssertionError
+_ test_every_unresolved_recovery_blocks_completion_even_without_critical_event[UNRECOVERABLE] _
+
+state = 'UNRECOVERABLE'
+
+    @pytest.mark.parametrize("state", ["DETECTED", "RECOVERY_AUTHORIZED", "RETRY_EXECUTED",
+                                      "EXHAUSTED", "UNRECOVERABLE"])
+    def test_every_unresolved_recovery_blocks_completion_even_without_critical_event(state):
+        result = evaluate(ReaderFixture(records=[record(state)]))
+>       assert not result.completed
+E       AssertionError: assert not True
+E        +  where True = CompletionEvaluation(completed=True, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED'...026, 10, 4, 11, 35, 56, 550280, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:57: AssertionError
+_ test_verified_resolved_reader_state_removes_only_corresponding_critical_event _
+
+    def test_verified_resolved_reader_state_removes_only_corresponding_critical_event():
+        event = SimpleNamespace(task_id="task-e2e-001", event_id="event", severity="CRITICAL")
+        result = evaluate(ReaderFixture(records=[record("VERIFIED_RESOLVED")], events=[event]))
+>       assert result.completed
+E       AssertionError: assert False
+E        +  where False = CompletionEvaluation(completed=False, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED...026, 10, 4, 11, 35, 56, 551947, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:65: AssertionError
+________ test_verified_resolution_does_not_hide_another_error_recovery _________
+
+    def test_verified_resolution_does_not_hide_another_error_recovery():
+        result = evaluate(ReaderFixture(records=[record("VERIFIED_RESOLVED"),
+                                                 record("RETRY_EXECUTED", "other")]))
+>       assert not result.completed
+E       AssertionError: assert not True
+E        +  where True = CompletionEvaluation(completed=True, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED'...026, 10, 4, 11, 35, 56, 553623, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:73: AssertionError
+__ test_configured_repository_with_unavailable_resolution_reader_fails_closed __
+
+    def test_configured_repository_with_unavailable_resolution_reader_fails_closed():
+        result = evaluate(ReaderFixture(unavailable=True))
+>       assert not result.completed
+E       AssertionError: assert not True
+E        +  where True = CompletionEvaluation(completed=True, reason_codes=['ALL_STEPS_COMPLETED', 'NO_PENDING_STEPS', 'ALL_CRITERIA_SATISFIED'...026, 10, 4, 11, 35, 56, 555914, tzinfo=datetime.timezone.utc), task_id='task-e2e-001', plan_version=1, scene_version=0).completed
+
+tests/test_recovery_completion.py:86: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_completion.py::test_every_unresolved_recovery_blocks_completion_even_without_critical_event[DETECTED]
+FAILED tests/test_recovery_completion.py::test_every_unresolved_recovery_blocks_completion_even_without_critical_event[RECOVERY_AUTHORIZED]
+FAILED tests/test_recovery_completion.py::test_every_unresolved_recovery_blocks_completion_even_without_critical_event[RETRY_EXECUTED]
+FAILED tests/test_recovery_completion.py::test_every_unresolved_recovery_blocks_completion_even_without_critical_event[EXHAUSTED]
+FAILED tests/test_recovery_completion.py::test_every_unresolved_recovery_blocks_completion_even_without_critical_event[UNRECOVERABLE]
+FAILED tests/test_recovery_completion.py::test_verified_resolved_reader_state_removes_only_corresponding_critical_event
+FAILED tests/test_recovery_completion.py::test_verified_resolution_does_not_hide_another_error_recovery
+FAILED tests/test_recovery_completion.py::test_configured_repository_with_unavailable_resolution_reader_fails_closed
+8 failed, 1 passed in 0.24s

@@ -1,0 +1,37 @@
+....................F......................................              [100%]
+=================================== FAILURES ===================================
+___________ test_cli_missing_dataset_is_incomplete_and_never_enables ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-850/test_cli_missing_dataset_is_in0')
+
+    def test_cli_missing_dataset_is_incomplete_and_never_enables(tmp_path: Path) -> None:
+        completed = subprocess.run(
+            [
+                ".venv/bin/python",
+                "scripts/calibrate_rgbd_risk.py",
+                "--dataset",
+                str(tmp_path / "missing"),
+                "--config",
+                "configs/research/risk.yaml",
+                "--output",
+                str(tmp_path / "out"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+>       assert completed.returncode == 2, completed.stderr
+E       AssertionError: Traceback (most recent call last):
+E           File "/tmp/risk-sources-independent-3j0871n6/scripts/calibrate_rgbd_risk.py", line 17, in <module>
+E             from cloud_edge_robot_arm.datasets.rgbd.models import (
+E           File "/tmp/risk-sources-independent-3j0871n6/src/cloud_edge_robot_arm/datasets/rgbd/models.py", line 13, in <module>
+E             from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
+E         ModuleNotFoundError: No module named 'pydantic'
+E         
+E       assert 1 == 2
+E        +  where 1 = CompletedProcess(args=['.venv/bin/python', 'scripts/calibrate_rgbd_risk.py', '--dataset', '/tmp/pytest-of-ningyd/pytes..., BaseModel, ConfigDict, Field, field_validator, model_validator\nModuleNotFoundError: No module named \'pydantic\'\n').returncode
+
+tests/test_rgbd_risk_calibration.py:244: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_risk_calibration.py::test_cli_missing_dataset_is_incomplete_and_never_enables
+1 failed, 58 passed in 1.27s

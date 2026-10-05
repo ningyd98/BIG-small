@@ -1,0 +1,55 @@
+...........................F...                                          [100%]
+=================================== FAILURES ===================================
+_ test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[missingname] _
+
+kind = 'missingname'
+
+    @pytest.mark.parametrize("kind", ["nonfinite", "empty", "missingname", "modelcopy", "effect"])
+    def test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph(kind):
+        data = values()
+        original = data["original"]
+        kwargs = original.freeze_inputs()
+        if kind == "nonfinite":
+            with pytest.raises(ValueError):
+                replace(original.requirements["move"], allowed_error_m=float("nan"))
+            return
+        if kind == "empty":
+            kwargs["requirements"] = {}
+        elif kind == "missingname":
+>           kwargs["requirements"] = {**original.requirements, "move": replace(
+
+tests/test_visual_owner_registration.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'OriginalActionRequirements' object has no attribute '_original_step_json'") raised in repr()] OriginalActionRequirements object at 0x7029cab00a40>
+original_step = None
+preconditions = (ConditionSpec(name='gripper_open', target_id=None, tolerances={}, sensor_requirements=('rgbd',)),)
+postconditions = (ConditionSpec(name='tcp_above_target', target_id='obj-1', tolerances=mappingproxy({}), sensor_requirements=('rgbd',)),)
+allowed_error_m = 0.01, sensor_requirements = ('rgbd',), ordinary_ttl_s = 5.0
+expected_duration_s = 10.0
+policy_source_hashes = mappingproxy({'src/software_grounding.py': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'})
+
+    def __init__(self, original_step: TaskStep | None = None,
+                 preconditions: Sequence[ConditionSpec] = (), postconditions: Sequence[ConditionSpec] = (),
+                 allowed_error_m: float = .01, sensor_requirements: Sequence[str] = ("rgbd",),
+                 ordinary_ttl_s: float = 5., expected_duration_s: float = 1.,
+                 policy_source_hashes: Mapping[str, str] | None = None, *,
+                 _original_step_json: str | None = None) -> None:
+        step = original_step if original_step is not None else TaskStep.model_validate_json(_original_step_json or "null")
+        stored = _model_json(step, TaskStep)
+        pre, post = tuple(_condition(c) for c in preconditions), tuple(_condition(c) for c in postconditions)
+        if not pre or not post:
+            raise ValueError("original canonical pre/effect requirements cannot be empty")
+        if (not set(step.preconditions) <= {c.name for c in pre}
+                or not set(step.success_conditions) <= {c.name for c in post}):
+>           raise ValueError("original condition names cannot be removed")
+E           ValueError: original condition names cannot be removed
+
+src/cloud_edge_robot_arm/vision/owner_registration.py:187: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_registration.py::test_original_source_freeze_rejects_malformed_policy_models_and_effect_graph[missingname]
+1 failed, 30 passed in 0.57s

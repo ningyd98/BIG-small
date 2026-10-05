@@ -1,0 +1,41 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_attested_verification_requires_source_bound_envelope ___________
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+
+    def test_attested_verification_requires_source_bound_envelope(scene_pool):
+        original = record(assignment(scene_pool), "STOP")
+>       with pytest.raises(ValueError, match="verification"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_runner.py:176: Failed
+____________ test_verification_content_hash_rejects_changed_verdict ____________
+
+scene_pool = [{'assignment_id': 'formal-0001', 'perturbation': {'noise_m': 0.0}, 'scene': {'asset_family_hash': 'fixture-assets', '...: 'rgbd.dataset.v1', ...}, 'scene_hash': '9c35a9edaf1496254c6419a261a6b11c2e01cbe786af0b0dfcd3ae7e9c1211c9', ...}, ...]
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-548/test_verification_content_hash0')
+
+    def test_verification_content_hash_rejects_changed_verdict(scene_pool, tmp_path):
+        import hashlib
+        from dataclasses import asdict
+        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+    
+        original = record(assignment(scene_pool), "STOP")
+        raw = tmp_path / "verdict.json"
+        raw.write_text('{"status":"PASS"}')
+        ref = assignment_api().ArtifactReference("online-verdict.v1",
+            hashlib.sha256(raw.read_bytes()).hexdigest(), str(raw))
+        envelope = {"schema_version": "ced.verification-record.v1", "record": {"status": "PASS"},
+                    "source_refs": [asdict(ref)]}
+        envelope["content_hash"] = content_digest(envelope)
+        bound = replace(original, verification_records=(envelope,), source_verified=True)
+        assert bound.verification_records[0]["record"] == {"status": "PASS"}
+        envelope["record"] = {"status": "FAIL"}
+>       with pytest.raises(ValueError, match="verification.*hash"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_research_runner.py:196: Failed
+=========================== short test summary info ============================
+FAILED tests/test_research_runner.py::test_attested_verification_requires_source_bound_envelope
+FAILED tests/test_research_runner.py::test_verification_content_hash_rejects_changed_verdict
+2 failed, 20 deselected in 0.56s

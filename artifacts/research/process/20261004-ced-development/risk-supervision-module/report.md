@@ -1,0 +1,17 @@
+# Risk supervision bounded source candidate
+
+This first candidate preserves 514 exact source/fixture references and two new owned files. Diagnostic reconstruction covers complete original observation allocation, full terminal task failure, marked-asset point error, online-only RGBD features, explicit SOFTWARE_ONLY numeric clock/calibration carriers, adjacent previous-frame checks and registered usage/connected-source split restrictions. Concrete corrected RAW fix2 and INITIAL registrations are copied and their actual auditors constructed internally. There is no method/execution admission interface.
+
+Actual risk source qualification is UNKNOWN: raw-v3 acquisition clock, independently published calibration, committed derived risk labels and candidate replay are unavailable. Usage histories and SOFTWARE_ONLY reference IDs are registered declarations, not independently authenticated real usage/calibration publishers. Marker geometry is point translation only, never extent/grasp/stability. Motion residual reconstruction is explicitly unavailable. Original real excluded development motion is only RAW diagnostic evidence: all 10 observations/10 terminal labels remain, 1 point error is reconstructable and 9 point labels are missing; no features are manufactured without clock/calibration.
+
+## TDD and verification
+
+Missing module RED: 23 failures. Qualified later REDs cover numeric Boolean calibration, known development history masked by UNKNOWN, nested marker alias mutation and INITIAL original-reference omission; all fixed. Earlier failed fixture setup (frame identity), marker field mismatch and incorrect synthetic camera point expectation remain in attempt logs.
+
+Final live: 37 owned tests PASS in 13.34 s; 178 related CPU tests PASS, one dynamics test deselected in 31.18 s. Scoped Ruff/format2 and fresh-cache mypy1 PASS. Frozen 514 overlay: 178 PASS/1 deselected in 30.43 s; format/cold mypy PASS. **Frozen Ruff FAIL:** tests/__init__.py was omitted from the inherited fixture closure, changing import categorization. The candidate is preserved; a separate 515-file closure correction adds the actual initializer without changing owned production/test bytes.
+
+The initial freeze script preserved all source bytes/manifest but failed on an unavailable opencv-contrib-python-headless distribution metadata name. complete_freeze.py records actual installed distribution metadata without overwriting the manifest. Original RED test bytes were not separately archived before edits; the original missing-module logs are preserved and this limitation is recorded in baseline.json. Minor inspection failures for absent optional filenames are setup mistakes, not suppressed product tests.
+
+Scope excludes new moving visual_owner.py/raw_episode_v3.py capabilities. Neither is in the 67 imported production paths. The namespace basis is reviewed RAW fix2/511 plus explicit current quiet read-only replacements and concrete INITIAL test helper, not a complete current global pipeline inventory. No existing production files, defaults, collectors, CLI, fit/calibration, dataset or historical packages were changed. Reader compiles original asset constants only; it does not run dynamics/render/model/provider/capture/account operations. Related software fit fixtures verify existing numerical algorithms, never an actual model training run.
+
+Candidate source manifest: 65384821274688f355c5626f409ba15e6b65783415969af54930278c8c1f1bc6. Independent review is pending for the corrected closure.

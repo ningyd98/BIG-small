@@ -1,0 +1,19 @@
+# T8b correction 1 — independent resource prerequisite and complete safety tail
+
+Status: corrected software frozen for independent review. Actual selection, foundation, resource acceptance, INITIAL, power and FINAL remain **NOT_RUN**.
+
+The original release and source manifest `c777ea24b269bf206cf263d10dd387b28105ef52ae942ed0a6e1e806e7c4927f` remain unchanged. `fix-round-1-baseline/` preserves that complete release. Root's independent counterexamples were reproduced before changing production code.
+
+INITIAL now refuses absent resource sources, reads the strict measured-success resource receipt, recompiles its full raw selection/foundation/auxiliary cost inputs and checks its actual declared ceilings. Its Tcap and role binding must match the independently derived protocol inputs. V2 adds `resource_plan_hash`; the v1 serializer omits all five v2 additions and rejects them under v1, preserving the historical shape. The new compiler remains a separate owned module and never grants physical acceptance.
+
+The raw physical case auditor requires the collector's exact evaluation start of **120**. Changing a rehashed header to a later prefix cannot omit an unsafe physical sample at step121. The complete original tail and failed denominators remain intact. This fixes the later-prefix safety omission rather than accepting a caller-declared phase marker.
+
+The fixed `ced_exclusions.yaml` inventory binds 101 development groups to their original source hashes: all 100 groups in `datasets/rgbd-ced-dev-smoke-20261004/samples.jsonl` and teacher group `g-b5c050eaad3b86539df2065da588fe32`. The CLI independently rereads both sources and checks the exact inventory; missing or drifted evidence refuses pooling. Existing pool validation checks every supplied external pool against this inventory. Default configs now also list the current development dataset and actual historical foundation pilots. No historical pool or protocol was rewritten.
+
+Six budget/start regressions failed before the fix and passed afterward. The external-pool exclusion regression also failed before implementation and passed after correction; an intermediate test-tail insertion error and its corrected result remain in separate logs. `fix-round-1-dry-selection` retains all 480 NOT_EXECUTED originals and actual NOT_RUN, with 101 exclusions absent from every generated pool. The INITIAL rejection exits3 with no protocol output because independent resource inputs remain unavailable.
+
+Combined final verification is retained in the co-frozen `resource-plan-module`: **98 CPU tests passed in 6.32s**, comprising 49 T8 tests, 20 existing pilot/protocol tests and 29 resource tests. T15/T16 compatibility: **98 passed in 38.77s**. Scoped Ruff, six-source mypy and nine-file formatting checks passed. Existing original renderer failure logs remain unchanged; no new renderer or cloud experiment was run.
+
+`fix-round-1-source-hashes.json` SHA256 is `7a7bfee4e38bb143d609e0e2ed4e9bf595083041ba62f3e29b3eba2d347ff9f0`. `fix-round-1-source/` is an immutable overlay of the complete stage inventory plus scoped tests and original exclusion sources, 538 files: ten owned and 528 read-only. `fix-round-1-review-package.diff` compares only owned files against the preserved original release. The resource module has the same complete source manifest. Reviews should execute from this overlay rather than import changing live dependencies.
+
+The collector's actual successful stage audit and complete resource pipeline have not been demonstrated. Fresh role probes, real selection/foundation data, declared resource ceilings, billing and auxiliary source traces are absent. Native geometry/motion UNKNOWN still stops actual physical actions; this correction does not bypass those gates or claim all future execution adapters are implemented.

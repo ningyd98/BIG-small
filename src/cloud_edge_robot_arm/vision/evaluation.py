@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -19,8 +19,13 @@ from cloud_edge_robot_arm.datasets.rgbd.models import SplitManifest
 from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
 from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import EpisodeOutcome
 from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
 
 ExecutionScope = Literal["CAPTURE_ONLY", "VISUAL_PLANNING", "VISION_CLOSED_LOOP"]
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.vision.raw_recorder_v3 import VisualRawRecorderV3
+    from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
 
 
 @dataclass(frozen=True)
@@ -39,12 +44,40 @@ class ExecutionPolicy:
     )
     cancelled: Callable[[], bool] | None = field(default=None, repr=False, compare=False)
     output_dir: Path | None = None
+    supervision_period_s: float | None = None
+    advance_physics_during_wait: bool = False
+    device_pipeline: Literal["LEGACY", "OPENCV"] = "LEGACY"
+    role_binding: RoleRuntimeBinding | None = None
+    worker_runtime: VisualWorkerRuntime | None = field(default=None, repr=False, compare=False)
+    raw_recorder: VisualRawRecorderV3 | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not self.instruction.strip() or not math.isfinite(self.timeout_s) or self.timeout_s <= 0:
             raise ValueError("instruction and finite positive episode timeout are required")
         if self.scope not in {"CAPTURE_ONLY", "VISUAL_PLANNING", "VISION_CLOSED_LOOP"}:
             raise ValueError("unknown execution scope")
+        if self.device_pipeline not in {"LEGACY", "OPENCV"}:
+            raise ValueError("unknown device pipeline")
+        if (self.device_pipeline == "OPENCV") != (self.role_binding is not None):
+            raise ValueError("OpenCV runs require explicit cloud/edge/device role binding")
+        if self.role_binding is not None:
+            self.role_binding.validate_execution_policy(self)
+        if self.worker_runtime is not None and self.device_pipeline != "OPENCV":
+            raise ValueError("worker ownership requires the explicit OpenCV device pipeline")
+        if self.worker_runtime is not None:
+            from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+
+            if type(self.worker_runtime) is not VisualWorkerRuntime:
+                raise ValueError("concrete live visual worker ownership required")
+            self.worker_runtime.validate_runtime_options(
+                self.supervision_period_s, self.advance_physics_during_wait
+            )
+        if self.raw_recorder is not None and self.worker_runtime is None:
+            raise ValueError("raw recording requires the live visual worker source")
+        if self.supervision_period_s is not None and (
+            not math.isfinite(self.supervision_period_s) or self.supervision_period_s <= 0
+        ):
+            raise ValueError("supervision period must be finite and positive")
         if self.scope != "CAPTURE_ONLY" and (
             len(self.model_snapshot_hash) != 64
             or any(c not in "0123456789abcdef" for c in self.model_snapshot_hash)

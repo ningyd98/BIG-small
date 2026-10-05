@@ -1,0 +1,54 @@
+.F..                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_command_cannot_claim_a_current_state_that_is_available_only_after_dispatch _
+
+    def test_command_cannot_claim_a_current_state_that_is_available_only_after_dispatch():
+        envelope, records = fixture()
+        previous = dict(envelope.reset_state_payload)
+        physics = []
+        for row in records.physics:
+            post = {**dict(row.post_state_payload), "estop_engaged": row.physics_step >= 120}
+            physics.append(
+                replace(row, previous_state_hash=hash_payload(previous), post_state_payload=post)
+            )
+            previous = post
+        changed = []
+        for interval in records.intervals:
+            if interval.interval_id == "settle":
+                interval = clock_interval(interval, "settle", interval.kind, 0, 120, 0, 210200000)
+            elif interval.interval_id == "control-120":
+                interval = clock_interval(
+                    interval, "control-120", interval.kind, 119, 119, 210120000, 210121000
+                )
+            elif interval.interval_id == "step-120":
+                interval = clock_interval(
+                    interval, "step-120", interval.kind, 119, 120, 210130000, 210190000
+                )
+            changed.append(interval)
+        by_step = {row.physics_step: row.post_state_payload for row in physics}
+        indices = {interval.interval_id: interval.start_step for interval in records.intervals}
+        frames = tuple(
+            replace(
+                frame,
+                joined_physics_observation_hash=hash_payload(dict(by_step[indices[frame.interval_id]])),
+            )
+            for frame in records.frames
+        )
+        view = api().validate_raw_episode_v3(
+            replace(envelope, terminal_state_payload=previous),
+            renumber(
+                replace(
+                    records, intervals=tuple(changed), physics=tuple(physics), frames=frames
+                )
+            ),
+        )
+>       assert view.status == "INVALID"
+E       AssertionError: assert 'COMPLETE' == 'INVALID'
+E         
+E         - INVALID
+E         + COMPLETE
+
+tests/test_raw_episode_v3.py:1091: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_command_cannot_claim_a_current_state_that_is_available_only_after_dispatch
+1 failed, 3 passed, 57 deselected in 2.42s

@@ -1,0 +1,25 @@
+.F............................                                           [100%]
+=================================== FAILURES ===================================
+_ test_complete_finite_replay_is_deterministic_and_calibrated_with_hash_tie_break _
+
+    def test_complete_finite_replay_is_deterministic_and_calibrated_with_hash_tie_break():
+        result = replay()
+        assert result["scope"] == "SOFTWARE_ONLY"
+        assert result["status"] == "VALID"
+        assert len(result["candidate_results"]) == 2
+        expected = min(content_digest(parameters(7)), content_digest(parameters(11)))
+        assert result["diagnostic_winner_hash"] == expected
+        assert result["counts"]["allocated_observations"] == 32
+        assert result == replay()
+        for candidate in result["candidate_results"]:
+            assert candidate["selection_brier"] == .25
+            assert candidate["test_brier"] == .25
+>           assert candidate["model"]["weights"] == [0.] * 7
+E           assert (0.0, 0.0, 0....0.0, 0.0, ...) == [0.0, 0.0, 0....0.0, 0.0, ...]
+E             
+E             Use -v to get more diff
+
+tests/test_research_risk_replay.py:102: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_replay.py::test_complete_finite_replay_is_deterministic_and_calibrated_with_hash_tie_break
+1 failed, 29 passed in 1.62s

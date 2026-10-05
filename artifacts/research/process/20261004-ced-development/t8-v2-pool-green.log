@@ -1,0 +1,62 @@
+F..........                                                              [100%]
+=================================== FAILURES ===================================
+______ test_ced_v2_has_independent_selection_and_complete_fixed_topology _______
+
+    def test_ced_v2_has_independent_selection_and_complete_fixed_topology():
+        pools = build_scene_pools(2026100411, set(), protocol_version="ced.research.v2")
+        assert {key: len(rows) for key, rows in pools.items()} == {
+            "selection": 120, "foundation": 120, "power": 120,
+            "formal": 2400, "recovery": 200, "ood": 300,
+        }
+        groups = [row["scene"]["group_id"] for rows in pools.values() for row in rows]
+        assert len(groups) == len(set(groups)) == 3260
+        assert Counter(row["stratum_id"] for row in pools["selection"]) == {
+            stratum: 10 for stratum in STRATA}
+        assert pools["selection"][0]["assignment_id"] == "selection-0001"
+        excluded = set(groups)
+>       second = build_scene_pools(2026100411, excluded, protocol_version="ced.research.v2")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ced_scene_pool_topology.py:22: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+seed = 2026100411
+excluded_groups = {'g-0001cdcebb0588b0504af157c27433ba', 'g-000da259832742fc9d9b37b1b9802e5d', 'g-0032fd04df89325b229b7303b4ce90bc', 'g-0040b6e86f76f82e838b50f9d079ade4', 'g-0043fb273658ad6a0cdd36db3c81b713', 'g-00497d32c57650ddeb929c9fe8e3ac1e', ...}
+
+    def build_scene_pools(
+        seed: int, excluded_groups: set[str], *, protocol_version: str = "rgbd.research.v1",
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Freeze scenes before runs, matching physical group identity across all pools."""
+        if protocol_version not in {"rgbd.research.v1", "ced.research.v2"}:
+            raise ValueError("unsupported explicit scene pool protocol version")
+        sizes = (("foundation", 120), ("power", 120), ("formal", 2400),
+                 ("recovery", 200), ("ood", 300))
+        if protocol_version == "ced.research.v2":
+            sizes = (("selection", 120), *sizes)
+        config = DatasetConfig(
+            dataset_id="research-pools", groups=sum(count for _, count in sizes), seed=seed,
+            target_x=(.34, .43), target_y=(-.07, .08), half_size=(.032, .037),
+            camera_height=(1.4, 1.4), camera_x=(.35, .35), camera_y=(0., 0.),
+            camera_fovy=(45., 45.), distractor_count=(0, 0),
+            depth_noise_m=(0.,), invalid_depth_fractions=(0.,),
+        )
+        pools: dict[str, list[dict[str, Any]]] = {}
+        seen = set(excluded_groups)
+        cursor = seed
+        for name, count in sizes:
+            rows = []
+            local = config if name != "ood" else config.model_copy(update={"camera_fovy": (60., 65.)})
+            for index in range(count):
+                for _attempt in range(5):
+                    scene = sample_scene(local, cursor)
+                    cursor += 1
+                    if scene.group_id not in seen:
+                        break
+                else:
+>                   raise ValueError("cannot obtain disjoint unique scene groups")
+E                   ValueError: cannot obtain disjoint unique scene groups
+
+src/cloud_edge_robot_arm/research/protocol.py:153: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_ced_scene_pool_topology.py::test_ced_v2_has_independent_selection_and_complete_fixed_topology
+1 failed, 10 passed in 2.14s

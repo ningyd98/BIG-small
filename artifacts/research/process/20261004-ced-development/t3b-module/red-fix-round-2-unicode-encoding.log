@@ -1,0 +1,92 @@
+.............F                                                           [100%]
+=================================== FAILURES ===================================
+_ test_alternate_escaped_credential_echo_withholds_all_artifacts[\xff\xfeH\x00T\x00T\x00P\x00 \x00e\x00r\x00r\x00o\x00r\x00:\x00 \x00\\x00u\x000\x000\x006\x003\x00r\x00e\x00d\x00e\x00n\x00t\x00i\x00a\x00l\x00-\x00m\x00a\x00r\x00k\x00e\x00r\x00-credential-marker-True] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-498/test_alternate_escaped_credent13')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f51c0d96f90>
+raw = b'\xff\xfeH\x00T\x00T\x00P\x00 \x00e\x00r\x00r\x00o\x00r\x00:\x00 \x00\\\x00u\x000\x000\x006\x003\x00r\x00e\x00d\x00e\x00n\x00t\x00i\x00a\x00l\x00-\x00m\x00a\x00r\x00k\x00e\x00r\x00'
+secret = 'credential-marker', http_error = True
+
+    @pytest.mark.parametrize(
+        "raw,secret,http_error",
+        [
+            (b'{"error":"\\u0063redential-marker"}', "credential-marker", False),
+            (
+                b'{"outer":[{"inner":"prefix \\u0063redential-marker suffix"}]}',
+                "credential-marker",
+                False,
+            ),
+            (b'{"\\u0063redential-marker":{"ordinary":"value"}}', "credential-marker", False),
+            (b'{"error":"slash\\/credential"}', "slash/credential", False),
+            (b'{"error":"quote\\u0022credential"}', 'quote"credential', False),
+            (b'{"error":"backslash\\u005ccredential"}', "backslash\\credential", False),
+            (b'{"error":"\\ud83d\\ude80-token"}', "🚀-token", False),
+            (b"not JSON: \\u0063redential-marker\x00\r\n", "credential-marker", False),
+            (b"not JSON: slash\\/credential\r\n", "slash/credential", False),
+            (b'{"error":"\\u0063redential-marker"}', "credential-marker", True),
+            (b'{"outer":[{"\\u0063redential-marker":"bad"}]}', "credential-marker", True),
+            (b"HTTP error: \\u0063redential-marker\r\n", "credential-marker", True),
+            (b'{"error":"\\\\u0063redential-marker"}', "credential-marker", False),
+            ("HTTP error: \\u0063redential-marker".encode("utf-16"), "credential-marker", True),
+        ],
+    )
+    def test_alternate_escaped_credential_echo_withholds_all_artifacts(
+        tmp_path, monkeypatch, raw, secret, http_error
+    ):
+        import io
+        import urllib.error
+        import urllib.request
+    
+        from scripts.probe_rgbd_roles import _attempt
+    
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest, SceneSummary
+        from cloud_edge_robot_arm.vision.capture import CapturedFrame
+        from cloud_edge_robot_arm.vision.model_resolver import (
+            ModelConfigSnapshot,
+            resolve_visual_planner,
+        )
+        from cloud_edge_robot_arm.vision.observations import RGBDObservation
+        from tests.test_rgbd_observations import observation_payload
+    
+        class ExternalBoundary:
+            def open(self, request, timeout):
+                if http_error:
+                    raise urllib.error.HTTPError(request.full_url, 503, secret, {}, io.BytesIO(raw))
+                return io.BytesIO(raw)
+    
+        monkeypatch.setattr(urllib.request, "build_opener", lambda *args: ExternalBoundary())
+        model = ModelConfigSnapshot(
+            provider="openai_compatible",
+            model="qwen3.8-max",
+            endpoint="https://dashscope.aliyuncs.com",
+            weight_digest=None,
+            quantization=None,
+            image_size=(320, 240),
+            generation_parameters={"temperature": 0, "num_predict": 512},
+            timeout_s=30,
+        )
+        planner = resolve_visual_planner(model, api_key=secret, allow_paid=True)
+        observation = RGBDObservation.model_validate(observation_payload())
+        frame = CapturedFrame(
+            observation,
+            (0, 11, 12, -1),
+            {0: "table", 11: "object_geom", 12: "target_region_geom"},
+            "fixture",
+            ("fixture",) * 3,
+        )
+        request = InitialPlanningRequest(
+            request_id="software-escaped-secret",
+            user_instruction="pick red cube",
+            scene=SceneSummary(scene_version=1, updated_at=datetime.now(UTC)),
+            observation=observation,
+        )
+        attempt = _attempt(planner, request, frame, tmp_path, 0, cloud())
+>       assert attempt.get("wire_artifact_suppressed") is True
+E       AssertionError: assert None is True
+E        +  where None = <built-in method get of dict object at 0x7f51c0dbf980>('wire_artifact_suppressed')
+E        +    where <built-in method get of dict object at 0x7f51c0dbf980> = {'actual_request_settings': {'allow_paid': True, 'chat_path': '/v1/chat/completions', 'config_version': 1, 'coordinate...es': 2841, 'cloud_model_requests': 1, 'commit_check_s': 0.0, 'inference_s': None, ...}}, 'destination_hit': False, ...}.get
+
+tests/test_rgbd_role_models.py:927: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_alternate_escaped_credential_echo_withholds_all_artifacts[\xff\xfeH\x00T\x00T\x00P\x00 \x00e\x00r\x00r\x00o\x00r\x00:\x00 \x00\\x00u\x000\x000\x006\x003\x00r\x00e\x00d\x00e\x00n\x00t\x00i\x00a\x00l\x00-\x00m\x00a\x00r\x00k\x00e\x00r\x00-credential-marker-True]
+1 failed, 13 passed, 52 deselected in 0.34s

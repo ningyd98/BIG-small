@@ -10,8 +10,9 @@ constraint errors.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from cloud_edge_robot_arm.contracts.models import (
     ActiveTaskContractRecord,
@@ -27,6 +28,43 @@ from cloud_edge_robot_arm.contracts.models import (
     ReplanApplyRecord,
     TaskContract,
 )
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
+    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
+        RecoveryAuthorizationEvidence,
+        RecoveryAuthorizationResult,
+        RecoveryRecord,
+        RecoveryReservationEvidence,
+        RecoveryTransitionEvidence,
+        VerificationBudgetRecord,
+    )
+    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+    from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+        VisualBootstrapDefinition,
+        VisualBootstrapPromotionInput,
+        VisualBootstrapRecord,
+        VisualBootstrapTransitionInput,
+        VisualBootstrapTransitionResult,
+    )
+    from cloud_edge_robot_arm.repositories.event_autonomy.visual_owner import (
+        VisualOwnerPublicationRecord,
+    )
+    from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import (
+        VisualSupervisionDefinition,
+        VisualSupervisionRecord,
+        VisualSupervisionTransitionInput,
+        VisualSupervisionTransitionResult,
+    )
+    from cloud_edge_robot_arm.repositories.event_autonomy.visual_verification import (
+        VisualVerificationRouteInput,
+        VisualVerificationRouteRecord,
+        VisualVerificationRouteWriteResult,
+    )
+    from cloud_edge_robot_arm.vision.owner_registration import (
+        StepGroundingBinding,
+        VisualOriginalPlan,
+    )
 
 
 class RepositoryConflictError(RuntimeError):
@@ -44,6 +82,95 @@ class VersionConflictError(RepositoryConflictError):
 @runtime_checkable
 class EventAutonomyRepository(Protocol):
     """Unified persistence contract for event-triggered edge autonomy."""
+
+    def initialize_visual_supervision_if_absent(
+        self, definition: VisualSupervisionDefinition
+    ) -> VisualSupervisionRecord:
+        """Persist fixed original periodic/wait limits; never refill existing costs."""
+        ...
+
+    def get_visual_supervision(self, task_id: str) -> VisualSupervisionRecord | None:
+        """Detached source history, including lost pending costs; no replay authority."""
+        ...
+
+    def get_visual_supervision_source_publication(
+        self, task_id: str
+    ) -> VisualOwnerPublicationRecord | None:
+        """Literal observer source only; does not extend grounding action freshness."""
+        ...
+
+    def transition_visual_supervision_if_current(
+        self, *, request: VisualSupervisionTransitionInput
+    ) -> VisualSupervisionTransitionResult | None:
+        """Atomic local source claim only; no camera, provider, wait or action effect."""
+        ...
+
+    def initialize_visual_bootstrap_if_absent(
+        self, definition: VisualBootstrapDefinition
+    ) -> VisualBootstrapRecord:
+        """Create one immutable job/run/episode source, never ordinary task pools."""
+        ...
+
+    def get_visual_bootstrap(self, bootstrap_id: str) -> VisualBootstrapRecord | None:
+        """Detached source history; a pending claim never authorizes replay."""
+        ...
+
+    def transition_visual_bootstrap_if_current(
+        self, *, request: VisualBootstrapTransitionInput
+    ) -> VisualBootstrapTransitionResult | None:
+        """Atomic BOOTSTRAP_SOURCE_ONLY transition; no external effects or adoption."""
+        ...
+
+    def initialize_visual_owner_if_absent(
+        self,
+        original: VisualOriginalPlan,
+        checkpoint: ExecutionCheckpoint,
+        verification_state: VerificationBudgetState,
+        retry_budget: RecoveryBudget,
+        *,
+        bootstrap_promotion: VisualBootstrapPromotionInput | None = None,
+    ) -> VisualOwnerPublicationRecord:
+        """Atomically register a durable source only, preserving complete existing pools."""
+        ...
+
+    def get_visual_original_plan(
+        self, task_id: str, plan_version: int
+    ) -> VisualOriginalPlan | None: ...
+
+    def get_visual_owner_publication(self, task_id: str) -> VisualOwnerPublicationRecord | None:
+        """Coherent current durable source; stale/expired publications remain unavailable."""
+        ...
+
+    def publish_visual_boundary_if_current(
+        self,
+        *,
+        task_id: str,
+        owner_epoch: str,
+        expected_owner_revision: int,
+        expected_contract_hash: str,
+        expected_checkpoint_hash: str,
+        checkpoint: ExecutionCheckpoint,
+        grounding: StepGroundingBinding | None,
+        state_generation: int,
+    ) -> VisualOwnerPublicationRecord | None:
+        """CAS checkpoint/publication only, with no physical or mode authority."""
+        ...
+
+    def route_visual_verification_if_current(
+        self,
+        *,
+        request: VisualVerificationRouteInput,
+    ) -> VisualVerificationRouteWriteResult | None:
+        """Atomic SOURCE_ROUTE_ONLY pool/publication routing; no effect authority."""
+        ...
+
+    def get_visual_verification_route(
+        self,
+        task_id: str,
+        event_key: str,
+    ) -> VisualVerificationRouteRecord | None:
+        """Detached history only; duplicates never authorize another capture."""
+        ...
 
     # ── Events ──────────────────────────────────────────────────────────
 
@@ -69,6 +196,10 @@ class EventAutonomyRepository(Protocol):
         """Persist or update a retry budget. Upsert on task_id."""
         ...
 
+    def initialize_retry_budget_if_absent(self, budget: RecoveryBudget) -> RecoveryBudget:
+        """Atomically create the task pool once, preserving any existing complete budget."""
+        ...
+
     def get_retry_budget(self, task_id: str) -> RecoveryBudget | None:
         """Get the current retry budget for a task."""
         ...
@@ -82,6 +213,67 @@ class EventAutonomyRepository(Protocol):
         event_id: str = "",
     ) -> tuple[bool, RecoveryBudget | None]:
         """Atomically consume one retry across task, step, skill, and event dimensions."""
+        ...
+
+    def initialize_verification_budget_if_absent(
+        self,
+        task_id: str,
+        state: VerificationBudgetState,
+    ) -> VerificationBudgetRecord:
+        """Create the task verification pool once without refilling allowances."""
+        ...
+
+    def get_verification_budget(self, task_id: str) -> VerificationBudgetRecord | None:
+        """Return a detached durable task verification pool."""
+        ...
+
+    def initialize_recovery_if_absent(self, record: RecoveryRecord) -> RecoveryRecord:
+        """Persist DETECTED only, preserving exact same-identity initialization."""
+        ...
+
+    def get_recovery(self, recovery_id: str) -> RecoveryRecord | None: ...
+
+    def list_unresolved_recoveries(self, task_id: str) -> list[RecoveryRecord]:
+        """Exclude only evidence-verified resolved records, not exhausted failures."""
+        ...
+
+    def list_recoveries(self, task_id: str) -> list[RecoveryRecord]:
+        """All detached event-linked records, including evidence-resolved history."""
+        ...
+
+    def advance_recovery_if_current(
+        self,
+        record: RecoveryRecord,
+        *,
+        expected_state: str,
+        expected_revision: int,
+        expected_budget_revision: int,
+        verified_transition: RecoveryTransitionEvidence,
+    ) -> RecoveryRecord | None: ...
+
+    def reserve_reobservation_if_current(
+        self,
+        *,
+        recovery_id: str,
+        expected_revision: int,
+        expected_budget_revision: int,
+        reservation: RecoveryReservationEvidence | None = None,
+    ) -> RecoveryRecord | None:
+        """Reserve a durable task allowance before the caller captures a new frame."""
+        ...
+
+    def consume_retry_and_authorize_recovery_if_current(
+        self,
+        *,
+        recovery_id: str,
+        expected_recovery_revision: int,
+        expected_verification_budget_revision: int,
+        expected_retry_count: int,
+        step_id: str,
+        skill: str,
+        authorization: RecoveryAuthorizationEvidence,
+    ) -> RecoveryAuthorizationResult:
+        """Atomically authorize and consume the existing task retry authority once."""
         ...
 
     # ── State Machine ───────────────────────────────────────────────────
@@ -181,6 +373,9 @@ class EventAutonomyRepository(Protocol):
         robot_id: str,
         based_on_plan_version: int,
         correlation_id: str = "",
+        replan_record: ReplanApplyRecord | None = None,
+        activation_guard: Callable[[ReplanApplyRecord, ExecutionCheckpoint, bool], EvidenceVerdict]
+        | None = None,
     ) -> ActiveTaskContractRecord | None:
         """CAS update active contract and retain historical versions."""
         ...
@@ -217,6 +412,15 @@ class EventAutonomyRepository(Protocol):
 
     def save_replan_apply_record(self, record: ReplanApplyRecord) -> ReplanApplyRecord:
         """Persist a replan apply record with payload-hash idempotency."""
+        ...
+
+    def update_replan_apply_record_if_current(
+        self,
+        record: ReplanApplyRecord,
+        *,
+        expected_status: str,
+    ) -> ReplanApplyRecord | None:
+        """CAS actual stage/resume/start evidence; activation uses active-contract CAS."""
         ...
 
     def get_replan_apply_record(self, apply_id: str) -> ReplanApplyRecord | None:

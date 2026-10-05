@@ -1,0 +1,17 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________ test_backwards_post_response_clock_cannot_extend_planning ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-915/test_backwards_post_response_c0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x744c751fec30>
+
+    def test_backwards_post_response_clock_cannot_extend_planning(tmp_path, monkeypatch):
+        provider, wire, _, _, _, now = setup(tmp_path, monkeypatch)
+        wire.after = lambda: now.__setitem__(0, now[0]-timedelta(seconds=.05))
+>       with pytest.raises(api().RoleConditionalPlanningUnavailable): provider.plan()
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.cloud.replanning.role_conditional_planning.RoleConditionalPlanningUnavailable'>
+
+tests/test_role_conditional_planning.py:410: Failed
+=========================== short test summary info ============================
+FAILED tests/test_role_conditional_planning.py::test_backwards_post_response_clock_cannot_extend_planning
+1 failed, 42 deselected in 0.55s

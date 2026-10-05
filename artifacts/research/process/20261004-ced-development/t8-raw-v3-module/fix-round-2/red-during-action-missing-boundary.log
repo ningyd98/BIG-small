@@ -1,0 +1,43 @@
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_original_during_action_camera_end_is_preserved_or_explicitly_incomplete[False] _
+
+missing_end = False
+
+    @pytest.mark.parametrize("missing_end", [False, True])
+    def test_original_during_action_camera_end_is_preserved_or_explicitly_incomplete(missing_end):
+        envelope, records = fixture()
+        frame = records.frames[-1]
+        interval = next(row for row in records.intervals if row.interval_id == frame.interval_id)
+        inside = clock_interval(interval, interval.interval_id, "ACQUISITION", 121, 121, 215000000, 215500000)
+        if missing_end:
+            inside = replace(
+                inside, end=None, end_step=None, end_sim_time_s=None,
+                disposition="PARTIAL", error="actual-camera-return-missing"
+            )
+        payload = dict(frame.observation_payload)
+        payload.update(captured_at=inside.start.utc_at.isoformat(), checksum_sha256="")
+        observation = RGBDObservation.model_validate(payload)
+        actual_frame = replace(frame, observation_payload=observation.model_dump(mode="json"))
+        joins = tuple(
+            replace(row, relation="DURING_ACTION", checksum_sha256=observation.checksum_sha256)
+            if row.acquisition_id == frame.acquisition_id else row
+            for row in records.joins
+        )
+        view = api().validate_raw_episode_v3(
+            envelope,
+            replace(records, intervals=tuple(inside if row.interval_id==inside.interval_id else row for row in records.intervals),
+                    frames=(*records.frames[:-1], actual_frame), joins=joins)
+        )
+>       assert view.status == ("INCOMPLETE" if missing_end else "COMPLETE"), view.reasons
+E       AssertionError: ('action_boundary_frame_join_missing',)
+E       assert 'INCOMPLETE' == 'COMPLETE'
+E         
+E         - COMPLETE
+E         + INCOMPLETE
+E         ? ++
+
+tests/test_raw_episode_v3.py:1434: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_raw_episode_v3.py::test_original_during_action_camera_end_is_preserved_or_explicitly_incomplete[False]
+1 failed, 1 passed, 72 deselected in 1.25s

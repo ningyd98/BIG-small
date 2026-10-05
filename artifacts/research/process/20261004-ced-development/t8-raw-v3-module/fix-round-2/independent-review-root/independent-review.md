@@ -1,0 +1,11 @@
+# Raw-v3 fix2 independent full source review
+
+**PASS within SOURCE_CONSISTENCY_ONLY.** Both new fix1 P2 findings are closed. The reader now matches the frozen backend's current + clip(target-current,-.10,.10), followed by original bias/gain and actuator range clipping. The existing current-state identity and pre-dispatch availability joins remain required. It preserves the actual camera's internal captured_at/checksum within a complete nominal acquisition BEGIN/END UTC bracket; missing END is INCOMPLETE, known outside/reversed clocks are INVALID. The ordinary DURING acquisition containment gate is unchanged.
+
+Root independently assembled the exact774-source archive, verified750 Python AST and the immutable release inventory, and ran the full122-case scoped suite in27.48s. Ruff/format on2 files and cold mypy on1 source pass. Source archive, isolated overlay, release artifacts and both current owned sources retain their post-run hashes. Exact argv and logs are in setup.json and post-check.json; no moving dependency overlay was used.
+
+The unchanged original compatibility counterexample is explicitly checked for COMPLETE baseline, COMPLETE actual displacement-limited output, INVALID incorrect unclipped output and COMPLETE internal camera time within the bracket. Every original denominator matches the preserved first counterexample. The unchanged terminal-frame/ordered-stop controls and current-state availability negative still give the required statuses. A zero exit by itself is not treated as closure.
+
+The review considered the complete source interval, command, physics, action return and frame joins, as well as both repaired boundaries and their missing/partial cases. There are no open findings in this finite source-consistency scope. Original negative reports and setup failures remain immutable. All review tests use software records; this review invoked no backend step/control/reset, render/capture, provider or model.
+
+This PASS establishes finite source consistency only. External UTC uncertainty remains UNAVAILABLE, continuous motion is NOT_CERTIFIED, and native/owner/INITIAL/RISK/METHOD/FINAL, real acquisition and billing are not admitted. The actual recorder/backend observer and worker factory are separate incomplete increments.

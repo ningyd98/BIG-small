@@ -1,0 +1,157 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_typed_submit_proof_copy_retains_frozen_facts[memory] ___________
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71ac63cd55b0>
+
+    def test_typed_submit_proof_copy_retains_frozen_facts(replan_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        result = ReplanApplyService(repository=replan_repo, clock=lambda: NOW).apply(
+            request=request, response=response, dispatch=False)
+        proof = submit_proof(result.record, result.contract,
+                             replan_repo.get_latest_execution_checkpoint("task"))
+>       copied = replace(proof, current=replace(proof.current, mode_version=2))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_replan_activation.py:810: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:7: in __init__
+    ???
+src/cloud_edge_robot_arm/cloud/replanning/apply_service.py:86: in __post_init__
+    facts = _freeze_mapping(deepcopy(dict(self.online_evidence.visual_facts)))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/copy.py:136: in deepcopy
+    y = copier(x, memo)
+        ^^^^^^^^^^^^^^^
+/usr/lib/python3.12/copy.py:221: in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+                             ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = mappingproxy({'source': 'rgbd_estimate', 'observation_id': 'frame-1', 'target_id': 'object', 'identity_confirmed': True, 'value': True, 'pixel': (0, 0)})
+memo = {124985194186688: {}}, _nil = []
+
+    def deepcopy(x, memo=None, _nil=[]):
+        """Deep copy operation on arbitrary Python objects.
+    
+        See the module's __doc__ string for more info.
+        """
+    
+        if memo is None:
+            memo = {}
+    
+        d = id(x)
+        y = memo.get(d, _nil)
+        if y is not _nil:
+            return y
+    
+        cls = type(x)
+    
+        copier = _deepcopy_dispatch.get(cls)
+        if copier is not None:
+            y = copier(x, memo)
+        else:
+            if issubclass(cls, type):
+                y = _deepcopy_atomic(x, memo)
+            else:
+                copier = getattr(x, "__deepcopy__", None)
+                if copier is not None:
+                    y = copier(memo)
+                else:
+                    reductor = dispatch_table.get(cls)
+                    if reductor:
+                        rv = reductor(x)
+                    else:
+                        reductor = getattr(x, "__reduce_ex__", None)
+                        if reductor is not None:
+>                           rv = reductor(4)
+                                 ^^^^^^^^^^^
+E                           TypeError: cannot pickle 'mappingproxy' object
+
+/usr/lib/python3.12/copy.py:151: TypeError
+__________ test_typed_submit_proof_copy_retains_frozen_facts[sqlite] ___________
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71ac5ff3f260>
+
+    def test_typed_submit_proof_copy_retains_frozen_facts(replan_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        result = ReplanApplyService(repository=replan_repo, clock=lambda: NOW).apply(
+            request=request, response=response, dispatch=False)
+        proof = submit_proof(result.record, result.contract,
+                             replan_repo.get_latest_execution_checkpoint("task"))
+>       copied = replace(proof, current=replace(proof.current, mode_version=2))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_replan_activation.py:810: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:7: in __init__
+    ???
+src/cloud_edge_robot_arm/cloud/replanning/apply_service.py:86: in __post_init__
+    facts = _freeze_mapping(deepcopy(dict(self.online_evidence.visual_facts)))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/copy.py:136: in deepcopy
+    y = copier(x, memo)
+        ^^^^^^^^^^^^^^^
+/usr/lib/python3.12/copy.py:221: in _deepcopy_dict
+    y[deepcopy(key, memo)] = deepcopy(value, memo)
+                             ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = mappingproxy({'source': 'rgbd_estimate', 'observation_id': 'frame-1', 'target_id': 'object', 'identity_confirmed': True, 'value': True, 'pixel': (0, 0)})
+memo = {124984489399488: {}}, _nil = []
+
+    def deepcopy(x, memo=None, _nil=[]):
+        """Deep copy operation on arbitrary Python objects.
+    
+        See the module's __doc__ string for more info.
+        """
+    
+        if memo is None:
+            memo = {}
+    
+        d = id(x)
+        y = memo.get(d, _nil)
+        if y is not _nil:
+            return y
+    
+        cls = type(x)
+    
+        copier = _deepcopy_dispatch.get(cls)
+        if copier is not None:
+            y = copier(x, memo)
+        else:
+            if issubclass(cls, type):
+                y = _deepcopy_atomic(x, memo)
+            else:
+                copier = getattr(x, "__deepcopy__", None)
+                if copier is not None:
+                    y = copier(memo)
+                else:
+                    reductor = dispatch_table.get(cls)
+                    if reductor:
+                        rv = reductor(x)
+                    else:
+                        reductor = getattr(x, "__reduce_ex__", None)
+                        if reductor is not None:
+>                           rv = reductor(4)
+                                 ^^^^^^^^^^^
+E                           TypeError: cannot pickle 'mappingproxy' object
+
+/usr/lib/python3.12/copy.py:151: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_typed_submit_proof_copy_retains_frozen_facts[memory]
+FAILED tests/test_replan_activation.py::test_typed_submit_proof_copy_retains_frozen_facts[sqlite]
+2 failed, 51 deselected in 0.74s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k typed_submit_proof_copy
+Observed exit code: 1

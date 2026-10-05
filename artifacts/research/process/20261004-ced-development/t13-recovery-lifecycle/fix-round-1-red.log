@@ -1,0 +1,94 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_authorization_detaches_entire_action_even_when_existing_contract_already_freezes_maps _
+
+    def test_authorization_detaches_entire_action_even_when_existing_contract_already_freezes_maps():
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        repo = InMemoryEventAutonomyRepository()
+        record = repo.initialize_recovery_if_absent(detected_record(repo))
+        original = authorization_proof(record)
+        tolerances = {"nested": {"values": [1, 2]}}
+        action = replace(original.action, preconditions=(
+            ConditionSpec("target_visible", "obj-1", tolerances),))
+        proof = replace(original, action=action)
+>       assert proof.action is not action
+E       AssertionError: assert ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...=1, command_seq=1, context_hash='eb98f740733f8a3be318765fea72921c9efb0092687191af6f6a023fc84108bc', ordinary_ttl_s=5.0) is not ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...=1, command_seq=1, context_hash='eb98f740733f8a3be318765fea72921c9efb0092687191af6f6a023fc84108bc', ordinary_ttl_s=5.0)
+E        +  where ActionEvidenceContract(evidence=VisualEvidence(observation_id='frame-1', calibration_version='cal-1', captured_at=date...=1, command_seq=1, context_hash='eb98f740733f8a3be318765fea72921c9efb0092687191af6f6a023fc84108bc', ordinary_ttl_s=5.0) = RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='eb98f740733f8a3be318765fea72921c9efb0092687191af6f6a023fc84108bc'), evidence_scope='SOFTWARE_ONLY').action
+
+tests/test_recovery_lifecycle_module.py:1395: AssertionError
+________ test_original_required_preconditions_cannot_be_dropped[memory] ________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x70e973f5b3e0>
+
+    def test_original_required_preconditions_cannot_be_dropped(lifecycle_repo):
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("robot_safe",)))
+        proof = authorization_proof(saved)
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='f0c98b567ff993f792478ff84d167b2d78cc0887a5e8df9cd9f5449eee413017'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='f0c98b567ff993f792478ff84d167b2d78cc0887a5e8df9cd9f5449eee413017'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x70e973f5b3e0>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='501818be6dbc623d5ed02cb4f2896ec17a5effdff23054a21b725ca1bee77bbc'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1409: AssertionError
+________ test_original_required_preconditions_cannot_be_dropped[sqlite] ________
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x70e94a108890>
+
+    def test_original_required_preconditions_cannot_be_dropped(lifecycle_repo):
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("robot_safe",)))
+        proof = authorization_proof(saved)
+        pool = lifecycle_repo.get_verification_budget("task")
+        retry = lifecycle_repo.get_retry_budget("task")
+>       assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert not True
+E        +  where True = RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='d5f7269d7b10b76e91a26487582f2edbf00dc637586336867443619448533b17'), reasons=()).authorized
+E        +    where RecoveryAuthorizationResult(authorized=True, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', tas...o=datetime.timezone.utc), content_hash='d5f7269d7b10b76e91a26487582f2edbf00dc637586336867443619448533b17'), reasons=()) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x70e94a108890>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='3f5992a5149ddfd8a5cacce1db298dd35c425aa972e03d0ffdfcdd855bdc1371'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1409: AssertionError
+_____ test_bound_required_preconditions_are_validated_canonically[memory] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x70e94a108f20>
+
+    def test_bound_required_preconditions_are_validated_canonically(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("robot_safe",)))
+        proof = authorization_proof(saved)
+        proof = replace(proof, action=replace(proof.action, preconditions=(
+            *proof.action.preconditions, ConditionSpec("robot_safe"),)))
+>       assert atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert False
+E        +  where False = RecoveryAuthorizationResult(authorized=False, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', ta...), content_hash='10ad9df9bd6e197fea5e50fbcd412f69197203e96c8c3dd772ad4002b133e15a'), reasons=('precondition_unknown',)).authorized
+E        +    where RecoveryAuthorizationResult(authorized=False, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', ta...), content_hash='10ad9df9bd6e197fea5e50fbcd412f69197203e96c8c3dd772ad4002b133e15a'), reasons=('precondition_unknown',)) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x70e94a108f20>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='0a6bc90d862a520041e7638f254ddad1e0dfadaf6df510278bda50755553fa6e'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1422: AssertionError
+_____ test_bound_required_preconditions_are_validated_canonically[sqlite] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x70e94a118d40>
+
+    def test_bound_required_preconditions_are_validated_canonically(lifecycle_repo):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(
+            lifecycle_repo, required_preconditions=("robot_safe",)))
+        proof = authorization_proof(saved)
+        proof = replace(proof, action=replace(proof.action, preconditions=(
+            *proof.action.preconditions, ConditionSpec("robot_safe"),)))
+>       assert atomic_authorize(lifecycle_repo, saved, proof).authorized
+E       AssertionError: assert False
+E        +  where False = RecoveryAuthorizationResult(authorized=False, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', ta...), content_hash='2515a6f26e6fdce4aad8b7c125da42ad1a15079eb33c4968be52db06b23b4697'), reasons=('precondition_unknown',)).authorized
+E        +    where RecoveryAuthorizationResult(authorized=False, recovery=RecoveryRecord(recovery_id='recovery-1', event_id='event-1', ta...), content_hash='2515a6f26e6fdce4aad8b7c125da42ad1a15079eb33c4968be52db06b23b4697'), reasons=('precondition_unknown',)) = atomic_authorize(<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x70e94a118d40>, RecoveryRecord(recovery_id='recovery-1', event_id='event-1', task_id='task', attempt_id='MOCK-attempt-event-1', state=...n_captured_at=None, last_verification_hash='', authorization_hash='', evidence_scope='UNAVAILABLE', authorized_at=None), RecoveryAuthorizationEvidence(recovery_id='recovery-1', decision=DecisionEnvelope(decision_id='MOCK-decision', task_id...eq=1, context_hash='4705ac33923c02df801ada53d9600711bf8f102f390ca67877ae4cc9e6ad0322'), evidence_scope='SOFTWARE_ONLY'))
+
+tests/test_recovery_lifecycle_module.py:1422: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_authorization_detaches_entire_action_even_when_existing_contract_already_freezes_maps
+FAILED tests/test_recovery_lifecycle_module.py::test_original_required_preconditions_cannot_be_dropped[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_original_required_preconditions_cannot_be_dropped[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_bound_required_preconditions_are_validated_canonically[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_bound_required_preconditions_are_validated_canonically[sqlite]
+5 failed, 156 deselected in 1.07s

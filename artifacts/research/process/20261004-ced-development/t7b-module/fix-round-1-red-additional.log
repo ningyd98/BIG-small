@@ -1,0 +1,120 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_ test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent[0.0] _
+
+occluder_depth = 0.0
+
+    @pytest.mark.parametrize("occluder_depth", [0.0, 0.938, 0.94])
+    def test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent(occluder_depth):
+        initial = scene(resolution=3)
+        tracked = tracker(initial)
+        current = scene("new", time=0.1, resolution=3, started=initial.captured_at)
+    
+        def hide_strip(rgb, depth):
+            rgb[72:90, 30:32] = 100
+            depth[72:90, 30:32] = occluder_depth
+    
+        facts = tracked.facts(image_variant(current, hide_strip))
+>       assert facts["target_visible"]["value"] is None
+E       assert True is None
+
+tests/test_opencv_target_evidence.py:286: AssertionError
+_ test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent[0.938] _
+
+occluder_depth = 0.938
+
+    @pytest.mark.parametrize("occluder_depth", [0.0, 0.938, 0.94])
+    def test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent(occluder_depth):
+        initial = scene(resolution=3)
+        tracked = tracker(initial)
+        current = scene("new", time=0.1, resolution=3, started=initial.captured_at)
+    
+        def hide_strip(rgb, depth):
+            rgb[72:90, 30:32] = 100
+            depth[72:90, 30:32] = occluder_depth
+    
+        facts = tracked.facts(image_variant(current, hide_strip))
+>       assert facts["target_visible"]["value"] is None
+E       assert True is None
+
+tests/test_opencv_target_evidence.py:286: AssertionError
+_ test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent[0.94] _
+
+occluder_depth = 0.94
+
+    @pytest.mark.parametrize("occluder_depth", [0.0, 0.938, 0.94])
+    def test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent(occluder_depth):
+        initial = scene(resolution=3)
+        tracked = tracker(initial)
+        current = scene("new", time=0.1, resolution=3, started=initial.captured_at)
+    
+        def hide_strip(rgb, depth):
+            rgb[72:90, 30:32] = 100
+            depth[72:90, 30:32] = occluder_depth
+    
+        facts = tracked.facts(image_variant(current, hide_strip))
+>       assert facts["target_visible"]["value"] is None
+E       assert True is None
+
+tests/test_opencv_target_evidence.py:286: AssertionError
+__ test_world_rotated_region_is_rejected_even_with_rectangular_image_support ___
+
+    def test_world_rotated_region_is_rejected_even_with_rectangular_image_support():
+        angle = np.pi / 4
+        payload = scene().model_dump()
+        payload.update(
+            camera_to_world=(
+                np.cos(angle),
+                np.sin(angle),
+                0.0,
+                0.0,
+                np.sin(angle),
+                -np.cos(angle),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                -1.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            ),
+            checksum_sha256="",
+        )
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_opencv_target_evidence.py:314: Failed
+_____ test_observed_orientation_oscillation_cannot_prove_angular_stability _____
+
+    def test_observed_orientation_oscillation_cannot_prove_angular_stability():
+        initial = scene(resolution=10, source="mujoco_camera")
+        tracked = tracker(initial, depth_error_bound_m=0.000001)
+        for index in range(8):
+            time = 0.1 + index * 0.1
+            current = scene(str(index), time=time, lift=0.06, resolution=10,
+                            source="mujoco_camera", started=datetime.now(UTC) - timedelta(seconds=time))
+            def rotate_top(rgb, depth):
+                mask = (rgb[:, :, 0] > 200).astype(np.uint8)
+                transform = cv2.getRotationMatrix2D((129.5, 269.5), (index % 2) * 5., 1.)
+                rotated = cv2.warpAffine(mask, transform, (rgb.shape[1], rgb.shape[0]),
+                                         flags=cv2.INTER_NEAREST) > 0
+                rgb[mask > 0] = 100
+                depth[mask > 0] = 1.0
+                rgb[rotated] = [230, 20, 20]
+                depth[rotated] = 0.88
+            facts = tracked.facts(image_variant(current, rotate_top), held())
+            assert facts["target_visible"]["value"] is True
+>       assert facts["object_stable"]["value"] is None
+E       assert True is None
+
+tests/test_visual_effect_evidence.py:219: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_opencv_target_evidence.py::test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent[0.0]
+FAILED tests/test_opencv_target_evidence.py::test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent[0.938]
+FAILED tests/test_opencv_target_evidence.py::test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent[0.94]
+FAILED tests/test_opencv_target_evidence.py::test_world_rotated_region_is_rejected_even_with_rectangular_image_support
+FAILED tests/test_visual_effect_evidence.py::test_observed_orientation_oscillation_cannot_prove_angular_stability
+5 failed in 3.75s

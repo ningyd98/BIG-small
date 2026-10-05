@@ -1,0 +1,54 @@
+# 第三方真实数据默认预算；full仅指这里显式选定的范围。
+budget:
+  total_download_gib: 250
+  robomind_download_gib: 10
+  minimum_free_gib: 50
+  download_workers: 4
+  decode_workers: 2
+  retries: 3
+# 下载专用直连，绑定物理网卡后才连接；不使用环境代理或系统TUN。
+network:
+  mode: direct
+  interface: enp7s0
+  dns_servers: [223.5.5.5, 223.6.6.6]
+profiles:
+  curated:
+    preview_groups: 5
+    batch_size: 2
+    validation_fraction: 0.2
+  smoke:
+    preview_groups: 5
+    batch_size: 2
+    validation_fraction: 0.2
+  pilot:
+    preview_groups: 5
+    batch_size: 4
+    validation_fraction: 0.2
+  full:
+    preview_groups: 5
+    batch_size: 4
+    validation_fraction: 0.2
+# 各profile只消费固定source manifest显式成员；精选不自动扩大到完整数据集。
+datasets:
+  robomind:
+    source_manifest: configs/rgbd_sources/robomind.json
+    requested_tasks: 2
+    requested_episodes: 10
+    network:
+      allowed_hosts: [modelscope.cn]
+  graspclutter6d:
+    source_manifest: configs/rgbd_sources/graspclutter6d.json
+    protocol: grasp_cross_object
+    network:
+      hf_endpoint: null
+      allowed_hosts: []
+      blocked_reason: "No verified mainland mirror for pinned archives; candidate mirror redirects overseas or has no mainland hosting evidence"
+  graspclutter6d_curated:
+    source_manifest: configs/rgbd_sources/graspclutter6d_curated.json
+    protocol: curated_preview
+  industryshapes_real:
+    source_manifest: configs/rgbd_sources/industryshapes_real.json
+  microagi01_small:
+    source_manifest: configs/rgbd_sources/microagi01_small.json
+  vins_rgbd_small:
+    source_manifest: configs/rgbd_sources/vins_rgbd_small.json

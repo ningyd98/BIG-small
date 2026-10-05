@@ -1,0 +1,84 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____ test_persisted_resource_flag_cannot_replace_independent_recompilation _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-757/test_persisted_resource_flag_c0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x75bbbca13800>
+
+    def test_persisted_resource_flag_cannot_replace_independent_recompilation(tmp_path, monkeypatch):
+        import json
+    
+        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+    
+        plan = {"scope": "SOURCE_RESOURCE_DIAGNOSTIC", "available": True,
+                "budget_status": "WITHIN_DECLARED_CEILINGS", "physical_acceptance": False,
+                "actual_research_status": "NOT_RUN", "tcap_s": 120}
+        plan["content_hash"] = content_digest(plan)
+        (tmp_path / "resource-inputs.json").write_text(json.dumps({
+            "schema_version": "ced.resource-inputs.v1", "formal_n": None,
+            "declared_ceilings": ceilings()}))
+        (tmp_path / "resource-plan.json").write_text(json.dumps({
+            "schema_version": "ced.resource-plan-receipt.v1", "plan": plan,
+            "content_hash": content_digest(plan)}))
+        monkeypatch.setattr(api(), "compile_resource_plan", lambda *a, **k: {
+            "available": False, "budget_status": "UNAVAILABLE", "scope": "SOURCE_RESOURCE_DIAGNOSTIC"})
+        with pytest.raises(ValueError, match="resource"):
+>           api().verify_resource_plan_receipt(tmp_path)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.resource_plan' has no attribute 'verify_resource_plan_receipt'
+
+tests/test_research_resource_plan.py:323: AttributeError
+____ test_software_only_budget_math_cannot_become_initial_resource_receipt _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-757/test_software_only_budget_math0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x75bbb89efcb0>
+
+    def test_software_only_budget_math_cannot_become_initial_resource_receipt(tmp_path, monkeypatch):
+        import json
+    
+        from cloud_edge_robot_arm.datasets.rgbd.models import content_digest
+    
+        plan = api().estimate_resource_terms(measurements(), declared_ceilings=ceilings())
+        plan["content_hash"] = content_digest(plan)
+        (tmp_path / "resource-inputs.json").write_text(json.dumps({
+            "schema_version": "ced.resource-inputs.v1", "formal_n": None,
+            "declared_ceilings": ceilings()}))
+        (tmp_path / "resource-plan.json").write_text(json.dumps({
+            "schema_version": "ced.resource-plan-receipt.v1", "plan": plan,
+            "content_hash": content_digest(plan)}))
+        monkeypatch.setattr(api(), "compile_resource_plan", lambda *a, **k: plan)
+        with pytest.raises(ValueError):
+>           api().verify_resource_plan_receipt(tmp_path)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'cloud_edge_robot_arm.research.resource_plan' has no attribute 'verify_resource_plan_receipt'
+
+tests/test_research_resource_plan.py:341: AttributeError
+_______ test_v2_spec_and_reader_preserve_legacy_entry_and_hash_semantics _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-757/test_v2_spec_and_reader_preser0')
+
+    def test_v2_spec_and_reader_preserve_legacy_entry_and_hash_semantics(tmp_path):
+>       spec = ProtocolSpec(
+            schema_version="ced.research.v2",
+            tcap_s=120,
+            pool_hashes={"fixture": "a" * 64},
+            model_snapshot_hash="b" * 64,
+            role_bundle_hash="b" * 64,
+            selection_manifest_hash="c" * 64,
+            selected_b0_period_s=2.0,
+            budget_selection_rule_hash="d" * 64,
+            resource_plan_hash="0" * 64,
+            opportunity_hash="e" * 64,
+            recovery_fault_manifest_hash="f" * 64,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ProtocolSpec
+E       resource_plan_hash
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='000000000000000000000000...00000000000000000000000', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+tests/test_ced_initial_freeze.py:17: ValidationError
+=========================== short test summary info ============================
+FAILED tests/test_research_resource_plan.py::test_persisted_resource_flag_cannot_replace_independent_recompilation
+FAILED tests/test_research_resource_plan.py::test_software_only_budget_math_cannot_become_initial_resource_receipt
+FAILED tests/test_ced_initial_freeze.py::test_v2_spec_and_reader_preserve_legacy_entry_and_hash_semantics
+3 failed, 56 deselected in 0.32s

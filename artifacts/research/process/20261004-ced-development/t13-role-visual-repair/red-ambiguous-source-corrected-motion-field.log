@@ -1,0 +1,52 @@
+FF......                                                                 [100%]
+=================================== FAILURES ===================================
+_ test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_precondition] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-773/test_ambiguous_frozen_conditio0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d076297b470>
+bad = 'duplicate_precondition'
+
+    @pytest.mark.parametrize('bad', ['duplicate_precondition', 'duplicate_postcondition'])
+    def test_ambiguous_frozen_conditions_reject_before_paid_call(tmp_path, monkeypatch, bad):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        proofs = dict(source.action_evidence)
+        proof = proofs['grasp']
+        field = 'preconditions' if bad == 'duplicate_precondition' else 'postconditions'
+        proofs['grasp'] = replace(proof, **{field: getattr(proof, field)*2})
+        changed = api().RoleVisualRepairSource(source.context, proofs, 'SOFTWARE_ONLY')
+        adapter.source_provider = lambda *_: changed
+        result = adapter.replan(request)
+>       assert wire.requests == [] and result.new_steps == []
+E       assert ([b'{"model": ...on_object"}}'] == []
+E         
+E         Left contains one more item: b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth i...AAABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:267: AssertionError
+_ test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_postcondition] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-773/test_ambiguous_frozen_conditio1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d0737152d80>
+bad = 'duplicate_postcondition'
+
+    @pytest.mark.parametrize('bad', ['duplicate_precondition', 'duplicate_postcondition'])
+    def test_ambiguous_frozen_conditions_reject_before_paid_call(tmp_path, monkeypatch, bad):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch)
+        proofs = dict(source.action_evidence)
+        proof = proofs['grasp']
+        field = 'preconditions' if bad == 'duplicate_precondition' else 'postconditions'
+        proofs['grasp'] = replace(proof, **{field: getattr(proof, field)*2})
+        changed = api().RoleVisualRepairSource(source.context, proofs, 'SOFTWARE_ONLY')
+        adapter.source_provider = lambda *_: changed
+        result = adapter.replan(request)
+>       assert wire.requests == [] and result.new_steps == []
+E       assert ([b'{"model": ...on_object"}}'] == []
+E         
+E         Left contains one more item: b'{"model": "qwen3.8-max", "messages": [{"role": "system", "content": "Inspect only the paired current RGB and depth i...AAABMABFV4+xUAAAAASUVORK5CYII="}}]}], "temperature": 0, "max_tokens": 512, "response_format": {"type": "json_object"}}'
+E         Use -v to get more diff)
+
+tests/test_role_visual_repair.py:267: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_precondition]
+FAILED tests/test_role_visual_repair.py::test_ambiguous_frozen_conditions_reject_before_paid_call[duplicate_postcondition]
+2 failed, 6 passed, 31 deselected in 0.60s

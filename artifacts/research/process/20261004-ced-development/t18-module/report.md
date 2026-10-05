@@ -1,0 +1,23 @@
+# T18 reproduction software preparation
+
+A new immutable manifest records source/dependency/asset/model/protocol/data/seeds/structured command arguments and raw artifact hashes. Verification reads actual bytes, checks source aggregate hash and the complete assignment-to-record index, retaining failed/blocked records. Relative paths cannot traverse or follow symlinks. JSONL identity coverage and single JSON identity are both re-read. Hash integrity never implies experiment acceptance; dependency replay and physical replay remain NOT_RUN.
+
+Rebuild calls the same T16 analyze_research_runs Python entry, never recorded shell commands. It requires hash-inventoried runs/assignments.json, runs/records.jsonl, runs/pools.json and protocol/protocol.json. The protocol digest is revalidated. Optional saved metrics/goals must exactly match the numeric rebuild. Fresh output is required. The CLI supports integrity-only and explicit software-only modes.
+
+Fresh verification: 15 CPU tests passed in 6.51s, scoped Ruff passed, mypy two sources passed. The complete deterministic software fixture has 600 groups × seven methods = 4,200 BLOCKED records, full archived 2,400 candidate pool and original Tcap penalties. The saved and rebuilt metrics/goal verdicts match; numeric_rebuild is SOFTWARE_ONLY, research_accepted false, physical_reproduction NOT_RUN. This is not a formal protocol or actual episode result.
+
+The original missing-module and malformed/foreign-assignment RED failures preceded implementation. A full fixture first used the wrong return accessor and was corrected to read metrics.json; green-first.log retains that failure. Initial output-directory redirection failure occurred before test execution and produced no data. Source copies distinguish three owned files from six frozen references. Independent review is pending. Full release, real rerun, final manuscript and demonstration await actual research prerequisites.
+
+## Fix round 1 and independent-review response
+
+The original REQUEST CHANGES review, source archive and report are preserved in fix-round-1-baseline/. Two regression cases were RED before production edits: removing an assignment and its failed-record reference together from the index still passed; a manifest model hash could differ from its bound frozen protocol. Verification now independently finds structured episode identities in all hash-inventoried archived JSON/JSONL and requires exact index coverage, retaining archived failed originals. If a protocol path is supplied, its actual protocol bytes must be in the inventory, and both protocol and model-snapshot hashes must match. Rebuild rechecks the same binding before creating output.
+
+Fresh final-source verification: 16 CPU tests passed in 6.73s (fix-round-1-final-green.log); Ruff passed and no-incremental mypy passed for two production files. The complete 4,200-record software fixture remains SOFTWARE_ONLY, research_accepted false and physical_reproduction NOT_RUN. Archive integrity does not authenticate a rewritten inventory, identify remote model weights, install dependencies or prove physical success; formal rebuild additionally reconstructs every assignment from the frozen protocol and archived candidate pool. Independent re-review pending.
+
+## Fix round 2: independent original assignment coverage
+
+The second independent review reproduced deleting the actual failed JSONL record and both index entries while retaining the complete frozen 4,200-assignment list. The verifier originally checked only surviving archived identities and reported 4,199 as valid. The fix-round-1 release and report are preserved in fix-round-2-baseline/; review-fix-round-1.md retains the rejection. A new RED case reproduces this omission before production changes.
+
+Verification now reads the hash-inventoried bound original assignment list, checks its canonical content hash and protocol identity, and requires exact agreement with the reproduction index. When a protocol is bound, it also requires the full pool archive and reconstructs every assignment from the actual frozen protocol, all seven core methods and the archived formal pool. Removing/relabeling failures in a rehashed assignment file therefore cannot redefine the denominator. Unbound generic archives still prove only declared byte/index consistency; they are never accepted research.
+
+Fresh final-source verification: 17 passed in fix-round-2-final-green.log; Ruff and no-incremental mypy passed for two production sources. The complete saved/rebuilt software metrics remain equal, SOFTWARE_ONLY, research_accepted false and physical_reproduction NOT_RUN. Independent re-review pending; no genuine final experiment or physical reproduction has occurred.

@@ -1,0 +1,13 @@
+# Conditional planning carrier public-type fix1
+
+Fix1 closes the independently reproduced public constructor isolation gap. The original 772-file source package, its 164-case factory-path checks and constructor counterexamples remain unchanged. Only the original two new owned files changed. Existing submission/provider/worker/repository/action paths were not modified by this fix.
+
+Eleven qualified constructor negatives failed before the correction: mutable arbitrary replacements, malformed source hashes/identity, empty replacements, duplicate/nonfinite/incomplete preserved JSON and invalid duplicate/type boundaries. A separate qualified boolean retry-count RED caught coercion before model validation. All twelve new regressions now pass with the original 21 cases.
+
+The public carrier now requires typed replacements and reconstructs each detached replacement with original requirements and diagnostic tuples. It validates complete source SHA256 identities, observation identity, counters, expiry and nonempty unique replacement IDs. Preserved original JSON uses duplicate-key rejection, finite-data checks, complete TaskStep fields, strict pre-coercion model validation and disjoint matching step identities; it is stored in canonical detached form. Current diagnostic names/status/frame/reasons remain explicitly typed. Unknown mutable payload providers cannot enter the carrier or change its digest later.
+
+All results remain PLANNING_ONLY, with method/execution admission fixed false. The component still does not authenticate a live owner, read current disk sources, prove geometry or supply an executable replan. Its current FAIL/UNKNOWN future requirements remain unchanged and need fresh actual evidence before the existing submission gate. No new cloud adapter or durable integration was added.
+
+Final local scoped verification: 176 tests passed in 1.44 seconds (33 new-module cases plus the exact 143 owner/evidence/composition/repair checks), Ruff and format passed for the two owned files, and cold mypy passed for the new module. Zero model, account, capture, renderer or controller calls occurred. Tests and source inventories are software-only.
+
+The separate `source/` package contains the exact independently reviewed 770-file owner closure plus the two corrected owned files, for 772 entries. `source-hashes.json`, `ownership.json` and `review-package.diff` retain precise ownership; Python AST and archive hashes passed during freeze. Independent fix1 review is pending. Earlier RED/static failures are retained alongside the first package and are not relabeled as actual research acceptance.

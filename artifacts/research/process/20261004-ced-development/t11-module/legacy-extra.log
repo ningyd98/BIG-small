@@ -1,0 +1,58 @@
+............F.......                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_transition_prepare_commit_abort_and_restart_recovery ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-543/test_transition_prepare_commit0')
+
+    def test_transition_prepare_commit_abort_and_restart_recovery(tmp_path) -> None:  # type: ignore[no-untyped-def]
+        repo = InMemorySkillCacheRepository(clock=lambda: NOW)
+        repo.save_template(_trusted_template())
+        service = ModeTransitionService(clock=lambda: NOW, repository=None)
+        request = AutoModeTransitionRequest(
+            task_id="task-1",
+            from_mode=ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY,
+            to_mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
+            expected_mode_version=1,
+            idempotency_key="idem-1",
+            decision_id="dec-1",
+            reason="dynamic_scene",
+        )
+    
+        prepared = service.prepare(request)
+>       committed = service.commit(prepared.transition_id)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase7_auto_mode.py:338: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/auto_mode/transition_service.py:82: in commit
+    return self._repository.commit_transition_if_current(
+src/cloud_edge_robot_arm/auto_mode/repository.py:275: in commit_transition_if_current
+    _validate_commit(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+record = AutoModeTransition(transition_id='transition-540bec07002f4c2c9e75647234272ba6', task_id='task-1', from_mode=<ControlMo...orted_at=None, reason='dynamic_scene', payload_hash='56eef4091831d8e16a398b76574fb4eeefaeb3e90fb86224152390569f5cc78b')
+current = None
+now = datetime.datetime(2026, 6, 14, 12, 0, tzinfo=datetime.timezone.utc)
+boundary = None, stored = None, require_boundary = False, mode_policy = None
+commit_guard = None
+
+    def _validate_commit(
+        record: AutoModeTransition,
+        current: AutoModeStatus | None,
+        now: datetime,
+        boundary: ModeTransitionCheckpoint | None,
+        stored: ModeTransitionCheckpoint | None,
+        require_boundary: bool,
+        mode_policy: ModeSwitchPolicySnapshot | None,
+        commit_guard: Callable[[], ModeTransitionCheckpoint | None] | None,
+    ) -> None:
+        if record.status != AutoModeTransitionStatus.PREPARED:
+            raise ValueError(f"only prepared transitions can commit: {record.status}")
+        if current is None:
+>           raise ValueError("current mode state is missing")
+E           ValueError: current mode state is missing
+
+src/cloud_edge_robot_arm/auto_mode/repository.py:717: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_phase7_auto_mode.py::test_transition_prepare_commit_abort_and_restart_recovery
+1 failed, 19 passed in 2.75s

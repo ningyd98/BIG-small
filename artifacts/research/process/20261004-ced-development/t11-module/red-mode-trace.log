@@ -1,0 +1,94 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+__ test_mode_selection_rejects_unverified_boundary_trace[missing_checkpoint] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-533/test_mode_selection_rejects_un0')
+damage = 'missing_checkpoint'
+
+    @pytest.mark.parametrize('damage',['missing_checkpoint','atomic_checkpoint','unconfirmed_checkpoint'])
+    def test_mode_selection_rejects_unverified_boundary_trace(tmp_path:Path,damage):
+        import json
+        module=import_module('cloud_edge_robot_arm.auto_mode.baseline_policies')
+        snapshot=mode_policy_snapshot(tmp_path/'mode')
+        raw=Path(snapshot.selection_directory)/'candidate'
+        assignment=json.loads((raw/'assignments.json').read_text())[0]
+        path=raw/'cases'/assignment['assignment_id']/'mode-transition-events.json'
+        log=json.loads(path.read_text())
+        if damage=='missing_checkpoint':
+            log['checkpoints']=[]
+        elif damage=='atomic_checkpoint':
+            log['checkpoints'][0]['atomic_action_active']=True
+        else:
+            log['checkpoints'][0]['confirmation_count']=1
+        path.write_text(json.dumps(log))
+>       assert module.verify_mode_switch_policy(snapshot)['accepted'] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:532: AssertionError
+___ test_mode_selection_rejects_unverified_boundary_trace[atomic_checkpoint] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-533/test_mode_selection_rejects_un1')
+damage = 'atomic_checkpoint'
+
+    @pytest.mark.parametrize('damage',['missing_checkpoint','atomic_checkpoint','unconfirmed_checkpoint'])
+    def test_mode_selection_rejects_unverified_boundary_trace(tmp_path:Path,damage):
+        import json
+        module=import_module('cloud_edge_robot_arm.auto_mode.baseline_policies')
+        snapshot=mode_policy_snapshot(tmp_path/'mode')
+        raw=Path(snapshot.selection_directory)/'candidate'
+        assignment=json.loads((raw/'assignments.json').read_text())[0]
+        path=raw/'cases'/assignment['assignment_id']/'mode-transition-events.json'
+        log=json.loads(path.read_text())
+        if damage=='missing_checkpoint':
+            log['checkpoints']=[]
+        elif damage=='atomic_checkpoint':
+            log['checkpoints'][0]['atomic_action_active']=True
+        else:
+            log['checkpoints'][0]['confirmation_count']=1
+        path.write_text(json.dumps(log))
+>       assert module.verify_mode_switch_policy(snapshot)['accepted'] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:532: AssertionError
+_ test_mode_selection_rejects_unverified_boundary_trace[unconfirmed_checkpoint] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-533/test_mode_selection_rejects_un2')
+damage = 'unconfirmed_checkpoint'
+
+    @pytest.mark.parametrize('damage',['missing_checkpoint','atomic_checkpoint','unconfirmed_checkpoint'])
+    def test_mode_selection_rejects_unverified_boundary_trace(tmp_path:Path,damage):
+        import json
+        module=import_module('cloud_edge_robot_arm.auto_mode.baseline_policies')
+        snapshot=mode_policy_snapshot(tmp_path/'mode')
+        raw=Path(snapshot.selection_directory)/'candidate'
+        assignment=json.loads((raw/'assignments.json').read_text())[0]
+        path=raw/'cases'/assignment['assignment_id']/'mode-transition-events.json'
+        log=json.loads(path.read_text())
+        if damage=='missing_checkpoint':
+            log['checkpoints']=[]
+        elif damage=='atomic_checkpoint':
+            log['checkpoints'][0]['atomic_action_active']=True
+        else:
+            log['checkpoints'][0]['confirmation_count']=1
+        path.write_text(json.dumps(log))
+>       assert module.verify_mode_switch_policy(snapshot)['accepted'] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:532: AssertionError
+__________ test_b2_mode_selection_cannot_rewrite_original_dwell_rule ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-533/test_b2_mode_selection_cannot_0')
+
+    def test_b2_mode_selection_cannot_rewrite_original_dwell_rule(tmp_path:Path):
+        module=import_module('cloud_edge_robot_arm.auto_mode.baseline_policies')
+        snapshot=mode_policy_snapshot(tmp_path/'mode',min_dwell_s=0)
+>       assert module.verify_mode_switch_policy(snapshot)['accepted'] is False
+E       assert True is False
+
+tests/test_runtime_auto_baselines.py:538: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_runtime_auto_baselines.py::test_mode_selection_rejects_unverified_boundary_trace[missing_checkpoint]
+FAILED tests/test_runtime_auto_baselines.py::test_mode_selection_rejects_unverified_boundary_trace[atomic_checkpoint]
+FAILED tests/test_runtime_auto_baselines.py::test_mode_selection_rejects_unverified_boundary_trace[unconfirmed_checkpoint]
+FAILED tests/test_runtime_auto_baselines.py::test_b2_mode_selection_cannot_rewrite_original_dwell_rule
+4 failed, 35 deselected in 5.39s

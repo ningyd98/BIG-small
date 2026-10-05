@@ -1,0 +1,9 @@
+# T18 reproduction software preparation
+
+A new immutable manifest records source/dependency/asset/model/protocol/data/seeds/structured command arguments and raw artifact hashes. Verification reads actual bytes, checks source aggregate hash and the complete assignment-to-record index, retaining failed/blocked records. Relative paths cannot traverse or follow symlinks. JSONL identity coverage and single JSON identity are both re-read. Hash integrity never implies experiment acceptance; dependency replay and physical replay remain NOT_RUN.
+
+Rebuild calls the same T16 analyze_research_runs Python entry, never recorded shell commands. It requires hash-inventoried runs/assignments.json, runs/records.jsonl, runs/pools.json and protocol/protocol.json. The protocol digest is revalidated. Optional saved metrics/goals must exactly match the numeric rebuild. Fresh output is required. The CLI supports integrity-only and explicit software-only modes.
+
+Fresh verification: 15 CPU tests passed in 6.51s, scoped Ruff passed, mypy two sources passed. The complete deterministic software fixture has 600 groups × seven methods = 4,200 BLOCKED records, full archived 2,400 candidate pool and original Tcap penalties. The saved and rebuilt metrics/goal verdicts match; numeric_rebuild is SOFTWARE_ONLY, research_accepted false, physical_reproduction NOT_RUN. This is not a formal protocol or actual episode result.
+
+The original missing-module and malformed/foreign-assignment RED failures preceded implementation. A full fixture first used the wrong return accessor and was corrected to read metrics.json; green-first.log retains that failure. Initial output-directory redirection failure occurred before test execution and produced no data. Source copies distinguish three owned files from six frozen references. Independent review is pending. Full release, real rerun, final manuscript and demonstration await actual research prerequisites.

@@ -1,0 +1,1000 @@
+--- before/src/cloud_edge_robot_arm/auto_mode/runtime_composition.py
++++ after/src/cloud_edge_robot_arm/auto_mode/runtime_composition.py
+@@ -0,0 +1,513 @@
++"""Read-only runtime composition; source validation never grants method admission.
++
++The actual INITIAL/calibration/selection verifier is not implemented. Diagnostics
++use isolated software quota, while existing executors retain every safety boundary.
++"""
++
++from __future__ import annotations
++
++from collections import OrderedDict
++from collections.abc import Callable, Mapping, Sequence
++from copy import deepcopy
++from dataclasses import dataclass, fields, is_dataclass, replace
++from datetime import UTC, datetime
++from types import MappingProxyType
++from typing import Any, Literal, cast
++
++from pydantic import BaseModel
++
++from cloud_edge_robot_arm.auto_mode.candidates import CandidateSet, build_candidates, content_hash
++from cloud_edge_robot_arm.auto_mode.joint_policy import (
++    JointEvidencePolicy,
++    joint_policy_source_hashes,
++)
++from cloud_edge_robot_arm.auto_mode.judgment import DecisionTrace
++from cloud_edge_robot_arm.auto_mode.runtime_events import (
++    DecisionAction,
++    DecisionContext,
++    DecisionEvent,
++)
++from cloud_edge_robot_arm.contracts import AutoModeStatus, ExecutionCheckpoint, TaskContract
++from cloud_edge_robot_arm.edge.evidence.conditions import (
++    ConditionSpec,
++    ConditionStatus,
++    OnlineEvidenceSnapshot,
++    evaluate_conditions,
++)
++from cloud_edge_robot_arm.edge.evidence.models import (
++    ActionEvidenceContract,
++    CommitContext,
++    EvidenceVerdict,
++)
++from cloud_edge_robot_arm.edge.evidence.validator import validate_decision_commit, validate_evidence
++from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
++from cloud_edge_robot_arm.research.network import NetworkCostSnapshot
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.risk.calibration import estimate_risk
++from cloud_edge_robot_arm.vision.risk.features import extract_risk_features
++from cloud_edge_robot_arm.vision.risk.models import RiskEstimate, RiskModelArtifact
++
++
++def _isolated(value: Any) -> Any:
++    if isinstance(value, BaseModel):
++        if set(vars(value)) - set(type(value).model_fields):
++            raise ValueError("undeclared runtime model fields")
++        return type(value).model_validate(_isolated(value.model_dump()))
++    if isinstance(value, Mapping):
++        return {key: _isolated(item) for key, item in value.items()}
++    if isinstance(value, (tuple, list, set, frozenset)):
++        return type(value)(_isolated(item) for item in value)
++    if is_dataclass(value) and not isinstance(value, type):
++        return type(value)(
++            **{item.name: _isolated(getattr(value, item.name)) for item in fields(value)}
++        )
++    return deepcopy(value)
++
++
++def _aware(now: datetime) -> bool:
++    return isinstance(now, datetime) and now.tzinfo is not None and now.utcoffset() is not None
++
++
++@dataclass(frozen=True)
++class RuntimeCompositionSnapshot:
++    """Complete owner-thread inputs; checkpoint truth maps never enter the policy."""
++
++    active_contract: TaskContract
++    checkpoint: ExecutionCheckpoint
++    mode_status: AutoModeStatus
++    online_evidence: OnlineEvidenceSnapshot
++    verification_budget: VerificationBudgetState
++    capabilities: set[DecisionAction]
++    network_cost: NetworkCostSnapshot
++    condition_specs: Sequence[ConditionSpec]
++    action_contracts: Mapping[DecisionAction, ActionEvidenceContract]
++    previous_observation: RGBDObservation | None = None
++    calibration_residuals: Sequence[float] = ()
++    cancelled: bool = False
++    atomic_action_active: bool = False
++
++    def __post_init__(self) -> None:
++        if type(self.cancelled) is not bool or type(self.atomic_action_active) is not bool:
++            raise ValueError("explicit cancellation and atomic flags required")
++        for model, names in (
++            (self.active_contract, ("plan_version", "command_seq")),
++            (self.checkpoint, ("plan_version", "command_seq", "current_step_index")),
++            (self.mode_status, ("mode_version",)),
++        ):
++            if any(type(getattr(model, name)) is not int for name in names):
++                raise ValueError("integer current versions required")
++        for name in (
++            "active_contract",
++            "checkpoint",
++            "mode_status",
++            "online_evidence",
++            "verification_budget",
++            "network_cost",
++            "previous_observation",
++        ):
++            object.__setattr__(self, name, _isolated(getattr(self, name)))
++        object.__setattr__(
++            self, "capabilities", frozenset(DecisionAction(v) for v in self.capabilities)
++        )
++        object.__setattr__(self, "condition_specs", tuple(_isolated(self.condition_specs)))
++        object.__setattr__(self, "calibration_residuals", tuple(self.calibration_residuals))
++        object.__setattr__(
++            self,
++            "action_contracts",
++            MappingProxyType(
++                {
++                    DecisionAction(key): _isolated(value)
++                    for key, value in self.action_contracts.items()
++                }
++            ),
++        )
++
++
++def _check_identity(snap: RuntimeCompositionSnapshot, event: DecisionEvent, now: datetime) -> None:
++    contract, checkpoint, online, mode = (
++        snap.active_contract,
++        snap.checkpoint,
++        snap.online_evidence,
++        snap.mode_status,
++    )
++    ids = [step.step_id for step in contract.steps]
++    completed = checkpoint.completed_step_ids
++    if (
++        not _aware(now)
++        or event.occurred_at > now
++        or contract.timestamp > now
++        or contract.task_id != checkpoint.task_id
++        or contract.task_id != mode.task_id
++        or (checkpoint.plan_version, checkpoint.command_seq)
++        != (contract.plan_version, contract.command_seq)
++        or (online.plan_version, online.command_seq)
++        != (contract.plan_version, contract.command_seq)
++        or event.observation_id != online.observation.observation_id
++        or not online.observation.episode_id
++        or not online.context_hash
++        or event.atomic_action_active != snap.atomic_action_active
++        or len(ids) != len(set(ids))
++        or ids[: len(completed)] != completed
++        or checkpoint.current_step_index != len(completed)
++        or checkpoint.pending_step_ids != ids[len(completed) :]
++        or (
++            checkpoint.pending_step_ids
++            and checkpoint.current_step_id != checkpoint.pending_step_ids[0]
++        )
++    ):
++        raise ValueError("snapshot identity invalid")
++
++
++def _hard_stop(snap: RuntimeCompositionSnapshot, now: datetime) -> tuple[str, ...]:
++    state, budget = snap.online_evidence.robot_state, snap.verification_budget
++    return tuple(
++        reason
++        for active, reason in (
++            (snap.cancelled, "episode_cancelled"),
++            (
++                state.estop_engaged or state.collision_detected or not state.connected,
++                "hard_robot_safety_state",
++            ),
++            (now >= budget.deadline_at, "absolute_verification_deadline_expired"),
++            (now >= snap.active_contract.valid_until, "active_contract_expired"),
++            (
++                bool(budget.exhausted_reason)
++                or budget.consecutive_no_progress >= budget.limits.max_no_progress,
++                "verification_budget_exhausted",
++            ),
++        )
++        if active
++    )
++
++
++def compose_decision_context(
++    snapshot: RuntimeCompositionSnapshot,
++    event: DecisionEvent,
++    now: datetime,
++    *,
++    risk_model: RiskModelArtifact | None = None,
++) -> DecisionContext:
++    """Derive online features and canonical verdicts; missing calibration is UNKNOWN."""
++    snap = cast(RuntimeCompositionSnapshot, _isolated(snapshot))
++    _check_identity(snap, event, now)
++    online = snap.online_evidence
++    conditions = evaluate_conditions(snap.condition_specs, online, now=now)
++    status = (
++        ConditionStatus.FAIL
++        if any(v.status == ConditionStatus.FAIL for v in conditions)
++        else ConditionStatus.UNKNOWN
++        if not conditions or any(v.status == ConditionStatus.UNKNOWN for v in conditions)
++        else ConditionStatus.PASS
++    )
++    features = extract_risk_features(
++        online.observation, snap.previous_observation, snap.calibration_residuals
++    )
++    unknown = RiskEstimate(None, {a.value: None for a in DecisionAction}, None, None, "UNKNOWN")
++    risk = unknown
++    if risk_model is not None and not _hard_stop(snap, now):
++        try:
++            risk = estimate_risk(_isolated(risk_model), features)
++        except (ValueError, OSError, KeyError, TypeError):
++            risk = unknown
++    action = snap.action_contracts.get(DecisionAction.CONTINUE)
++    verdict = (
++        EvidenceVerdict("UNKNOWN", ("current_action_contract_missing",))
++        if action is None
++        else validate_evidence(
++            action,
++            now,
++            online.context_hash,
++            online.observation.calibration_version or "",
++            online_evidence=online,
++        )
++    )
++    return DecisionContext(
++        snap.active_contract.task_id,
++        online.observation.episode_id or "",
++        snap.mode_status.current_mode,
++        snap.mode_status.mode_version,
++        snap.active_contract.plan_version,
++        snap.active_contract.command_seq,
++        replace(event, occurred_at=now, verification_status=status),
++        online,
++        verdict,
++        conditions,
++        features,
++        risk,
++        snap.network_cost,
++        snap.capabilities,
++        _isolated(snap.verification_budget),
++    )
++
++
++@dataclass(frozen=True)
++class RuntimeCompositionResult:
++    action: DecisionAction
++    scope: Literal["SOFTWARE_ONLY", "NOT_ADMITTED"]
++    reasons: tuple[str, ...]
++    evaluated_at: datetime | None
++    context: DecisionContext | None = None
++    candidates: CandidateSet | None = None
++    trace: DecisionTrace | None = None
++    source_verdict: EvidenceVerdict = EvidenceVerdict("UNKNOWN", ("source_binding_missing",))
++
++
++class RuntimeCompositionAdapter:
++    """No admission flags, dispatch, mode mutations or persistent budget transaction."""
++
++    def __init__(
++        self,
++        snapshot_reader: Callable[[], RuntimeCompositionSnapshot],
++        *,
++        policy: JointEvidencePolicy | None = None,
++        source_validator: Callable[[], None] | None = None,
++        risk_model: RiskModelArtifact | None = None,
++        clock: Callable[[], datetime] | None = None,
++        software_only: bool = False,
++    ) -> None:
++        if type(software_only) is not bool or (
++            policy is not None and policy.software_only and not software_only
++        ):
++            raise ValueError("software policy requires explicit diagnostic composition")
++        self.snapshot_reader, self.policy, self.source_validator = (
++            snapshot_reader,
++            policy,
++            source_validator,
++        )
++        self.risk_model, self.software_only = _isolated(risk_model), software_only
++        self.clock = clock or (lambda: datetime.now(UTC))
++        self._events: OrderedDict[str, tuple[str, RuntimeCompositionResult]] = OrderedDict()
++
++    def _clock(self, previous: datetime | None = None) -> datetime:
++        now = self.clock()
++        if not _aware(now) or (previous is not None and now < previous):
++            raise ValueError("clock missing or reversed")
++        return now
++
++    def _read(self) -> RuntimeCompositionSnapshot:
++        value = self.snapshot_reader()
++        if not isinstance(value, RuntimeCompositionSnapshot):
++            raise ValueError("owner snapshot unavailable")
++        return cast(RuntimeCompositionSnapshot, _isolated(value))
++
++    def _source(self) -> EvidenceVerdict:
++        if self.source_validator is None:
++            return EvidenceVerdict("UNKNOWN", ("source_binding_missing",))
++        try:
++            if self.source_validator() is not None:
++                raise ValueError("a source flag is not binding validation")
++        except Exception:
++            return EvidenceVerdict("INVALID", ("source_binding_unavailable",))
++        return EvidenceVerdict("VALID", ("runtime_source_callback_completed",))
++
++    def evaluate(self, event: DecisionEvent) -> RuntimeCompositionResult:
++        scope: Literal["SOFTWARE_ONLY", "NOT_ADMITTED"] = (
++            "SOFTWARE_ONLY" if self.software_only else "NOT_ADMITTED"
++        )
++        now = None
++        context = None
++        candidates = None
++        source = EvidenceVerdict("UNKNOWN", ("source_binding_missing",))
++
++        def stop(*reasons: str) -> RuntimeCompositionResult:
++            return RuntimeCompositionResult(
++                DecisionAction.STOP, scope, tuple(reasons), now, context, candidates, None, source
++            )
++
++        try:
++            now = self._clock()
++            try:
++                snap = self._read()
++            finally:
++                now = self._clock(now)
++            context = compose_decision_context(snap, event, now, risk_model=self.risk_model)
++            candidates = build_candidates(context, action_contracts=snap.action_contracts)
++        except Exception:
++            return stop("snapshot_identity_invalid")
++        if hard := _hard_stop(snap, now):
++            return stop(*hard)
++        digest = content_hash((snap, event))
++
++        def fresh() -> RuntimeCompositionSnapshot:
++            nonlocal now
++            now = self._clock(now)
++            try:
++                value = self._read()
++            finally:
++                now = self._clock(now)
++            _check_identity(value, event, now)
++            return value
++
++        source = self._source()
++        try:
++            current = fresh()
++        except Exception:
++            return stop("current_snapshot_unavailable")
++        if hard := _hard_stop(current, now):
++            return stop(*hard)
++        if source.status == "INVALID":
++            return stop("source_binding_unavailable")
++        if content_hash((current, event)) != digest:
++            return stop("current_snapshot_changed")
++        if not self.software_only:
++            return stop("actual_admission_verifier_unavailable", *source.reasons)
++        current_context = replace(context, event=replace(context.event, occurred_at=now))
++        candidates = build_candidates(current_context, action_contracts=current.action_contracts)
++        cached = self._events.get(event.event_id)
++        if cached is not None:
++            if cached[0] != digest:
++                return stop("duplicate_event_context_changed")
++            if (
++                cached[1].candidates is None
++                or cached[1].candidates.content_hash != candidates.content_hash
++            ):
++                return stop("duplicate_event_candidates_expired")
++            return cast(RuntimeCompositionResult, _isolated(cached[1]))
++        if self.policy is None or not self.policy.software_only:
++            return stop("software_policy_unavailable")
++        isolated_context = _isolated(context)
++        try:
++            action = DecisionAction(self.policy.decide(isolated_context))
++            now = self._clock(now)
++            before, after = context.verification_budget, isolated_context.verification_budget
++            budget_copy = replace(
++                after,
++                remaining_reobservations=before.remaining_reobservations,
++                remaining_retries=before.remaining_retries,
++            )
++            normalized = replace(isolated_context, verification_budget=budget_copy)
++            if (
++                content_hash(normalized) != content_hash(context)
++                or (
++                    before.remaining_reobservations - after.remaining_reobservations
++                    not in ((0, 1) if action == DecisionAction.REOBSERVE else (0,))
++                )
++                or (
++                    before.remaining_retries - after.remaining_retries
++                    not in ((0, 1) if action == DecisionAction.REQUEST_CLOUD else (0,))
++                )
++            ):
++                return stop("policy_mutated_bound_context")
++            _isolated(isolated_context)
++        except Exception:
++            try:
++                now = self._clock(now)
++            except Exception:
++                return stop("policy_clock_unavailable")
++            if hard := _hard_stop(snap, now):
++                return stop(*hard)
++            return stop("policy_failed_or_context_invalid")
++        source = self._source()
++        try:
++            current = fresh()
++            if hard := _hard_stop(current, now):
++                return stop(*hard)
++            if source.status == "INVALID" or content_hash((current, event)) != digest:
++                return stop("current_source_or_snapshot_changed_after_policy")
++            if dict(self.policy.source_hashes) != dict(joint_policy_source_hashes()):
++                return stop("policy_source_changed")
++            trace = _isolated(self.policy.last_trace)
++            current_context = replace(context, event=replace(context.event, occurred_at=now))
++            candidates = build_candidates(
++                current_context, action_contracts=current.action_contracts
++            )
++            observation = context.online_evidence.observation
++            if (
++                trace is None
++                or trace.envelope.candidate_set_hash != candidates.content_hash
++                or (
++                    trace.envelope.policy_version != self.policy.policy_version
++                    or trace.envelope.action != action
++                    or trace.envelope.task_id != context.task_id
++                    or trace.envelope.episode_id != context.episode_id
++                    or trace.envelope.observation_id != context.event.observation_id
++                    or trace.envelope.context_hash != context.online_evidence.context_hash
++                    or any(
++                        type(getattr(trace.envelope, name)) is not int
++                        or getattr(trace.envelope, name) != getattr(context, name)
++                        for name in ("plan_version", "command_seq", "mode_version")
++                    )
++                    or trace.envelope.provider_version != trace.judgment.provider_version
++                    or trace.envelope.created_at < context.event.occurred_at
++                    or trace.envelope.created_at > now
++                    or trace.observation_checksum != observation.checksum_sha256
++                    or trace.calibration_version != observation.calibration_version
++                    or trace.risk_model_hash != self.policy.risk_model.model_hash
++                    or trace.weights_hash != self.policy.weights_hash
++                    or dict(trace.source_hashes or {}) != dict(self.policy.source_hashes)
++                    or tuple(trace.verification_event_ids) != (event.event_id,)
++                    or not trace.software_only
++                    or trace.envelope.valid_until != trace.envelope.created_at
++                )
++            ):
++                return stop("policy_trace_binding_invalid")
++            selected = next(row for row in candidates.candidates if row.action == action)
++            if not selected.executable and trace.disposition != "DEFERRED_ATOMIC":
++                return stop("selected_candidate_unavailable")
++        except Exception:
++            return stop("policy_trace_unavailable")
++        result = RuntimeCompositionResult(
++            action, scope, tuple(trace.reason_codes), now, context, candidates, trace, source
++        )
++        self._events[event.event_id] = digest, _isolated(result)
++        if len(self._events) > 128:
++            self._events.popitem(last=False)
++        return cast(RuntimeCompositionResult, _isolated(result))
++
++    def validate_for_existing_submission(self, result: RuntimeCompositionResult) -> EvidenceVerdict:
++        """Read-only revalidation, always closed until a real admission verifier exists."""
++        if (
++            self.software_only
++            or result.scope == "SOFTWARE_ONLY"
++            or (result.trace is not None and result.trace.software_only)
++        ):
++            return EvidenceVerdict("INVALID", ("software_diagnostic_never_submit",))
++        try:
++            now = self._clock()
++            source = self._source()
++            try:
++                current = self._read()
++            finally:
++                now = self._clock(now)
++            if hard := _hard_stop(current, now):
++                return EvidenceVerdict("INVALID", hard)
++            if source.status != "VALID":
++                return EvidenceVerdict("UNKNOWN", source.reasons)
++            if result.trace is None or result.context is None:
++                return EvidenceVerdict("UNKNOWN", ("current_decision_envelope_missing",))
++            ctx = compose_decision_context(
++                current, result.context.event, now, risk_model=self.risk_model
++            )
++            candidates = build_candidates(ctx, action_contracts=current.action_contracts)
++            commit = CommitContext(
++                ctx.task_id,
++                ctx.episode_id,
++                ctx.event.observation_id,
++                ctx.plan_version,
++                ctx.command_seq,
++                ctx.mode_version,
++                ctx.online_evidence.context_hash,
++                candidates.content_hash,
++                current.cancelled,
++            )
++            verdict = validate_decision_commit(result.trace.envelope, commit, now)
++            if verdict.status != "VALID":
++                return verdict
++            if current.atomic_action_active:
++                return EvidenceVerdict("INVALID", ("ordinary_submit_deferred_atomic",))
++            if result.action in {DecisionAction.CONTINUE, DecisionAction.LOCAL_RECOVER}:
++                contract = current.action_contracts.get(result.action)
++                if contract is None:
++                    return EvidenceVerdict("UNKNOWN", ("current_action_contract_missing",))
++                verdict = validate_evidence(
++                    contract,
++                    now,
++                    ctx.online_evidence.context_hash,
++                    ctx.online_evidence.observation.calibration_version or "",
++                    online_evidence=ctx.online_evidence,
++                )
++                if verdict.status != "VALID":
++                    return verdict
++        except Exception:
++            return EvidenceVerdict("INVALID", ("current_submit_context_unavailable",))
++        return EvidenceVerdict("UNKNOWN", ("actual_admission_verifier_unavailable",))
+--- before/tests/test_runtime_composition.py
++++ after/tests/test_runtime_composition.py
+@@ -0,0 +1,481 @@
++"""The composition seam never turns software or missing admission into dispatch."""
++
++from dataclasses import replace
++from datetime import timedelta
++from importlib import import_module
++
++import pytest
++
++from cloud_edge_robot_arm.auto_mode.judgment import JudgmentResult
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction, DecisionEvent
++from cloud_edge_robot_arm.contracts import AutoModeStatus, ControlMode
++from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec, ConditionStatus
++from cloud_edge_robot_arm.edge.recovery.verification_router import (
++    VerificationBudget,
++    VerificationBudgetState,
++)
++from cloud_edge_robot_arm.research.network import NetworkCostSnapshot
++from tests.test_joint_visual_policy import policy
++from tests.test_visual_repair_builder import NOW, fixture
++
++
++def api():
++    return import_module("cloud_edge_robot_arm.auto_mode.runtime_composition")
++
++
++def snapshot(**changes):
++    from cloud_edge_robot_arm.vision.action_evidence import native_action_contract
++
++    _, repair, _, _ = fixture()
++    online, contract = repair.online_evidence, repair.active_contract
++    action = native_action_contract(online, contract, contract.steps[1])
++    values = dict(
++        active_contract=contract,
++        checkpoint=repair.checkpoint.model_copy(
++            update={
++                "pending_step_ids": ["grasp", "telemetry"],
++                "current_step_index": 1,
++                "current_step_id": "grasp",
++            },
++            deep=True,
++        ),
++        mode_status=AutoModeStatus(
++            task_id=contract.task_id,
++            current_mode=ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY,
++            mode_version=1,
++        ),
++        online_evidence=online,
++        verification_budget=VerificationBudgetState.start(VerificationBudget(2, 2, 5, 60), now=NOW),
++        capabilities=set(DecisionAction),
++        network_cost=NetworkCostSnapshot(
++            observed_rtt_s=None,
++            observed_loss_rate=None,
++            observed_bandwidth_bytes_s=None,
++            sampled_at=NOW,
++        ),
++        condition_specs=(ConditionSpec("target_visible", contract.task_target.object_id),),
++        action_contracts={DecisionAction.CONTINUE: action, DecisionAction.REQUEST_CLOUD: action},
++    )
++    return api().RuntimeCompositionSnapshot(**{**values, **changes})
++
++
++def event(snap):
++    from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionEventKind
++
++    return DecisionEvent(
++        "composition-event",
++        DecisionEventKind.SKILL_BOUNDARY,
++        NOW + timedelta(seconds=0.2),
++        snap.online_evidence.observation.observation_id,
++        snap.atomic_action_active,
++        ConditionStatus.PASS,
++    )
++
++
++def software_adapter(snap, *, clock=lambda: NOW + timedelta(seconds=0.2), source_validator=None):
++    class AbstainingSoftwareJudge:
++        is_model = False
++
++        def choose(self, context, candidates, estimates):
++            return JudgmentResult(None, {}, None, None, "ABSTAIN", "software-abstain", 0.0)
++
++    selected = policy(clock=clock, judge=AbstainingSoftwareJudge())
++    selected.contract_provider = lambda ctx: snap.action_contracts
++    adapter = api().RuntimeCompositionAdapter(
++        lambda: snap,
++        policy=selected,
++        clock=clock,
++        source_validator=source_validator,
++        software_only=True,
++    )
++    return adapter, selected
++
++
++def test_default_actual_composition_cannot_enable_from_source_validation():
++    snap = snapshot()
++    selected = policy(software_only=False, clock=lambda: NOW + timedelta(seconds=0.2))
++    adapter = api().RuntimeCompositionAdapter(
++        lambda: snap,
++        policy=selected,
++        source_validator=lambda: None,
++        clock=lambda: NOW + timedelta(seconds=0.2),
++    )
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert result.scope == "NOT_ADMITTED"
++    assert "actual_admission_verifier_unavailable" in result.reasons
++    assert result.context.risk_estimate.status == "UNKNOWN"
++    assert result.context.risk_estimate.failure_probability is None
++    assert snap.verification_budget.remaining_reobservations == 2
++
++
++def test_current_native_unknown_bounds_mask_continue_and_recovery():
++    snap = snapshot()
++    result = (
++        api()
++        .RuntimeCompositionAdapter(lambda: snap, clock=lambda: NOW + timedelta(seconds=0.2))
++        .evaluate(event(snap))
++    )
++    rows = {row.action: row for row in result.candidates.candidates}
++    assert rows[DecisionAction.STOP].executable
++    assert not rows[DecisionAction.CONTINUE].executable
++    assert not rows[DecisionAction.LOCAL_RECOVER].executable
++    assert result.context.evidence_verdict.status == "UNKNOWN"
++
++
++@pytest.mark.parametrize(
++    "field",
++    ["contract_version", "checkpoint_version", "online_sequence", "mode_task", "frame", "atomic"],
++)
++def test_incoherent_authoritative_snapshot_fails_closed(field):
++    snap = snapshot()
++    supplied_event = event(snap)
++    if field == "contract_version":
++        snap = replace(
++            snap, active_contract=snap.active_contract.model_copy(update={"plan_version": 2})
++        )
++    elif field == "checkpoint_version":
++        snap = replace(snap, checkpoint=snap.checkpoint.model_copy(update={"command_seq": 2}))
++    elif field == "online_sequence":
++        snap = replace(snap, online_evidence=replace(snap.online_evidence, command_seq=2))
++    elif field == "mode_task":
++        snap = replace(snap, mode_status=snap.mode_status.model_copy(update={"task_id": "other"}))
++    elif field == "frame":
++        supplied_event = replace(supplied_event, observation_id="other")
++    else:
++        snap = replace(snap, atomic_action_active=True)
++    result = (
++        api()
++        .RuntimeCompositionAdapter(lambda: snap, clock=lambda: NOW + timedelta(seconds=0.2))
++        .evaluate(supplied_event)
++    )
++    assert result.action == DecisionAction.STOP
++    assert "snapshot_identity_invalid" in result.reasons
++
++
++def test_canonical_unknown_overrides_event_caller_pass():
++    snap = snapshot()
++    online = replace(snap.online_evidence, visual_facts={})
++    snap = replace(snap, online_evidence=online)
++    ctx = api().compose_decision_context(snap, event(snap), NOW + timedelta(seconds=0.2))
++    assert ctx.event.verification_status == ConditionStatus.UNKNOWN
++    assert ctx.condition_verdicts[0].status == ConditionStatus.UNKNOWN
++
++
++@pytest.mark.parametrize(
++    "field,value", [("estop_engaged", True), ("collision_detected", True), ("connected", False)]
++)
++def test_hard_state_skips_policy_and_source_callbacks(field, value):
++    snap = snapshot()
++    snap = replace(
++        snap,
++        online_evidence=replace(
++            snap.online_evidence,
++            robot_state=snap.online_evidence.robot_state.model_copy(update={field: value}),
++        ),
++    )
++
++    def forbidden():
++        raise AssertionError("hard stop must precede source/provider callbacks")
++
++    adapter, selected = software_adapter(snap, source_validator=forbidden)
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert selected.last_trace is None
++    assert snap.verification_budget.remaining_reobservations == 2
++
++
++def test_software_math_is_explicit_and_never_submittable():
++    snap = snapshot()
++    selected = policy()
++    with pytest.raises(ValueError):
++        api().RuntimeCompositionAdapter(lambda: snap, policy=selected)
++    adapter, _ = software_adapter(snap)
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.REOBSERVE
++    assert result.scope == "SOFTWARE_ONLY"
++    assert result.trace.envelope.valid_until == result.trace.envelope.created_at
++    assert snap.verification_budget.remaining_reobservations == 2
++    verdict = adapter.validate_for_existing_submission(result)
++    assert verdict.status != "VALID"
++    assert "software_diagnostic_never_submit" in verdict.reasons
++
++
++def test_duplicate_event_returns_one_software_trace_without_second_reservation():
++    snap = snapshot()
++    adapter, selected = software_adapter(snap)
++    first = adapter.evaluate(event(snap))
++    first.context.verification_budget.remaining_reobservations = 0
++    again = adapter.evaluate(event(snap))
++    assert again.action == DecisionAction.REOBSERVE
++    assert len(selected.traces) == 1
++    assert again.context.verification_budget.remaining_reobservations == 2
++    assert snap.verification_budget.remaining_reobservations == 2
++
++
++def test_snapshot_values_are_isolated_from_result_and_provider():
++    snap = snapshot()
++    adapter, selected = software_adapter(snap)
++
++    def mutating(ctx):
++        ctx.verification_budget.remaining_reobservations = 99
++        ctx.online_evidence.robot_state.estop_engaged = True
++        ctx.online_evidence.observation.__dict__["calibration_version"] = "provider-mutated"
++        return DecisionAction.REOBSERVE
++
++    selected.decide = mutating
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert "policy_mutated_bound_context" in result.reasons
++    assert snap.verification_budget.remaining_reobservations == 2
++    assert not snap.online_evidence.robot_state.estop_engaged
++    assert snap.online_evidence.observation.calibration_version == "cal-1"
++
++
++@pytest.mark.parametrize("return_value", [True, False, "VALID"])
++def test_flag_source_callback_cannot_be_treated_as_verified_binding(return_value):
++    snap = snapshot()
++    adapter, selected = software_adapter(snap, source_validator=lambda: return_value)
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert result.source_verdict.status != "VALID"
++    assert selected.last_trace is None
++
++
++def test_source_drift_stops_without_calling_policy_or_charging():
++    snap = snapshot()
++
++    def drift():
++        raise ValueError("actual source bytes changed")
++
++    adapter, selected = software_adapter(snap, source_validator=drift)
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert "source_binding_unavailable" in result.reasons
++    assert selected.last_trace is None
++    assert snap.verification_budget.remaining_reobservations == 2
++
++
++def test_late_source_ack_cannot_publish_capture_request():
++    snap = snapshot()
++    clock = [NOW + timedelta(seconds=0.2)]
++
++    def delayed():
++        clock[0] = NOW + timedelta(seconds=61)
++
++    adapter, selected = software_adapter(snap, source_validator=delayed, clock=lambda: clock[0])
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert "absolute_verification_deadline_expired" in result.reasons
++    assert selected.last_trace is None
++    assert snap.verification_budget.remaining_reobservations == 2
++
++
++def test_fresh_authoritative_state_after_callback_rejects_new_cancel():
++    initial = snapshot()
++    current = [initial]
++    selected = policy(clock=lambda: NOW + timedelta(seconds=0.2))
++    selected.contract_provider = lambda ctx: initial.action_contracts
++
++    def changed():
++        current[0] = replace(initial, cancelled=True)
++
++    adapter = api().RuntimeCompositionAdapter(
++        lambda: current[0],
++        policy=selected,
++        source_validator=changed,
++        clock=lambda: NOW + timedelta(seconds=0.2),
++        software_only=True,
++    )
++    result = adapter.evaluate(event(initial))
++    assert result.action == DecisionAction.STOP
++    assert selected.last_trace is None
++    assert initial.verification_budget.remaining_reobservations == 2
++
++
++def test_forged_future_envelope_and_policy_identity_never_grant_admission():
++    snap = snapshot()
++    adapter, _ = software_adapter(snap)
++    result = adapter.evaluate(event(snap))
++    changed_envelope = replace(
++        result.trace.envelope,
++        valid_until=NOW + timedelta(seconds=50),
++        policy_version="accepted-looking-hash",
++    )
++    forged = replace(
++        result,
++        scope="NOT_ADMITTED",
++        trace=replace(result.trace, envelope=changed_envelope, software_only=False),
++    )
++    assert adapter.validate_for_existing_submission(forged).status != "VALID"
++
++
++def actual_guard_and_forged_result(snap):
++    software, _ = software_adapter(snap)
++    result = software.evaluate(event(snap))
++    envelope = replace(result.trace.envelope, valid_until=NOW + timedelta(seconds=50))
++    forged = replace(
++        result,
++        scope="NOT_ADMITTED",
++        trace=replace(result.trace, envelope=envelope, software_only=False),
++    )
++    guard = api().RuntimeCompositionAdapter(
++        lambda: snap, source_validator=lambda: None, clock=lambda: NOW + timedelta(seconds=0.2)
++    )
++    return guard, forged
++
++
++def test_actual_guard_cannot_admit_forged_scope_hash_or_future_expiry():
++    guard, forged = actual_guard_and_forged_result(snapshot())
++    verdict = guard.validate_for_existing_submission(forged)
++    assert verdict.status == "UNKNOWN"
++    assert "actual_admission_verifier_unavailable" in verdict.reasons
++
++
++def test_submission_guard_reads_current_mode_and_cancel_instead_of_saved_result():
++    initial = snapshot()
++    guard, forged = actual_guard_and_forged_result(initial)
++    current = [
++        replace(initial, mode_status=initial.mode_status.model_copy(update={"mode_version": 2}))
++    ]
++    guard.snapshot_reader = lambda: current[0]
++    assert guard.validate_for_existing_submission(forged).status == "INVALID"
++    current[0] = replace(initial, cancelled=True)
++    assert "episode_cancelled" in guard.validate_for_existing_submission(forged).reasons
++
++
++def test_late_exception_reports_fresh_absolute_deadline_without_quota_charge():
++    snap = snapshot()
++    clock = [NOW + timedelta(seconds=0.2)]
++    adapter, selected = software_adapter(snap, clock=lambda: clock[0])
++
++    def late_failure(ctx):
++        clock[0] = NOW + timedelta(seconds=61)
++        raise TimeoutError("late software callback")
++
++    selected.decide = late_failure
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert result.evaluated_at == NOW + timedelta(seconds=61)
++    assert "absolute_verification_deadline_expired" in result.reasons
++    assert snap.verification_budget.remaining_reobservations == 2
++
++
++def test_late_snapshot_exception_does_not_report_the_old_callback_timestamp():
++    snap = snapshot()
++    clock = [NOW + timedelta(seconds=0.2)]
++
++    def late_read():
++        clock[0] = NOW + timedelta(seconds=61)
++        raise OSError("late reader unavailable")
++
++    result = (
++        api().RuntimeCompositionAdapter(late_read, clock=lambda: clock[0]).evaluate(event(snap))
++    )
++    assert result.action == DecisionAction.STOP and result.context is None
++    assert result.evaluated_at == NOW + timedelta(seconds=61)
++
++
++def test_late_source_error_observes_deadline_and_never_calls_policy():
++    snap = snapshot()
++    clock = [NOW + timedelta(seconds=0.2)]
++
++    def late_source():
++        clock[0] = NOW + timedelta(seconds=61)
++        raise ValueError("late source drift")
++
++    adapter, selected = software_adapter(snap, clock=lambda: clock[0], source_validator=late_source)
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert result.evaluated_at == NOW + timedelta(seconds=61)
++    assert selected.last_trace is None
++
++
++def test_expired_task_contract_stops_even_when_verification_deadline_is_later():
++    snap = snapshot()
++    snap = replace(
++        snap,
++        active_contract=snap.active_contract.model_copy(
++            update={"valid_until": NOW + timedelta(seconds=0.15)}
++        ),
++    )
++    adapter, selected = software_adapter(snap)
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert "active_contract_expired" in result.reasons
++    assert selected.last_trace is None
++    assert snap.verification_budget.remaining_reobservations == 2
++
++
++@pytest.mark.parametrize("field", ["timestamp", "valid_until"])
++def test_naive_contract_time_fails_closed_without_ordinary_choice(field):
++    snap = snapshot()
++    snap.active_contract.__dict__[field] = getattr(snap.active_contract, field).replace(tzinfo=None)
++    result = (
++        api()
++        .RuntimeCompositionAdapter(lambda: snap, clock=lambda: NOW + timedelta(seconds=0.2))
++        .evaluate(event(snap))
++    )
++    assert result.action == DecisionAction.STOP
++    assert "snapshot_identity_invalid" in result.reasons
++
++
++@pytest.mark.parametrize(
++    "field,value",
++    [
++        ("plan_version", 9),
++        ("command_seq", 9),
++        ("mode_version", 9),
++        ("observation_id", "stale"),
++        ("context_hash", "another-context"),
++    ],
++)
++def test_policy_trace_must_bind_every_current_envelope_field(field, value):
++    snap = snapshot()
++    adapter, selected = software_adapter(snap)
++    actual_decide = selected.decide
++
++    def changed(ctx):
++        action = actual_decide(ctx)
++        selected.last_trace = replace(
++            selected.last_trace, envelope=replace(selected.last_trace.envelope, **{field: value})
++        )
++        return action
++
++    selected.decide = changed
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert "policy_trace_binding_invalid" in result.reasons
++
++
++def test_trace_source_and_frame_metadata_cannot_be_substituted():
++    snap = snapshot()
++    adapter, selected = software_adapter(snap)
++    actual_decide = selected.decide
++
++    def changed(ctx):
++        action = actual_decide(ctx)
++        selected.last_trace = replace(
++            selected.last_trace,
++            observation_checksum="f" * 64,
++            source_hashes={"different-source": "a" * 64},
++        )
++        return action
++
++    selected.decide = changed
++    result = adapter.evaluate(event(snap))
++    assert result.action == DecisionAction.STOP
++    assert "policy_trace_binding_invalid" in result.reasons
++
++
++def test_reader_failure_returns_stop_without_invented_context():
++    def missing():
++        raise OSError("no active repository record")
++
++    result = (
++        api()
++        .RuntimeCompositionAdapter(missing, clock=lambda: NOW + timedelta(seconds=0.2))
++        .evaluate(event(snapshot()))
++    )
++    assert result.action == DecisionAction.STOP
++    assert result.context is None

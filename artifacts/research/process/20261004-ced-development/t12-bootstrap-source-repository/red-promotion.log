@@ -1,0 +1,1697 @@
+FFFFFFFFFFFFFFFFsFF                                                      [100%]
+=================================== FAILURES ===================================
+_ test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[memory] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b7742d2b0>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once(store):
+        from dataclasses import asdict
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:721: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b7742d2b0>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[sqlite] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b78b1b0e0>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once(store):
+        from dataclasses import asdict
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:721: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b78b1b0e0>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-quota] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b78b18800>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'quota'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b78b18800>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-rounds] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b7412b4a0>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'rounds'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b7412b4a0>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-history] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b74163110>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'history'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b74163110>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-deadline] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b741a4260>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'deadline'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b741a4260>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-retry] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b4c58b0b0>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'retry'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b4c58b0b0>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-original] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b78ab4380>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'original'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b78ab4380>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-checkpoint] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b4c4f7890>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'checkpoint'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x760b4c4f7890>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-quota] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b741d7e90>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'quota'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b741d7e90>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-rounds] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5cc920>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'rounds'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5cc920>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-history] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5cf1a0>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'history'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5cf1a0>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-deadline] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5bb620>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'deadline'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5bb620>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-retry] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b78ab4e30>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'retry'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b78ab4e30>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-original] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5bb9e0>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'original'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5bb9e0>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-checkpoint] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c4f4380>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+change = 'checkpoint'
+
+    @pytest.mark.parametrize(
+        "change", ["quota", "rounds", "history", "deadline", "retry", "original", "checkpoint"]
+    )
+    def test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows(store, change):
+        from cloud_edge_robot_arm.vision.owner_registration import freeze_original_visual_plan
+    
+        repo, data = store
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:755: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c4f4380>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_promotion_storage_failure_rolls_back_bootstrap_and_all_owner_rows[sqlite] _
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5bbd70>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_promotion_storage_failure_rolls_back_bootstrap_and_all_owner_rows(store):
+        repo, data = store
+        if not isinstance(repo, SQLiteEventAutonomyRepository):
+            pytest.skip("SQLite transaction failure")
+>       source = promotion_ready(repo, data)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:787: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b4c5bbd70>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+_ test_two_sqlite_connections_promotion_race_and_restart_preserve_spent_state __
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-986/test_two_sqlite_connections_pr0')
+
+    def test_two_sqlite_connections_promotion_race_and_restart_preserve_spent_state(tmp_path):
+        path = tmp_path / "adoption-race.db"
+        repos = [SQLiteEventAutonomyRepository(path), SQLiteEventAutonomyRepository(path)]
+>       source = promotion_ready(repos[0], definition_values())
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_visual_bootstrap_repository.py:813: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x760b741611c0>
+data = {'definition': VisualBootstrapDefinition(lease=WorkerLeaseObservation(job_id='job-1', run_id='run-1', worker_id='worke...22222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')}
+
+    def promotion_ready(repo, data, *, spent=True):
+        from cloud_edge_robot_arm.vision.worker_owner import REQUIRED_COMPILER_SOURCES
+        from cloud_edge_robot_arm.contracts.models import ExecutionCheckpoint
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import checkpoint_digest
+    
+        definition = replace(
+            data["definition"],
+            source_hashes={
+                name: "6" * 64 for name in (*REQUIRED_COMPILER_SOURCES, api().BOOTSTRAP_SOURCE_PATH)
+            },
+        )
+        data = {**data, "definition": definition}
+        record = repo.initialize_visual_bootstrap_if_absent(definition)
+        record, observation = advance_capture(repo, data, record)
+        if spent:
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-1"
+            )
+            record = complete_unusable_plan(repo, data, record, observation)
+            record, observation = advance_capture(
+                repo, data, record, kind="RESERVE_REOBSERVATION", identifier="promotion-spent-2"
+            )
+        claim = repo.transition_visual_bootstrap_if_current(
+            request=request_for(data, record, "RESERVE_PLAN")
+        )
+        draft = PlannerDraft(
+            raw_text="SOFTWARE_ONLY canonical proposal",
+            parsed_json={
+                **values()["original"].contract.model_dump(mode="json"),
+                "user_instruction": definition.user_instruction,
+            },
+            observation_evidence={
+                **observation.evidence(),
+                "model_snapshot_hash": definition.model_snapshot_hash,
+                "role_bundle_hash": definition.role_bundle_hash,
+            },
+        )
+        result = repo.transition_visual_bootstrap_if_current(
+            request=request_for(
+                data, claim.record, "COMPLETE_PLAN", claim_id=claim.record.pending_claim_id, draft=draft
+            )
+        )
+        record = result.record
+        now = datetime.now(UTC)
+        original = api().compile_bootstrap_original_plan(
+            record,
+            current_lease=data["lease"],
+            plan_id="software-bootstrap-plan",
+            robot_id="software-bootstrap-robot",
+            registered_at=now,
+        )
+        retry = api().bootstrap_retry_budget(record, original, created_at=now)
+>       checkpoint = ExecutionCheckpoint(
+            task_id=original.identity.task_id,
+            plan_id=original.identity.plan_id,
+            robot_id=original.identity.robot_id,
+            plan_version=original.contract.plan_version,
+            command_seq=original.contract.command_seq,
+            scene_version=original.contract.scene_version,
+            current_step_id=original.contract.steps[0].step_id,
+            current_step_index=0,
+            pending_step_ids=[step.step_id for step in original.contract.steps],
+            completed_step_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecutionCheckpoint
+E       checkpoint_id
+E         Field required [type=missing, input_value={'task_id': 'episode', 'p...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+tests/test_visual_bootstrap_repository.py:681: ValidationError
+=========================== short test summary info ============================
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[memory]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_commits_entire_spent_pool_original_checkpoint_and_bootstrap_once[sqlite]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-quota]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-rounds]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-history]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-deadline]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-retry]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-original]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[memory-checkpoint]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-quota]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-rounds]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-history]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-deadline]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-retry]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-original]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_changed_source_or_pool_does_not_create_any_partial_owner_rows[sqlite-checkpoint]
+FAILED tests/test_visual_bootstrap_repository.py::test_promotion_storage_failure_rolls_back_bootstrap_and_all_owner_rows[sqlite]
+FAILED tests/test_visual_bootstrap_repository.py::test_two_sqlite_connections_promotion_race_and_restart_preserve_spent_state
+18 failed, 1 skipped, 57 deselected in 11.64s

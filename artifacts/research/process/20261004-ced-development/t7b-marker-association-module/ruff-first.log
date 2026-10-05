@@ -1,0 +1,63 @@
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/vision/marker_association.py:57:101
+   |
+56 | def _sha(value: object) -> bool:
+57 |     return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+   |                                                                                                     ^^
+   |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/vision/marker_association.py:279:101
+    |
+277 |     if not all(_sha(v) for v in (context.context_hash, context.role_bundle_hash)) or (
+278 |         not context.task_id or type(context.plan_version) is not int
+279 |         or type(context.command_seq) is not int or context.plan_version < 0 or context.command_seq < 0
+    |                                                                                                     ^^
+280 |     ):
+281 |         return result("INVALID", "current_context_missing")
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/vision/marker_association.py:311:101
+    |
+309 |     if pose.status != "OBSERVED" or pose.ordered_corners_px is None:
+310 |         return result("UNKNOWN", pose.reason, pose_estimate=pose)
+311 |     rgb = np.asarray(Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))).convert("RGB"))
+    |                                                                                                     ^^^^^
+312 |     colors, inverse = np.unique(rgb.reshape(-1, 3), axis=0, return_inverse=True)
+313 |     matching = np.asarray([_matches(color, sample/255) for sample in colors], dtype=np.uint8)
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/vision/marker_association.py:317:101
+    |
+315 |     contours, hierarchy = cv2.findContours(raw_color, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+316 |     if hierarchy is None or len(contours) != 2 or tuple(hierarchy[0, :, 3]) != (-1, 0):
+317 |         return result("UNKNOWN", "requested_color_ring_missing_ambiguous_or_broken", pose_estimate=pose)
+    |                                                                                                     ^^^^
+318 |     corners = np.asarray(pose.ordered_corners_px, dtype=np.float32)
+319 |     # A single central observed hole is a topology candidate only. Layout projection
+    |
+
+E501 Line too long (121 > 100)
+   --> src/cloud_edge_robot_arm/vision/marker_association.py:354:101
+    |
+352 |     masks["observed_neutral_quiet"] = (quiet & (1-tag) & neutral & valid).tobytes()
+353 |     masks["observed_tag_depth_support"] = (tag & valid).tobytes()
+354 |     coverage["observed_neutral_quiet_pixels"] = int(np.frombuffer(masks["observed_neutral_quiet"], dtype=np.uint8).sum())
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+355 |     return result("OBSERVED_CANDIDATE", "registered_tag_and_color_ring_diagnostic_only",
+356 |                   pose_estimate=pose, support_masks=masks, coverage=coverage)
+    |
+
+E501 Line too long (111 > 100)
+  --> tests/test_marker_association.py:24:101
+   |
+22 | PROCESS = ROOT / "artifacts/research/process/20261004-ced-development"
+23 | STATIC = PROCESS / "t7b-pose-marker-color/actual-capture-640/frame/observation-full.json"
+24 | INITIAL = PROCESS / "t7b-pose-marker-motion-development/attempt-1/frames/INITIAL_SETTLED/observation-full.json"
+   |                                                                                                     ^^^^^^^^^^^
+25 | INSTRUCTION = "pick the red cube and place it in the green target region"
+   |
+
+Found 7 errors (1 fixed, 6 remaining).

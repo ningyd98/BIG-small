@@ -1,6 +1,48 @@
 # Current Authoritative Status
 
+## 2026-10-04 云、边、端持续研发
+
+当前按[ced.research.v2总计划](superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)持续实施，边缘模型型号后置。已独立审查的软件范围包括角色/wire绑定、原生三值条件、T10提交与硬停止、共同基线/模式CAS、规则成本边界、视觉修复候选、stage/activation/start接口、持久恢复及完成/预算消费者、运行组合、Max角色局部修复、T8先导/完整资源冻结补修、INITIAL来源审计、完整分配/统计/复现及只读研究页。实际风险来源、owner登记和方法接入继续实施，不登记整体完成。
+
+当前没有新Max key/profile、经独立验收的native几何/运动界或连续效果证书；JOINT/LOCAL_RECOVER及真实INITIAL/FINAL保持关闭。新100组开发采集与1组教师故障原始来源不能替代完整机会/200组证明。研究页面的4200条软件BLOCKED记录不计物理结果，formal_accepted=false。历史限定DONE与原始失败保持原口径。每步报告和审查见[阶段总结](research/process/continuation_20261004.md)，操作入口见[复现说明](research/reproduction.md)，未满足门见[结果与限制](research/results_and_limits.md)。
+
+用户选择增加可见姿态标记并保留顶视相机与控制器。独立开发v1资产/检测已通过73项CPU及源/原始帧hash独审；同一物理相机的320×240严格识别UNKNOWN，新640×480单帧OBSERVED。第二版本保留原红色边缘，17份源与77项CPU独审通过，新的实际静态帧识别ID7并看到红色边缘；完整目标关联和连续/校准/native证书仍缺，不自动切换默认配置或抓取profile。一次开发搬运的147份产物/完整raw重建独审通过，离线物理评分成功，但全部9个动作后边界标记UNKNOWN，不能以物理成功代替视觉可观测性。
+
+阶段总结已到第49步：在原640×480顶视相机和控制器下，新独立可见标记资产完成一次实际仿真搬运，初始与全部九个动作后帧均OBSERVED（10/10）；旧中心标记九个动作后UNKNOWN保留。独立复算确认4807个完整物理状态除episode_id外与旧运行一致，9动作/743命令/4806物理步，评分为限定SUCCESS。另补目标边界RGB-D数据及点运动校准输入；不将离散帧或采样速度视为连续证书。主线仍T12/18、T13并行，真实Max、基本几何/连续证书、风险校准及INITIAL/METHOD/FINAL未验收，边缘型号后置。详见[实测报告](../artifacts/research/process/20261004-ced-development/t7b-visible-marker-next/report.md)与[阶段总结](research/process/continuation_20261004.md)。
+
+## 2026-10-04 夹爪修复应用到全项目
+
+默认模型工厂、HTTP/WS工作台、Linux启动环境、模型探针、离线评估与smoke/pilot开发配置已统一到 `mujoco_upright_box_v2` 和[当前共享冻结](../artifacts/research/process/20261004-gripper-project-migration/model-probe/model-frozen.json)。沿用已安装的Qwen3-VL 4B Q4_K_M；真实双图探针4/4，冻结来源验真通过。显式active profile及环境选择仍优先，冻结缺失或来源漂移时拒绝规划。API启动和采集不提前加载模型，能力接口在模型解析前标为UNRESOLVED。
+
+默认在线20例全部保留：2成功/18失败、正常2/12、0环境阻塞、2误完成；50,310物理样本独立复算一致，3例硬关节限位违规。实际工作台完成1次模型调用和8动作，语义引用正确绑定v2，但因硬限位违规如实FAILED。以上证明配置迁移与链路可用，在线质量仍未达标，不升级正式G1或T8。大回归702通过，13项来源清单测试夹具修正后的相关52项全部通过；前端30测试及类型、构建、lint通过，独立迁移审查无开放问题。详见[全项目迁移报告](../artifacts/research/process/20261004-gripper-project-migration/acceptance.md)。下文T5及各模型冻结保留原验收时点；当前默认冻结以本条为准。
+
+**整体计划修订（2026-10-04）：** 当前后续开发以[云、边、端总计划](superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)和[ced.research.v2设计](superpowers/specs/2026-10-04-cloud-edge-device-research-design.md)为准。云端Max规划、端侧OpenCV/RGB-D证据补强，边缘型号按用户要求后续调整，近期采用规则/成本provider。新增T3b/T7b为READY；T8a证据/筛选、T8b先导冻结、T12a规则和T12b选型分别登记。该修订只改文档，未切换生产配置、部署OpenCV或运行新模型，不升级既有实验状态。
+
+## 2026-10-04 T5 脚本教师夹爪修复
+
+修复手指闭爪内间隙64mm与60–70mm采样方块不匹配，并将开爪目标保留1mm硬限位余量。当前源码实跑原20例为19成功、1无接触负控正确失败，正常19/19、安全违规0；另预先固定40新随机场景为39成功、1搬运碰撞安全失败，正负控分别成功/失败。两批逐条校验及场景配对审计通过，历史7/20证据原样保留。661项大范围回归及最后87项相关补测通过，独立审查无开放实质问题。
+
+当前资产使用 `mujoco_upright_box_v2`，已有本地Qwen3-VL 4B双图探针4/4的新冻结；旧v1冻结只对应历史资产，不能用于当前源码。实测仅限60–70mm直立方块，未重测T7/T8在线成功率或升级正式G1。详见[完整修复报告](../artifacts/research/process/20261004-t5-gripper-fix/acceptance.md)与[新模型冻结](../artifacts/research/process/20261004-t5-gripper-fix/model-probe/model-frozen.json)。下文各历史条目保持原验收时点。
+
+**2026-10-04 后续研发更新：T17a `DONE`，T8 `IN_PROGRESS`。** [T17a验收](../artifacts/research/process/20261004-t17a-workbench/acceptance.md)包含真实 EGL/Chromium 三条路径；518 项相关回归、定向 Ruff/mypy 和前端检查通过，最后摘要修复另有58项补测通过。T8 v1 全120例仅为诊断；修复后互斥新120例全部结束，5成功、静态4/40，279,482物理样本与1950帧载荷独立复核一致，成本少记/在途均0。当前2秒周期候选未过质量门，初次冻结退出3、没有发布协议。固定机会/恢复证据尚未完成，G1—G5及C1/C2未成立。详见[第二批报告](../artifacts/research/process/20261004-t8-foundation/foundation-v2-assessment.md)与[逐步阶段总结](research/process/continuation_20261004.md)。
+
 本文件记录当前实施状态与历史分支基线；论文、答辩和 README 必须同时说明证据版本与验收范围。
+
+## 2026-10-04 T7 更大视觉模型候选与归一化坐标复测
+
+按用户指定顺序筛选 Qwen3-VL 8B Instruct Q8_0、Llama-3.2-Vision 11B Q5_K_M、InternVL2.5 8B，统一使用 `normalized_1000`；原 T7 已采用此坐标系。Qwen 8B 固定双图探测 4/4 通过，显存足够，无需 Q6_K 回退；原 T7 的20例闭环仍只正常成功2/12，缺失目标误操作1/4。Llama 当前后端架构和双图契约不兼容，未下载完整权重、未测性能；InternVL 原生 BNB INT8 实际运行，但固定定位0/4及开发筛选0/16，未进入独立闭环比较。
+
+冻结另60个新场景、40目标存在/20目标缺失，两Qwen配置共120例全部保留。Qwen3-VL 4B/8B 缺失目标误操作 16/20 与 11/20，正常成功 4/40 与 0/40；定位 P90 10.31/33.52 mm（覆盖 40/40 与 28/40），墙钟 P95 10.64/10.42 秒。 API账单费用均0元/任务，总费用因无机器单价而未测。独立复算226,006物理样本、999帧、349动作，valid=true、errors=[]；包含本轮筛选的2090份历史RGB摘要无重合，配对初始RGB/depth一致。
+
+8B误操作率差值的配对95%区间跨零，且正常成功率和条件定位结果较差，不支持替换默认模型。原4B/8B分别新增3/1例缺失目标误完成，全部扣除成功计数。此为探索性实际部署栈比较，非正式G1；T7仍限原开发DONE，T8/T17a仍READY、T6b仍TODO，生产配置未替换。详见[完整候选报告](../artifacts/research/process/20261004-t7-larger-vlm-candidates/acceptance.md)、[冻结协议](../artifacts/research/process/20261004-t7-larger-vlm-candidates/independent-60/protocol.json)与[物理复核](../artifacts/research/process/20261004-t7-larger-vlm-candidates/independent-validation.json)。
+
+## 2026-10-04 T7 失败复测与独立探索性比较
+
+新增[完整报告](../artifacts/research/process/20261004-t7-retest-comparison/acceptance.md)：原样复跑历史 v2 的20例，逐例状态、失败原因、动作数和模型调用数一致，仍为2成功/18失败；4个目标缺失案例全部执行动作，误操作4/4，不能由0误完成推断0误操作。独立复算有效，覆盖34,288物理样本、154帧、52动作。
+
+冻结60个新场景（40目标存在/20目标缺失），Qwen3-VL 4B与Qwen3.5 4B同场景配对共120例，初始RGB/depth一致、全部保留、无环境阻塞。目标缺失误操作为17/20（85%）与0/20；正常任务成功为6/40（15%）与0/40，全分配为6/60与0/60。定位P90为11.60与32.57 mm，有效覆盖40/40与7/40；端到端墙钟P95为11.64与8.44秒，失败惩罚P95均120秒。本地API费用均0元/任务；用户无机器计费单价，电费与折旧总费用未测。
+
+Qwen3-VL新增1例误完成：缺失紫块请求经重观测后抓放其他颜色方块，在线/物理层成功但语义任务失败。Qwen3.5全部停在规划阶段，0误操作不能解释为可靠任务能力。独立重放136,673物理样本、781帧、212动作，定位/分母/配对与来源审计valid=true、errors=[]。此为原开发分布的新独立探索集，不是正式G1；两候选均不满足G1任务门槛，不形成成本收益结论。T7仅保持原开发DONE，T8/T17a仍READY、T6b仍TODO；模型、控制器、阈值和历史证据均未改动。
 
 ## 2026-10-04 T7 在线视觉闭环开发验收
 

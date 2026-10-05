@@ -1,0 +1,18 @@
+# Clean RGB-D adaptation independent review
+
+Verdict: **PASS for the released visibility/boundary correction**. No blocking counterexample found in this narrow change. This does not accept calibrated metric authorization, native physical completion, G1/G4, or full T7b.
+
+Reviewed exactly the three-file `source-hashes.json`/`source/` snapshot and `review-package.diff` against `baseline-hashes.json`/`baseline/`, plus the preceding `t7b-real-adaptation/report.md` fail-closed constraints and immutable clean captures 2 and 3. All three current sources match their saved copies and registered hashes. Algorithm SHA256 is `11642e2d65b6f69f70d08a6ab6d1f134070adce6d695e0eaa0c05e811c360d4c`; the capture-3 assessment records this same value. No production/test/shared-document edits were made.
+
+The change moves the existing target outer-ring check after measured top selection and compares neighboring registered depth against the observed top maximum. This fixes table-depth antialias pixels inside the color component incorrectly making the whole component's maximum depth equal to its neighboring table. All original registered component points still contribute to the conservative measured silhouette/body geometry; they are not removed or replaced with invented object surfaces. Color, contour, interval, error bound, camera scope, freshness and shape tolerances were not widened.
+
+The ring still rejects invalid or nonfinite neighbors, and requires every neighbor's lower depth bound to exceed the observed top's upper depth bound. Nearer/coplanar or unresolved outer surfaces therefore fail closed. Interior holes/depth spikes, incomplete contours, ambiguity, cropped targets, changed episode/calibration, unsupported camera/region orientation and uncertain placement retain their existing rejection/UNKNOWN behavior. Otsu remains only a candidate top segmentation: metric extent requires externally supported depth intervals to intersect. Missing finite sensor/calibration bounds leave extent_complete False and conservative full bounds unavailable. Continuous stability and completion remain UNKNOWN.
+
+Visually inspected the saved capture-3 RGB image: a visible yellow block top and green destination are present. Independently verified the saved RGB and raw float32 depth bytes exactly equal their encoded RGBDObservation payloads for both clean captures. CPU replay used the original immutable captured_at/checksum and a replay-only acquisition clock at +1 second; it did not edit timestamps, create a fresh observation or claim a new capture. Both saved inputs now produce target_visible=True and every other metric/effect condition UNKNOWN. Capture-3 replay facts matched its entire saved assessment exactly. The source assessments report 0 model requests, 0 robot actions and physical_success=NOT_RUN; this review performs no independent physical run.
+
+Independent verification:
+
+- `.venv/bin/python -m pytest -q tests/test_opencv_target_evidence.py tests/test_visual_effect_evidence.py`: **55 passed in 21.86s**, exit 0.
+- Scoped Ruff on the three files: **All checks passed**, exit 0.
+- Source/raw-payload hashes and assessment binding checks passed. Capture 2 retains its original old-algorithm UNKNOWN assessment; capture 3 remains DEVELOPMENT_ONLY/VISIBLE_METRIC_UNKNOWN, not formal opportunity or physical-success evidence.
+- No network/provider/model/GPU/rendering, new capture, robot dispatch or broad project suite was attempted. Only this review report was written. Engineering sensor-bound and registration coverage validation, fresh online integration, real method execution and independent physical acceptance remain outstanding.

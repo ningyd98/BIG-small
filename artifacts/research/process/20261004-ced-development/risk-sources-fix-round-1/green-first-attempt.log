@@ -1,0 +1,44 @@
+..........................F.....................                         [100%]
+=================================== FAILURES ===================================
+______________ test_joint_error_clamp_and_bias_reproduced[False] _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-858/test_joint_error_clamp_and_bia0')
+bad_clamp = False
+
+    @pytest.mark.parametrize("bad_clamp", [False, True])
+    def test_joint_error_clamp_and_bias_reproduced(tmp_path: Path, bad_clamp: bool) -> None:
+        case, directory = fixture_case(tmp_path)
+        command = {
+            "command_seq": 1,
+            "physics_step": 120,
+            "sim_time_s": 120 * 0.0041666667,
+            "episode_id": case.context["episode_id"],
+            "type": "joint_target",
+            "accepted": True,
+            "reason": "",
+            "after_emergency_stop": False,
+            "target_positions_rad": [-0.5, 0, 0, 0, 0, 0, 0],
+            "applied_target_positions_rad": [-0.5, 0, 0, 0, 0, 0, 0],
+        }
+        json_file(directory / "commands.json", [command])
+        path = directory / "raw-actuators.jsonl"
+        rows = [json.loads(row) for row in path.read_text().splitlines()]
+        rows[-1]["applied_joint_targets_rad"][0] = -0.5
+        rows[-1]["control_rad"][0] = -0.5 if bad_clamp else -0.7
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        case = replace(
+            case,
+            original_file_hashes=hashes(directory),
+            expected_counts={**dict(case.expected_counts), "commands": 1},
+        )
+        result = registered(tmp_path, case).audit("fixture", scope="RAW_EXECUTION")
+>       assert result.status == ("INVALID" if bad_clamp else "VALID")
+E       AssertionError: assert 'UNKNOWN' == 'VALID'
+E         
+E         - VALID
+E         + UNKNOWN
+
+tests/test_research_risk_sources.py:421: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_joint_error_clamp_and_bias_reproduced[False]
+1 failed, 47 passed in 16.50s

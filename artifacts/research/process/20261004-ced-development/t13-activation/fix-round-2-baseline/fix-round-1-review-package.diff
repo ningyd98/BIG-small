@@ -1,0 +1,193 @@
+--- fix-round-1-baseline/source/src/cloud_edge_robot_arm/contracts/models.py
++++ source/src/cloud_edge_robot_arm/contracts/models.py
+@@ -9,7 +9,7 @@
+ from math import hypot, isfinite
+ from typing import Any
+ 
+-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
++from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+ 
+ from cloud_edge_robot_arm.errors import StructuredError
+ 
+@@ -596,9 +596,9 @@
+     activation_token: str = Field(min_length=1)
+     payload_hash: str = Field(min_length=1)
+     event_id: str = Field(min_length=1)
+-    occurred_at: datetime
+-
+-    @field_validator("occurred_at")
++    started_at: datetime = Field(validation_alias=AliasChoices("started_at", "occurred_at"))
++
++    @field_validator("started_at")
+     @classmethod
+     def aware_start(cls, value: datetime) -> datetime:
+         if value.tzinfo is None or value.utcoffset() is None:
+--- fix-round-1-baseline/source/src/cloud_edge_robot_arm/cloud/replanning/apply_service.py
++++ source/src/cloud_edge_robot_arm/cloud/replanning/apply_service.py
+@@ -495,17 +495,10 @@
+             region_target = pending[0].parameters.get(
+                 "region_id", candidate.task_target.target_region_id
+             )
+-            primary_target = (
+-                pending[0].parameters.get("object_id")
+-                or pending[0].parameters.get("region_id")
+-                or object_target
+-            )
+             for condition in (*action.preconditions, *action.postconditions):
+                 if condition.target_id is not None:
+                     expected_target = (
+-                        region_target
+-                        if condition.name in {"tcp_above_region", "object_inside_target_region"}
+-                        else primary_target
++                        region_target if condition.name == "tcp_above_region" else object_target
+                     )
+                     if not expected_target or condition.target_id != expected_target:
+                         return EvidenceVerdict(
+@@ -558,7 +551,7 @@
+             raise ValueError("replan stage transition conflict")
+         return saved
+ 
+-    def confirm_execution_started(self, receipt: ReplanExecutionReceipt) -> ReplanApplyRecord:
++    def confirm_execution_started(self, receipt: ReplanExecutionReceipt) -> ReplanApplyResult:
+         receipt = ReplanExecutionReceipt.model_validate(receipt.model_dump())
+         record = self._repo.get_replan_apply_record(receipt.repair_id)
+         if record is None or record.repair_id != receipt.repair_id:
+@@ -578,21 +571,30 @@
+                 )
+                 if saved is None:
+                     raise ValueError("execution receipt references an old active contract")
+-                return saved
++                return self._started_result(saved)
+             raise ValueError("conflicting execution start receipt")
+         if (
+             record.status != "ACTIVATED"
+-            or receipt.occurred_at < record.created_at
+-            or receipt.occurred_at > self._clock()
++            or receipt.started_at < record.created_at
++            or receipt.started_at > self._clock()
+         ):
+             raise ValueError("execution receipt is not current activated start")
+-        return self._transition(
++        started = self._transition(
+             record,
+             status="EXECUTION_STARTED",
+             reason="edge execution start received",
+             start_receipt=receipt,
+             executing_plan_version=receipt.plan_version,
+             executing_command_seq=receipt.command_seq,
++        )
++        return self._started_result(started)
++
++    @staticmethod
++    def _started_result(record: ReplanApplyRecord) -> ReplanApplyResult:
++        return ReplanApplyResult(
++            True, record,
++            record.candidate_contract.model_copy(deep=True) if record.candidate_contract else None,
++            record.resume_ack or record.stage_ack, [],
+         )
+ 
+     def _validate_presence(
+--- fix-round-1-baseline/source/tests/test_replan_activation.py
++++ source/tests/test_replan_activation.py
+@@ -615,14 +615,15 @@
+         event_id="MOCK-start-event",
+         occurred_at=NOW,
+     )
+-    saved = ReplanApplyService(repository=repo, clock=lambda: NOW).confirm_execution_started(
++    saved_result = ReplanApplyService(repository=repo, clock=lambda: NOW).confirm_execution_started(
+         receipt
+     )
++    saved = saved_result.record
+     assert saved.status == "EXECUTION_STARTED" and saved.executing_plan_version == 2
+     repo.close()
+     restarted = SQLiteEventAutonomyRepository(path)
+     service = ReplanApplyService(repository=restarted, clock=lambda: NOW)
+-    assert service.confirm_execution_started(receipt) == saved
++    assert service.confirm_execution_started(receipt) == saved_result
+     for change in (
+         {"event_id": "conflicting-event"},
+         {"repair_id": "unknown"},
+@@ -1071,3 +1072,83 @@
+     assert not result.applied and gateway.calls == []
+     assert result.record.status == "PREPARED" and result.record.stage_attempt_id
+     assert replan_repo.get_active_contract("task").plan_version == 1
++
++
++def test_receipt_uses_planned_started_at_and_canonical_serialization():
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++    receipt = ReplanExecutionReceipt(
++        repair_id="repair", task_id="task", plan_version=2, command_seq=2,
++        activation_token="MOCK-token", payload_hash="a" * 64, event_id="MOCK-event",
++        started_at=NOW,
++    )
++    assert receipt.started_at == NOW
++    assert receipt.model_dump(mode="json")["started_at"] == NOW.isoformat().replace("+00:00", "Z")
++    assert "occurred_at" not in receipt.model_dump(mode="json")
++    compatibility = ReplanExecutionReceipt.model_validate({
++        **receipt.model_dump(exclude={"started_at"}), "occurred_at": NOW,
++    })
++    assert compatibility == receipt
++    assert "occurred_at" not in compatibility.model_dump(mode="json")
++
++
++def test_confirm_started_returns_planned_replan_apply_result(replan_repo):
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import (
++        ReplanApplyResult,
++        ReplanApplyService,
++    )
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
++    request, response = setup_replan(replan_repo)
++    service = ReplanApplyService(repository=replan_repo, dispatcher=MockStagedGateway(),
++                                submit_guard=submit_proof, clock=lambda: NOW)
++    activated = service.apply(request=request, response=response)
++    receipt = ReplanExecutionReceipt(
++        repair_id=activated.record.repair_id, task_id="task", plan_version=2, command_seq=2,
++        activation_token="mock-token", payload_hash=activated.record.payload_hash,
++        event_id="MOCK-planned-return", occurred_at=NOW,
++    )
++    result = service.confirm_execution_started(receipt)
++    assert isinstance(result, ReplanApplyResult)
++    assert result.applied and result.record.status == "EXECUTION_STARTED"
++    assert result.contract == activated.contract
++    assert result.ack == activated.record.resume_ack and result.errors == []
++    assert service.confirm_execution_started(receipt) == result
++
++
++@pytest.mark.parametrize("condition,target_id,expected_staged", [
++    ("object_inside_target_region", "obj-1", True),
++    ("object_inside_target_region", "bin-a", False),
++    ("object_inside_target_region", "decoy", False),
++    ("tcp_above_region", "bin-a", True),
++    ("tcp_above_region", "obj-1", False),
++])
++def test_placement_binds_object_extent_and_region_tcp_to_distinct_targets(
++    replan_repo, condition, target_id, expected_staged,
++):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
++    request, response = setup_replan(replan_repo)
++    response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
++        update={"preconditions": [condition]}, deep=True)]}, deep=True)
++    def placement_proof(*args):
++        proof = submit_proof(*args)
++        base = dict(proof.online_evidence.visual_facts["target_visible"])
++        online = replace(proof.online_evidence, visual_facts={
++            condition: {**base, "target_id": target_id, "value": True},
++        })
++        action = replace(
++            proof.action, preconditions=(ConditionSpec(condition, target_id=target_id),)
++        )
++        proof = replace(proof, action=action, online_evidence=online)
++        assert validate_evidence(action, NOW, args[0].checkpoint_hash, "cal-1",
++                                 online_evidence=online).status == "VALID"
++        return proof
++    gateway = MockStagedGateway()
++    result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
++                                submit_guard=placement_proof, clock=lambda: NOW).apply(
++        request=request, response=response)
++    assert bool(gateway.calls) is expected_staged
++    assert result.applied is expected_staged
++    assert replan_repo.get_active_contract("task").plan_version == (2 if expected_staged else 1)

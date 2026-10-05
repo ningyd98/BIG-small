@@ -1,0 +1,36 @@
+...F..................                                                   [100%]
+=================================== FAILURES ===================================
+__________ test_candidate_hash_rejects_mutation_and_duplicate_options __________
+
+    def test_candidate_hash_rejects_mutation_and_duplicate_options():
+        c,j,p=modules();ctx=prepared_context();built=c.build_candidates(ctx,action_contracts=contracts(ctx))
+>       wrong=replace(built.candidates[0],executable=not built.candidates[0].executable)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_decision_judgment.py:74: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/dataclasses.py:1581: in replace
+    return obj.__class__(**changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:8: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ActionCandidate(candidate_id='continue-2c58eae1180613d7f6c9ac03', action=<DecisionAction.CONTINUE: 'CONTINUE'>, execut...sor_requirements=('rgbd',)),), postconditions=(), plan_version=1, command_seq=1, context_hash='ctx', ordinary_ttl_s=5))
+
+    def __post_init__(self) -> None:
+        if not self.candidate_id or type(self.executable) is not bool:
+            raise ValueError('candidate requires a nonempty identity and boolean availability')
+        object.__setattr__(self,'action',DecisionAction(self.action))
+        object.__setattr__(self,'unavailable_reasons',tuple(self.unavailable_reasons))
+        if self.evidence_contract is not None:
+            from dataclasses import replace
+            object.__setattr__(self, 'evidence_contract', replace(self.evidence_contract))
+        if not self.executable and not self.unavailable_reasons:
+>           raise ValueError('unavailable candidate requires reasons')
+E           ValueError: unavailable candidate requires reasons
+
+src/cloud_edge_robot_arm/auto_mode/candidates.py:64: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_decision_judgment.py::test_candidate_hash_rejects_mutation_and_duplicate_options
+1 failed, 21 passed in 0.34s

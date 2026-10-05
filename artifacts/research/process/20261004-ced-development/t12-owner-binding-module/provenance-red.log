@@ -1,0 +1,46 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_binding_retains_all_grounding_sources_and_complete_input_hash ______
+
+    def test_binding_retains_all_grounding_sources_and_complete_input_hash():
+        data = values()
+        more_sources = {**SOURCES, "src/software_measurement.py": "b" * 64}
+        data["original"] = replace(data["original"], source_hashes=more_sources)
+        data["grounding_inputs"] = replace(
+            data["grounding_inputs"], source_hashes={"src/software_measurement.py": "b" * 64}
+        )
+        result = api().bind_step_grounding(**data)
+>       assert result.grounding_source_hashes == more_sources
+E       AssertionError: assert mappingproxy(...aaaaaaaaaaa'}) == {'src/softwar...bbbbbbbbbbbb'}
+E         
+E         Use -v to get more diff
+
+tests/test_visual_owner_registration.py:478: AssertionError
+__________ test_binding_retains_exact_fresh_duration_check_provenance __________
+
+    def test_binding_retains_exact_fresh_duration_check_provenance():
+        data = values()
+        data["required_duration_s"] = 12.0
+        check = api().GroundingDurationCheck(
+            data["grounded_step"],
+            data["online"].observation.observation_id,
+            data["online"].observation.checksum_sha256,
+            data["original"].digest(),
+            data["grounding_policy"].digest(),
+            12.0,
+            data["now"],
+            SOURCES,
+        )
+        first = api().bind_step_grounding(**data, duration_check=check)
+        earlier = replace(check, checked_at=data["now"] - timedelta(seconds=0.01))
+        second = api().bind_step_grounding(**data, duration_check=earlier)
+>       assert first.binding_hash != second.binding_hash
+E       AssertionError: assert 'cbc91621649ca130316238f831d18298c90a37750250fe001ccea234ffea4f88' != 'cbc91621649ca130316238f831d18298c90a37750250fe001ccea234ffea4f88'
+E        +  where 'cbc91621649ca130316238f831d18298c90a37750250fe001ccea234ffea4f88' = StepGroundingBinding(original_plan_hash='fda0170580b4c4e60eb4763f31914c3c1f4283360014716ebb0e454171f7b5e8', current_id..., 200000, tzinfo=datetime.timezone.utc), valid_until=datetime.datetime(2026, 10, 4, 0, 0, 5, 100000, tzinfo=TzInfo(0))).binding_hash
+E        +  and   'cbc91621649ca130316238f831d18298c90a37750250fe001ccea234ffea4f88' = StepGroundingBinding(original_plan_hash='fda0170580b4c4e60eb4763f31914c3c1f4283360014716ebb0e454171f7b5e8', current_id..., 200000, tzinfo=datetime.timezone.utc), valid_until=datetime.datetime(2026, 10, 4, 0, 0, 5, 100000, tzinfo=TzInfo(0))).binding_hash
+
+tests/test_visual_owner_registration.py:502: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_registration.py::test_binding_retains_all_grounding_sources_and_complete_input_hash
+FAILED tests/test_visual_owner_registration.py::test_binding_retains_exact_fresh_duration_check_provenance
+2 failed, 46 deselected in 0.49s

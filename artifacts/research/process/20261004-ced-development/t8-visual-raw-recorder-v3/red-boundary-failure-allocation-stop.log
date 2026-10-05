@@ -1,0 +1,70 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_capture_state_read_failure_still_allocates_begin_and_end_without_camera_call _
+
+    def test_capture_state_read_failure_still_allocates_begin_and_end_without_camera_call():
+        boundary_api()
+        backend = software_backend()
+        events = []
+        with backend.observe_operation_boundaries(events.append):
+            backend._data = None  # SOFTWARE_ONLY source failure, no actual simulator state.
+            with pytest.raises((RuntimeError, AssertionError)):
+                backend.capture_sensor_frame_with_instances()
+>       assert [(row["kind"], row["phase"]) for row in backend.operation_ledger] == [
+            ("CAPTURE", "BEGIN"), ("CAPTURE", "END")]
+E       AssertionError: assert [] == [('CAPTURE', ...TURE', 'END')]
+E         
+E         Right contains 2 more items, first extra item: ('CAPTURE', 'BEGIN')
+E         Use -v to get more diff
+
+tests/test_visual_raw_recorder_v3.py:202: AssertionError
+_ test_unprintable_observer_exception_cannot_prevent_the_actual_software_stop __
+
+_event = BackendOperationBoundary(operation_id=1, kind='COMMAND', phase='BEGIN', episode_id='software-episode', physics_step=0,...time_s=0.0, parameters=mappingproxy({'command_type': 'hold_current_joints'}), result=None, error_type=None, error=None)
+
+    def failure(_event):
+>       raise Unprintable()
+E       tests.test_visual_raw_recorder_v3.test_unprintable_observer_exception_cannot_prevent_the_actual_software_stop.<locals>.Unprintable: <exception str() failed>
+
+tests/test_visual_raw_recorder_v3.py:214: Unprintable
+
+During handling of the above exception, another exception occurred:
+
+    def test_unprintable_observer_exception_cannot_prevent_the_actual_software_stop():
+        boundary_api()
+        backend = software_backend()
+        class Unprintable(RuntimeError):
+            def __str__(self):
+                raise RuntimeError("message source unavailable")
+        def failure(_event):
+            raise Unprintable()
+        with backend.observe_operation_boundaries(failure):
+>           backend.emergency_stop()
+
+tests/test_visual_raw_recorder_v3.py:216: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:789: in emergency_stop
+    self.hold_current_joints()
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:178: in observed
+    with self._operation_source(kind, parameters) as source:
+/usr/lib/python3.12/contextlib.py:137: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:359: in _operation_source
+    self._emit_operation_source(number, kind, "BEGIN", parameters, None, None)
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:343: in _emit_operation_source
+    "observer_error": str(observer_error),
+                      ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Unprintable()
+
+    def __str__(self):
+>       raise RuntimeError("message source unavailable")
+E       RuntimeError: message source unavailable
+
+tests/test_visual_raw_recorder_v3.py:212: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_visual_raw_recorder_v3.py::test_capture_state_read_failure_still_allocates_begin_and_end_without_camera_call
+FAILED tests/test_visual_raw_recorder_v3.py::test_unprintable_observer_exception_cannot_prevent_the_actual_software_stop
+2 failed, 6 deselected in 0.32s

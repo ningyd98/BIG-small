@@ -1,0 +1,67 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+______________ test_actuator_observer_is_cleared_by_episode_reset ______________
+
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x704d55aaa660>
+
+    def test_actuator_observer_is_cleared_by_episode_reset(backend):
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        calls = []
+        with backend.observe_actuator_steps(calls.append):
+            backend.step()
+            backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=43))
+            backend.step()
+>       assert len(calls) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([ActuatorStepObservation(episode_id='2d76582a51844430a7e079d85b346ef9', physics_step=1, sim_time_s=0.0, applied_joint_....0), actuator_ctrl_ranges=((-2.9, 2.9), (-1.8, 1.8), (-2.8, 2.8), (-2.9, 2.9), (-2.9, 2.9), (-2.9, 2.9), (-2.9, 2.9)))])
+
+tests/test_protocol_raw_observers.py:128: AssertionError
+__________ test_nested_teacher_cannot_clear_an_outer_read_only_guard ___________
+
+backend = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x704d29319460>
+
+    def test_nested_teacher_cannot_clear_an_outer_read_only_guard(backend):
+        from cloud_edge_robot_arm.datasets.rgbd.teacher import EpisodeRecorder, run_teacher_episode
+        from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec
+        from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+        from tests.test_rgbd_teacher_smoke import _fixed_scene
+    
+        source = _fixed_scene()
+        # This source matches the currently reset episode and model. The callback
+        # must reject before reading/mutating the backend regardless of that match.
+        scene = SceneSpec.model_construct(**{
+            **source.model_dump(), "group_id": backend._scenario.scenario_id,
+        })
+    
+        def observe(_snapshot):
+            with pytest.raises(RuntimeError):
+                run_teacher_episode(scene, MuJoCoSkillRobot(backend), EpisodeRecorder(),
+                                    physical_observer=lambda row: None)
+            assert backend._in_observer_callback is True
+            with pytest.raises(RuntimeError, match="observer callback"):
+                backend.apply_joint_targets(JointCommand(positions=[0.] * 7))
+    
+        with backend.observe_physics_steps(observe):
+>           backend.step()
+
+tests/test_protocol_raw_observers.py:153: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/simulation/mujoco/backend.py:308: in step
+    observer(snapshot)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_snapshot = PhysicsStepObservation(episode_id='96a171636d2f4762b586c90436bedc6f', physics_step=1, sim_time_s=0.0041666667, object_...', 'left_finger_geom', 0.11354584937712801), ('link5', 'right_finger_geom', 0.11354584937712801)), estop_engaged=False)
+
+    def observe(_snapshot):
+        with pytest.raises(RuntimeError):
+            run_teacher_episode(scene, MuJoCoSkillRobot(backend), EpisodeRecorder(),
+                                physical_observer=lambda row: None)
+>       assert backend._in_observer_callback is True
+E       assert False is True
+E        +  where False = <cloud_edge_robot_arm.simulation.mujoco.backend.MuJoCoPhysicsBackend object at 0x704d29319460>._in_observer_callback
+
+tests/test_protocol_raw_observers.py:148: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_raw_observers.py::test_actuator_observer_is_cleared_by_episode_reset
+FAILED tests/test_protocol_raw_observers.py::test_nested_teacher_cannot_clear_an_outer_read_only_guard
+2 failed, 4 deselected in 0.30s

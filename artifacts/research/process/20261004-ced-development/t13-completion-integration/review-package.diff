@@ -1,0 +1,286 @@
+--- before/src/cloud_edge_robot_arm/edge/completion_evaluator.py
++++ after/src/cloud_edge_robot_arm/edge/completion_evaluator.py
+@@ -55,7 +55,7 @@
+     Check 5: Gripper state matches task result
+     Check 6: Target object at target region
+     Check 7: Latest perception data not stale
+-    Check 8: No unresolved safety events
++    Check 8: No unresolved recoveries or critical safety events
+     Check 9: VERIFY_RESULT step succeeded
+     """
+ 
+@@ -190,16 +190,38 @@
+             codes.append("SCENE_FRESHNESS_UNVERIFIED")
+         evidence["scene_version"] = scene_version
+ 
+-        # Check 8: No unresolved safety events
++        # Check 8: Durable canonical resolution, not event severity or retry success.
+         if self._repo is not None:
+-            events = self._repo.list_events(contract.task_id)
+-            critical = [e.event_id for e in events if getattr(e, "severity", "") == "CRITICAL"]
+-            if critical:
+-                failures.append("CHECK_8_UNRESOLVED_CRITICAL_EVENTS")
+-                codes.append(f"CRITICAL:{len(critical)}")
+-            else:
+-                codes.append("NO_CRITICAL_EVENTS")
+-            evidence["critical_events"] = len(critical)
++            try:
++                events = self._repo.list_events(contract.task_id)
++                recoveries = self._repo.list_recoveries(contract.task_id)
++                recoveries = [item for item in recoveries if item.task_id == contract.task_id]
++                unresolved = sorted(item.recovery_id for item in recoveries
++                                    if item.state != "VERIFIED_RESOLVED"
++                                    or item.evidence_scope != "ACTUAL_SOURCE")
++                resolved_events = {item.event_id for item in recoveries
++                                   if item.state == "VERIFIED_RESOLVED"
++                                   and item.evidence_scope == "ACTUAL_SOURCE"}
++                critical = sorted(e.event_id for e in events
++                                  if e.task_id == contract.task_id
++                                  and getattr(e, "severity", "") == "CRITICAL"
++                                  and e.event_id not in resolved_events)
++            except Exception as exc:
++                failures.append("CHECK_8_EVENT_STATUS_UNAVAILABLE")
++                codes.append("EVENT_RESOLUTION_UNAVAILABLE")
++                evidence["event_resolution_error"] = type(exc).__name__
++            else:
++                if unresolved:
++                    failures.append("CHECK_8_UNRESOLVED_RECOVERIES")
++                    codes.append(f"UNRESOLVED_RECOVERIES:{len(unresolved)}")
++                if critical:
++                    failures.append("CHECK_8_UNRESOLVED_CRITICAL_EVENTS")
++                    codes.append(f"CRITICAL:{len(critical)}")
++                if not unresolved and not critical:
++                    codes.append("NO_UNRESOLVED_EVENTS_OR_RECOVERIES")
++                evidence["critical_events"] = len(critical)
++                evidence["unresolved_recoveries"] = unresolved
++                evidence["resolved_recovery_events"] = sorted(resolved_events)
+         else:
+             codes.append("EVENT_CHECK_SKIPPED_NO_REPO")
+ 
+--- before/src/cloud_edge_robot_arm/edge/recovery/retry_budget.py
++++ after/src/cloud_edge_robot_arm/edge/recovery/retry_budget.py
+@@ -12,11 +12,18 @@
+ from __future__ import annotations
+ 
+ from datetime import UTC, datetime, timedelta
++from typing import TYPE_CHECKING
+ 
+ from cloud_edge_robot_arm.contracts.models import RecoveryBudget, TaskContract
+ from cloud_edge_robot_arm.repositories.event_autonomy.protocol import (
+     EventAutonomyRepository,
+ )
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++        RecoveryAuthorizationEvidence,
++        RecoveryAuthorizationResult,
++    )
+ 
+ 
+ class RetryBudgetService:
+@@ -138,6 +145,44 @@
+             return None
+         return budget
+ 
++    def consume_for_recovery(
++        self, authorization: RecoveryAuthorizationEvidence,
++    ) -> RecoveryAuthorizationResult:
++        """Consume retry and authorize once in the existing durable transaction.
++
++        This is distinct from legacy retry consumption and creates no dispatch
++        permission on duplicate, stale or missing source records. Repository CAS
++        rechecks the actual task/step/evidence after these detached reads.
++        """
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++            RecoveryAuthorizationEvidence,
++            RecoveryAuthorizationResult,
++        )
++
++        if not isinstance(authorization, RecoveryAuthorizationEvidence):
++            return RecoveryAuthorizationResult(
++                False, None, None, None, ("typed_recovery_authorization_unavailable",),
++            )
++        recovery = self._repo.get_recovery(authorization.recovery_id)
++        if recovery is None:
++            return RecoveryAuthorizationResult(
++                False, None, None, None, ("recovery_record_unavailable",),
++            )
++        pool = self._repo.get_verification_budget(recovery.task_id)
++        retry = self._repo.get_retry_budget(recovery.task_id)
++        if pool is None or retry is None:
++            return RecoveryAuthorizationResult(
++                False, recovery, retry, pool, ("existing_recovery_budget_unavailable",),
++            )
++        return self._repo.consume_retry_and_authorize_recovery_if_current(
++            recovery_id=recovery.recovery_id,
++            expected_recovery_revision=recovery.revision,
++            expected_verification_budget_revision=pool.revision,
++            expected_retry_count=retry.retry_count_used,
++            step_id=recovery.step_id, skill=recovery.skill,
++            authorization=authorization,
++        )
++
+     def record_result(
+         self,
+         task_id: str,
+--- before/tests/test_recovery_completion.py
++++ after/tests/test_recovery_completion.py
+@@ -0,0 +1,99 @@
++"""Completion reader regressions; software fixtures are not recovery proof."""
++
++from datetime import UTC, datetime
++from types import SimpleNamespace
++from typing import cast
++
++import pytest
++
++from cloud_edge_robot_arm.edge.completion_evaluator import CompletionEvaluator
++from cloud_edge_robot_arm.repositories.event_autonomy.protocol import EventAutonomyRepository
++from tests.test_phase6_e2e_executor import _event_contract
++
++
++class ReaderFixture:
++    def __init__(self, records=(), events=(), *, unavailable=False):
++        self.records, self.events = list(records), list(events)
++        self.unavailable = unavailable
++
++    def list_events(self, task_id):
++        return [item for item in self.events if item.task_id == task_id]
++
++    def list_recoveries(self, task_id):
++        if self.unavailable:
++            raise RuntimeError("actual lifecycle reader unavailable")
++        return [item for item in self.records if item.task_id == task_id]
++
++    def list_unresolved_recoveries(self, task_id):
++        return [item for item in self.list_recoveries(task_id)
++                if item.state != "VERIFIED_RESOLVED"]
++
++
++def evaluate(reader):
++    contract = _event_contract()
++    now = datetime.now(UTC)
++    return CompletionEvaluator(
++        repository=cast(EventAutonomyRepository, reader), clock=lambda: now,
++    ).evaluate(
++        contract=contract,
++        completed_step_ids=[item.step_id for item in contract.steps],
++        completion_criteria_results={"object_placed": True},
++        final_safety_decision="ALLOW",
++        final_robot_state={"connected": True, "gripper_open": True},
++        final_target_state={"object_at_target": True},
++        last_scene_update_at=now,
++    )
++
++
++def record(state, event_id="event", task_id="task-e2e-001", scope="ACTUAL_SOURCE"):
++    return SimpleNamespace(recovery_id="recovery-" + event_id,
++                           task_id=task_id, event_id=event_id, state=state,
++                           evidence_scope=scope)
++
++
++@pytest.mark.parametrize("state", ["DETECTED", "RECOVERY_AUTHORIZED", "RETRY_EXECUTED",
++                                  "EXHAUSTED", "UNRECOVERABLE"])
++def test_every_unresolved_recovery_blocks_completion_even_without_critical_event(state):
++    result = evaluate(ReaderFixture(records=[record(state)]))
++    assert not result.completed
++    assert "CHECK_8_UNRESOLVED_RECOVERIES" in result.failed_checks
++    assert result.evidence["unresolved_recoveries"] == ["recovery-event"]
++
++
++def test_verified_resolved_reader_state_removes_only_corresponding_critical_event():
++    event = SimpleNamespace(task_id="task-e2e-001", event_id="event", severity="CRITICAL")
++    result = evaluate(ReaderFixture(records=[record("VERIFIED_RESOLVED")], events=[event]))
++    assert result.completed
++    assert result.evidence["critical_events"] == 0
++    assert result.evidence["resolved_recovery_events"] == ["event"]
++
++
++def test_verified_resolution_does_not_hide_another_error_recovery():
++    result = evaluate(ReaderFixture(records=[record("VERIFIED_RESOLVED"),
++                                             record("RETRY_EXECUTED", "other")]))
++    assert not result.completed
++    assert result.evidence["unresolved_recoveries"] == ["recovery-other"]
++
++
++def test_critical_event_without_matching_task_resolution_stays_unresolved():
++    event = SimpleNamespace(task_id="task-e2e-001", event_id="event", severity="CRITICAL")
++    result = evaluate(ReaderFixture(records=[record("VERIFIED_RESOLVED", task_id="other")],
++                                    events=[event]))
++    assert "CHECK_8_UNRESOLVED_CRITICAL_EVENTS" in result.failed_checks
++
++
++def test_configured_repository_with_unavailable_resolution_reader_fails_closed():
++    result = evaluate(ReaderFixture(unavailable=True))
++    assert not result.completed
++    assert "CHECK_8_EVENT_STATUS_UNAVAILABLE" in result.failed_checks
++
++
++@pytest.mark.parametrize("scope", ["SOFTWARE_ONLY", "UNAVAILABLE"])
++def test_software_or_unavailable_resolution_never_unblocks_actual_completion(scope):
++    event = SimpleNamespace(task_id="task-e2e-001", event_id="event", severity="CRITICAL")
++    result = evaluate(ReaderFixture(records=[record("VERIFIED_RESOLVED", scope=scope)],
++                                    events=[event]))
++    assert not result.completed
++    assert "CHECK_8_UNRESOLVED_RECOVERIES" in result.failed_checks
++    assert "CHECK_8_UNRESOLVED_CRITICAL_EVENTS" in result.failed_checks
++    assert result.evidence["resolved_recovery_events"] == []
+--- before/tests/test_retry_lifecycle_consumer.py
++++ after/tests/test_retry_lifecycle_consumer.py
+@@ -0,0 +1,56 @@
++"""Actual memory/SQLite authorization transactions with software T10 fixtures."""
++
++from dataclasses import replace
++
++import pytest
++
++from cloud_edge_robot_arm.edge.recovery.retry_budget import RetryBudgetService
++from cloud_edge_robot_arm.repositories.event_autonomy.memory import InMemoryEventAutonomyRepository
++from cloud_edge_robot_arm.repositories.event_autonomy.sqlite import SQLiteEventAutonomyRepository
++from tests.test_recovery_lifecycle_module import authorization_proof, detected_record
++
++
++@pytest.fixture(params=["memory", "sqlite"])
++def repo(request, tmp_path):
++    value = (SQLiteEventAutonomyRepository(tmp_path / "consumer.sqlite")
++             if request.param == "sqlite" else InMemoryEventAutonomyRepository())
++    yield value
++    if request.param == "sqlite":
++        value.close()
++
++
++def test_retry_consumer_uses_single_lifecycle_transaction_and_duplicate_cannot_dispatch(repo):
++    saved = repo.initialize_recovery_if_absent(detected_record(repo))
++    proof = authorization_proof(saved)
++    service = RetryBudgetService(repository=repo)
++    before = repo.get_retry_budget("task").retry_count_used
++    repo.consume_retry_if_available = lambda **kwargs: pytest.fail("split retry transaction used")
++    first = service.consume_for_recovery(proof)
++    assert first.authorized
++    assert first.recovery.state == "RECOVERY_AUTHORIZED"
++    assert first.retry_budget.retry_count_used == before + 1
++    second = service.consume_for_recovery(proof)
++    assert not second.authorized
++    assert second.retry_budget.retry_count_used == before + 1
++    assert repo.list_unresolved_recoveries("task")[0].state == "RECOVERY_AUTHORIZED"
++
++
++def test_retry_consumer_invalid_current_version_does_not_consume(repo):
++    saved = repo.initialize_recovery_if_absent(detected_record(repo))
++    proof = authorization_proof(saved)
++    proof = replace(proof, current=replace(proof.current, plan_version=999))
++    before = repo.get_retry_budget("task").model_dump()
++    result = RetryBudgetService(repository=repo).consume_for_recovery(proof)
++    assert not result.authorized
++    assert repo.get_retry_budget("task").model_dump() == before
++    assert repo.get_recovery(saved.recovery_id).state == "DETECTED"
++
++
++def test_retry_consumer_missing_recovery_cannot_initialize_or_spend(repo):
++    proposal = detected_record(repo)
++    before = repo.get_retry_budget("task").model_dump()
++    result = RetryBudgetService(repository=repo).consume_for_recovery(authorization_proof(proposal))
++    assert not result.authorized
++    assert result.recovery is None
++    assert repo.get_retry_budget("task").model_dump() == before
++    assert repo.list_unresolved_recoveries("task") == []

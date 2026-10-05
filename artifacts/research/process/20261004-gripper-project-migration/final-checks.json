@@ -1,0 +1,97 @@
+[
+  {
+    "check": "freeze",
+    "command": [
+      ".venv/bin/python",
+      "scripts/probe_rgbd_model.py",
+      "--verify-frozen"
+    ],
+    "exit_code": 0,
+    "log": "final-freeze.log"
+  },
+  {
+    "check": "ruff",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "ruff",
+      "check",
+      "src/cloud_edge_robot_arm/vision/defaults.py",
+      "src/cloud_edge_robot_arm/vision/frozen_model.py",
+      "src/cloud_edge_robot_arm/vision/planner.py",
+      "src/cloud_edge_robot_arm/vision/task_semantics.py",
+      "src/cloud_edge_robot_arm/model_control/service.py",
+      "src/cloud_edge_robot_arm/cloud/api/app.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "scripts/probe_rgbd_model.py",
+      "scripts/evaluate_rgbd_model.py",
+      "tests/test_rgbd_project_defaults.py",
+      "tests/test_rgbd_model_probe.py",
+      "tests/test_rgbd_task_semantics.py",
+      "artifacts/research/process/20261004-gripper-project-migration/audit_smoke.py",
+      "artifacts/research/process/20261004-gripper-project-migration/run_workbench.py"
+    ],
+    "exit_code": 0,
+    "log": "final-ruff.log"
+  },
+  {
+    "check": "mypy",
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "mypy",
+      "--follow-imports=silent",
+      "src/cloud_edge_robot_arm/vision/defaults.py",
+      "src/cloud_edge_robot_arm/vision/frozen_model.py",
+      "src/cloud_edge_robot_arm/vision/planner.py",
+      "src/cloud_edge_robot_arm/vision/task_semantics.py",
+      "src/cloud_edge_robot_arm/model_control/service.py",
+      "src/cloud_edge_robot_arm/cloud/api/app.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "scripts/probe_rgbd_model.py",
+      "scripts/evaluate_rgbd_model.py"
+    ],
+    "exit_code": 0,
+    "log": "final-mypy.log"
+  },
+  {
+    "check": "bash",
+    "command": [
+      "bash",
+      "-n",
+      "scripts/linux/env.sh"
+    ],
+    "exit_code": 0,
+    "log": "final-bash.log"
+  },
+  {
+    "check": "diff",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "log": "final-diff.log"
+  },
+  {
+    "check": "physical_audit",
+    "command": [
+      ".venv/bin/python",
+      "artifacts/research/process/20261004-gripper-project-migration/audit_smoke.py"
+    ],
+    "exit_code": 0,
+    "log": "final-physical_audit.log"
+  },
+  {
+    "check": "frontend_typecheck",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "cwd": "dashboard",
+    "exit_code": 0,
+    "evidence": "PTY sessions 44941 initial output and final exit 0"
+  }
+]

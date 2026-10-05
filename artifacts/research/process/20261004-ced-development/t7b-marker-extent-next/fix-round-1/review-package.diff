@@ -1,0 +1,85 @@
+--- baseline/src/cloud_edge_robot_arm/vision/marker_association.py
++++ src/cloud_edge_robot_arm/vision/marker_association.py
+@@ -12,7 +12,7 @@
+ import json
+ import math
+ from collections.abc import Mapping
+-from dataclasses import dataclass, field
++from dataclasses import dataclass, field, replace
+ from datetime import datetime
+ from pathlib import Path
+ from types import MappingProxyType
+@@ -89,6 +89,9 @@
+     )
+ 
+     def __post_init__(self) -> None:
++        if type(self.pose_marker) is not PoseMarkerRegistration:
++            raise ValueError("concrete pose marker registration required")
++        object.__setattr__(self, "pose_marker", replace(self.pose_marker))
+         if self.admission_scope != "DEVELOPMENT_ONLY":
+             raise ValueError("only DEVELOPMENT_ONLY registration is implemented")
+ 
+--- baseline/tests/test_marker_extent_integration.py
++++ tests/test_marker_extent_integration.py
+@@ -9,7 +9,9 @@
+ import base64
+ import hashlib
+ import io
++from dataclasses import asdict, replace
+ from pathlib import Path
++from types import SimpleNamespace
+ 
+ import numpy as np
+ import pytest
+@@ -22,7 +24,7 @@
+     replay_marker_target_development,
+ )
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
+-from cloud_edge_robot_arm.vision.pose_markers import detect_pose_marker
++from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ CONFIG = ROOT / "configs/research/ced_marker_registration_v1.yaml"
+@@ -179,3 +181,31 @@
+         assert result.status == "UNKNOWN" and result.extent_complete is False
+         assert result.admission_status == "NOT_ADMITTED"
+         assert getattr(result, "boundary_support", {}) == {}
++
++
++def test_direct_registration_rejects_all_nonconcrete_or_forged_nested_marker_carriers():
++    # Break caught: marker aliases or forged fields alter geometry under the same digest.
++    observation = RGBDObservation.model_validate_json(STATIC.read_text())
++    result, registration = replay(observation)
++    assert result.status == "OBSERVED_CANDIDATE" and registration.sources_valid()
++    marker = registration.pose_marker
++    mutable = SimpleNamespace(**asdict(marker), digest=lambda: marker.digest())
++
++    class MarkerSubclass(PoseMarkerRegistration):
++        pass
++
++    subclass = MarkerSubclass(**asdict(marker))
++    forged = replace(marker)
++    object.__setattr__(forged, "dictionary", "FORGED_DICTIONARY")
++    accepted = []
++    for name, carrier in (("mutable", mutable), ("subclass", subclass), ("forged", forged)):
++        try:
++            replace(registration, pose_marker=carrier)
++        except (ValueError, TypeError):
++            continue
++        accepted.append(name)
++    assert accepted == [], f"unsupported nested marker carriers were accepted: {accepted}"
++    detached = replace(registration, pose_marker=marker)
++    before = detached.digest()
++    object.__setattr__(marker, "marker_size_m", 0.0525)
++    assert detached.pose_marker.marker_size_m == 0.045 and detached.digest() == before
+--- baseline/configs/research/ced_marker_registration_v1.yaml
++++ configs/research/ced_marker_registration_v1.yaml
+@@ -61,7 +61,7 @@
+   - - -0.035
+     - -0.035
+ registration_source_hashes:
+-  src/cloud_edge_robot_arm/vision/marker_association.py: 984e409db8c227a967b41bb169e17630efaedc57df8805f81dafcf47adb9709d
++  src/cloud_edge_robot_arm/vision/marker_association.py: f538c6b751ab560b2523cfbe2d237f8956b092931af276bfcda744d10ee4f426
+   src/cloud_edge_robot_arm/vision/pose_markers.py: 68f9e6e0675a4b6ccdead896bd767c685fd53357591ab1fdf4d71d124c72264f
+   src/cloud_edge_robot_arm/vision/observations.py: 1114e6b2de4107ae516f12f8972fcb3b6f71eae7ae5a45bf93adfeb4aa673bb8
+   src/cloud_edge_robot_arm/vision/online_intent.py: d38cf2c6fb578aa646b3dbc2d2865d952e56c4142d8951951edd82adb82dfaf0

@@ -1,0 +1,39 @@
+.............................................F                           [100%]
+=================================== FAILURES ===================================
+__________ test_actual_successful_terminal_hold_dispatch_is_supported __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-502/test_actual_successful_termina0')
+
+    def test_actual_successful_terminal_hold_dispatch_is_supported(tmp_path):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        commands = json.loads((source / "commands.json").read_text())
+        actions = json.loads((source / "teacher-actions.json").read_text())
+        observations = json.loads((source / "physical-observations.json").read_text())
+        target = observations[523]["joint_positions_rad"]
+        hold = {"command_id": "terminal-hold", "action_id": actions[0]["action_id"],
+            "episode_id": "recovery-episode", "source": "GROUND_TRUTH_TEACHER",
+            "physics_step": 523, "sim_time_s": 1.046, "type": "hold_current_joints",
+            "accepted": True, "target_positions_rad": target,
+            "backend_record": {"type": "hold_current_joints", "accepted": True,
+                "after_emergency_stop": False, "reason": "motion_terminated", "sim_time_s": 1.046,
+                "episode_id": "recovery-episode", "physics_step": 523, "command_seq": 2,
+                "target_positions_rad": target, "applied_target_positions_rad": target}}
+        commands.insert(1, hold)
+        for index, command in enumerate(commands):
+            command["backend_record"]["command_seq"] = index+1
+        actions[0]["command_seq_end"] += 1
+        for action in actions[1:]:
+            action["command_seq_start"] += 1
+            action["command_seq_end"] += 1
+        write_json(source / "commands.json", commands)
+        write_json(source / "teacher-actions.json", actions)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+>       assert api().prepare_protocol_evidence(pools, tmp_path / "output")["recovery_proven"] == 1
+E       assert 0 == 1
+
+tests/test_protocol_evidence_generation.py:982: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_actual_successful_terminal_hold_dispatch_is_supported
+1 failed, 45 passed in 16.75s

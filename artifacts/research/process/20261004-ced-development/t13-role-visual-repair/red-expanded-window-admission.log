@@ -1,0 +1,40 @@
+.FF                                                                      [100%]
+=================================== FAILURES ===================================
+___________ test_direct_provider_cannot_expand_its_authorized_window ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-759/test_direct_provider_cannot_ex0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79bfa0d564e0>
+
+    def test_direct_provider_cannot_expand_its_authorized_window(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.cloud.replanning.visual_dependencies import RepairWindow
+        adapter, wire, _, _, source, request, window, observation, _ = setup(tmp_path, monkeypatch)
+        provider = api().RoleVisualRepairProvider(planner=adapter.planner, binding=adapter.binding,
+            source=source, grounding_provider=adapter.grounding_provider,
+            clock=lambda: NOW + timedelta(seconds=.2))
+        expanded = RepairWindow('grasp', ('grasp','telemetry'), ('approach',), 1, 1)
+>       with pytest.raises(api().RoleVisualRepairUnavailable):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.cloud.replanning.role_visual_repair.RoleVisualRepairUnavailable'>
+
+tests/test_role_visual_repair.py:188: Failed
+____ test_b4_missing_expanded_step_geometry_is_unavailable_before_any_call _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-759/test_b4_missing_expanded_step_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79bf749c5280>
+
+    def test_b4_missing_expanded_step_geometry_is_unavailable_before_any_call(tmp_path, monkeypatch):
+        adapter, wire, _, _, source, request, *_ = setup(tmp_path, monkeypatch, full_remaining=True)
+        source = api().RoleVisualRepairSource(source.context, {'grasp':source.action_evidence['grasp']},
+                                             evidence_scope='SOFTWARE_ONLY')
+        adapter.source_provider = lambda *_: source
+        result = adapter.replan(request)
+>       assert result.outcome == 'MORE_OBSERVATION_REQUIRED' and result.new_steps == []
+E       AssertionError: assert ('PLANNER_FAILED' == 'MORE_OBSERVATION_REQUIRED'
+E         
+E         - MORE_OBSERVATION_REQUIRED
+E         + PLANNER_FAILED)
+
+tests/test_role_visual_repair.py:199: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_role_visual_repair.py::test_direct_provider_cannot_expand_its_authorized_window
+FAILED tests/test_role_visual_repair.py::test_b4_missing_expanded_step_geometry_is_unavailable_before_any_call
+2 failed, 1 passed, 11 deselected in 0.56s

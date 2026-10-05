@@ -1,0 +1,199 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_failure_sources_must_match_frozen_request_versions_and_step[memory-event_version] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71683bff6210>
+field = 'event_version'
+
+    @pytest.mark.parametrize("field", ["event_version", "summary_version", "failed_step"])
+    def test_failure_sources_must_match_frozen_request_versions_and_step(replan_repo, field):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        summary = replan_repo.get_failure_summary("summary")
+        changes = {"summary_id": "summary-bad", "summary_hash": ""}
+        if field == "event_version":
+            event = replan_repo.get_event("failure")
+            replan_repo.save_event(event.model_copy(update={"event_id": "failure-bad", "plan_version": 2}))
+            request = request.model_copy(update={"trigger_event_id": "failure-bad"})
+            changes["failure_event_id"] = "failure-bad"
+        elif field == "summary_version":
+            changes["plan_version"] = 2
+        else:
+            changes["failed_step_id"] = "place"
+        replan_repo.save_failure_summary(summary.model_copy(update=changes))
+        request = request.model_copy(update={"failure_summary_id": "summary-bad"})
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:966: AssertionError
+_ test_failure_sources_must_match_frozen_request_versions_and_step[memory-summary_version] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71683793ff80>
+field = 'summary_version'
+
+    @pytest.mark.parametrize("field", ["event_version", "summary_version", "failed_step"])
+    def test_failure_sources_must_match_frozen_request_versions_and_step(replan_repo, field):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        summary = replan_repo.get_failure_summary("summary")
+        changes = {"summary_id": "summary-bad", "summary_hash": ""}
+        if field == "event_version":
+            event = replan_repo.get_event("failure")
+            replan_repo.save_event(event.model_copy(update={"event_id": "failure-bad", "plan_version": 2}))
+            request = request.model_copy(update={"trigger_event_id": "failure-bad"})
+            changes["failure_event_id"] = "failure-bad"
+        elif field == "summary_version":
+            changes["plan_version"] = 2
+        else:
+            changes["failed_step_id"] = "place"
+        replan_repo.save_failure_summary(summary.model_copy(update=changes))
+        request = request.model_copy(update={"failure_summary_id": "summary-bad"})
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:966: AssertionError
+_ test_failure_sources_must_match_frozen_request_versions_and_step[memory-failed_step] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71683a8b3bc0>
+field = 'failed_step'
+
+    @pytest.mark.parametrize("field", ["event_version", "summary_version", "failed_step"])
+    def test_failure_sources_must_match_frozen_request_versions_and_step(replan_repo, field):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        summary = replan_repo.get_failure_summary("summary")
+        changes = {"summary_id": "summary-bad", "summary_hash": ""}
+        if field == "event_version":
+            event = replan_repo.get_event("failure")
+            replan_repo.save_event(event.model_copy(update={"event_id": "failure-bad", "plan_version": 2}))
+            request = request.model_copy(update={"trigger_event_id": "failure-bad"})
+            changes["failure_event_id"] = "failure-bad"
+        elif field == "summary_version":
+            changes["plan_version"] = 2
+        else:
+            changes["failed_step_id"] = "place"
+        replan_repo.save_failure_summary(summary.model_copy(update=changes))
+        request = request.model_copy(update={"failure_summary_id": "summary-bad"})
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:966: AssertionError
+_ test_failure_sources_must_match_frozen_request_versions_and_step[sqlite-event_version] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7168379a9850>
+field = 'event_version'
+
+    @pytest.mark.parametrize("field", ["event_version", "summary_version", "failed_step"])
+    def test_failure_sources_must_match_frozen_request_versions_and_step(replan_repo, field):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        summary = replan_repo.get_failure_summary("summary")
+        changes = {"summary_id": "summary-bad", "summary_hash": ""}
+        if field == "event_version":
+            event = replan_repo.get_event("failure")
+            replan_repo.save_event(event.model_copy(update={"event_id": "failure-bad", "plan_version": 2}))
+            request = request.model_copy(update={"trigger_event_id": "failure-bad"})
+            changes["failure_event_id"] = "failure-bad"
+        elif field == "summary_version":
+            changes["plan_version"] = 2
+        else:
+            changes["failed_step_id"] = "place"
+        replan_repo.save_failure_summary(summary.model_copy(update=changes))
+        request = request.model_copy(update={"failure_summary_id": "summary-bad"})
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:966: AssertionError
+_ test_failure_sources_must_match_frozen_request_versions_and_step[sqlite-summary_version] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7168379ab470>
+field = 'summary_version'
+
+    @pytest.mark.parametrize("field", ["event_version", "summary_version", "failed_step"])
+    def test_failure_sources_must_match_frozen_request_versions_and_step(replan_repo, field):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        summary = replan_repo.get_failure_summary("summary")
+        changes = {"summary_id": "summary-bad", "summary_hash": ""}
+        if field == "event_version":
+            event = replan_repo.get_event("failure")
+            replan_repo.save_event(event.model_copy(update={"event_id": "failure-bad", "plan_version": 2}))
+            request = request.model_copy(update={"trigger_event_id": "failure-bad"})
+            changes["failure_event_id"] = "failure-bad"
+        elif field == "summary_version":
+            changes["plan_version"] = 2
+        else:
+            changes["failed_step_id"] = "place"
+        replan_repo.save_failure_summary(summary.model_copy(update=changes))
+        request = request.model_copy(update={"failure_summary_id": "summary-bad"})
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:966: AssertionError
+_ test_failure_sources_must_match_frozen_request_versions_and_step[sqlite-failed_step] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7168379a9e50>
+field = 'failed_step'
+
+    @pytest.mark.parametrize("field", ["event_version", "summary_version", "failed_step"])
+    def test_failure_sources_must_match_frozen_request_versions_and_step(replan_repo, field):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        request, response = setup_replan(replan_repo)
+        summary = replan_repo.get_failure_summary("summary")
+        changes = {"summary_id": "summary-bad", "summary_hash": ""}
+        if field == "event_version":
+            event = replan_repo.get_event("failure")
+            replan_repo.save_event(event.model_copy(update={"event_id": "failure-bad", "plan_version": 2}))
+            request = request.model_copy(update={"trigger_event_id": "failure-bad"})
+            changes["failure_event_id"] = "failure-bad"
+        elif field == "summary_version":
+            changes["plan_version"] = 2
+        else:
+            changes["failed_step_id"] = "place"
+        replan_repo.save_failure_summary(summary.model_copy(update=changes))
+        request = request.model_copy(update={"failure_summary_id": "summary-bad"})
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=submit_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert not result.applied and gateway.calls == []
+E       AssertionError: assert (not True)
+E        +  where True = ReplanApplyResult(applied=True, record=ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task..._token': 'mock-token', 'payload_hash': '2f2d385e0f18708c13759ae9614f19fa6edef874c38b89cbfc7e1da737177fc4'}), errors=[]).applied
+
+tests/test_replan_activation.py:966: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_failure_sources_must_match_frozen_request_versions_and_step[memory-event_version]
+FAILED tests/test_replan_activation.py::test_failure_sources_must_match_frozen_request_versions_and_step[memory-summary_version]
+FAILED tests/test_replan_activation.py::test_failure_sources_must_match_frozen_request_versions_and_step[memory-failed_step]
+FAILED tests/test_replan_activation.py::test_failure_sources_must_match_frozen_request_versions_and_step[sqlite-event_version]
+FAILED tests/test_replan_activation.py::test_failure_sources_must_match_frozen_request_versions_and_step[sqlite-summary_version]
+FAILED tests/test_replan_activation.py::test_failure_sources_must_match_frozen_request_versions_and_step[sqlite-failed_step]
+6 failed, 62 deselected in 1.59s
+
+Executed command: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k failure_sources
+Observed exit code: 1

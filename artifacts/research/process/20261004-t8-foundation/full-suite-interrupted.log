@@ -1,0 +1,1079 @@
+.F..................................F.F.....F..F...............F........ [  4%]
+.............................................................F......F... [  8%]
+............................................F.F......................... [ 12%]
+........................ss.............................F...........FFFF. [ 16%]
+...F...FFFFFFFFFFFFF.................................................... [ 20%]
+........................................................................ [ 24%]
+....
+=================================== FAILURES ===================================
+_______________ test_auto_mode_public_api_has_chinese_docstrings _______________
+
+    def test_auto_mode_public_api_has_chinese_docstrings() -> None:
+        missing = _public_python_api_without_chinese_docstrings(
+            Path("src/cloud_edge_robot_arm/auto_mode")
+        )
+    
+>       assert missing == []
+E       AssertionError: assert ['src/cloud_e...ecisionEvent'] == []
+E         
+E         Left contains 3 more items, first extra item: 'src/cloud_edge_robot_arm/auto_mode/runtime_events.py:12:DecisionAction'
+E         Use -v to get more diff
+
+tests/test_chinese_comment_checker.py:45: AssertionError
+_______________ test_default_paths_cover_all_tracked_code_files ________________
+
+    def test_default_paths_cover_all_tracked_code_files() -> None:
+        tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+        expected: list[Path] = []
+        for name in tracked:
+            path = Path(name)
+            # 覆盖说明：文档中的可执行代码块也要审计，只排除生成的验收 artifacts。
+            if path.parts and path.parts[0] == "artifacts":
+                continue
+            if (
+                path.parts
+                and path.parts[0] == "dashboard"
+                and len(path.parts) > 1
+                and path.parts[1] in {"node_modules", "dist"}
+            ):
+                continue
+            if chinese_comments._is_audited_file(path):
+                expected.append(path)
+    
+        collected = set(_collect_files([Path(value) for value in DEFAULT_AUDIT_PATHS]))
+        missing = [path for path in expected if path not in collected]
+    
+>       assert missing == []
+E       AssertionError: assert [PosixPath('o...t.json'), ...] == []
+E         
+E         Left contains 2309 more items, first extra item: PosixPath('output/doc/20261002-opening-proposal/qa/authoring_audit.json')
+E         Use -v to get more diff
+
+tests/test_chinese_comment_checker.py:509: AssertionError
+_______ test_deploy_is_offline_idempotent_and_keeps_incomplete_sequence ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_deploy_is_offline_idempot0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6ce36300>
+
+    def test_deploy_is_offline_idempotent_and_keeps_incomplete_sequence(tmp_path, monkeypatch):
+        plan = local_plan(tmp_path)
+    
+        def no_network(*args, **kwargs):
+            raise AssertionError("offline deployment attempted network")
+    
+        monkeypatch.setattr(socket, "socket", no_network)
+>       first = run_operation("deploy", plan, num_workers=0)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_additional_deployment.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/deployment.py:759: in run_operation
+    run_operation(step, plan, num_workers=num_workers)
+src/cloud_edge_robot_arm/datasets/external/deployment.py:735: in run_operation
+    result = preview_dataset(plan)
+             ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/deployment.py:419: in preview_dataset
+    reports = [save_preview(read_sample(row), out / row["sample_id"]) for row in selected]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sample = DatasetSample(dataset_id='vins_rgbd_small', source_revision='fixture-pinned', sample_kind='trajectory_observation', so...idth': 3}, 'rgb_topic': '/camera/color/image_raw', 'source_depth_frame_index': 0, 'source_variant': 'vins_rgbd_small'})
+output = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_deploy_is_offline_idempot0/previews/vins_rgbd_small/9b666944d8cd4249125c6148313c0289')
+
+    def save_preview(sample: DatasetSample, output: Path) -> dict[str, Any]:
+>       import matplotlib
+E       ModuleNotFoundError: No module named 'matplotlib'
+
+src/cloud_edge_robot_arm/datasets/external/preview.py:16: ModuleNotFoundError
+______ test_single_sequence_preview_reports_frames_separately_from_groups ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_single_sequence_preview_r0')
+
+    def test_single_sequence_preview_reports_frames_separately_from_groups(tmp_path):
+        plan = local_plan(tmp_path)
+        run_operation("extract", plan)
+        run_operation("validate", plan)
+>       result = run_operation("preview", plan)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_additional_deployment.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/deployment.py:735: in run_operation
+    result = preview_dataset(plan)
+             ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/deployment.py:419: in preview_dataset
+    reports = [save_preview(read_sample(row), out / row["sample_id"]) for row in selected]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sample = DatasetSample(dataset_id='vins_rgbd_small', source_revision='fixture-pinned', sample_kind='trajectory_observation', so...idth': 3}, 'rgb_topic': '/camera/color/image_raw', 'source_depth_frame_index': 0, 'source_variant': 'vins_rgbd_small'})
+output = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_single_sequence_preview_r0/previews/vins_rgbd_small/9b666944d8cd4249125c6148313c0289')
+
+    def save_preview(sample: DatasetSample, output: Path) -> dict[str, Any]:
+>       import matplotlib
+E       ModuleNotFoundError: No module named 'matplotlib'
+
+src/cloud_edge_robot_arm/datasets/external/preview.py:16: ModuleNotFoundError
+___________ test_reused_raw_does_not_reserve_conversion_space_again ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_reused_raw_does_not_reser0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6ce34b90>
+
+    def test_reused_raw_does_not_reserve_conversion_space_again(tmp_path, monkeypatch):
+        from collections import namedtuple
+    
+        from cloud_edge_robot_arm.datasets.external import prepared_deployment
+    
+        plan = local_plan(tmp_path)
+        run_operation("extract", plan)
+        plan["minimum_free_bytes"] = 100_000
+        disk = namedtuple("Disk", "total used free")
+        monkeypatch.setattr(
+            prepared_deployment.shutil, "disk_usage", lambda _: disk(500_000, 300_000, 200_000)
+        )
+        budget = run_operation("plan", plan)["budget"]
+        assert budget["status"] == "READY"
+        assert budget["estimated_conversion_peak_bytes"] == 0
+        assert budget["raw_reusable"] is True
+>       assert run_operation("deploy", plan)["verified_scope"] == "SELECTED_RGBD_VERIFIED"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_additional_deployment.py:153: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/deployment.py:759: in run_operation
+    run_operation(step, plan, num_workers=num_workers)
+src/cloud_edge_robot_arm/datasets/external/deployment.py:735: in run_operation
+    result = preview_dataset(plan)
+             ^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/deployment.py:419: in preview_dataset
+    reports = [save_preview(read_sample(row), out / row["sample_id"]) for row in selected]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sample = DatasetSample(dataset_id='vins_rgbd_small', source_revision='fixture-pinned', sample_kind='trajectory_observation', so...idth': 3}, 'rgb_topic': '/camera/color/image_raw', 'source_depth_frame_index': 0, 'source_variant': 'vins_rgbd_small'})
+output = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_reused_raw_does_not_reser0/previews/vins_rgbd_small/9b666944d8cd4249125c6148313c0289')
+
+    def save_preview(sample: DatasetSample, output: Path) -> dict[str, Any]:
+>       import matplotlib
+E       ModuleNotFoundError: No module named 'matplotlib'
+
+src/cloud_edge_robot_arm/datasets/external/preview.py:16: ModuleNotFoundError
+________ test_multivolume_7z_selected_members_are_tested_and_extracted _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_multivolume_7z_selected_m0')
+
+    def test_multivolume_7z_selected_members_are_tested_and_extracted(tmp_path):
+>       import multivolumefile
+E       ModuleNotFoundError: No module named 'multivolumefile'
+
+tests/test_external_rgbd_archives.py:129: ModuleNotFoundError
+___________ test_preview_preserves_raw_depth_and_marks_unknown_units ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_preview_preserves_raw_dep0')
+
+    def test_preview_preserves_raw_depth_and_marks_unknown_units(tmp_path):
+        sample = DatasetSample(
+            dataset_id="synthetic_fixture",
+            source_revision="a" * 40,
+            sample_kind="trajectory_observation",
+            source_file="test.h5",
+            relative_path="test.h5",
+            source_sha256="b" * 64,
+            frame_index=0,
+            camera_id="top",
+            official_split="train",
+            rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+            depth_raw=np.array([[0, 1250], [65000, 1000]], dtype=np.uint16),
+        )
+>       report = save_preview(sample, tmp_path)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_deployment.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sample = DatasetSample(dataset_id='synthetic_fixture', source_revision='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', sample_kind=...dence=None, temporal_alignment=None, temporal_evidence=None, transforms={}, robot_state=None, action=None, metadata={})
+output = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_preview_preserves_raw_dep0')
+
+    def save_preview(sample: DatasetSample, output: Path) -> dict[str, Any]:
+>       import matplotlib
+E       ModuleNotFoundError: No module named 'matplotlib'
+
+src/cloud_edge_robot_arm/datasets/external/preview.py:16: ModuleNotFoundError
+______________ test_oracle_preview_is_separate_from_original_rgb _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_oracle_preview_is_separat0')
+
+    def test_oracle_preview_is_separate_from_original_rgb(tmp_path):
+        from PIL import Image
+    
+        mask_path = tmp_path / "visible.png"
+        Image.fromarray(np.array([[255, 0], [0, 0]], dtype=np.uint8)).save(mask_path)
+        sample = DatasetSample(
+            dataset_id="synthetic_fixture",
+            source_revision="a" * 40,
+            sample_kind="static_multiview_scene",
+            source_file="test.png",
+            relative_path="test.png",
+            source_sha256="b" * 64,
+            frame_index=0,
+            camera_id="top",
+            official_split="train",
+            rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+            depth_raw=np.ones((2, 2), dtype=np.uint16),
+            annotations={
+                "instances": [
+                    {
+                        "instance_id": 0,
+                        "obj_id": 1,
+                        "visible_mask": {"available": True, "path": str(mask_path)},
+                    }
+                ]
+            },
+        )
+>       report = save_preview(sample, tmp_path / "preview")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_deployment.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+sample = DatasetSample(dataset_id='synthetic_fixture', source_revision='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', sample_kind=...dence=None, temporal_alignment=None, temporal_evidence=None, transforms={}, robot_state=None, action=None, metadata={})
+output = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_oracle_preview_is_separat0/preview')
+
+    def save_preview(sample: DatasetSample, output: Path) -> dict[str, Any]:
+>       import matplotlib
+E       ModuleNotFoundError: No module named 'matplotlib'
+
+src/cloud_edge_robot_arm/datasets/external/preview.py:16: ModuleNotFoundError
+______________ test_mcap_embedded_protobuf_and_native_sizes[zstd] ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_mcap_embedded_protobuf_an1')
+compression = 'zstd'
+
+    @pytest.mark.parametrize("compression", ["", "zstd"])
+    def test_mcap_embedded_protobuf_and_native_sizes(tmp_path, compression):
+        from cloud_edge_robot_arm.datasets.external.native_sources import convert_microagi
+    
+        path = tmp_path / "sample.mcap"
+>       mcap_fixture(path, compression=compression)
+
+tests/test_external_rgbd_native.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_mcap_embedded_protobuf_an1/sample.mcap')
+
+    def mcap_fixture(path, *, compression="", bad_crc=False):
+        types = {
+            "Image": [("format", 9, False), ("data", 12, False)],
+            "Info": [("width", 13, False), ("height", 13, False), ("K", 1, True)],
+            "Unit": [("unit_in_mm", 1, False)],
+        }
+        messages = []
+        for name, fields in types.items():
+            desc = pb(1, name)
+            for index, (key, kind, repeated) in enumerate(fields, 1):
+                desc += pb(2, pb(1, key) + pb(3, index) + pb(4, 3 if repeated else 1) + pb(5, kind))
+            messages.append(pb(4, desc))
+        descriptor = pb(1, pb(2, "fixture") + b"".join(messages))
+        topics = [
+            (
+                "/camera/color/info",
+                "Info",
+                pb(1, 3) + pb(2, 2) + pb(3, struct.pack("<9d", 2, 0, 1, 0, 2, 1, 0, 0, 1)),
+            ),
+            (
+                "/camera/depth/info",
+                "Info",
+                pb(1, 2) + pb(2, 2) + pb(3, struct.pack("<9d", 2, 0, 1, 0, 2, 1, 0, 0, 1)),
+            ),
+            ("/camera/depth/unit_of_depth_in_mm", "Unit", vi(9) + struct.pack("<d", 1.0)),
+            (
+                "/camera/color/image",
+                "Image",
+                pb(1, "png") + pb(2, png(np.full((2, 3, 3), 70, np.uint8))),
+            ),
+            (
+                "/camera/depth/image",
+                "Image",
+                pb(1, "png") + pb(2, png(np.full((2, 2), 1500, np.uint16))),
+            ),
+        ]
+        inner = b""
+        for number, (topic, name, payload) in enumerate(topics, 1):
+            inner += mr(
+                3,
+                struct.pack("<H", number)
+                + mstring("fixture." + name)
+                + mstring("protobuf")
+                + struct.pack("<I", len(descriptor))
+                + descriptor,
+            )
+            inner += mr(
+                4,
+                struct.pack("<HH", number, number)
+                + mstring(topic)
+                + mstring("protobuf")
+                + struct.pack("<I", 0),
+            )
+            inner += mr(5, struct.pack("<HIQQ", number, 0, 1000000000 + number * 1000000, 0) + payload)
+        if compression == "zstd":
+>           from backports import zstd
+E           ModuleNotFoundError: No module named 'backports'
+
+tests/test_external_rgbd_native.py:106: ModuleNotFoundError
+___________ test_mcap_resource_limit_is_checked_before_decompression ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_mcap_resource_limit_is_ch0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cf23c20>
+
+    def test_mcap_resource_limit_is_checked_before_decompression(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.datasets.external import mcap_native
+    
+        path = tmp_path / "bounded.mcap"
+>       mcap_fixture(path, compression="zstd")
+
+tests/test_external_rgbd_native.py:242: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_mcap_resource_limit_is_ch0/bounded.mcap')
+
+    def mcap_fixture(path, *, compression="", bad_crc=False):
+        types = {
+            "Image": [("format", 9, False), ("data", 12, False)],
+            "Info": [("width", 13, False), ("height", 13, False), ("K", 1, True)],
+            "Unit": [("unit_in_mm", 1, False)],
+        }
+        messages = []
+        for name, fields in types.items():
+            desc = pb(1, name)
+            for index, (key, kind, repeated) in enumerate(fields, 1):
+                desc += pb(2, pb(1, key) + pb(3, index) + pb(4, 3 if repeated else 1) + pb(5, kind))
+            messages.append(pb(4, desc))
+        descriptor = pb(1, pb(2, "fixture") + b"".join(messages))
+        topics = [
+            (
+                "/camera/color/info",
+                "Info",
+                pb(1, 3) + pb(2, 2) + pb(3, struct.pack("<9d", 2, 0, 1, 0, 2, 1, 0, 0, 1)),
+            ),
+            (
+                "/camera/depth/info",
+                "Info",
+                pb(1, 2) + pb(2, 2) + pb(3, struct.pack("<9d", 2, 0, 1, 0, 2, 1, 0, 0, 1)),
+            ),
+            ("/camera/depth/unit_of_depth_in_mm", "Unit", vi(9) + struct.pack("<d", 1.0)),
+            (
+                "/camera/color/image",
+                "Image",
+                pb(1, "png") + pb(2, png(np.full((2, 3, 3), 70, np.uint8))),
+            ),
+            (
+                "/camera/depth/image",
+                "Image",
+                pb(1, "png") + pb(2, png(np.full((2, 2), 1500, np.uint16))),
+            ),
+        ]
+        inner = b""
+        for number, (topic, name, payload) in enumerate(topics, 1):
+            inner += mr(
+                3,
+                struct.pack("<H", number)
+                + mstring("fixture." + name)
+                + mstring("protobuf")
+                + struct.pack("<I", len(descriptor))
+                + descriptor,
+            )
+            inner += mr(
+                4,
+                struct.pack("<HH", number, number)
+                + mstring(topic)
+                + mstring("protobuf")
+                + struct.pack("<I", 0),
+            )
+            inner += mr(5, struct.pack("<HIQQ", number, 0, 1000000000 + number * 1000000, 0) + payload)
+        if compression == "zstd":
+>           from backports import zstd
+E           ModuleNotFoundError: No module named 'backports'
+
+tests/test_external_rgbd_native.py:106: ModuleNotFoundError
+_______________ test_plan_blocks_download_budget_before_network ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_plan_blocks_download_budg0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdaa780>
+
+    def test_plan_blocks_download_budget_before_network(tmp_path, monkeypatch):
+        mod = transfer()
+>       calls = fake_hf(monkeypatch)
+                ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:64: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdaa780>
+body = b'rgbd01'
+
+    def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:41: ModuleNotFoundError
+_________ test_hf_retries_then_reuses_only_version_and_hash_bound_file _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_hf_retries_then_reuses_on0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdabef0>
+
+    def test_hf_retries_then_reuses_only_version_and_hash_bound_file(tmp_path, monkeypatch):
+        mod = transfer()
+>       calls = fake_hf(monkeypatch, fail_first=True)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdabef0>
+body = b'rgbd01'
+
+    def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:41: ModuleNotFoundError
+__________ test_known_upstream_digest_failure_never_becomes_reusable ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_known_upstream_digest_fai0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb04a0>
+
+    def test_known_upstream_digest_failure_never_becomes_reusable(tmp_path, monkeypatch):
+        mod = transfer()
+>       fake_hf(monkeypatch)
+
+tests/test_external_rgbd_transfer.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb04a0>
+body = b'rgbd01'
+
+    def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:41: ModuleNotFoundError
+________________ test_immutable_size_is_checked_after_download _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_immutable_size_is_checked0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb0d40>
+
+    def test_immutable_size_is_checked_after_download(tmp_path, monkeypatch):
+        mod = transfer()
+>       fake_hf(monkeypatch, b"wrong size")
+
+tests/test_external_rgbd_transfer.py:136: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb0d40>
+body = b'wrong size'
+
+    def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:41: ModuleNotFoundError
+_________ test_failed_download_has_finite_retries_and_sanitized_error __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_failed_download_has_finit0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb16a0>
+
+    def test_failed_download_has_finite_retries_and_sanitized_error(tmp_path, monkeypatch):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:142: ModuleNotFoundError
+_____ test_hf_persistent_transport_pins_revision_and_records_actual_bytes ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_hf_persistent_transport_p0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd832f0>
+
+    def test_hf_persistent_transport_pins_revision_and_records_actual_bytes(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+        requests = []
+    
+        def serve(request):
+            requests.append(request)
+            assert "/resolve/" + "a" * 40 + "/trajectory.h5" in str(request.url)
+            return httpx.Response(200, content=b"rgbd01")
+    
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        plan = make_plan(tmp_path, transport="hf_sdk_metadata_http_range")
+>       result = mod.download_plan(plan, retries=1)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:302: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:713: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-385/test_hf_persistent_transport_p0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 1
+
+    def _download_plan_locked(
+        plan: dict[str, Any],
+        max_workers: int,
+        retries: int,
+    ) -> dict[str, Any]:
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.ledger["download_status"] = "DOWNLOADING"
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append(
+                {
+                    **file,
+                    "local_path": str(_directory(data) / file["path"]),
+                    "sha256": entry["sha256"],
+                    "verification": entry["verification"],
+                    "reused": True,
+                }
+            )
+        failures = []
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        futures = []
+        try:
+            futures = [
+                executor.submit(_download_one, state, file, retries) for file in budget["pending"]
+            ]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        except BaseException:
+            # 必须先发出取消信号，再等线程退出；不能先进入 context manager 的等待。
+            state.cancel()
+            for future in futures:
+                future.cancel()
+            raise
+        finally:
+            executor.shutdown(wait=True, cancel_futures=state.cancelled.is_set())
+        if failures:
+            state.ledger["download_status"] = (
+                "BLOCKED_AUTH"
+                if any(code.startswith("BLOCKED_AUTH:") for code in failures)
+                else "FAILED"
+            )
+            state.save()
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: ModuleNotFoundError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:674: RuntimeError
+_______ test_hf_persistent_auth_is_removed_before_cross_domain_redirect ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_hf_persistent_auth_is_rem0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd83020>
+
+    def test_hf_persistent_auth_is_removed_before_cross_domain_redirect(tmp_path, monkeypatch):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:369: ModuleNotFoundError
+________ test_concurrent_process_cannot_overwrite_shared_budget_ledger _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_concurrent_process_cannot0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd80740>
+
+    def test_concurrent_process_cannot_overwrite_shared_budget_ledger(tmp_path, monkeypatch):
+        import fcntl
+    
+        mod = transfer()
+>       fake_hf(monkeypatch)
+
+tests/test_external_rgbd_transfer.py:393: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd80740>
+body = b'rgbd01'
+
+    def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:41: ModuleNotFoundError
+______________ test_https_download_refuses_redirect_to_plain_http ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_https_download_refuses_re0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd81070>
+
+    def test_https_download_refuses_redirect_to_plain_http(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+    
+        def serve(request):
+            if request.url.host == "huggingface.co":
+                return httpx.Response(302, headers={"location": "http://cdn.example.test/file"})
+            return httpx.Response(200, content=b"rgbd01")
+    
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        with pytest.raises(RuntimeError, match="TLS"):
+>           mod.download_plan(make_plan(tmp_path, transport="hf_sdk_metadata_http_range"), retries=1)
+
+tests/test_external_rgbd_transfer.py:415: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:713: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-385/test_https_download_refuses_re0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 1
+
+    def _download_plan_locked(
+        plan: dict[str, Any],
+        max_workers: int,
+        retries: int,
+    ) -> dict[str, Any]:
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.ledger["download_status"] = "DOWNLOADING"
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append(
+                {
+                    **file,
+                    "local_path": str(_directory(data) / file["path"]),
+                    "sha256": entry["sha256"],
+                    "verification": entry["verification"],
+                    "reused": True,
+                }
+            )
+        failures = []
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        futures = []
+        try:
+            futures = [
+                executor.submit(_download_one, state, file, retries) for file in budget["pending"]
+            ]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        except BaseException:
+            # 必须先发出取消信号，再等线程退出；不能先进入 context manager 的等待。
+            state.cancel()
+            for future in futures:
+                future.cancel()
+            raise
+        finally:
+            executor.shutdown(wait=True, cancel_futures=state.cancelled.is_set())
+        if failures:
+            state.ledger["download_status"] = (
+                "BLOCKED_AUTH"
+                if any(code.startswith("BLOCKED_AUTH:") for code in failures)
+                else "FAILED"
+            )
+            state.save()
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: ModuleNotFoundError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:674: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_https_download_refuses_re0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd81070>
+
+    def test_https_download_refuses_redirect_to_plain_http(tmp_path, monkeypatch):
+        mod = transfer()
+        original_client = httpx.Client
+    
+        def serve(request):
+            if request.url.host == "huggingface.co":
+                return httpx.Response(302, headers={"location": "http://cdn.example.test/file"})
+            return httpx.Response(200, content=b"rgbd01")
+    
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+>       with pytest.raises(RuntimeError, match="TLS"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'TLS'
+E        Input: 'NETWORK: ModuleNotFoundError'
+
+tests/test_external_rgbd_transfer.py:414: AssertionError
+_____ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-401] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_unauthorized_download_is_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd81af0>
+status = 401, transport = 'hf_sdk'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(
+        tmp_path, monkeypatch, status, transport
+    ):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:423: ModuleNotFoundError
+_____ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-403] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_unauthorized_download_is_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd80bc0>
+status = 403, transport = 'hf_sdk'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(
+        tmp_path, monkeypatch, status, transport
+    ):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:423: ModuleNotFoundError
+_ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-401] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_unauthorized_download_is_2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb0770>
+status = 401, transport = 'hf_sdk_metadata_http_range'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(
+        tmp_path, monkeypatch, status, transport
+    ):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:423: ModuleNotFoundError
+_ test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-403] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_unauthorized_download_is_3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb00b0>
+status = 403, transport = 'hf_sdk_metadata_http_range'
+
+    @pytest.mark.parametrize("status", [401, 403])
+    @pytest.mark.parametrize("transport", ["hf_sdk", "hf_sdk_metadata_http_range"])
+    def test_unauthorized_download_is_blocked_auth_without_retry(
+        tmp_path, monkeypatch, status, transport
+    ):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:423: ModuleNotFoundError
+_ test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_partial _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_keyboard_interrupt_cancel0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb0e00>
+
+    def test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_partial(
+        tmp_path,
+        monkeypatch,
+    ):
+        mod = transfer()
+        started = threading.Event()
+        requests = []
+        original_client = httpx.Client
+    
+        class SlowBody(httpx.SyncByteStream):
+            def __iter__(self):
+                yield b"r"
+                started.set()
+                for _ in range(20):
+                    time.sleep(0.005)
+                    yield b"x"
+    
+        def serve(request):
+            requests.append(request)
+            return httpx.Response(200, stream=SlowBody())
+    
+        def interrupted_iterator(_futures):
+            assert started.wait(2)
+            raise KeyboardInterrupt
+    
+        monkeypatch.setattr(mod, "as_completed", interrupted_iterator)
+        monkeypatch.setattr(
+            httpx, "Client", lambda **kw: original_client(transport=httpx.MockTransport(serve), **kw)
+        )
+        plan = make_plan(
+            tmp_path,
+            transport="hf_sdk_metadata_http_range",
+            files=[{"path": "trajectory.h5", "size": 21}, {"path": "queued.h5", "size": 21}],
+        )
+        with pytest.raises(KeyboardInterrupt):
+>           mod.download_plan(plan, max_workers=1)
+
+tests/test_external_rgbd_transfer.py:484: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:713: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/datasets/external/transfer.py:654: in _download_plan_locked
+    for future in as_completed(futures):
+                  ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_futures = [<Future at 0x70bc6cdb2720 state=finished raised RuntimeError>, <Future at 0x70bc6cdb0110 state=cancelled>]
+
+    def interrupted_iterator(_futures):
+>       assert started.wait(2)
+E       assert False
+E        +  where False = wait(2)
+E        +    where wait = <threading.Event at 0x70bc6cdb0f20: unset>.wait
+
+tests/test_external_rgbd_transfer.py:471: AssertionError
+______ test_keyboard_interrupt_stops_sdk_progress_without_losing_partial _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_keyboard_interrupt_stops_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd80dd0>
+
+    def test_keyboard_interrupt_stops_sdk_progress_without_losing_partial(tmp_path, monkeypatch):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:493: ModuleNotFoundError
+___ test_mainland_source_block_prevents_network_without_discarding_partials ____
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_mainland_source_block_pre0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd82ed0>
+
+    def test_mainland_source_block_prevents_network_without_discarding_partials(tmp_path, monkeypatch):
+        mod = transfer()
+>       calls = fake_hf(monkeypatch)
+                ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:537: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd82ed0>
+body = b'rgbd01'
+
+    def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:41: ModuleNotFoundError
+_________ test_real_plan_without_direct_policy_cannot_fall_back_to_sdk _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_real_plan_without_direct_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd816d0>
+
+    def test_real_plan_without_direct_policy_cannot_fall_back_to_sdk(tmp_path, monkeypatch):
+        mod = transfer()
+>       calls = fake_hf(monkeypatch)
+                ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_external_rgbd_transfer.py:561: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd816d0>
+body = b'rgbd01'
+
+    def fake_hf(monkeypatch, body=b"rgbd01", *, fail_first=False):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:41: ModuleNotFoundError
+_______ test_direct_mirror_range_keeps_identity_and_never_sends_hf_token _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_direct_mirror_range_keeps0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cd83dd0>
+
+    def test_direct_mirror_range_keeps_identity_and_never_sends_hf_token(tmp_path, monkeypatch):
+>       import huggingface_hub
+E       ModuleNotFoundError: No module named 'huggingface_hub'
+
+tests/test_external_rgbd_transfer.py:570: ModuleNotFoundError
+_________ test_direct_mirror_refuses_overseas_redirect_before_contact __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_direct_mirror_refuses_ove0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb2570>
+
+    def test_direct_mirror_refuses_overseas_redirect_before_contact(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.datasets.external import network
+    
+        mod = transfer()
+        observed = []
+    
+        def serve(request):
+            observed.append(request.url.host)
+            return httpx.Response(302, headers={"location": "https://cas-bridge.xethub.hf.co/file"})
+    
+        monkeypatch.setattr(network, "create_direct_transport", lambda _: httpx.MockTransport(serve))
+        plan = make_plan(
+            tmp_path,
+            files=[
+                {"path": "trajectory.h5", "size": 6, "sha256": hashlib.sha256(b"rgbd01").hexdigest()}
+            ],
+            network={
+                "mode": "direct",
+                "interface": "enp7s0",
+                "dns_servers": ["223.5.5.5"],
+                "allowed_hosts": ["mirror.example.cn"],
+                "hf_endpoint": "https://mirror.example.cn",
+            },
+        )
+        with pytest.raises(RuntimeError, match="BLOCKED_NETWORK"):
+>           mod.download_plan(plan, retries=1)
+
+tests/test_external_rgbd_transfer.py:644: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/datasets/external/transfer.py:713: in download_plan
+    return _download_plan_locked(data, max_workers, retries)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+plan = {'budget_bytes': 100, 'data_root': '/tmp/pytest-of-ningyd/pytest-385/test_direct_mirror_refuses_ove0', 'dataset_budget_bytes': 100, 'dataset_id': 'robomind', ...}
+max_workers = 4, retries = 1
+
+    def _download_plan_locked(
+        plan: dict[str, Any],
+        max_workers: int,
+        retries: int,
+    ) -> dict[str, Any]:
+        if max_workers < 1 or retries < 1:
+            raise ValueError("max_workers and retries must be positive")
+        data = _validate(plan)
+        budget = plan_budget(data)
+        if budget["status"] != "READY":
+            raise RuntimeError(budget["status"] + ": plan gate rejected transfer")
+        state = _TransferState(data)
+        state.ledger["download_status"] = "DOWNLOADING"
+        state.save()
+        results = []
+        for file in budget["reusable"]:
+            entry = state.ledger["files"][_identity(data, file)]
+            results.append(
+                {
+                    **file,
+                    "local_path": str(_directory(data) / file["path"]),
+                    "sha256": entry["sha256"],
+                    "verification": entry["verification"],
+                    "reused": True,
+                }
+            )
+        failures = []
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        futures = []
+        try:
+            futures = [
+                executor.submit(_download_one, state, file, retries) for file in budget["pending"]
+            ]
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    failures.append(_failure_code(exc))
+        except BaseException:
+            # 必须先发出取消信号，再等线程退出；不能先进入 context manager 的等待。
+            state.cancel()
+            for future in futures:
+                future.cancel()
+            raise
+        finally:
+            executor.shutdown(wait=True, cancel_futures=state.cancelled.is_set())
+        if failures:
+            state.ledger["download_status"] = (
+                "BLOCKED_AUTH"
+                if any(code.startswith("BLOCKED_AUTH:") for code in failures)
+                else "FAILED"
+            )
+            state.save()
+>           raise RuntimeError(failures[0]) from None
+E           RuntimeError: NETWORK: ModuleNotFoundError
+
+src/cloud_edge_robot_arm/datasets/external/transfer.py:674: RuntimeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-385/test_direct_mirror_refuses_ove0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70bc6cdb2570>
+
+    def test_direct_mirror_refuses_overseas_redirect_before_contact(tmp_path, monkeypatch):
+        from cloud_edge_robot_arm.datasets.external import network
+    
+        mod = transfer()
+        observed = []
+    
+        def serve(request):
+            observed.append(request.url.host)
+            return httpx.Response(302, headers={"location": "https://cas-bridge.xethub.hf.co/file"})
+    
+        monkeypatch.setattr(network, "create_direct_transport", lambda _: httpx.MockTransport(serve))
+        plan = make_plan(
+            tmp_path,
+            files=[
+                {"path": "trajectory.h5", "size": 6, "sha256": hashlib.sha256(b"rgbd01").hexdigest()}
+            ],
+            network={
+                "mode": "direct",
+                "interface": "enp7s0",
+                "dns_servers": ["223.5.5.5"],
+                "allowed_hosts": ["mirror.example.cn"],
+                "hf_endpoint": "https://mirror.example.cn",
+            },
+        )
+>       with pytest.raises(RuntimeError, match="BLOCKED_NETWORK"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'BLOCKED_NETWORK'
+E        Input: 'NETWORK: ModuleNotFoundError'
+
+tests/test_external_rgbd_transfer.py:643: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:45
+  /home/ningyd/文档/ChatGPT/BIGsmall/.venv/lib/python3.12/site-packages/starlette/testclient.py:45: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_chinese_comment_checker.py::test_auto_mode_public_api_has_chinese_docstrings
+FAILED tests/test_chinese_comment_checker.py::test_default_paths_cover_all_tracked_code_files
+FAILED tests/test_external_rgbd_additional_deployment.py::test_deploy_is_offline_idempotent_and_keeps_incomplete_sequence
+FAILED tests/test_external_rgbd_additional_deployment.py::test_single_sequence_preview_reports_frames_separately_from_groups
+FAILED tests/test_external_rgbd_additional_deployment.py::test_reused_raw_does_not_reserve_conversion_space_again
+FAILED tests/test_external_rgbd_archives.py::test_multivolume_7z_selected_members_are_tested_and_extracted
+FAILED tests/test_external_rgbd_deployment.py::test_preview_preserves_raw_depth_and_marks_unknown_units
+FAILED tests/test_external_rgbd_deployment.py::test_oracle_preview_is_separate_from_original_rgb
+FAILED tests/test_external_rgbd_native.py::test_mcap_embedded_protobuf_and_native_sizes[zstd]
+FAILED tests/test_external_rgbd_native.py::test_mcap_resource_limit_is_checked_before_decompression
+FAILED tests/test_external_rgbd_transfer.py::test_plan_blocks_download_budget_before_network
+FAILED tests/test_external_rgbd_transfer.py::test_hf_retries_then_reuses_only_version_and_hash_bound_file
+FAILED tests/test_external_rgbd_transfer.py::test_known_upstream_digest_failure_never_becomes_reusable
+FAILED tests/test_external_rgbd_transfer.py::test_immutable_size_is_checked_after_download
+FAILED tests/test_external_rgbd_transfer.py::test_failed_download_has_finite_retries_and_sanitized_error
+FAILED tests/test_external_rgbd_transfer.py::test_hf_persistent_transport_pins_revision_and_records_actual_bytes
+FAILED tests/test_external_rgbd_transfer.py::test_hf_persistent_auth_is_removed_before_cross_domain_redirect
+FAILED tests/test_external_rgbd_transfer.py::test_concurrent_process_cannot_overwrite_shared_budget_ledger
+FAILED tests/test_external_rgbd_transfer.py::test_https_download_refuses_redirect_to_plain_http
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-401]
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk-403]
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-401]
+FAILED tests/test_external_rgbd_transfer.py::test_unauthorized_download_is_blocked_auth_without_retry[hf_sdk_metadata_http_range-403]
+FAILED tests/test_external_rgbd_transfer.py::test_keyboard_interrupt_cancels_active_http_and_queued_files_preserving_partial
+FAILED tests/test_external_rgbd_transfer.py::test_keyboard_interrupt_stops_sdk_progress_without_losing_partial
+FAILED tests/test_external_rgbd_transfer.py::test_mainland_source_block_prevents_network_without_discarding_partials
+FAILED tests/test_external_rgbd_transfer.py::test_real_plan_without_direct_policy_cannot_fall_back_to_sdk
+FAILED tests/test_external_rgbd_transfer.py::test_direct_mirror_range_keeps_identity_and_never_sends_hf_token
+FAILED tests/test_external_rgbd_transfer.py::test_direct_mirror_refuses_overseas_redirect_before_contact
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/usr/lib/python3.12/selectors.py:415: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+29 failed, 405 passed, 2 skipped, 1 warning in 572.27s (0:09:32)

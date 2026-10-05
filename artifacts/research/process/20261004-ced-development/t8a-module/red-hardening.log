@@ -1,0 +1,33 @@
+..............F..                                                        [100%]
+=================================== FAILURES ===================================
+_ test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[nonfinite] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-437/test_recorded_markers_do_not_r3')
+change = 'nonfinite'
+
+    @pytest.mark.parametrize("change", ["no_motion", "teacher_before_fault", "unsafe", "nonfinite"])
+    def test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery(tmp_path, change):
+        pools = inputs(tmp_path)
+        row = pools["recovery"][0]
+        source = recovery(tmp_path, row)
+        observations = json.loads((source / "physical-observations.json").read_text())
+        if change == "no_motion":
+            for item in observations:
+                item["object_position_m"][1] = 0.
+        elif change == "teacher_before_fault":
+            write_json(source / "teacher-actions.json", [{"source": "GROUND_TRUTH_TEACHER",
+                "action_type": "PICK_PLACE", "start_step": 1, "end_step": 1401}])
+        elif change == "unsafe":
+            observations[600]["joint_velocities_rad_s"][0] = 100.
+        else:
+            observations[600]["joint_velocities_rad_s"][0] = float("nan")
+        write_json(source / "physical-observations.json", observations)
+        pools["_evidence"]["recovery_sources"][row["assignment_id"]] = [str(source)]
+        report = api().prepare_protocol_evidence(pools, tmp_path / "output")
+>       assert report["recovery_proven"] == 0
+E       assert 1 == 0
+
+tests/test_protocol_evidence_generation.py:231: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_evidence_generation.py::test_recorded_markers_do_not_replace_physical_defect_and_safe_recovery[nonfinite]
+1 failed, 16 passed in 2.42s

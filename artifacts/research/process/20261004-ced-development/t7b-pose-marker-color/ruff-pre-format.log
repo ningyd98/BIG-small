@@ -1,0 +1,107 @@
+E501 Line too long (104 > 100)
+  --> src/cloud_edge_robot_arm/vision/pose_marker_assets.py:34:101
+   |
+32 |         if name=='pose_marker_quiet_v1':
+33 |             geom.set('name','pose_marker_color_v2_quiet')
+34 |             geom.set('size',f'{COLOR_QUIET_EXTENT_M/2:.10f} {COLOR_QUIET_EXTENT_M/2:.10f} 0.0000100000')
+   |                                                                                                     ^^^^
+35 |             changed+=1
+36 |         elif name.startswith('pose_marker_v1_r'):
+   |
+
+E501 Line too long (119 > 100)
+  --> src/cloud_edge_robot_arm/vision/pose_marker_assets.py:44:101
+   |
+42 |     if changed!=37:
+43 |         raise ValueError('immutable marker generation layout unavailable')
+44 |     tree.insert(0,ET.Comment('DEVELOPMENTAL COLOR RIM MARKER V2: visual only; no grasp/native calibration acceptance'))
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+45 |     ET.indent(tree,space='  ')
+46 |     return bytes(ET.tostring(tree,encoding='utf-8'))+b'\n'
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_pose_marker_assets.py:22:31
+   |
+21 | def test_new_colored_marker_has_real_rim_and_full_white_quiet_cell_without_mutating_base_or_v1():
+22 |     original=BASE.read_bytes();v1=V1.read_bytes()
+   |                               ^
+23 |     generated=api().build_colored_pose_marker_xml(original)
+24 |     assert generated==api().build_colored_pose_marker_xml(original)
+   |
+
+E501 Line too long (106 > 100)
+  --> tests/test_pose_marker_assets.py:29:101
+   |
+27 |     assert quiet is not None
+28 |     assert [float(value) for value in quiet.get('size').split()]==pytest.approx([.03,.03,.00001])
+29 |     cells=[node for node in tree.iter('geom') if node.get('name','').startswith('pose_marker_color_v2_r')]
+   |                                                                                                     ^^^^^^
+30 |     assert len(cells)==36
+31 |     extents=[]
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_pose_marker_assets.py:33:49
+   |
+31 |     extents=[]
+32 |     for node in cells:
+33 |         x,y,_=map(float,node.get('pos').split());sx,sy,_=map(float,node.get('size').split())
+   |                                                 ^
+34 |         extents.append((x-sx,x+sx,y-sy,y+sy))
+35 |         assert sx==pytest.approx(.00375) and sy==pytest.approx(.00375)
+   |
+
+E701 Multiple statements on one line (colon)
+  --> tests/test_pose_marker_assets.py:44:33
+   |
+42 |     old={node.get('name'):node for node in ET.fromstring(original).iter() if node.get('name')}
+43 |     new={node.get('name'):node for node in tree.iter() if node.get('name')}
+44 |     for name,node in old.items(): assert new[name].attrib==node.attrib
+   |                                 ^
+45 |     additions=[node for name,node in new.items() if name not in old]
+46 |     assert len(additions)==37
+   |
+
+E501 Line too long (115 > 100)
+  --> tests/test_pose_marker_assets.py:51:101
+   |
+49 |     assert tree.find('asset') is None
+50 |     assert BASE.read_bytes()==original and V1.read_bytes()==v1
+51 |     assert hashlib.sha256(original).hexdigest()=='66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2'
+   |                                                                                                     ^^^^^^^^^^^^^^^
+   |
+
+E501 Line too long (103 > 100)
+  --> tests/test_pose_marker_assets.py:73:101
+   |
+71 |         name=mujoco.mj_id2name(original,mujoco.mjtObj.mjOBJ_GEOM,index)
+72 |         other=marked.geom(name).id
+73 |         for field in ('geom_type','geom_size','geom_pos','geom_quat','geom_contype','geom_conaffinity',
+   |                                                                                                     ^^^
+74 |                       'geom_friction','geom_solref','geom_solimp','geom_margin','geom_gap','geom_rgba'):
+75 |             assert np.array_equal(getattr(original,field)[index],getattr(marked,field)[other]),(name,field)
+   |
+
+E501 Line too long (107 > 100)
+  --> tests/test_pose_marker_assets.py:75:101
+   |
+73 |         for field in ('geom_type','geom_size','geom_pos','geom_quat','geom_contype','geom_conaffinity',
+74 |                       'geom_friction','geom_solref','geom_solimp','geom_margin','geom_gap','geom_rgba'):
+75 |             assert np.array_equal(getattr(original,field)[index],getattr(marked,field)[other]),(name,field)
+   |                                                                                                     ^^^^^^^
+76 |     a,b=mujoco.MjData(original),mujoco.MjData(marked)
+77 |     for _ in range(20):
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> tests/test_pose_marker_assets.py:78:35
+   |
+76 |     a,b=mujoco.MjData(original),mujoco.MjData(marked)
+77 |     for _ in range(20):
+78 |         mujoco.mj_step(original,a);mujoco.mj_step(marked,b)
+   |                                   ^
+79 |     assert np.array_equal(a.qpos,b.qpos) and np.array_equal(a.qvel,b.qvel)
+   |
+
+Found 10 errors.

@@ -1,0 +1,1795 @@
+--- /dev/null
++++ src/cloud_edge_robot_arm/auto_mode/candidates.py
+@@ -0,0 +1,270 @@
++"""先按在线证据和能力筛选有限动作，候选集合不含执行入口。"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, fields, is_dataclass, replace
++from datetime import datetime
++from enum import Enum
++from types import MappingProxyType
++from typing import Any, TypeGuard
++
++from pydantic import BaseModel
++
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction, DecisionContext
++from cloud_edge_robot_arm.edge.evidence.conditions import ConditionStatus
++from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract
++from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
++
++
++def canonical_value(value: Any) -> Any:
++    """将冻结的契约字段规范化为可hash的JSON，不丢弃版本或条件参数。"""
++    if isinstance(value, BaseModel):
++        return value.model_dump(mode="json")
++    if isinstance(value, (set, frozenset)):
++        return sorted(canonical_value(item) for item in value)
++    if isinstance(value, datetime):
++        return value.isoformat()
++    if isinstance(value, Enum):
++        return value.value
++    if isinstance(value, Mapping):
++        return {str(key): canonical_value(item) for key, item in value.items()}
++    if isinstance(value, (tuple, list)):
++        return [canonical_value(item) for item in value]
++    if is_dataclass(value) and not isinstance(value, type):
++        return {field.name: canonical_value(getattr(value, field.name)) for field in fields(value)}
++    return value
++
++
++def content_hash(value: Any) -> str:
++    """计算严格有限JSON的内容hash。"""
++    return hashlib.sha256(
++        json.dumps(
++            canonical_value(value), sort_keys=True, separators=(",", ":"), allow_nan=False
++        ).encode()
++    ).hexdigest()
++
++
++@dataclass(frozen=True)
++class ActionCandidate:
++    """动作候选保留不可用原因和完整动作证据，选择不代表执行。"""
++
++    candidate_id: str
++    action: DecisionAction
++    executable: bool
++    unavailable_reasons: Sequence[str]
++    evidence_contract: ActionEvidenceContract | None
++
++    def __post_init__(self) -> None:
++        if not self.candidate_id or type(self.executable) is not bool:
++            raise ValueError("candidate requires a nonempty identity and boolean availability")
++        object.__setattr__(self, "action", DecisionAction(self.action))
++        object.__setattr__(self, "unavailable_reasons", tuple(self.unavailable_reasons))
++        if self.evidence_contract is not None:
++            object.__setattr__(self, "evidence_contract", replace(self.evidence_contract))
++        if not self.executable and not self.unavailable_reasons:
++            raise ValueError("unavailable candidate requires reasons")
++
++
++@dataclass(frozen=True)
++class CandidateSet:
++    """不可变候选集合绑定动作、可用性、条件及证据的内容hash。"""
++
++    candidates: Sequence[ActionCandidate]
++    content_hash: str
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "candidates", tuple(self.candidates))
++        self.validate()
++        if not self.content_hash:
++            object.__setattr__(self, "content_hash", self.digest())
++
++    def digest(self) -> str:
++        """按候选ID规范排序，输入排列不改变集合hash。"""
++        return content_hash(sorted(self.candidates, key=lambda row: row.candidate_id))
++
++    def validate(self) -> None:
++        """拒绝重复ID/动作、缺少停止路径以及内容被换绑。"""
++        ids = [row.candidate_id for row in self.candidates]
++        actions = [row.action for row in self.candidates]
++        if len(set(ids)) != len(ids) or len(set(actions)) != len(actions):
++            raise ValueError("duplicate candidate identity or action")
++        if not any(row.action == DecisionAction.STOP and row.executable for row in self.candidates):
++            raise ValueError("STOP must remain an executable candidate")
++        if self.content_hash and self.content_hash != self.digest():
++            raise ValueError("candidate content hash mismatch")
++
++
++def _number(value: object) -> TypeGuard[int | float]:
++    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
++
++
++def _contract_current(context: DecisionContext, contract: ActionEvidenceContract) -> bool:
++    observation = context.online_evidence.observation
++    evidence = contract.evidence
++    return (
++        evidence.observation_id == observation.observation_id
++        and evidence.captured_at == observation.captured_at
++        and evidence.calibration_version == observation.calibration_version
++        and contract.plan_version == context.plan_version
++        and contract.command_seq == context.command_seq
++        and contract.context_hash == context.online_evidence.context_hash
++    )
++
++
++def fresh_cloud_input(
++    context: DecisionContext,
++    contracts: Mapping[DecisionAction, ActionEvidenceContract],
++    now: datetime,
++) -> bool:
++    """云观测请求需要当前帧的真实TTL，但不授予任何物理动作权限。"""
++    if now.tzinfo is None or now.utcoffset() is None:
++        return False
++    for contract in contracts.values():
++        e = contract.evidence
++        if (
++            e.captured_at.tzinfo is None
++            or e.captured_at.utcoffset() is None
++            or not e.calibration_version
++            or e.identity_status != "CONFIRMED"
++            or e.sensor_status != "VALID"
++            or not set(contract.sensor_requirements).issubset(e.available_sensors)
++        ):
++            continue
++        if (
++            not _contract_current(context, contract)
++            or not _number(contract.ordinary_ttl_s)
++            or contract.ordinary_ttl_s <= 0
++        ):
++            continue
++        age = (now - context.online_evidence.observation.captured_at).total_seconds()
++        if 0 <= age <= contract.ordinary_ttl_s:
++            return True
++    return False
++
++
++def build_candidates(
++    context: DecisionContext,
++    *,
++    action_contracts: Mapping[DecisionAction, ActionEvidenceContract] | None = None,
++) -> CandidateSet:
++    """按真实当前契约、证据、能力、预算和原子边界生成五个有限候选。"""
++    contracts = MappingProxyType(
++        {DecisionAction(key): value for key, value in (action_contracts or {}).items()}
++    )
++    now = context.event.occurred_at
++    state = context.online_evidence.robot_state
++    budget = context.verification_budget
++    hard = (
++        state.estop_engaged
++        or state.collision_detected
++        or not state.connected
++        or budget.exhausted_reason is not None
++        or now >= budget.deadline_at
++        or budget.consecutive_no_progress >= budget.limits.max_no_progress
++        or any(
++            row.measured_values.get("hard_safety_fault") is True
++            for row in context.condition_verdicts
++        )
++    )
++    identity = content_hash(
++        {
++            "task": context.task_id,
++            "episode": context.episode_id,
++            "observation": context.event.observation_id,
++            "plan": context.plan_version,
++            "command": context.command_seq,
++            "mode": context.mode_version,
++            "context": context.online_evidence.context_hash,
++        }
++    )
++    result = []
++    for action in DecisionAction:
++        reasons = []
++        contract = contracts.get(action)
++        if action != DecisionAction.STOP:
++            if hard:
++                reasons.append("hard_stop_or_budget_exhausted")
++            if action not in context.capabilities:
++                reasons.append("capability_unavailable")
++            if context.event.atomic_action_active:
++                reasons.append("ordinary_decision_deferred_atomic")
++        if action == DecisionAction.LOCAL_RECOVER:
++            reasons.append("recovery_not_accepted_t13")
++        elif action == DecisionAction.REOBSERVE and budget.remaining_reobservations <= 0:
++            reasons.append("reobservation_budget_exhausted")
++        elif action == DecisionAction.REQUEST_CLOUD:
++            if not fresh_cloud_input(context, contracts, now):
++                reasons.append("cloud_input_ttl_missing_or_expired")
++            if (
++                any(row.status == ConditionStatus.FAIL for row in context.condition_verdicts)
++                or context.event.verification_status == ConditionStatus.FAIL
++                or context.evidence_verdict.status == "INVALID"
++            ) and budget.remaining_retries <= 0:
++                reasons.append("recovery_retry_budget_exhausted")
++        elif action == DecisionAction.CONTINUE:
++            estimate = context.risk_estimate
++            probability = estimate.failure_probability_by_action.get(action.value)
++            if (
++                estimate.status != "VALID"
++                or not _number(probability)
++                or probability is None
++                or not 0 <= probability <= 1
++            ):
++                reasons.append("calibrated_action_risk_unavailable")
++            if (
++                not _number(estimate.geometric_error_bound_m)
++                or not _number(estimate.motion_bound_m_s)
++                or estimate.geometric_error_bound_m is None
++                or estimate.motion_bound_m_s is None
++                or min(estimate.geometric_error_bound_m, estimate.motion_bound_m_s) < 0
++            ):
++                reasons.append("physical_bounds_unknown")
++            if (
++                context.evidence_verdict.status != "VALID"
++                or context.event.verification_status != ConditionStatus.PASS
++                or not context.condition_verdicts
++                or any(row.status != ConditionStatus.PASS for row in context.condition_verdicts)
++            ):
++                reasons.append("current_online_evidence_not_valid")
++            if contract is None:
++                reasons.append("current_action_contract_missing")
++            elif not _contract_current(context, contract):
++                reasons.append("current_action_contract_identity_mismatch")
++            else:
++                verdict = validate_evidence(
++                    contract,
++                    now,
++                    context.online_evidence.context_hash,
++                    context.online_evidence.observation.calibration_version or "",
++                    online_evidence=context.online_evidence,
++                )
++                if verdict.status != "VALID":
++                    reasons.extend(verdict.reasons)
++                e = contract.evidence
++                if (
++                    estimate.geometric_error_bound_m is not None
++                    and (
++                        not _number(e.geometric_error_bound_m)
++                        or e.geometric_error_bound_m < estimate.geometric_error_bound_m
++                    )
++                    or estimate.motion_bound_m_s is not None
++                    and (
++                        not _number(e.motion_bound_m_s)
++                        or e.motion_bound_m_s < estimate.motion_bound_m_s
++                    )
++                ):
++                    reasons.append("contract_understates_calibrated_bounds")
++        result.append(
++            ActionCandidate(
++                f"{action.value.lower()}-{identity[:24]}",
++                action,
++                not reasons,
++                tuple(reasons),
++                contract,
++            )
++        )
++    return CandidateSet(tuple(result), "")
+--- /dev/null
++++ src/cloud_edge_robot_arm/auto_mode/judgment.py
+@@ -0,0 +1,174 @@
++"""Immutable finite-choice judgments; rule scores never masquerade as probabilities."""
++
++from __future__ import annotations
++
++import hashlib
++import math
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, replace
++from pathlib import Path
++from time import perf_counter
++from types import MappingProxyType
++from typing import TYPE_CHECKING, Literal, Protocol
++
++from cloud_edge_robot_arm.auto_mode.candidates import CandidateSet
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionContext
++from cloud_edge_robot_arm.edge.evidence.models import DecisionEnvelope
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.auto_mode.joint_policy import ActionCostEstimate
++
++
++def _finite(value: object) -> bool:
++    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
++
++
++@dataclass(frozen=True)
++class JudgmentResult:
++    selected_candidate_id: str | None
++    rule_scores: Mapping[str, float]
++    candidate_probabilities: Mapping[str, float] | None
++    reported_confidence: float | None
++    status: Literal["SELECTED", "ABSTAIN", "ERROR"]
++    provider_version: str
++    latency_ms: float
++
++    def __post_init__(self) -> None:
++        if self.status not in {"SELECTED", "ABSTAIN", "ERROR"}:
++            raise ValueError("unsupported judgment status")
++        if self.selected_candidate_id is not None and (
++            not isinstance(self.selected_candidate_id, str) or not self.selected_candidate_id
++        ):
++            raise ValueError("selected candidate identity must be a nonempty string or None")
++        if (self.status == "SELECTED") != bool(self.selected_candidate_id):
++            raise ValueError("only SELECTED can identify a selected candidate")
++        if (
++            not isinstance(self.provider_version, str)
++            or not self.provider_version
++            or not _finite(self.latency_ms)
++            or self.latency_ms < 0
++        ):
++            raise ValueError("provider identity and finite measured/reported latency are required")
++        scores = dict(self.rule_scores)
++        if any(
++            not isinstance(key, str) or not key or not _finite(value) or value < 0
++            for key, value in scores.items()
++        ):
++            raise ValueError("rule costs must be named finite nonnegative values")
++        object.__setattr__(self, "rule_scores", MappingProxyType(scores))
++        if self.candidate_probabilities is not None:
++            probabilities = dict(self.candidate_probabilities)
++            if (
++                any(
++                    not isinstance(key, str) or not key or not _finite(value) or not 0 <= value <= 1
++                    for key, value in probabilities.items()
++                )
++                or sum(probabilities.values()) > 1 + 1e-9
++            ):
++                raise ValueError("candidate probabilities conflict or are outside [0,1]")
++            object.__setattr__(self, "candidate_probabilities", MappingProxyType(probabilities))
++        if self.reported_confidence is not None and (
++            not _finite(self.reported_confidence) or not 0 <= self.reported_confidence <= 1
++        ):
++            raise ValueError("reported confidence must be a finite unit interval value")
++
++
++@dataclass(frozen=True)
++class DecisionTrace:
++    envelope: DecisionEnvelope
++    candidates: CandidateSet
++    judgment: JudgmentResult
++    estimates: Sequence[ActionCostEstimate]
++    disposition: str
++    reason_codes: Sequence[str]
++    verification_event_ids: Sequence[str]
++    cost_snapshot: Mapping[str, object] | None = None
++    risk_model_hash: str = ""
++    weights_hash: str = ""
++    source_hashes: Mapping[str, str] | None = None
++    observation_checksum: str = ""
++    calibration_version: str = ""
++    software_only: bool = False
++    rule_cpu_ms: float | None = None
++    provider_elapsed_ms: float | None = None
++
++    def __post_init__(self) -> None:
++        self.candidates.validate()
++        if self.software_only and self.envelope.valid_until > self.envelope.created_at:
++            raise ValueError("software trace cannot authorize future physical submission")
++        if self.envelope.candidate_set_hash != self.candidates.content_hash:
++            raise ValueError("trace candidate/envelope hash mismatch")
++        if not self.disposition:
++            raise ValueError("trace must distinguish selection and fallback disposition")
++        object.__setattr__(self, "estimates", tuple(replace(row) for row in self.estimates))
++        object.__setattr__(self, "reason_codes", tuple(self.reason_codes))
++        object.__setattr__(self, "verification_event_ids", tuple(self.verification_event_ids))
++        object.__setattr__(self, "cost_snapshot", _freeze(self.cost_snapshot or {}))
++        object.__setattr__(self, "source_hashes", MappingProxyType(dict(self.source_hashes or {})))
++        for latency in (self.rule_cpu_ms, self.provider_elapsed_ms):
++            if latency is not None and (not _finite(latency) or latency < 0):
++                raise ValueError("trace elapsed time must remain finite and nonnegative")
++
++
++def _freeze(value: Mapping[str, object]) -> Mapping[str, object]:
++    return MappingProxyType(
++        {key: _freeze(item) if isinstance(item, Mapping) else item for key, item in value.items()}
++    )
++
++
++class DecisionJudge(Protocol):
++    def choose(
++        self,
++        context: DecisionContext,
++        candidates: CandidateSet,
++        estimates: Sequence[ActionCostEstimate],
++    ) -> JudgmentResult: ...
++
++
++class CostDecisionJudge:
++    """Deterministic minimum known cost over already legal candidates, then ID tie-break."""
++
++    provider_version = (
++        "cost-decision-rule.v1:" + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
++    )
++
++    def __init__(self, *, context_version: str | None = None) -> None:
++        if context_version is not None:
++            self.provider_version = type(self).provider_version + ":" + context_version
++
++    def choose(
++        self,
++        context: DecisionContext,
++        candidates: CandidateSet,
++        estimates: Sequence[ActionCostEstimate],
++    ) -> JudgmentResult:
++        from cloud_edge_robot_arm.auto_mode.joint_policy import score_actions
++
++        started = perf_counter()
++        candidates.validate()
++        scores = score_actions(context, estimates)
++        feasible = {
++            row.candidate_id: scores[row.action]
++            for row in candidates.candidates
++            if row.executable and row.action in scores
++        }
++        if not feasible:
++            return JudgmentResult(
++                None,
++                {},
++                None,
++                None,
++                "ABSTAIN",
++                self.provider_version,
++                (perf_counter() - started) * 1000,
++            )
++        selected = min(feasible, key=lambda identity: (feasible[identity], identity))
++        return JudgmentResult(
++            selected,
++            feasible,
++            None,
++            None,
++            "SELECTED",
++            self.provider_version,
++            (perf_counter() - started) * 1000,
++        )
+--- /dev/null
++++ src/cloud_edge_robot_arm/auto_mode/joint_policy.py
+@@ -0,0 +1,728 @@
++"""Finite online evidence/cost decisions, with no execution or model-request transport."""
++
++from __future__ import annotations
++
++import json
++import math
++import os
++import re
++import tempfile
++from collections import OrderedDict
++from collections.abc import Callable, Mapping, Sequence
++from dataclasses import dataclass, replace
++from datetime import UTC, datetime, timedelta
++from pathlib import Path
++from time import perf_counter
++from types import MappingProxyType
++from typing import Literal, TypeGuard
++
++from cloud_edge_robot_arm.auto_mode.candidates import (
++    CandidateSet,
++    build_candidates,
++    canonical_value,
++    content_hash,
++)
++from cloud_edge_robot_arm.auto_mode.judgment import (
++    CostDecisionJudge,
++    DecisionJudge,
++    DecisionTrace,
++    JudgmentResult,
++)
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction, DecisionContext
++from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract, DecisionEnvelope
++from cloud_edge_robot_arm.research.cost_ledger import CostLedger, CostSnapshot
++from cloud_edge_robot_arm.vision.risk.models import RiskModelArtifact
++
++_REQUIRED_WEIGHTS = frozenset(
++    {"failure_loss", "stop_failure_loss", "inference_weight", "network_weight", "switch_weight"}
++)
++
++
++def _number(value: object) -> TypeGuard[int | float]:
++    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
++
++
++def _weights(values: Mapping[str, float]) -> Mapping[str, float]:
++    if set(values) != _REQUIRED_WEIGHTS or any(not _number(v) or v < 0 for v in values.values()):
++        raise ValueError("weights require the five preregistered finite nonnegative costs")
++    return MappingProxyType({key: float(value) for key, value in values.items()})
++
++
++@dataclass(frozen=True)
++class ActionCostEstimate:
++    action: DecisionAction
++    failure_probability: float | None
++    failure_loss: float
++    inference_cost: float | None
++    network_cost: float | None
++    switch_cost: float | None
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "action", DecisionAction(self.action))
++        if self.failure_probability is not None and (
++            not _number(self.failure_probability) or not 0 <= self.failure_probability <= 1
++        ):
++            raise ValueError("failure probability must be calibrated or None")
++        if not _number(self.failure_loss) or self.failure_loss < 0:
++            raise ValueError("failure loss must be finite and nonnegative")
++        for value in (self.inference_cost, self.network_cost, self.switch_cost):
++            if value is not None and (not _number(value) or value < 0):
++                raise ValueError("cost components must be measured finite values or None")
++
++
++def estimate_action_costs(
++    context: DecisionContext, measured_costs: CostSnapshot, weights: Mapping[str, float]
++) -> list[ActionCostEstimate]:
++    """Use mean measured cost per sent attempt, never provider RTT as inference time.
++
++    Timing aggregates have no per-action or per-role attribution, so this heuristic
++    explicitly uses the aggregate mean for REQUEST_CLOUD. Unknown inference stays
++    None, including when only round-trip timing exists. No request is sent here.
++    """
++    frozen = _weights(weights)
++    attempts = measured_costs.model_requests
++    if type(attempts) is not int or attempts < 0:
++        raise ValueError("measured attempt denominator is invalid")
++    for value in (measured_costs.inference_s, measured_costs.network_s, measured_costs.switch_s):
++        if value is not None and (not _number(value) or value < 0):
++            raise ValueError("measured cost aggregate is invalid")
++    result = []
++    for action in DecisionAction:
++        probability = (
++            context.risk_estimate.failure_probability_by_action.get(action.value)
++            if context.risk_estimate.status == "VALID"
++            else None
++        )
++        if probability is not None and (not _number(probability) or not 0 <= probability <= 1):
++            probability = None
++        loss = (
++            frozen["stop_failure_loss"] if action == DecisionAction.STOP else frozen["failure_loss"]
++        )
++        if action == DecisionAction.REQUEST_CLOUD:
++            inference = (
++                measured_costs.inference_s / attempts * frozen["inference_weight"]
++                if attempts and measured_costs.inference_s is not None
++                else None
++            )
++            network = (
++                measured_costs.network_s / attempts * frozen["network_weight"] if attempts else None
++            )
++            switch = (
++                measured_costs.switch_s / attempts * frozen["switch_weight"] if attempts else None
++            )
++        else:
++            # These rule actions make no model/transport/mode request themselves.
++            inference = network = switch = 0.0
++        if action == DecisionAction.STOP:
++            # STOP pays deterministic task-failure loss, not a made-up p=1.
++            probability = None
++        result.append(ActionCostEstimate(action, probability, loss, inference, network, switch))
++    return result
++
++
++def score_actions(
++    context: DecisionContext, estimates: Sequence[ActionCostEstimate]
++) -> Mapping[DecisionAction, float]:
++    """Compute finite expected costs; missing probability/cost remains unranked."""
++    scores: dict[DecisionAction, float] = {}
++    seen: set[DecisionAction] = set()
++    for row in estimates:
++        row = replace(row)  # Revalidate dataclass fields on external estimates.
++        if row.action in seen:
++            raise ValueError("duplicate action cost estimate")
++        seen.add(row.action)
++        if row.action == DecisionAction.STOP:
++            risk_cost = row.failure_loss
++        elif row.failure_probability is None:
++            continue
++        else:
++            risk_cost = row.failure_probability * row.failure_loss
++        if any(v is None for v in (row.inference_cost, row.network_cost, row.switch_cost)):
++            continue
++        assert (
++            row.inference_cost is not None
++            and row.network_cost is not None
++            and row.switch_cost is not None
++        )
++        score = risk_cost + row.inference_cost + row.network_cost + row.switch_cost
++        if math.isfinite(score):
++            scores[row.action] = score
++    return MappingProxyType(scores)
++
++
++@dataclass(frozen=True)
++class JointPolicyAdmission:
++    """Future source-bound admission request, never an acceptance flag.
++
++    T12a does not authorize an ordinary research decision from this object. A
++    future source verifier must reconstruct INITIAL, calibrated provenance and
++    every preregistered weight candidate, including actual selection outcomes.
++    SELECTION_EXPLORATION needs INITIAL/calibration and finite candidates first,
++    rather than circularly requiring its own completed selection result.
++    """
++
++    stage: Literal["SELECTION_EXPLORATION", "SELECTION_ACCEPTED"]
++    initial_protocol_directory: str
++    risk_artifact_hash: str
++    candidate_weights: Sequence[Mapping[str, float]]
++    source_hashes: Mapping[str, str]
++    selection_directory: str | None = None
++
++    def __post_init__(self) -> None:
++        if self.stage not in {"SELECTION_EXPLORATION", "SELECTION_ACCEPTED"}:
++            raise ValueError("unsupported joint admission stage")
++        if not self.initial_protocol_directory or len(self.risk_artifact_hash) != 64:
++            raise ValueError("joint admission requires INITIAL and risk artifact identity")
++        if not self.candidate_weights or not self.source_hashes:
++            raise ValueError("joint admission requires finite preregistered candidates and sources")
++        object.__setattr__(
++            self, "candidate_weights", tuple(_weights(row) for row in self.candidate_weights)
++        )
++        object.__setattr__(self, "source_hashes", MappingProxyType(dict(self.source_hashes)))
++
++
++ContractProvider = Callable[[DecisionContext], Mapping[DecisionAction, ActionEvidenceContract]]
++AdmissionProvider = Callable[[DecisionContext], JointPolicyAdmission | None]
++
++
++def joint_policy_source_hashes() -> Mapping[str, str]:
++    """Bind rule, candidate, risk estimator and evidence validator actual sources."""
++    import hashlib
++
++    from cloud_edge_robot_arm.edge.evidence import validator
++    from cloud_edge_robot_arm.vision.risk import calibration
++
++    base = Path(__file__).parent
++    sources = {
++        f"auto_mode/{name}": base / name
++        for name in ("candidates.py", "judgment.py", "joint_policy.py", "runtime_events.py")
++    }
++    sources.update(
++        {
++            "edge/evidence/validator.py": Path(validator.__file__),
++            "vision/risk/calibration.py": Path(calibration.__file__),
++        }
++    )
++    return MappingProxyType(
++        {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in sources.items()}
++    )
++
++
++def _hard_stop(context: DecisionContext, now: datetime) -> bool:
++    state = context.online_evidence.robot_state
++    budget = context.verification_budget
++    return (
++        state.estop_engaged
++        or state.collision_detected
++        or not state.connected
++        or budget.exhausted_reason is not None
++        or now >= budget.deadline_at
++        or budget.consecutive_no_progress >= budget.limits.max_no_progress
++        or any(
++            row.measured_values.get("hard_safety_fault") is True
++            for row in context.condition_verdicts
++        )
++    )
++
++
++def _envelope_expiry(
++    context: DecisionContext,
++    action: DecisionAction,
++    contract: ActionEvidenceContract | None,
++    now: datetime,
++) -> datetime:
++    """Derive validity from actual evidence; no guessed TTL or physical bounds."""
++    if action == DecisionAction.STOP:
++        return now
++    deadline = context.verification_budget.deadline_at
++    if deadline.tzinfo is None or deadline <= now:
++        return now
++    if action == DecisionAction.REOBSERVE:
++        return deadline
++    if contract is None:
++        return now
++    evidence = contract.evidence
++    if (
++        evidence.captured_at.tzinfo is None
++        or evidence.captured_at > now
++        or not _number(contract.ordinary_ttl_s)
++        or contract.ordinary_ttl_s <= 0
++    ):
++        return now
++    age = (now - evidence.captured_at).total_seconds()
++    horizon = min((deadline - now).total_seconds(), contract.ordinary_ttl_s - age)
++    if horizon <= 0:
++        return now
++    expiry = now + timedelta(seconds=horizon)
++    if action == DecisionAction.REQUEST_CLOUD:
++        return expiry if expiry > now else now
++    error, motion = evidence.geometric_error_bound_m, evidence.motion_bound_m_s
++    if (
++        not _number(error)
++        or error < 0
++        or not _number(motion)
++        or motion < 0
++        or not _number(contract.allowed_error_m)
++        or contract.allowed_error_m <= 0
++        or not _number(contract.expected_duration_s)
++        or contract.expected_duration_s < 0
++    ):
++        return now
++    available = contract.allowed_error_m - error - motion * contract.expected_duration_s
++    if not math.isfinite(available) or available < 0:
++        return now
++    if motion > 0:
++        horizon = min(horizon, available / motion - age)
++        if horizon <= 0:
++            return now
++        expiry = now + timedelta(seconds=horizon)
++    return expiry if expiry > now else now
++
++
++class JsonDecisionTraceSink:
++    """Atomically archive an immutable hashed decision; conflicting IDs never overwrite."""
++
++    def __init__(self, directory: Path | str) -> None:
++        self.directory = Path(directory)
++
++    def __call__(self, trace: DecisionTrace) -> None:
++        identity = trace.envelope.decision_id
++        if re.fullmatch(r"decision-[0-9a-f]{32}", identity) is None:
++            raise ValueError("unsafe decision trace identity")
++        payload = canonical_value(trace)
++        record = {
++            "schema_version": "ced.decision-trace.v1",
++            "content_hash": content_hash(payload),
++            "payload": payload,
++        }
++        encoded = json.dumps(
++            record, sort_keys=True, separators=(",", ":"), allow_nan=False
++        ).encode()
++        self.directory.mkdir(parents=True, exist_ok=True)
++        target = self.directory / f"{identity}.json"
++        with tempfile.NamedTemporaryFile(
++            dir=self.directory, prefix=".decision-", delete=False
++        ) as handle:
++            temporary = Path(handle.name)
++            handle.write(encoded)
++            handle.flush()
++            os.fsync(handle.fileno())
++        try:
++            try:
++                # Atomic install without replacement, including concurrent writers.
++                os.link(temporary, target)
++            except FileExistsError:
++                if target.read_bytes() != encoded:
++                    raise ValueError("conflicting immutable decision trace") from None
++            directory_fd = os.open(self.directory, os.O_RDONLY)
++            try:
++                os.fsync(directory_fd)
++            finally:
++                os.close(directory_fd)
++        finally:
++            temporary.unlink(missing_ok=True)
++
++
++class JointEvidencePolicy:
++    """T12a SOFTWARE_ONLY math with actual adaptive admission explicitly closed.
++
++    This object produces audit decisions only. Hardware dispatch and commit must
++    remain in the existing executor. Rule/provider latency is recorded separately;
++    arbitrary synchronous injected providers cannot be forcibly interrupted.
++    """
++
++    def __init__(
++        self,
++        risk_model: RiskModelArtifact,
++        weights: Mapping[str, float],
++        cost_ledger: CostLedger,
++        judge: DecisionJudge | None = None,
++        *,
++        contract_provider: ContractProvider | None = None,
++        software_only: bool = False,
++        clock: Callable[[], datetime] | None = None,
++        admission_provider: AdmissionProvider | None = None,
++        trace_sink: Callable[[DecisionTrace], None] | None = None,
++        judge_timeout_s: float = 1.0,
++    ) -> None:
++        if type(software_only) is not bool or not _number(judge_timeout_s) or judge_timeout_s <= 0:
++            raise ValueError("explicit software mode and finite judgment timeout are required")
++        self.risk_model = replace(
++            risk_model, feature_schema=MappingProxyType(dict(risk_model.feature_schema))
++        )
++        self.weights = _weights(weights)
++        self.cost_ledger = cost_ledger
++        self.contract_provider = contract_provider
++        self.software_only = software_only
++        self.clock = clock or (lambda: datetime.now(UTC))
++        self.admission_provider = admission_provider
++        self.trace_sink = trace_sink
++        self.judge_timeout_s = float(judge_timeout_s)
++        self.source_hashes = joint_policy_source_hashes()
++        self.weights_hash = content_hash(self.weights)
++        self.policy_version = "joint-evidence.v1:" + content_hash(
++            {
++                "weights": self.weights_hash,
++                "risk": self.risk_model.model_hash,
++                "sources": self.source_hashes,
++                "software_only": software_only,
++            }
++        )
++        self.judge = (
++            judge if judge is not None else CostDecisionJudge(context_version=self.policy_version)
++        )
++        self._traces: list[DecisionTrace] = []
++        self._events: OrderedDict[str, tuple[str, DecisionTrace]] = OrderedDict()
++        self.last_trace: DecisionTrace | None = None
++
++    @property
++    def traces(self) -> tuple[DecisionTrace, ...]:
++        """Immutable audit records; durable storage can be supplied as trace_sink."""
++        return tuple(self._traces)
++
++    def _save(
++        self,
++        context: DecisionContext,
++        candidates: CandidateSet,
++        estimates: Sequence[ActionCostEstimate],
++        costs: CostSnapshot,
++        judgment: JudgmentResult,
++        action: DecisionAction,
++        disposition: str,
++        reasons: Sequence[str],
++        now: datetime,
++        *,
++        rule_ms: float | None = None,
++        provider_ms: float | None = None,
++    ) -> DecisionAction:
++        selected = next(row for row in candidates.candidates if row.action == action)
++        expiry = _envelope_expiry(context, action, selected.evidence_contract, now)
++        if self.software_only or disposition in {"DEFERRED_ATOMIC", "HARD_STOP", "NOT_ADMITTED"}:
++            expiry = now
++        envelope = DecisionEnvelope(
++            "decision-"
++            + content_hash(
++                {
++                    "event": context.event.event_id,
++                    "candidates": candidates.content_hash,
++                    "policy": self.policy_version,
++                    "action": action,
++                    "created_at": now,
++                }
++            )[:32],
++            context.task_id,
++            context.episode_id,
++            context.event.observation_id,
++            context.plan_version,
++            context.command_seq,
++            context.mode_version,
++            context.online_evidence.context_hash,
++            candidates.content_hash,
++            action,
++            self.policy_version,
++            judgment.provider_version,
++            now,
++            expiry,
++        )
++        trace = DecisionTrace(
++            envelope,
++            candidates,
++            judgment,
++            estimates,
++            disposition,
++            tuple(reasons),
++            (context.event.event_id,),
++            costs.model_dump(),
++            self.risk_model.model_hash,
++            self.weights_hash,
++            self.source_hashes,
++            context.online_evidence.observation.checksum_sha256,
++            context.online_evidence.observation.calibration_version or "",
++            self.software_only,
++            rule_ms,
++            provider_ms,
++        )
++        # A sink must complete before returning the choice; no silent loss of durable audit.
++        if self.trace_sink is not None:
++            self.trace_sink(trace)
++        self._traces.append(trace)
++        self.last_trace = trace
++        return action
++
++    def _fallback(
++        self,
++        context: DecisionContext,
++        candidates: CandidateSet,
++        estimates: Sequence[ActionCostEstimate],
++        costs: CostSnapshot,
++        judgment: JudgmentResult,
++        reasons: Sequence[str],
++        now: datetime,
++        *,
++        rule_ms: float | None = None,
++        provider_ms: float | None = None,
++    ) -> DecisionAction:
++        available = next(
++            row for row in candidates.candidates if row.action == DecisionAction.REOBSERVE
++        )
++        if _hard_stop(context, now):
++            return self._save(
++                context,
++                candidates,
++                estimates,
++                costs,
++                judgment,
++                DecisionAction.STOP,
++                "FALLBACK_STOP",
++                (*reasons, "hard_stop_or_budget_exhausted"),
++                now,
++                rule_ms=rule_ms,
++                provider_ms=provider_ms,
++            )
++        if available.executable and context.verification_budget.remaining_reobservations > 0:
++            context.verification_budget.remaining_reobservations -= 1
++            action, disposition = DecisionAction.REOBSERVE, "FALLBACK_REOBSERVE"
++            reasons = (*reasons, "requires_new_capture")
++        else:
++            action, disposition = DecisionAction.STOP, "FALLBACK_STOP"
++            reasons = (*reasons, "reobservation_unavailable")
++        return self._save(
++            context,
++            candidates,
++            estimates,
++            costs,
++            judgment,
++            action,
++            disposition,
++            reasons,
++            now,
++            rule_ms=rule_ms,
++            provider_ms=provider_ms,
++        )
++
++    def decide(self, context: DecisionContext) -> DecisionAction:
++        """Read the live T8 ledger, filter, judge, validate and audit; never dispatch."""
++        now = self.clock()
++        if now.tzinfo is None or now.utcoffset() is None:
++            raise ValueError("decision clock must be timezone-aware")
++        costs = self.cost_ledger.snapshot()
++        reasons: tuple[str, ...]
++        current = replace(context, event=replace(context.event, occurred_at=now))
++        empty = JudgmentResult(
++            None, {}, None, None, "ABSTAIN", CostDecisionJudge.provider_version, 0.0
++        )
++        # No contract/model/judge provider precedes these unconditional stops.
++        if _hard_stop(context, now) or not self.software_only or context.event.atomic_action_active:
++            candidates = build_candidates(current)
++            if _hard_stop(context, now):
++                action, disposition, reasons = (
++                    DecisionAction.STOP,
++                    "HARD_STOP",
++                    ("hard_stop_or_budget_exhausted",),
++                )
++            elif not self.software_only:
++                action, disposition, reasons = (
++                    DecisionAction.STOP,
++                    "NOT_ADMITTED",
++                    ("adaptive_not_accepted", "actual_admission_verifier_unavailable"),
++                )
++            else:
++                action, disposition, reasons = (
++                    DecisionAction.CONTINUE,
++                    "DEFERRED_ATOMIC",
++                    ("await_atomic_boundary", "no_new_physical_authority"),
++                )
++            return self._save(
++                context, candidates, (), costs, empty, action, disposition, reasons, now
++            )
++        contracts: Mapping[DecisionAction, ActionEvidenceContract] = MappingProxyType({})
++        contract_error = None
++        if self.contract_provider is not None:
++            try:
++                contracts = MappingProxyType(
++                    {
++                        DecisionAction(key): replace(value)
++                        for key, value in self.contract_provider(context).items()
++                    }
++                )
++            except Exception as exc:
++                contract_error = f"contract_provider_error:{type(exc).__name__}"
++        candidates = build_candidates(current, action_contracts=contracts)
++        estimates = tuple(estimate_action_costs(context, costs, self.weights))
++        key = content_hash(
++            {
++                "task": context.task_id,
++                "episode": context.episode_id,
++                "mode": context.mode,
++                "mode_version": context.mode_version,
++                "plan": context.plan_version,
++                "command": context.command_seq,
++                "event": context.event,
++                "online_evidence": context.online_evidence,
++                "contracts": contracts,
++                "contract_error": contract_error,
++                "evidence": context.evidence_verdict,
++                "risk_estimate": context.risk_estimate,
++                "risk_features": context.risk_features,
++                "network": context.network_cost,
++                "conditions": context.condition_verdicts,
++                "costs": costs.model_dump(),
++                "deadline": context.verification_budget.deadline_at,
++                "capabilities": context.capabilities,
++                "budget_limits": context.verification_budget.limits,
++            }
++        )
++        old = self._events.get(context.event.event_id)
++        if old is not None:
++            if old[0] == key:
++                action = old[1].envelope.action
++                # Reserved capture/retry allowance is not charged twice. Current
++                # TTL/bounds must still permit a previously chosen ordinary action.
++                from cloud_edge_robot_arm.auto_mode.candidates import fresh_cloud_input
++
++                current_choice = next(row for row in candidates.candidates if row.action == action)
++                still_valid = (
++                    current_choice.executable
++                    if action == DecisionAction.CONTINUE
++                    else fresh_cloud_input(context, contracts, now)
++                    if action == DecisionAction.REQUEST_CLOUD
++                    else True
++                )
++                if still_valid:
++                    self.last_trace = old[1]
++                    return action
++            action = self._save(
++                context,
++                candidates,
++                estimates,
++                costs,
++                empty,
++                DecisionAction.STOP,
++                "DUPLICATE_CHANGED",
++                ("duplicate_event_inputs_changed_or_expired",),
++                now,
++            )
++        elif contract_error is not None or not any(
++            row.executable and row.action in {DecisionAction.CONTINUE, DecisionAction.REQUEST_CLOUD}
++            for row in candidates.candidates
++        ):
++            action = self._fallback(
++                context,
++                candidates,
++                estimates,
++                costs,
++                empty,
++                (contract_error or "current_evidence_requires_new_observation",),
++                now,
++            )
++        else:
++            provider_estimates = tuple(replace(row) for row in estimates)
++            estimate_hash = content_hash(provider_estimates)
++            judge_started = perf_counter()
++            result = empty
++            failure: str | None = None
++            try:
++                proposed = self.judge.choose(context, candidates, provider_estimates)
++                if not isinstance(proposed, JudgmentResult):
++                    raise ValueError("malformed judgment result")
++                result = replace(proposed)
++                candidates.validate()  # Recheck hash after untrusted provider access.
++                if content_hash(provider_estimates) != estimate_hash:
++                    raise ValueError("action cost estimates changed during provider call")
++            except Exception as exc:
++                result = JudgmentResult(
++                    None,
++                    {},
++                    None,
++                    None,
++                    "ERROR",
++                    result.provider_version
++                    if result is not empty
++                    else str(
++                        getattr(self.judge, "provider_version", type(self.judge).__qualname__)
++                    ),
++                    (perf_counter() - judge_started) * 1000,
++                )
++                failure = f"judge_failure:{type(exc).__name__}"
++            elapsed = (perf_counter() - judge_started) * 1000
++            finished = self.clock()
++            if finished.tzinfo is None or finished.utcoffset() is None or finished < now:
++                raise ValueError("judgment clock is missing or reversed")
++            if (
++                elapsed > self.judge_timeout_s * 1000
++                or finished >= context.verification_budget.deadline_at
++            ):
++                result = JudgmentResult(
++                    None, {}, None, None, "ERROR", result.provider_version, elapsed
++                )
++                failure = "judge_failure:TimeoutError"
++            refreshed = build_candidates(
++                replace(context, event=replace(context.event, occurred_at=finished)),
++                action_contracts=contracts,
++            )
++            selected = next(
++                (
++                    row
++                    for row in refreshed.candidates
++                    if row.candidate_id == result.selected_candidate_id
++                ),
++                None,
++            )
++            identities = {row.candidate_id for row in refreshed.candidates}
++            if failure is None:
++                if result.status != "SELECTED" or selected is None or not selected.executable:
++                    failure = f"judge_{result.status.lower()}_or_out_of_set"
++                elif (
++                    set(result.rule_scores) - identities
++                    or set(result.candidate_probabilities or {}) - identities
++                ):
++                    failure = "judge_payload_out_of_set"
++                elif refreshed.content_hash != candidates.content_hash:
++                    failure = "evidence_changed_or_expired_during_judgment"
++            is_rule = type(self.judge) is CostDecisionJudge
++            rule_ms, provider_ms = (elapsed, None) if is_rule else (None, elapsed)
++            # Audit errors are deliberately outside the provider exception block;
++            # a failed durable sink cannot cause a hidden fallback or double charge.
++            if failure is not None:
++                action = self._fallback(
++                    context,
++                    refreshed,
++                    estimates,
++                    costs,
++                    result,
++                    (failure,),
++                    finished,
++                    rule_ms=rule_ms,
++                    provider_ms=provider_ms,
++                )
++            else:
++                assert selected is not None
++                action = selected.action
++                reasons = ("software_only_math_fixture",)
++                if action == DecisionAction.REOBSERVE:
++                    context.verification_budget.remaining_reobservations -= 1
++                    reasons += ("requires_new_capture",)
++                if action == DecisionAction.REQUEST_CLOUD and (
++                    any(row.status.value == "FAIL" for row in context.condition_verdicts)
++                    or context.event.verification_status.value == "FAIL"
++                    or context.evidence_verdict.status == "INVALID"
++                ):
++                    context.verification_budget.remaining_retries -= 1
++                action = self._save(
++                    context,
++                    refreshed,
++                    estimates,
++                    costs,
++                    result,
++                    action,
++                    "SOFTWARE_ONLY_SELECTED",
++                    reasons,
++                    finished,
++                    rule_ms=rule_ms,
++                    provider_ms=provider_ms,
++                )
++        assert self.last_trace is not None
++        self._events[context.event.event_id] = (key, self.last_trace)
++        if len(self._events) > 128:
++            self._events.popitem(last=False)
++        return action
+--- /dev/null
++++ configs/research/joint_policy.yaml
+@@ -0,0 +1,20 @@
++schema_version: ced.joint-policy.v1
++status: SOFTWARE_ONLY
++adaptive_enabled: false
++risk_artifact: null
++accepted_initial: null
++weights: null
++selection_manifest: null
++admission_verifier: null
++candidate_actions:
++  - CONTINUE
++  - REOBSERVE
++  - LOCAL_RECOVER
++  - REQUEST_CLOUD
++  - STOP
++local_recover_enabled: false
++judge: cost-decision-rule.v1
++cost_source: CostLedger.snapshot
++unknown_cost: null
++actual_cloud_requests: 0
++claim: finite_candidate_heuristic_only
+--- /dev/null
++++ tests/test_decision_judgment.py
+@@ -0,0 +1,216 @@
++"""有限候选选择的非法输出、不可变hash及规则来源测试。"""
++
++from __future__ import annotations
++
++from dataclasses import replace
++from importlib import import_module
++
++import pytest
++
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++from cloud_edge_robot_arm.edge.evidence.models import ActionEvidenceContract, VisualEvidence
++from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
++from tests.test_runtime_auto_baselines import context
++
++
++def modules():
++    candidates = import_module("cloud_edge_robot_arm.auto_mode.candidates")
++    judgment = import_module("cloud_edge_robot_arm.auto_mode.judgment")
++    policy = import_module("cloud_edge_robot_arm.auto_mode.joint_policy")
++    return candidates, judgment, policy
++
++
++def prepared_context(**changes):
++    ctx = context(**changes)
++    fact = {
++        "source": "rgbd_estimate",
++        "target_id": "cube",
++        "identity_confirmed": True,
++        "observation_id": "fresh",
++        "pixel": [0, 0],
++        "value": True,
++    }
++    return replace(
++        ctx, online_evidence=replace(ctx.online_evidence, visual_facts={"target_visible": fact})
++    )
++
++
++def contracts(ctx):
++    obs = ctx.online_evidence.observation
++    evidence = VisualEvidence(
++        obs.observation_id,
++        obs.calibration_version,
++        obs.captured_at,
++        ctx.risk_estimate.geometric_error_bound_m,
++        ctx.risk_estimate.motion_bound_m_s,
++        "CONFIRMED",
++        "VALID",
++    )
++    contract = ActionEvidenceContract(
++        evidence,
++        0.5,
++        0.01,
++        ("rgbd",),
++        (ConditionSpec("target_visible", "cube"),),
++        (),
++        ctx.plan_version,
++        ctx.command_seq,
++        ctx.online_evidence.context_hash,
++        ordinary_ttl_s=5,
++    )
++    return {DecisionAction.CONTINUE: contract, DecisionAction.REQUEST_CLOUD: contract}
++
++
++def weights():
++    return dict(
++        failure_loss=10.0,
++        stop_failure_loss=20.0,
++        inference_weight=1.0,
++        network_weight=1.0,
++        switch_weight=1.0,
++    )
++
++
++def estimates(ctx):
++    module = import_module("cloud_edge_robot_arm.auto_mode.joint_policy")
++    return module.estimate_action_costs(
++        ctx,
++        CostSnapshot(model_requests=1, inference_s=0.2, network_s=0.1, switch_s=0.05),
++        weights(),
++    )
++
++
++def test_unsafe_low_cost_action_cannot_win():
++    c, j, p = modules()
++    ctx = prepared_context()
++    supplied = contracts(ctx)
++    supplied[DecisionAction.CONTINUE] = replace(
++        supplied[DecisionAction.CONTINUE], context_hash="stale"
++    )
++    candidates = c.build_candidates(ctx, action_contracts=supplied)
++    assert not next(
++        row for row in candidates.candidates if row.action == DecisionAction.CONTINUE
++    ).executable
++    result = j.CostDecisionJudge().choose(ctx, candidates, estimates(ctx))
++    assert result.selected_candidate_id != next(
++        row.candidate_id for row in candidates.candidates if row.action == DecisionAction.CONTINUE
++    )
++
++
++def test_missing_action_contract_and_unaccepted_recovery_are_masked():
++    c, j, p = modules()
++    ctx = prepared_context()
++    candidates = c.build_candidates(ctx)
++    assert not next(
++        row for row in candidates.candidates if row.action == DecisionAction.CONTINUE
++    ).executable
++    assert not next(
++        row for row in candidates.candidates if row.action == DecisionAction.LOCAL_RECOVER
++    ).executable
++    assert next(
++        row for row in candidates.candidates if row.action == DecisionAction.STOP
++    ).executable
++
++
++def test_atomic_ordinary_candidates_are_deferred_but_stop_remains():
++    c, j, p = modules()
++    ctx = prepared_context()
++    ctx = replace(ctx, event=replace(ctx.event, atomic_action_active=True))
++    candidates = c.build_candidates(ctx, action_contracts=contracts(ctx))
++    assert all(
++        not row.executable for row in candidates.candidates if row.action != DecisionAction.STOP
++    )
++
++
++def test_candidate_hash_rejects_mutation_and_duplicate_options():
++    c, j, p = modules()
++    ctx = prepared_context()
++    built = c.build_candidates(ctx, action_contracts=contracts(ctx))
++    wrong = replace(
++        built.candidates[0],
++        executable=not built.candidates[0].executable,
++        unavailable_reasons=("tampered",),
++    )
++    with pytest.raises(ValueError, match="hash"):
++        c.CandidateSet((wrong, *built.candidates[1:]), built.content_hash)
++    with pytest.raises(ValueError, match="duplicate"):
++        c.CandidateSet((built.candidates[0], built.candidates[0]), "")
++
++
++def test_rule_scores_have_no_fabricated_probabilities():
++    c, j, p = modules()
++    ctx = prepared_context()
++    built = c.build_candidates(ctx, action_contracts=contracts(ctx))
++    result = j.CostDecisionJudge().choose(ctx, built, estimates(ctx))
++    assert result.status == "SELECTED" and result.rule_scores
++    assert result.candidate_probabilities is None and result.reported_confidence is None
++    with pytest.raises(TypeError):
++        result.rule_scores["forged"] = 0
++
++
++def test_equal_scores_have_deterministic_tie_break():
++    c, j, p = modules()
++    ctx = prepared_context()
++    built = c.build_candidates(ctx, action_contracts=contracts(ctx))
++    values = [p.ActionCostEstimate(row.action, 0.0, 0.0, 0.0, 0.0, 0.0) for row in built.candidates]
++    expected = min(row.candidate_id for row in built.candidates if row.executable)
++    result = j.CostDecisionJudge().choose(ctx, built, values)
++    reversed_set = c.CandidateSet(tuple(reversed(built.candidates)), "")
++    assert result.selected_candidate_id == expected
++    assert j.CostDecisionJudge().choose(ctx, reversed_set, values).selected_candidate_id == expected
++
++
++def test_independent_answers_with_conflicting_actions_are_rejected():
++    c, j, p = modules()
++    with pytest.raises(ValueError):
++        j.JudgmentResult(
++            "a", {"a": 1, "b": 2}, {"a": 0.8, "b": 0.7}, 0.9, "SELECTED", "provider", 1.0
++        )
++    with pytest.raises(ValueError):
++        j.JudgmentResult("a", {}, None, None, "ABSTAIN", "provider", 1.0)
++
++
++def test_candidate_identity_changes_with_observation_and_versions():
++    c, j, p = modules()
++    ctx = prepared_context()
++    first = c.build_candidates(ctx, action_contracts=contracts(ctx))
++    fresh = ctx.online_evidence.observation.model_copy(
++        update={"frame_id": "next", "observation_id": "next"}
++    )
++    from cloud_edge_robot_arm.vision.risk.models import RiskFeatures
++
++    newer = replace(
++        ctx,
++        online_evidence=replace(ctx.online_evidence, observation=fresh),
++        event=replace(ctx.event, observation_id="next"),
++        risk_features=RiskFeatures({}, "next"),
++        condition_verdicts=tuple(replace(v, observation_id="next") for v in ctx.condition_verdicts),
++    )
++    assert c.build_candidates(newer).content_hash != first.content_hash
++
++
++def test_unknown_cloud_identity_cannot_replace_new_capture():
++    c, j, p = modules()
++    ctx = prepared_context()
++    supplied = contracts(ctx)
++    supplied = {
++        action: replace(value, evidence=replace(value.evidence, identity_status="UNKNOWN"))
++        for action, value in supplied.items()
++    }
++    choices = c.build_candidates(ctx, action_contracts=supplied)
++    assert not next(
++        row for row in choices.candidates if row.action == DecisionAction.REQUEST_CLOUD
++    ).executable
++
++
++def test_final_verification_failure_cannot_continue_even_with_old_pass_conditions():
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionStatus
++
++    c, j, p = modules()
++    ctx = prepared_context()
++    ctx = replace(ctx, event=replace(ctx.event, verification_status=ConditionStatus.FAIL))
++    choices = c.build_candidates(ctx, action_contracts=contracts(ctx))
++    assert not next(
++        row for row in choices.candidates if row.action == DecisionAction.CONTINUE
++    ).executable
+--- /dev/null
++++ tests/test_joint_visual_policy.py
+@@ -0,0 +1,369 @@
++"""联合策略只生成可审计选择，不执行机器人或伪造模型请求。"""
++
++from __future__ import annotations
++
++from dataclasses import replace
++from datetime import timedelta
++from importlib import import_module
++
++import pytest
++
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++from cloud_edge_robot_arm.research.cost_ledger import CostLedger, RequestCost
++from cloud_edge_robot_arm.vision.risk.models import RiskEstimate, RiskModelArtifact
++from tests.test_decision_judgment import contracts, prepared_context, weights
++from tests.test_runtime_auto_baselines import NOW
++
++
++def ledger():
++    result = CostLedger()
++    result.record_request(
++        RequestCost(
++            request_id="old-real-attempt",
++            sent_at=NOW - timedelta(seconds=2),
++            finished_at=NOW - timedelta(seconds=1),
++            is_cloud_model=True,
++            model_role="PLANNER",
++            deployment="CLOUD",
++            provider_location="REMOTE_SERVICE",
++            provider_version="frozen",
++            status="SUCCESS",
++            serialized_sent_bytes=23,
++            serialized_received_bytes=11,
++        )
++    )
++    result.record_timing(inference_s=0.2, network_s=0.1, switch_s=0.05)
++    return result
++
++
++def policy(*, judge=None, costs=None, software_only=True, clock=lambda: NOW):
++    module = import_module("cloud_edge_robot_arm.auto_mode.joint_policy")
++    risk = RiskModelArtifact("a" * 64, "missing-model.json", "missing-calibration.json", (), (), {})
++    return module.JointEvidencePolicy(
++        risk,
++        weights(),
++        costs or ledger(),
++        judge=judge,
++        contract_provider=contracts,
++        software_only=software_only,
++        clock=clock,
++    )
++
++
++def test_default_adaptive_path_is_closed_without_real_selection():
++    chosen = policy(software_only=False)
++    assert chosen.decide(prepared_context()) == DecisionAction.STOP
++    assert "adaptive_not_accepted" in chosen.last_trace.reason_codes
++
++
++def test_selected_decision_records_candidate_and_observation_hash():
++    chosen = policy()
++    assert chosen.decide(prepared_context()) == DecisionAction.CONTINUE
++    trace = chosen.last_trace
++    assert trace.envelope.observation_id == "fresh"
++    assert trace.envelope.candidate_set_hash == trace.candidates.content_hash
++    assert trace.envelope.context_hash == "ctx"
++    assert trace.envelope.plan_version == 1 and trace.envelope.mode_version == 1
++    assert trace.disposition == "SOFTWARE_ONLY_SELECTED"
++    assert trace.envelope.valid_until == trace.envelope.created_at
++
++
++def test_high_failure_risk_changes_choice_to_cloud():
++    ctx = prepared_context(
++        risk_estimate=RiskEstimate(
++            0.9, {"CONTINUE": 0.9, "REQUEST_CLOUD": 0.01}, 0.001, 0.001, "VALID"
++        )
++    )
++    assert policy().decide(ctx) == DecisionAction.REQUEST_CLOUD
++
++
++def test_aged_or_missing_ttl_requires_new_capture():
++    ctx = prepared_context()
++    old = ctx.online_evidence.observation.model_copy(
++        update={"captured_at": NOW - timedelta(seconds=6)}
++    )
++    ctx = replace(ctx, online_evidence=replace(ctx.online_evidence, observation=old))
++    chosen = policy()
++    assert chosen.decide(ctx) == DecisionAction.REOBSERVE
++    assert "requires_new_capture" in chosen.last_trace.reason_codes
++    no_contract = policy()
++    no_contract.contract_provider = None
++    assert no_contract.decide(prepared_context()) == DecisionAction.REOBSERVE
++
++
++def test_physical_unknown_bounds_cannot_win():
++    ctx = prepared_context(risk_estimate=RiskEstimate(None, {}, None, None, "UNKNOWN"))
++    chosen = policy()
++    assert chosen.decide(ctx) in {
++        DecisionAction.REOBSERVE,
++        DecisionAction.REQUEST_CLOUD,
++        DecisionAction.STOP,
++    }
++    assert not next(
++        row
++        for row in chosen.last_trace.candidates.candidates
++        if row.action == DecisionAction.CONTINUE
++    ).executable
++
++
++def test_unsafe_hard_stop_bypasses_cheap_action_and_atomic_boundary():
++    ctx = prepared_context()
++    state = ctx.online_evidence.robot_state.model_copy(update={"estop_engaged": True})
++    ctx = replace(
++        ctx,
++        online_evidence=replace(ctx.online_evidence, robot_state=state),
++        event=replace(ctx.event, atomic_action_active=True),
++    )
++    chosen = policy()
++    assert chosen.decide(ctx) == DecisionAction.STOP
++    assert chosen.last_trace.disposition == "HARD_STOP"
++
++
++def test_atomic_non_safety_defer_does_not_authorize_next_action():
++    ctx = prepared_context()
++    ctx = replace(ctx, event=replace(ctx.event, atomic_action_active=True))
++    chosen = policy()
++    assert chosen.decide(ctx) == DecisionAction.CONTINUE
++    assert chosen.last_trace.disposition == "DEFERRED_ATOMIC"
++    assert chosen.last_trace.envelope.valid_until == chosen.last_trace.envelope.created_at
++
++
++@pytest.mark.parametrize("mode", ["out_of_set", "abstain", "timeout"])
++def test_bad_provider_output_routes_with_budget_and_preserves_failure(mode):
++    module = import_module("cloud_edge_robot_arm.auto_mode.judgment")
++
++    class BadJudge:
++        def choose(self, context, candidates, estimates):
++            if mode == "timeout":
++                raise TimeoutError("provider deadline")
++            return module.JudgmentResult(
++                "outside" if mode == "out_of_set" else None,
++                {},
++                None,
++                None,
++                "SELECTED" if mode == "out_of_set" else "ABSTAIN",
++                "fake-provider",
++                1.0,
++            )
++
++    ctx = prepared_context()
++    chosen = policy(judge=BadJudge())
++    assert chosen.decide(ctx) == DecisionAction.REOBSERVE
++    assert ctx.verification_budget.remaining_reobservations == 1
++    assert chosen.last_trace.judgment.provider_version == "fake-provider" or mode == "timeout"
++    assert chosen.last_trace.disposition == "FALLBACK_REOBSERVE"
++    assert "requires_new_capture" in chosen.last_trace.reason_codes
++    assert chosen.decide(ctx) == DecisionAction.REOBSERVE
++    assert ctx.verification_budget.remaining_reobservations == 1
++
++
++def test_exhausted_budget_stops_instead_of_silent_fallback():
++    ctx = prepared_context()
++    ctx.verification_budget.remaining_reobservations = 0
++    chosen = policy()
++    chosen.contract_provider = None
++    assert chosen.decide(ctx) == DecisionAction.STOP
++
++
++def test_policy_reads_live_ledger_and_does_not_count_rules_as_model_calls():
++    costs = ledger()
++    chosen = policy(costs=costs)
++    ctx = prepared_context(
++        risk_estimate=RiskEstimate(
++            0.09, {"CONTINUE": 0.09, "REQUEST_CLOUD": 0.01}, 0.001, 0.001, "VALID"
++        )
++    )
++    assert chosen.decide(ctx) == DecisionAction.REQUEST_CLOUD
++    costs.record_timing(network_s=5)
++    changed = replace(ctx, event=replace(ctx.event, event_id="second"))
++    assert chosen.decide(changed) == DecisionAction.CONTINUE
++    assert costs.snapshot().model_requests == 1 and costs.snapshot().application_bytes == 34
++    assert chosen.last_trace.judgment.candidate_probabilities is None
++
++
++def test_unknown_inference_cost_stays_null_without_rtt_substitution():
++    module = import_module("cloud_edge_robot_arm.auto_mode.joint_policy")
++    from cloud_edge_robot_arm.research.cost_ledger import CostSnapshot
++
++    rows = module.estimate_action_costs(
++        prepared_context(), CostSnapshot(model_requests=1, provider_roundtrip_s=3), weights()
++    )
++    cloud = next(row for row in rows if row.action == DecisionAction.REQUEST_CLOUD)
++    assert cloud.inference_cost is None
++
++
++def test_failed_and_timed_out_attempts_and_telemetry_remain_separate():
++    costs = ledger()
++    for number, status in [(2, "TIMEOUT"), (3, "SUCCESS")]:
++        costs.record_request(
++            RequestCost(
++                request_id=f"attempt-{number}",
++                sent_at=NOW,
++                finished_at=NOW + timedelta(seconds=1),
++                is_cloud_model=True,
++                model_role="SUPERVISOR",
++                deployment="CLOUD",
++                provider_location="REMOTE_SERVICE",
++                provider_version="frozen",
++                status=status,
++                serialized_sent_bytes=7,
++                serialized_received_bytes=5 if status == "SUCCESS" else 0,
++            )
++        )
++    costs.record_telemetry(3, 4)
++    chosen = policy(costs=costs)
++    chosen.decide(prepared_context())
++    summary = costs.snapshot()
++    assert summary.model_requests == 3 and summary.cloud_model_requests == 3
++    assert summary.telemetry_messages == 1 and summary.application_bytes == 60
++
++
++def test_hard_stop_never_calls_contract_or_judge_provider():
++    ctx = prepared_context()
++    ctx = replace(
++        ctx,
++        online_evidence=replace(
++            ctx.online_evidence,
++            robot_state=ctx.online_evidence.robot_state.model_copy(update={"estop_engaged": True}),
++        ),
++    )
++    chosen = policy()
++
++    def forbidden(_):
++        raise AssertionError("hard stop waited for ordinary provider")
++
++    chosen.contract_provider = forbidden
++    assert chosen.decide(ctx) == DecisionAction.STOP
++
++
++def test_provider_failure_after_absolute_deadline_cannot_reserve_new_capture():
++    times = iter((NOW, NOW + timedelta(seconds=61)))
++
++    class SlowJudge:
++        def choose(self, context, candidates, estimates):
++            raise TimeoutError("late provider")
++
++    chosen = policy(judge=SlowJudge(), clock=lambda: next(times))
++    ctx = prepared_context()
++    assert chosen.decide(ctx) == DecisionAction.STOP
++    assert ctx.verification_budget.remaining_reobservations == 2
++    assert chosen.last_trace.judgment.status == "ERROR"
++
++
++def test_arbitrary_provider_error_is_a_recorded_budgeted_fallback():
++    class BrokenJudge:
++        def choose(self, context, candidates, estimates):
++            raise OSError("transport unavailable")
++
++    chosen = policy(judge=BrokenJudge())
++    assert chosen.decide(prepared_context()) == DecisionAction.REOBSERVE
++    assert chosen.last_trace.judgment.status == "ERROR"
++    assert "judge_failure:OSError" in chosen.last_trace.reason_codes
++
++
++def test_provider_cannot_rebind_unavailable_recovery_candidate():
++    module = import_module("cloud_edge_robot_arm.auto_mode.judgment")
++
++    class RebindingJudge:
++        def choose(self, context, candidates, estimates):
++            row = next(
++                row for row in candidates.candidates if row.action == DecisionAction.LOCAL_RECOVER
++            )
++            object.__setattr__(row, "executable", True)
++            return module.JudgmentResult(
++                row.candidate_id, {}, None, None, "SELECTED", "tampering-provider", 0.0
++            )
++
++    chosen = policy(judge=RebindingJudge())
++    assert chosen.decide(prepared_context()) == DecisionAction.REOBSERVE
++    assert chosen.last_trace.judgment.status == "ERROR"
++
++
++def test_failed_audit_sink_never_silently_returns_or_double_reserves():
++    chosen = policy()
++    chosen.contract_provider = None
++
++    def broken_sink(trace):
++        raise RuntimeError("durable audit unavailable")
++
++    chosen.trace_sink = broken_sink
++    ctx = prepared_context()
++    with pytest.raises(RuntimeError, match="durable audit unavailable"):
++        chosen.decide(ctx)
++    assert ctx.verification_budget.remaining_reobservations == 1
++    assert chosen.last_trace is None
++
++
++def test_repeated_reserved_capture_with_last_allowance_is_idempotent():
++    chosen = policy()
++    chosen.contract_provider = None
++    ctx = prepared_context()
++    ctx.verification_budget.remaining_reobservations = 1
++    assert chosen.decide(ctx) == DecisionAction.REOBSERVE
++    assert chosen.decide(ctx) == DecisionAction.REOBSERVE
++    assert ctx.verification_budget.remaining_reobservations == 0
++    assert len(chosen.traces) == 1
++
++
++def test_duplicate_event_rejects_replaced_risk_without_new_quota():
++    chosen = policy()
++    ctx = prepared_context()
++    assert chosen.decide(ctx) == DecisionAction.CONTINUE
++    unknown = replace(
++        ctx, risk_estimate=RiskEstimate(None, {"CONTINUE": None}, None, None, "UNKNOWN")
++    )
++    assert chosen.decide(unknown) == DecisionAction.STOP
++    assert ctx.verification_budget.remaining_reobservations == 2
++
++
++def test_physical_expiry_is_derived_from_error_motion_duration_and_real_ttl():
++    module = import_module("cloud_edge_robot_arm.auto_mode.joint_policy")
++    ctx = prepared_context()
++    contract = contracts(ctx)[DecisionAction.CONTINUE]
++    contract = replace(
++        contract,
++        evidence=replace(contract.evidence, geometric_error_bound_m=0.002, motion_bound_m_s=0.004),
++        expected_duration_s=1.0,
++        allowed_error_m=0.014,
++    )
++    assert module._envelope_expiry(ctx, DecisionAction.CONTINUE, contract, NOW) == NOW + timedelta(
++        seconds=2
++    )
++    missing = replace(contract, evidence=replace(contract.evidence, motion_bound_m_s=None))
++    assert module._envelope_expiry(ctx, DecisionAction.CONTINUE, missing, NOW) == NOW
++    assert (
++        module._envelope_expiry(ctx, DecisionAction.REOBSERVE, None, NOW)
++        == ctx.verification_budget.deadline_at
++    )
++    assert module._envelope_expiry(ctx, DecisionAction.STOP, None, NOW) == NOW
++
++
++def test_durable_trace_sink_is_hashed_and_never_overwrites_conflicting_record(tmp_path):
++    import json
++
++    module = import_module("cloud_edge_robot_arm.auto_mode.joint_policy")
++    chosen = policy()
++    sink = module.JsonDecisionTraceSink(tmp_path / "decisions")
++    chosen.trace_sink = sink
++    chosen.decide(prepared_context())
++    trace = chosen.last_trace
++    path = tmp_path / "decisions" / (trace.envelope.decision_id + ".json")
++    original = path.read_bytes()
++    saved = json.loads(original)
++    assert saved["schema_version"] == "ced.decision-trace.v1"
++    assert saved["content_hash"] == module.content_hash(saved["payload"])
++    sink(trace)
++    assert path.read_bytes() == original
++    with pytest.raises(ValueError, match="conflicting"):
++        sink(replace(trace, reason_codes=("changed",)))
++    assert path.read_bytes() == original
++
++
++def test_software_trace_never_creates_physical_authority():
++    chosen = policy()
++    chosen.decide(prepared_context())
++    with pytest.raises(ValueError, match="software"):
++        replace(
++            chosen.last_trace,
++            envelope=replace(chosen.last_trace.envelope, valid_until=NOW + timedelta(seconds=1)),
++        )

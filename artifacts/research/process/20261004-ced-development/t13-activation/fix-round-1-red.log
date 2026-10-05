@@ -1,0 +1,252 @@
+FFFFF...FF...                                                            [100%]
+=================================== FAILURES ===================================
+_______ test_receipt_uses_planned_started_at_and_canonical_serialization _______
+
+    def test_receipt_uses_planned_started_at_and_canonical_serialization():
+        from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
+>       receipt = ReplanExecutionReceipt(
+            repair_id="repair", task_id="task", plan_version=2, command_seq=2,
+            activation_token="MOCK-token", payload_hash="a" * 64, event_id="MOCK-event",
+            started_at=NOW,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 2 validation errors for ReplanExecutionReceipt
+E       occurred_at
+E         Field required [type=missing, input_value={'repair_id': 'repair', '...=datetime.timezone.utc)}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+E       started_at
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=datetime.datetime(2026, 1...o=datetime.timezone.utc), input_type=datetime]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+tests/test_replan_activation.py:1078: ValidationError
+_______ test_confirm_started_returns_planned_replan_apply_result[memory] _______
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7a347a152ed0>
+
+    def test_confirm_started_returns_planned_replan_apply_result(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyResult, ReplanApplyService
+        from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
+        request, response = setup_replan(replan_repo)
+        service = ReplanApplyService(repository=replan_repo, dispatcher=MockStagedGateway(),
+                                    submit_guard=submit_proof, clock=lambda: NOW)
+        activated = service.apply(request=request, response=response)
+        receipt = ReplanExecutionReceipt(
+            repair_id=activated.record.repair_id, task_id="task", plan_version=2, command_seq=2,
+            activation_token="mock-token", payload_hash=activated.record.payload_hash,
+            event_id="MOCK-planned-return", occurred_at=NOW,
+        )
+        result = service.confirm_execution_started(receipt)
+>       assert isinstance(result, ReplanApplyResult)
+E       AssertionError: assert False
+E        +  where False = isinstance(ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task', plan_id='plan', robot_id='robot', pr...7fc4', event_id='MOCK-planned-return', occurred_at=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=datetime.timezone.utc))), <class 'cloud_edge_robot_arm.cloud.replanning.apply_service.ReplanApplyResult'>)
+
+tests/test_replan_activation.py:1106: AssertionError
+_______ test_confirm_started_returns_planned_replan_apply_result[sqlite] _______
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7a3475d87b00>
+
+    def test_confirm_started_returns_planned_replan_apply_result(replan_repo):
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyResult, ReplanApplyService
+        from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt
+        request, response = setup_replan(replan_repo)
+        service = ReplanApplyService(repository=replan_repo, dispatcher=MockStagedGateway(),
+                                    submit_guard=submit_proof, clock=lambda: NOW)
+        activated = service.apply(request=request, response=response)
+        receipt = ReplanExecutionReceipt(
+            repair_id=activated.record.repair_id, task_id="task", plan_version=2, command_seq=2,
+            activation_token="mock-token", payload_hash=activated.record.payload_hash,
+            event_id="MOCK-planned-return", occurred_at=NOW,
+        )
+        result = service.confirm_execution_started(receipt)
+>       assert isinstance(result, ReplanApplyResult)
+E       AssertionError: assert False
+E        +  where False = isinstance(ReplanApplyRecord(apply_id='apply-request', request_id='request', task_id='task', plan_id='plan', robot_id='robot', pr...7fc4', event_id='MOCK-planned-return', occurred_at=datetime.datetime(2026, 10, 4, 0, 0, tzinfo=datetime.timezone.utc))), <class 'cloud_edge_robot_arm.cloud.replanning.apply_service.ReplanApplyResult'>)
+
+tests/test_replan_activation.py:1106: AssertionError
+_ test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[memory-object_inside_target_region-obj-1-True] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7a3475d85640>
+condition = 'object_inside_target_region', target_id = 'obj-1'
+expected_staged = True
+
+    @pytest.mark.parametrize("condition,target_id,expected_staged", [
+        ("object_inside_target_region", "obj-1", True),
+        ("object_inside_target_region", "bin-a", False),
+        ("object_inside_target_region", "decoy", False),
+        ("tcp_above_region", "bin-a", True),
+        ("tcp_above_region", "obj-1", False),
+    ])
+    def test_placement_binds_object_extent_and_region_tcp_to_distinct_targets(
+        replan_repo, condition, target_id, expected_staged,
+    ):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
+        request, response = setup_replan(replan_repo)
+        response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
+            update={"preconditions": [condition]}, deep=True)]}, deep=True)
+        def placement_proof(*args):
+            proof = submit_proof(*args)
+            base = dict(proof.online_evidence.visual_facts["target_visible"])
+            online = replace(proof.online_evidence, visual_facts={
+                condition: {**base, "target_id": target_id, "value": True},
+            })
+            action = replace(proof.action, preconditions=(ConditionSpec(condition, target_id=target_id),))
+            proof = replace(proof, action=action, online_evidence=online)
+            assert validate_evidence(action, NOW, args[0].checkpoint_hash, "cal-1",
+                                     online_evidence=online).status == "VALID"
+            return proof
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=placement_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert bool(gateway.calls) is expected_staged
+E       assert False is True
+E        +  where False = bool([])
+E        +    where [] = <tests.test_replan_activation.MockStagedGateway object at 0x7a3475d85b80>.calls
+
+tests/test_replan_activation.py:1145: AssertionError
+_ test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[memory-object_inside_target_region-bin-a-False] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7a3475db0140>
+condition = 'object_inside_target_region', target_id = 'bin-a'
+expected_staged = False
+
+    @pytest.mark.parametrize("condition,target_id,expected_staged", [
+        ("object_inside_target_region", "obj-1", True),
+        ("object_inside_target_region", "bin-a", False),
+        ("object_inside_target_region", "decoy", False),
+        ("tcp_above_region", "bin-a", True),
+        ("tcp_above_region", "obj-1", False),
+    ])
+    def test_placement_binds_object_extent_and_region_tcp_to_distinct_targets(
+        replan_repo, condition, target_id, expected_staged,
+    ):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
+        request, response = setup_replan(replan_repo)
+        response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
+            update={"preconditions": [condition]}, deep=True)]}, deep=True)
+        def placement_proof(*args):
+            proof = submit_proof(*args)
+            base = dict(proof.online_evidence.visual_facts["target_visible"])
+            online = replace(proof.online_evidence, visual_facts={
+                condition: {**base, "target_id": target_id, "value": True},
+            })
+            action = replace(proof.action, preconditions=(ConditionSpec(condition, target_id=target_id),))
+            proof = replace(proof, action=action, online_evidence=online)
+            assert validate_evidence(action, NOW, args[0].checkpoint_hash, "cal-1",
+                                     online_evidence=online).status == "VALID"
+            return proof
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=placement_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert bool(gateway.calls) is expected_staged
+E       AssertionError: assert True is False
+E        +  where True = bool(['stage', 'resume'])
+E        +    where ['stage', 'resume'] = <tests.test_replan_activation.MockStagedGateway object at 0x7a3475db0530>.calls
+
+tests/test_replan_activation.py:1145: AssertionError
+_ test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[sqlite-object_inside_target_region-obj-1-True] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7a3475db3440>
+condition = 'object_inside_target_region', target_id = 'obj-1'
+expected_staged = True
+
+    @pytest.mark.parametrize("condition,target_id,expected_staged", [
+        ("object_inside_target_region", "obj-1", True),
+        ("object_inside_target_region", "bin-a", False),
+        ("object_inside_target_region", "decoy", False),
+        ("tcp_above_region", "bin-a", True),
+        ("tcp_above_region", "obj-1", False),
+    ])
+    def test_placement_binds_object_extent_and_region_tcp_to_distinct_targets(
+        replan_repo, condition, target_id, expected_staged,
+    ):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
+        request, response = setup_replan(replan_repo)
+        response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
+            update={"preconditions": [condition]}, deep=True)]}, deep=True)
+        def placement_proof(*args):
+            proof = submit_proof(*args)
+            base = dict(proof.online_evidence.visual_facts["target_visible"])
+            online = replace(proof.online_evidence, visual_facts={
+                condition: {**base, "target_id": target_id, "value": True},
+            })
+            action = replace(proof.action, preconditions=(ConditionSpec(condition, target_id=target_id),))
+            proof = replace(proof, action=action, online_evidence=online)
+            assert validate_evidence(action, NOW, args[0].checkpoint_hash, "cal-1",
+                                     online_evidence=online).status == "VALID"
+            return proof
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=placement_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert bool(gateway.calls) is expected_staged
+E       assert False is True
+E        +  where False = bool([])
+E        +    where [] = <tests.test_replan_activation.MockStagedGateway object at 0x7a34761adb20>.calls
+
+tests/test_replan_activation.py:1145: AssertionError
+_ test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[sqlite-object_inside_target_region-bin-a-False] _
+
+replan_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7a3475db3620>
+condition = 'object_inside_target_region', target_id = 'bin-a'
+expected_staged = False
+
+    @pytest.mark.parametrize("condition,target_id,expected_staged", [
+        ("object_inside_target_region", "obj-1", True),
+        ("object_inside_target_region", "bin-a", False),
+        ("object_inside_target_region", "decoy", False),
+        ("tcp_above_region", "bin-a", True),
+        ("tcp_above_region", "obj-1", False),
+    ])
+    def test_placement_binds_object_extent_and_region_tcp_to_distinct_targets(
+        replan_repo, condition, target_id, expected_staged,
+    ):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.cloud.replanning.apply_service import ReplanApplyService
+        from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
+        from cloud_edge_robot_arm.edge.evidence.validator import validate_evidence
+        request, response = setup_replan(replan_repo)
+        response = response.model_copy(update={"new_steps": [response.new_steps[0].model_copy(
+            update={"preconditions": [condition]}, deep=True)]}, deep=True)
+        def placement_proof(*args):
+            proof = submit_proof(*args)
+            base = dict(proof.online_evidence.visual_facts["target_visible"])
+            online = replace(proof.online_evidence, visual_facts={
+                condition: {**base, "target_id": target_id, "value": True},
+            })
+            action = replace(proof.action, preconditions=(ConditionSpec(condition, target_id=target_id),))
+            proof = replace(proof, action=action, online_evidence=online)
+            assert validate_evidence(action, NOW, args[0].checkpoint_hash, "cal-1",
+                                     online_evidence=online).status == "VALID"
+            return proof
+        gateway = MockStagedGateway()
+        result = ReplanApplyService(repository=replan_repo, dispatcher=gateway,
+                                    submit_guard=placement_proof, clock=lambda: NOW).apply(
+            request=request, response=response)
+>       assert bool(gateway.calls) is expected_staged
+E       AssertionError: assert True is False
+E        +  where True = bool(['stage', 'resume'])
+E        +    where ['stage', 'resume'] = <tests.test_replan_activation.MockStagedGateway object at 0x7a3475db0830>.calls
+
+tests/test_replan_activation.py:1145: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_replan_activation.py::test_receipt_uses_planned_started_at_and_canonical_serialization
+FAILED tests/test_replan_activation.py::test_confirm_started_returns_planned_replan_apply_result[memory]
+FAILED tests/test_replan_activation.py::test_confirm_started_returns_planned_replan_apply_result[sqlite]
+FAILED tests/test_replan_activation.py::test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[memory-object_inside_target_region-obj-1-True]
+FAILED tests/test_replan_activation.py::test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[memory-object_inside_target_region-bin-a-False]
+FAILED tests/test_replan_activation.py::test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[sqlite-object_inside_target_region-obj-1-True]
+FAILED tests/test_replan_activation.py::test_placement_binds_object_extent_and_region_tcp_to_distinct_targets[sqlite-object_inside_target_region-bin-a-False]
+7 failed, 6 passed, 72 deselected in 2.07s
+
+COMMAND: .venv/bin/python -m pytest -q tests/test_replan_activation.py -k "planned_started_at or planned_replan_apply_result or placement_binds"
+OBSERVED_EXIT_CODE: 1

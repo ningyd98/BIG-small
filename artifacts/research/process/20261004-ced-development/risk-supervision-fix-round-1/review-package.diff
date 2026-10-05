@@ -1,0 +1,151 @@
+diff --git "a/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/baseline-source/src/cloud_edge_robot_arm/research/risk_supervision.py" "b/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/source/src/cloud_edge_robot_arm/research/risk_supervision.py"
+index e5ec2d42..a7993387 100644
+--- "a/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/baseline-source/src/cloud_edge_robot_arm/research/risk_supervision.py"
++++ "b/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/source/src/cloud_edge_robot_arm/research/risk_supervision.py"
+@@ -43,6 +43,7 @@ from cloud_edge_robot_arm.research.risk_sources import (
+     _rows,
+     _safe,
+ )
++from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import CompletionCriteria
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
+ from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerRegistration, detect_pose_marker
+ from cloud_edge_robot_arm.vision.risk.features import extract_risk_features
+@@ -89,6 +90,26 @@ def _identity(value: str) -> None:
+         raise ValueError("opaque registered identity required")
+ 
+ 
++def _detached_criteria(criteria: CompletionCriteria) -> CompletionCriteria:
++    if type(criteria) is not CompletionCriteria:
++        raise TypeError("concrete completion criteria required")
++
++    def bounds(value: Any) -> tuple[float, float, float]:
++        if type(value) not in {list, tuple} or len(value) != 3:
++            raise ValueError("three-dimensional workspace bounds required")
++        for item in value:
++            _number(item)
++        # Validate without coercing the original numbers; detach both lists and
++        # tuples before the concrete RAW registration performs its shallow copy.
++        return value[0], value[1], value[2]
++
++    return replace(
++        criteria,
++        workspace_min_m=bounds(criteria.workspace_min_m),
++        workspace_max_m=bounds(criteria.workspace_max_m),
++    )
++
++
+ @dataclass(frozen=True)
+ class RiskObservationAllocation:
+     sample_id: str
+@@ -178,7 +199,7 @@ class RiskSupervisionRegistration:
+                     )
+                     for case in raw.cases
+                 ),
+-                replace(raw.criteria),
++                _detached_criteria(raw.criteria),
+                 raw.current_role_binding,
+             ),
+         )
+
+diff --git "a/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/baseline-source/tests/test_research_risk_supervision.py" "b/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/source/tests/test_research_risk_supervision.py"
+index 7ff8f866..4757bfd1 100644
+--- "a/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/baseline-source/tests/test_research_risk_supervision.py"
++++ "b/home/ningyd/\346\226\207\346\241\243/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/risk-supervision-fix-round-1/source/tests/test_research_risk_supervision.py"
+@@ -153,6 +153,97 @@ def audit(registration):
+     return api().RiskSupervisionAuditor({"source": registration}).audit("source")
+ 
+ 
++@pytest.mark.parametrize("bound", ["workspace_min_m", "workspace_max_m"])
++def test_registered_workspace_lists_cannot_mutate_reconstructed_labels(
++    tmp_path: Path, bound: str
++) -> None:
++    from cloud_edge_robot_arm.research.risk_sources import RiskSourceAuditor
++
++    registration, directory, _, _ = registered_fixture(tmp_path)
++    minimum = [-0.85, -0.85, 0.0]
++    maximum = [0.85, 0.85, 1.2]
++    criteria = replace(
++        registration.raw_registration.criteria,
++        workspace_min_m=minimum,
++        workspace_max_m=maximum,
++    )
++    raw = replace(registration.raw_registration, criteria=criteria)
++    replay = RiskSourceAuditor({"raw": raw}).audit("raw", scope="RAW_EXECUTION")
++    assert replay.status == "VALID", replay.reasons
++    json_file(
++        directory / "summary.json", {"outcome": dict(replay.case_results[0]["physical_outcome"])}
++    )
++    case = replace(raw.cases[0], original_file_hashes=hashes(directory))
++    registration = replace(registration, raw_registration=replace(raw, cases=(case,)))
++    owner = api().RiskSupervisionAuditor({"source": registration})
++    before = owner.audit("source")
++    assert before.diagnostic_status == "VALID", before.reasons
++    assert len(before.rows) == 2
++    original_hashes = hashes(directory)
++
++    if bound == "workspace_min_m":
++        minimum[2] = 0.7
++    else:
++        maximum[2] = 0.001
++
++    assert hashes(directory) == original_hashes
++    after = owner.audit("source")
++    assert after.diagnostic_status == before.diagnostic_status, after.reasons
++    assert after.rows == before.rows
++    assert after.counts == before.counts
++    assert after.original_file_hashes == before.original_file_hashes
++    assert after.status == after.actual_source_status == "UNKNOWN"
++    frozen = registration.raw_registration.criteria
++    assert type(frozen.workspace_min_m) is type(frozen.workspace_max_m) is tuple
++    assert frozen.workspace_min_m == (-0.85, -0.85, 0.0)
++    assert frozen.workspace_max_m == (0.85, 0.85, 1.2)
++
++
++def test_registered_tuple_criteria_keep_exact_values_and_all_other_policy_fields(
++    tmp_path: Path,
++) -> None:
++    registration, _, _, _ = registered_fixture(tmp_path)
++    criteria = replace(
++        registration.raw_registration.criteria,
++        lift_m=0.06,
++        hold_s=0.75,
++        workspace_min_m=(-0.85, -0.85, 0),
++        workspace_max_m=(0.85, 0.85, 1.2),
++    )
++    raw = replace(registration.raw_registration, criteria=criteria)
++    registered = replace(registration, raw_registration=raw)
++    assert asdict(registered.raw_registration.criteria) == asdict(criteria)
++    assert type(registered.raw_registration.criteria.workspace_min_m[2]) is int
++    assert registered.raw_registration.criteria is not criteria
++    first = audit(registered)
++    criteria = replace(criteria, workspace_xy_radius_m=0.01)
++    second = audit(registered)
++    assert second.rows == first.rows
++    assert second.diagnostic_status == first.diagnostic_status
++    assert second.status == "UNKNOWN"
++
++
++@pytest.mark.parametrize("bound", ["workspace_min_m", "workspace_max_m"])
++def test_registered_workspace_bounds_reject_boolean_without_numeric_coercion(
++    tmp_path: Path, bound: str
++) -> None:
++    registration, _, _, _ = registered_fixture(tmp_path)
++    minimum = [-0.85, -0.85, 0.0]
++    maximum = [0.85, 0.85, 1.2]
++    criteria = replace(
++        registration.raw_registration.criteria,
++        workspace_min_m=minimum,
++        workspace_max_m=maximum,
++    )
++    raw = replace(registration.raw_registration, criteria=criteria)
++    if bound == "workspace_min_m":
++        minimum[0] = False
++    else:
++        maximum[2] = True
++    with pytest.raises(ValueError, match="numeric"):
++        replace(registration, raw_registration=raw)
++
++
+ def test_reconstructed_online_features_and_offline_failure_stay_software_only(tmp_path: Path):
+     registration, _, _, _ = registered_fixture(tmp_path)
+     result = audit(registration)

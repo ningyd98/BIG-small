@@ -1,0 +1,27 @@
+# Independent scoped runtime integration review
+
+Verdict: REQUEST CHANGES. Two concrete P2 issues remain. This review covers the frozen software integration only and does not infer real role/model admission, calibrated metric evidence or physical task acceptance.
+
+## P2 — bind the actual edge routing configuration and implementation
+
+`source/src/cloud_edge_robot_arm/vision/runtime_binding.py:85` validates the cloud adapter's effective settings but rehashes only its own stored `edge_policy` at lines93–96. It never compares the actual `ExecutionPolicy.verification_budget` consumed by `_VisualEpisode.route`/`VerificationBudgetState.start`. `source/src/cloud_edge_robot_arm/vision/evaluation.py:33` permits a different budget under the same role bundle. CPU counterexample: two valid OPENCV policies share the exact accepted binding/bundle/edge hash; default limits route UNKNOWN×3 to REOBSERVE,REOBSERVE,STOP, while `VerificationBudget(100,0,100,120)` routes REOBSERVE×3. Every boundary `binding.validate(planner)` succeeds. The identical declared edge policy is not the actual policy that determined the third decision.
+
+The concrete source omission compounds this: `source/configs/research/ced_roles.yaml:15` records only role_models.py as the edge provider source, and neither edge nor device inventory includes the actually invoked edge/recovery/verification_router.py. Changing that rules implementation does not change any selected role source digest, so current checks cannot identify its drift. This is directly used behavior, not a request to hash arbitrary unrelated files. The source records and declared-policy digest currently establish declaration consistency, not frozen identity of the actual edge route.
+
+Required: derive/bind the current route provider implementation and behavior-affecting frozen settings from the runtime policy, compare them at initialization and existing dispatch boundaries, and inventory the real route implementation (and directly required decision/settings dependencies). Add a regression using changed limits under the same bundle and a changed actual route source. Keep runtime quota consumption separate from immutable initial limits. Do not relabel existing T12 candidate-set identities or enable LOCAL_RECOVER.
+
+## P2 — reject ambiguous observed colors before using the tracker
+
+`source/src/cloud_edge_robot_arm/vision/online_intent.py:20` defines adjacent inclusive hue ranges. At line33, hue162 matches both green and cyan, and `validate_grounded_colors` at lines42–45 checks only the requested color without checking uniqueness. Actual integer PNG RGB `(0,50,35)`, normalized exactly as OpenCVTargetTracker._color does, is accepted by both `Move the green block to the green region.` and `Move the cyan block to the green region.` against the same target pixels and pure-green destination. This contradicts the declared “ambiguous color remains unavailable” boundary and lets requested identity choose the interpretation of ambiguous measured evidence.
+
+Required: make classification conservative and uniquely bound to observed pixels; reject multiply matched/boundary colors, including ambiguous destination colors, before the tracker is used for an action. Preserve exact whole-instruction/negation/multiple-instruction refusal and positive well-separated color cases. Add a PNG-integer boundary regression rather than only testing ideal primary colors.
+
+## Verified scope and unaffected protections
+
+All thirteen archived source files match source-hashes.json; the live files also matched when reviewed. Manifest SHA256: 5b08efbff65086d4098ff227800e6778a2c2d31595321089799362ed03d155ac. Nine owned paths plus four explicit references were reviewed against the scoped baseline diff; the whole dirty tree was not reviewed. Root's final-source log accurately reports132 passes; the earlier green.log is an older120-case run and was not used as final evidence.
+
+Independent CPU command: `.venv/bin/python -m pytest -q tests/test_ced_runtime_binding.py tests/test_online_visual_intent.py tests/test_visual_supervision.py tests/test_rgbd_online_verification.py tests/test_opencv_target_evidence.py tests/test_visual_effect_evidence.py tests/test_visual_evidence_contract.py`: **161 passed in22.71s**, exit0. Scoped Ruff passes. Exact counterexample outputs are in independent-review-counterexamples.log. No production files were edited, and no live network/model, physics backend, GPU or renderer was invoked.
+
+Cloud role/request/source drift is checked before and after planning/supervision and before safety/skill dispatch; the separate legacy model snapshot is not used as a role bundle digest. Source paths reject escapes/symlinks. OPENCV preserves native UNKNOWN facts and does not receive the legacy lift endpoint transform; terminal conditions require canonical placement_stable. Missing/occluded centers remain UNKNOWN. Legacy execution import without optional cv2 succeeds. Whole canonical instructions reject missing requested primary colors, negation, multiple commands, unsupported language and wrong destination; the ambiguity issue above is additional.
+
+The report accurately distinguishes source identity from unavailable remote weights, method admission, real RGB-D metric/stability certificates and physical success. Native evidence remains insufficient for real completion; no software fixture result should alter that status. Independent review can be repeated on a newly frozen fix snapshot once both findings are addressed.

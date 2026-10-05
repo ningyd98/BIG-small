@@ -1,0 +1,38 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_foreign_checkpoint_cannot_alias_a_publication_via_a_declared_hash[memory] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x78cfa6b018e0>, V...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 20, 44, 678717, tzinfo=datetime.timezone.utc)))
+
+    def test_foreign_checkpoint_cannot_alias_a_publication_via_a_declared_hash(prepared):
+        repo, original, checkpoint, _, _ = prepared
+        initialize(prepared)
+        next_checkpoint = boundary(checkpoint)
+        # Existing legacy diagnostic save accepts a caller-declared hash; the new boundary must not.
+        foreign = next_checkpoint.model_copy(update={"task_id": "other-task"}, deep=True)
+        repo.save_execution_checkpoint(foreign)
+>       assert publish(prepared, next_checkpoint) is None
+E       assert VisualOwnerPublicationRecord(_payload_json='{"binding_scope":"DURABLE_BINDING_ONLY","checkpoint":{"checkpoint_hash":"9...":3,"remaining_retries":2,"verification_rounds":0},"task_id":"task","updated_at":"2026-10-04T16:20:44.688539+00:00"}}') is None
+E        +  where VisualOwnerPublicationRecord(_payload_json='{"binding_scope":"DURABLE_BINDING_ONLY","checkpoint":{"checkpoint_hash":"9...":3,"remaining_retries":2,"verification_rounds":0},"task_id":"task","updated_at":"2026-10-04T16:20:44.688539+00:00"}}') = publish((<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x78cfa6b018e0>, V...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 20, 44, 678717, tzinfo=datetime.timezone.utc))), ExecutionCheckpoint(checkpoint_id='checkpoint-next', task_id='task', plan_id='plan', plan_version=1, command_seq=1, ro...e.timezone.utc), correlation_id='', checkpoint_hash='9f9042f20d56aa4fa43a5f39b99145cc7095c577ee05d0439afcac8fec810ce8'))
+
+tests/test_visual_owner_repository.py:368: AssertionError
+_ test_foreign_checkpoint_cannot_alias_a_publication_via_a_declared_hash[sqlite] _
+
+prepared = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x78cfa354e030>, Vis...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 20, 44, 979001, tzinfo=datetime.timezone.utc)))
+
+    def test_foreign_checkpoint_cannot_alias_a_publication_via_a_declared_hash(prepared):
+        repo, original, checkpoint, _, _ = prepared
+        initialize(prepared)
+        next_checkpoint = boundary(checkpoint)
+        # Existing legacy diagnostic save accepts a caller-declared hash; the new boundary must not.
+        foreign = next_checkpoint.model_copy(update={"task_id": "other-task"}, deep=True)
+        repo.save_execution_checkpoint(foreign)
+>       assert publish(prepared, next_checkpoint) is None
+E       assert VisualOwnerPublicationRecord(_payload_json='{"binding_scope":"DURABLE_BINDING_ONLY","checkpoint":{"checkpoint_hash":"d...":3,"remaining_retries":2,"verification_rounds":0},"task_id":"task","updated_at":"2026-10-04T16:20:44.982574+00:00"}}') is None
+E        +  where VisualOwnerPublicationRecord(_payload_json='{"binding_scope":"DURABLE_BINDING_ONLY","checkpoint":{"checkpoint_hash":"d...":3,"remaining_retries":2,"verification_rounds":0},"task_id":"task","updated_at":"2026-10-04T16:20:44.982574+00:00"}}') = publish((<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x78cfa354e030>, Vis...o=datetime.timezone.utc), updated_at=datetime.datetime(2026, 10, 4, 16, 20, 44, 979001, tzinfo=datetime.timezone.utc))), ExecutionCheckpoint(checkpoint_id='checkpoint-next', task_id='task', plan_id='plan', plan_version=1, command_seq=1, ro...e.timezone.utc), correlation_id='', checkpoint_hash='d20442ebd466d103638184f8bf0917351d34aed6e5da309e37baf9c802bb27ae'))
+
+tests/test_visual_owner_repository.py:368: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_owner_repository.py::test_foreign_checkpoint_cannot_alias_a_publication_via_a_declared_hash[memory]
+FAILED tests/test_visual_owner_repository.py::test_foreign_checkpoint_cannot_alias_a_publication_via_a_declared_hash[sqlite]
+2 failed, 45 deselected in 0.82s

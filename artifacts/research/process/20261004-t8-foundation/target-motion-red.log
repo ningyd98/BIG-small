@@ -1,0 +1,67 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_target_motion_changes_pose_only_through_physics_steps __________
+
+    def test_target_motion_changes_pose_only_through_physics_steps():
+        with MuJoCoCaptureSession(SimulatorConfig(render_rgb=False, render_depth=False,
+                                                 domain_randomization=False)) as capture:
+            backend = capture._backend
+            backend.step(120)
+            before = backend.current_physics_observation().object_position_m
+>           backend.inject_fault(PhysicalFault(PhysicalFaultType.TARGET_MOTION,
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                {"speed_m_s": .02, "duration_s": 1., "direction_y": 1.}))
+E           AttributeError: type object 'PhysicalFaultType' has no attribute 'TARGET_MOTION'
+
+tests/test_research_target_motion.py:17: AttributeError
+____________ test_motion_fault_rejects_invalid_configuration[-1.0] _____________
+
+speed = -1.0
+
+    @pytest.mark.parametrize("speed", [-1., float("nan"), float("inf")])
+    def test_motion_fault_rejects_invalid_configuration(speed):
+        with MuJoCoCaptureSession(SimulatorConfig(render_rgb=False, render_depth=False,
+                                                 domain_randomization=False)) as capture:
+            with pytest.raises(ValueError):
+>               capture._backend.inject_fault(PhysicalFault(PhysicalFaultType.TARGET_MOTION,
+                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                           {"speed_m_s": speed}))
+E               AttributeError: type object 'PhysicalFaultType' has no attribute 'TARGET_MOTION'
+
+tests/test_research_target_motion.py:34: AttributeError
+_____________ test_motion_fault_rejects_invalid_configuration[nan] _____________
+
+speed = nan
+
+    @pytest.mark.parametrize("speed", [-1., float("nan"), float("inf")])
+    def test_motion_fault_rejects_invalid_configuration(speed):
+        with MuJoCoCaptureSession(SimulatorConfig(render_rgb=False, render_depth=False,
+                                                 domain_randomization=False)) as capture:
+            with pytest.raises(ValueError):
+>               capture._backend.inject_fault(PhysicalFault(PhysicalFaultType.TARGET_MOTION,
+                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                           {"speed_m_s": speed}))
+E               AttributeError: type object 'PhysicalFaultType' has no attribute 'TARGET_MOTION'
+
+tests/test_research_target_motion.py:34: AttributeError
+_____________ test_motion_fault_rejects_invalid_configuration[inf] _____________
+
+speed = inf
+
+    @pytest.mark.parametrize("speed", [-1., float("nan"), float("inf")])
+    def test_motion_fault_rejects_invalid_configuration(speed):
+        with MuJoCoCaptureSession(SimulatorConfig(render_rgb=False, render_depth=False,
+                                                 domain_randomization=False)) as capture:
+            with pytest.raises(ValueError):
+>               capture._backend.inject_fault(PhysicalFault(PhysicalFaultType.TARGET_MOTION,
+                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                                           {"speed_m_s": speed}))
+E               AttributeError: type object 'PhysicalFaultType' has no attribute 'TARGET_MOTION'
+
+tests/test_research_target_motion.py:34: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_research_target_motion.py::test_target_motion_changes_pose_only_through_physics_steps
+FAILED tests/test_research_target_motion.py::test_motion_fault_rejects_invalid_configuration[-1.0]
+FAILED tests/test_research_target_motion.py::test_motion_fault_rejects_invalid_configuration[nan]
+FAILED tests/test_research_target_motion.py::test_motion_fault_rejects_invalid_configuration[inf]
+4 failed in 0.57s

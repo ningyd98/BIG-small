@@ -1,0 +1,2712 @@
+--- a/src/cloud_edge_robot_arm/auto_mode/runtime_events.py
++++ b/src/cloud_edge_robot_arm/auto_mode/runtime_events.py
+@@ -2,11 +2,27 @@
+ 
+ from __future__ import annotations
+ 
+-from dataclasses import dataclass
++# 类型仅供静态检查；risk、evidence 和 verification_router 复用本模块枚举。
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass, replace
+ from datetime import datetime
+ from enum import StrEnum
++from types import MappingProxyType
++from typing import TYPE_CHECKING, Any, Protocol
+ 
+-from cloud_edge_robot_arm.edge.evidence.conditions import ConditionStatus
++from cloud_edge_robot_arm.contracts import ControlMode
++from cloud_edge_robot_arm.edge.evidence.conditions import (
++    ConditionStatus,
++    ConditionVerdict,
++    OnlineEvidenceSnapshot,
++)
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.auto_mode.baseline_policies import LegacyRuleEvidence
++    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
++    from cloud_edge_robot_arm.research.network import NetworkCostSnapshot
++    from cloud_edge_robot_arm.vision.risk.models import RiskEstimate, RiskFeatures
+ 
+ 
+ class DecisionAction(StrEnum):
+@@ -43,3 +59,130 @@
+             raise ValueError("occurred_at must include timezone")
+         object.__setattr__(self, "kind", DecisionEventKind(self.kind))
+         object.__setattr__(self, "verification_status", ConditionStatus(self.verification_status))
++
++
++_FORBIDDEN_ONLINE_KEYS = frozenset(
++    {
++        "oracle",
++        "ground_truth",
++        "ground_truth_used_for_control",
++        "fault_schedule",
++        "future_fault",
++        "future_faults",
++        "true_target_coordinates",
++        "true_target_position",
++        "physical_outcome",
++        "success_label",
++        "recoverability_label",
++    }
++)
++_FORBIDDEN_SOURCES = frozenset({"oracle", "ground_truth", "physical_evaluator", "offline_teacher"})
++
++
++def _freeze_online(value: Any) -> Any:
++    if isinstance(value, Mapping):
++        frozen = {}
++        for key, item in value.items():
++            lowered = str(key).lower()
++            if lowered in _FORBIDDEN_ONLINE_KEYS:
++                # A transport marker explicitly declaring no oracle use is allowed.
++                if lowered != "ground_truth_used_for_control" or item is not False:
++                    raise ValueError("online decision context cannot contain oracle/future labels")
++            if lowered == "source" and isinstance(item, str) and item.lower() in _FORBIDDEN_SOURCES:
++                raise ValueError("online decision context cannot contain offline sources")
++            frozen[key] = _freeze_online(item)
++        return MappingProxyType(frozen)
++    if isinstance(value, (tuple, list)):
++        return tuple(_freeze_online(item) for item in value)
++    return value
++
++
++@dataclass(frozen=True)
++class DecisionContext:
++    """统一运行中决策输入，绑定当前观测和版本并拒绝离线真值。"""
++
++    task_id: str
++    episode_id: str
++    mode: ControlMode
++    mode_version: int
++    plan_version: int
++    command_seq: int
++    event: DecisionEvent
++    online_evidence: OnlineEvidenceSnapshot
++    evidence_verdict: EvidenceVerdict
++    condition_verdicts: Sequence[ConditionVerdict]
++    risk_features: RiskFeatures
++    risk_estimate: RiskEstimate
++    network_cost: NetworkCostSnapshot
++    capabilities: set[DecisionAction]
++    verification_budget: VerificationBudgetState
++    legacy_rule_evidence: LegacyRuleEvidence | None = None
++
++    def __post_init__(self) -> None:
++        observation = self.online_evidence.observation
++        if not self.task_id or not self.episode_id or observation.episode_id != self.episode_id:
++            raise ValueError("decision identity requires the current task and episode")
++        if (
++            self.event.observation_id != observation.observation_id
++            or self.risk_features.observation_id != observation.observation_id
++        ):
++            raise ValueError("decision observation identity mismatch")
++        if any(
++            type(value) is not int or value < 0
++            for value in (self.mode_version, self.plan_version, self.command_seq)
++        ):
++            raise ValueError("decision versions must be nonnegative integers")
++        if (
++            self.online_evidence.plan_version != self.plan_version
++            or self.online_evidence.command_seq != self.command_seq
++            or not self.online_evidence.context_hash
++        ):
++            raise ValueError("decision online evidence version/context mismatch")
++        if any(
++            verdict.observation_id != observation.observation_id
++            for verdict in self.condition_verdicts
++        ):
++            raise ValueError("condition observation identity mismatch")
++        object.__setattr__(
++            self,
++            "risk_estimate",
++            replace(
++                self.risk_estimate,
++                failure_probability_by_action=MappingProxyType(
++                    dict(self.risk_estimate.failure_probability_by_action)
++                ),
++            ),
++        )
++        object.__setattr__(self, "mode", ControlMode(self.mode))
++        object.__setattr__(
++            self, "capabilities", frozenset(DecisionAction(v) for v in self.capabilities)
++        )
++        object.__setattr__(
++            self,
++            "condition_verdicts",
++            tuple(
++                replace(
++                    verdict,
++                    measured_values=_freeze_online(verdict.measured_values),
++                    reasons=tuple(verdict.reasons),
++                )
++                for verdict in self.condition_verdicts
++            ),
++        )
++        object.__setattr__(
++            self,
++            "online_evidence",
++            replace(
++                self.online_evidence,
++                visual_facts=_freeze_online(self.online_evidence.visual_facts),
++                robot_state=self.online_evidence.robot_state.model_copy(deep=True),
++            ),
++        )
++
++
++class RuntimeDecisionPolicy(Protocol):
++    """只输出现有动作枚举的共同策略接口，不包含执行器或dispatch。"""
++
++    def decide(self, context: DecisionContext) -> DecisionAction:
++        """根据同一在线上下文选择一个动作；真正执行仍需提交和安全验证。"""
++        ...
+--- /dev/null
++++ b/src/cloud_edge_robot_arm/auto_mode/baseline_policies.py
+@@ -0,0 +1,727 @@
++"""共同事件上的B0/B1/B2适配；所有策略只返回动作，不执行机器人。"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++from collections import Counter, OrderedDict
++from collections.abc import Callable, Mapping
++from dataclasses import dataclass
++from datetime import datetime
++from pathlib import Path
++from types import MappingProxyType
++from typing import Any
++
++from cloud_edge_robot_arm.auto_mode.models import AutoModePolicy, AutoModeState
++from cloud_edge_robot_arm.auto_mode.runtime_events import (
++    DecisionAction,
++    DecisionContext,
++    DecisionEvent,
++    DecisionEventKind,
++)
++from cloud_edge_robot_arm.auto_mode.selector import AutoModeSelector
++from cloud_edge_robot_arm.contracts import AutoModeDecision, AutoModeDecisionType
++from cloud_edge_robot_arm.edge.evidence.conditions import ConditionStatus
++from cloud_edge_robot_arm.research.pilot_audit import audit_pilot
++from cloud_edge_robot_arm.research.protocol import STRATA
++from cloud_edge_robot_arm.research.supervision import PeriodicSupervision
++from cloud_edge_robot_arm.risk.evaluator import RiskEvaluator
++from cloud_edge_robot_arm.risk.models import RiskPolicy, RiskSnapshotInput
++from cloud_edge_robot_arm.skill_cache.models import SkillCacheLookupResult
++
++B0_PERIODS = (0.5, 1.0, 2.0, 5.0)
++
++
++def _canonical_hash(value: Any) -> str:
++    return hashlib.sha256(
++        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
++    ).hexdigest()
++
++
++def _source_hashes() -> dict[str, str]:
++    from cloud_edge_robot_arm.auto_mode import selector
++    from cloud_edge_robot_arm.risk import evaluator, models
++
++    sources = {
++        "auto_mode/selector.py": Path(selector.__file__),
++        "risk/evaluator.py": Path(evaluator.__file__),
++        "risk/models.py": Path(models.__file__),
++        "auto_mode/models.py": Path(__file__).with_name("models.py"),
++    }
++    return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in sources.items()}
++
++
++@dataclass(frozen=True)
++class FrozenLegacyRuleSnapshot:
++    """冻结原风险权重、AUTO阈值和实现源码；不包含校准概率。"""
++
++    risk_policy: Mapping[str, Any]
++    auto_policy: Mapping[str, Any]
++    source_hashes: Mapping[str, str]
++
++    def __post_init__(self) -> None:
++        risk = RiskPolicy.model_validate(dict(self.risk_policy))
++        auto = AutoModePolicy.model_validate(dict(self.auto_policy))
++        object.__setattr__(self, "risk_policy", MappingProxyType(risk.model_dump(mode="json")))
++        object.__setattr__(self, "auto_policy", MappingProxyType(auto.model_dump(mode="json")))
++        object.__setattr__(self, "source_hashes", MappingProxyType(dict(self.source_hashes)))
++
++    def digest(self) -> str:
++        """返回原规则参数和源码的确定性内容hash。"""
++        return _canonical_hash(
++            {
++                "risk_policy": dict(self.risk_policy),
++                "auto_policy": dict(self.auto_policy),
++                "source_hashes": dict(self.source_hashes),
++            }
++        )
++
++
++def freeze_legacy_rule_snapshot(
++    risk_policy: RiskPolicy | None = None,
++    auto_policy: AutoModePolicy | None = None,
++) -> FrozenLegacyRuleSnapshot:
++    """从现有policy的实际参数冻结B2；默认值保持原risk-v1/auto-v1。"""
++    return FrozenLegacyRuleSnapshot(
++        (risk_policy or RiskPolicy(version="risk-v1")).model_dump(mode="json"),
++        (auto_policy or AutoModePolicy(version="auto-v1")).model_dump(mode="json"),
++        _source_hashes(),
++    )
++
++
++@dataclass(frozen=True)
++class LegacyRuleEvidence:
++    """原B2需要的可观测缓存、合同和checkpoint输入，不接收独立结果。"""
++
++    current_state: AutoModeState
++    risk_input: RiskSnapshotInput
++    cache_lookup: SkillCacheLookupResult
++    active_contract_complete: bool
++    checkpoint_persisted: bool
++    event_autonomy_ready: bool
++    supervision_available: bool
++    mode_history: tuple[Any, ...] = ()
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "current_state", self.current_state.model_copy(deep=True))
++        object.__setattr__(self, "risk_input", self.risk_input.model_copy(deep=True))
++        object.__setattr__(self, "cache_lookup", self.cache_lookup.model_copy(deep=True))
++        object.__setattr__(self, "mode_history", tuple(self.mode_history))
++
++
++class _BaselinePolicy:
++    def __init__(self) -> None:
++        self._decisions: OrderedDict[str, tuple[tuple[Any, ...], DecisionAction]] = OrderedDict()
++
++    def _remember(
++        self, context: DecisionContext, choose: Callable[[], DecisionAction]
++    ) -> DecisionAction:
++        if self._hard_stop(context):
++            return DecisionAction.STOP
++        key = (
++            context.task_id,
++            context.episode_id,
++            context.event.observation_id,
++            context.plan_version,
++            context.command_seq,
++            context.mode_version,
++            context.online_evidence.context_hash,
++            context.online_evidence.observation.checksum_sha256,
++            context.event.kind,
++            context.event.atomic_action_active,
++            context.event.verification_status,
++            context.evidence_verdict.status,
++            tuple((v.condition_name, v.status) for v in context.condition_verdicts),
++            tuple(sorted(context.capabilities)),
++        )
++        existing = self._decisions.get(context.event.event_id)
++        # This bounded policy cache only prevents charging an allowance twice;
++        # the envelope/repository performs durable execution deduplication.
++        if existing is not None:
++            return existing[1] if existing[0] == key else DecisionAction.STOP
++        result = choose()
++        self._decisions[context.event.event_id] = (key, result)
++        if len(self._decisions) > 128:
++            self._decisions.popitem(last=False)
++        return result
++
++    def _hard_stop(self, context: DecisionContext) -> bool:
++        state = context.online_evidence.robot_state
++        budget = context.verification_budget
++        return (
++            state.estop_engaged
++            or state.collision_detected
++            or not state.connected
++            or any(
++                v.measured_values.get("hard_safety_fault") is True
++                for v in context.condition_verdicts
++            )
++            or budget.exhausted_reason is not None
++            or context.event.occurred_at >= budget.deadline_at
++            or budget.consecutive_no_progress >= budget.limits.max_no_progress
++        )
++
++    def _guard(self, context: DecisionContext) -> DecisionAction | None:
++        budget = context.verification_budget
++        if self._hard_stop(context):
++            return DecisionAction.STOP
++        if context.event.atomic_action_active:
++            return self._available(context, DecisionAction.CONTINUE)
++        if (
++            context.evidence_verdict.status == "UNKNOWN"
++            or context.event.verification_status == ConditionStatus.UNKNOWN
++            or not context.condition_verdicts
++            or any(v.status == ConditionStatus.UNKNOWN for v in context.condition_verdicts)
++        ):
++            return self._observe(context)
++        if (
++            context.evidence_verdict.status == "INVALID"
++            or any(v.status == ConditionStatus.FAIL for v in context.condition_verdicts)
++            or context.event.verification_status == ConditionStatus.FAIL
++        ):
++            if (
++                DecisionAction.REQUEST_CLOUD in context.capabilities
++                and budget.remaining_retries > 0
++            ):
++                budget.remaining_retries -= 1
++                return DecisionAction.REQUEST_CLOUD
++            return DecisionAction.STOP
++        return None
++
++    def _observe(self, context: DecisionContext) -> DecisionAction:
++        budget = context.verification_budget
++        if DecisionAction.REOBSERVE in context.capabilities and budget.remaining_reobservations > 0:
++            budget.remaining_reobservations -= 1
++            return DecisionAction.REOBSERVE
++        return DecisionAction.STOP
++
++    def _available(self, context: DecisionContext, action: DecisionAction) -> DecisionAction:
++        return action if action in context.capabilities else DecisionAction.STOP
++
++
++class PeriodicPolicy(_BaselinePolicy):
++    """B0复用现有独立PCSC ticker，周期tick提出监督请求。"""
++
++    def __init__(self, period_s: float) -> None:
++        if type(period_s) not in (int, float) or period_s not in B0_PERIODS:
++            raise ValueError("B0 period must be one of .5, 1, 2, 5 seconds")
++        super().__init__()
++        self.period_s = float(period_s)
++        self._observed_ticks = 0
++        self.merged_tick_events = 0
++
++    def supervision(
++        self, infer: Callable[[Any], Any], capture: Callable[[], Any]
++    ) -> PeriodicSupervision:
++        """返回既有有界单在途监督器，不建立另一套调度/执行器。"""
++        return PeriodicSupervision(self.period_s, infer, capture)
++
++    def tick_events(
++        self,
++        snapshot: Mapping[str, Any],
++        *,
++        occurred_at: datetime,
++        observation_id: str,
++        atomic_action_active: bool,
++    ) -> tuple[DecisionEvent, ...]:
++        """把既有ticker计数转为最新事件，保留被合并的tick计数。"""
++        ticks = snapshot.get("ticks")
++        if type(ticks) is not int or ticks < self._observed_ticks:
++            raise ValueError("supervision ticks must be monotonic nonnegative integers")
++        if ticks == self._observed_ticks:
++            return ()
++        self.merged_tick_events += max(0, ticks - self._observed_ticks - 1)
++        self._observed_ticks = ticks
++        return (
++            DecisionEvent(
++                f"b0-tick-{ticks}",
++                DecisionEventKind.SUPERVISION_TICK,
++                occurred_at,
++                observation_id,
++                atomic_action_active,
++                ConditionStatus.PASS,
++            ),
++        )
++
++    def decide(self, context: DecisionContext) -> DecisionAction:
++        """在所有业务事件上复核安全和证据，在独立tick上请求云端。"""
++
++        def choose() -> DecisionAction:
++            guarded = self._guard(context)
++            if guarded is not None:
++                return guarded
++            action = (
++                DecisionAction.REQUEST_CLOUD
++                if context.event.kind == DecisionEventKind.SUPERVISION_TICK
++                else DecisionAction.CONTINUE
++            )
++            return self._available(context, action)
++
++        return self._remember(context, choose)
++
++
++class ThresholdPolicy(_BaselinePolicy):
++    """B1仅比较T9校准的CONTINUE失败概率，未知风险先重新观测。"""
++
++    def __init__(self, threshold: float) -> None:
++        if (
++            type(threshold) not in (int, float)
++            or not math.isfinite(threshold)
++            or not 0 <= threshold <= 1
++        ):
++            raise ValueError("B1 threshold must be a finite probability in [0,1]")
++        super().__init__()
++        self.threshold = float(threshold)
++
++    def decide(self, context: DecisionContext) -> DecisionAction:
++        """每个运行中事件都重新判断，规则分数和自报confidence不作概率。"""
++
++        def choose() -> DecisionAction:
++            guarded = self._guard(context)
++            if guarded is not None:
++                return guarded
++            estimate = context.risk_estimate
++            probability = estimate.failure_probability_by_action.get(DecisionAction.CONTINUE.value)
++            if (
++                estimate.status != "VALID"
++                or not isinstance(probability, (int, float))
++                or isinstance(probability, bool)
++                or not math.isfinite(probability)
++                or not 0 <= probability <= 1
++            ):
++                return self._observe(context)
++            action = (
++                DecisionAction.REQUEST_CLOUD
++                if probability >= self.threshold
++                else DecisionAction.CONTINUE
++            )
++            return self._available(context, action)
++
++        return self._remember(context, choose)
++
++
++class FrozenRuleAutoPolicy(_BaselinePolicy):
++    """B2直接复用冻结的原RiskEvaluator和AutoModeSelector。"""
++
++    def __init__(self, rule_snapshot: FrozenLegacyRuleSnapshot) -> None:
++        if dict(rule_snapshot.source_hashes) != _source_hashes():
++            raise ValueError("B2 original rule source hash differs from frozen snapshot")
++        super().__init__()
++        self.rule_snapshot = rule_snapshot
++        self.last_mode_decision: AutoModeDecision | None = None
++
++    def decide_mode(self, context: DecisionContext) -> AutoModeDecision | None:
++        """重算原风险分数并调用原模式选择器，不修改原权重或切换条件。"""
++        legacy = context.legacy_rule_evidence
++        if legacy is None or dict(self.rule_snapshot.source_hashes) != _source_hashes():
++            return None
++        state, risk_input = legacy.current_state, legacy.risk_input
++        if (
++            state.task_id != context.task_id
++            or risk_input.task_id != context.task_id
++            or state.mode_version != context.mode_version
++            or state.current_mode != context.mode
++            or risk_input.current_mode != context.mode
++            or risk_input.current_time != context.event.occurred_at
++        ):
++            return None
++        risk_policy = RiskPolicy.model_validate(dict(self.rule_snapshot.risk_policy))
++        if risk_input.policy_version != risk_policy.version:
++            return None
++        risk = RiskEvaluator(policy=risk_policy).evaluate(risk_input)
++        return AutoModeSelector(
++            policy=AutoModePolicy.model_validate(dict(self.rule_snapshot.auto_policy)),
++            clock=lambda: context.event.occurred_at,
++        ).decide(
++            current_state=state,
++            risk_snapshot=risk,
++            cache_lookup=legacy.cache_lookup,
++            active_contract_complete=legacy.active_contract_complete,
++            checkpoint_persisted=legacy.checkpoint_persisted,
++            event_autonomy_ready=legacy.event_autonomy_ready,
++            supervision_available=legacy.supervision_available,
++            atomic_step_active=context.event.atomic_action_active,
++            mode_history=list(legacy.mode_history),
++        )
++
++    def decide(self, context: DecisionContext) -> DecisionAction:
++        """先过共同安全证据门，再把原AUTO决策映射到同一动作词汇。"""
++
++        def choose() -> DecisionAction:
++            guarded = self._guard(context)
++            if guarded is not None:
++                return guarded
++            decision = self.decide_mode(context)
++            self.last_mode_decision = decision
++            if decision is None:
++                return DecisionAction.STOP
++            actions = {
++                AutoModeDecisionType.KEEP_CURRENT_MODE: DecisionAction.CONTINUE,
++                AutoModeDecisionType.SWITCH_TO_EVENT_TRIGGERED_EDGE_AUTONOMY: (
++                    DecisionAction.CONTINUE
++                ),
++                AutoModeDecisionType.SWITCH_TO_PERIODIC_CLOUD_SUPERVISION: (
++                    DecisionAction.REQUEST_CLOUD
++                ),
++                AutoModeDecisionType.REQUEST_MORE_OBSERVATION: DecisionAction.REOBSERVE,
++            }
++            action = actions.get(decision.action, DecisionAction.STOP)
++            return (
++                self._observe(context)
++                if action == DecisionAction.REOBSERVE
++                else self._available(context, action)
++            )
++
++        return self._remember(context, choose)
++
++
++def _file_hash(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def _audit_curve(period: float, directory: Path) -> dict[str, Any]:
++    manifest = json.loads((directory / "selection-manifest.json").read_text())
++    if manifest.get("stage") != "SELECTION" or manifest.get("period_s") != period:
++        raise ValueError("curve must be an explicitly bound selection run at the registered period")
++    for name in ("assignments", "results"):
++        if manifest.get(f"{name}_sha256") != _file_hash(directory / f"{name}.json"):
++            raise ValueError(f"{name} source hash mismatch")
++    bindings = {
++        name: manifest[name]
++        for name in (
++            "snapshot_id",
++            "role_bundle_hash",
++            "device_pipeline_hash",
++            "edge_provider_hash",
++        )
++    }
++    if any(not isinstance(v, str) or not v for v in bindings.values()):
++        raise ValueError("common frozen role/device/provider identities are required")
++    assignments = json.loads((directory / "assignments.json").read_text())
++    groups = [row["scene"]["group_id"] for row in assignments]
++    ids = [row["assignment_id"] for row in assignments]
++    counts = Counter(row["stratum_id"] for row in assignments)
++    if (
++        len(ids) != 120
++        or len(set(ids)) != 120
++        or len(set(groups)) != 120
++        or set(counts) != set(STRATA)
++        or set(counts.values()) != {10}
++        or sum(n for key, n in counts.items() if key.startswith("STATIC")) != 40
++    ):
++        raise ValueError(
++            "selection requires all 120 unique groups, 12 strata of 10, including 40 static"
++        )
++    results = json.loads((directory / "results.json").read_text())
++    result_ids = [row["assignment_id"] for row in results]
++    if len(result_ids) != 120 or len(set(result_ids)) != 120 or set(result_ids) != set(ids):
++        raise ValueError("selection result denominator is duplicated or incomplete")
++    if any(not str(value).startswith("selection-") for value in ids):
++        raise ValueError("selection cannot relabel foundation/formal assignment identities")
++    episode_ids = set()
++    for assignment in assignments:
++        case = directory / "cases" / assignment["assignment_id"]
++        episode = json.loads((case / "episode.json").read_text())
++        samples = json.loads((case / "physical-evidence.json").read_text())
++        outcome = json.loads((case / "physical-outcome.json").read_text())
++        episode_id = episode.get("episode_id")
++        if not isinstance(episode_id, str) or not episode_id or episode_id in episode_ids:
++            raise ValueError("selection needs a unique actual episode identity per assigned group")
++        episode_ids.add(episode_id)
++        if not samples or any(sample.get("episode_id") != episode_id for sample in samples):
++            raise ValueError("selection physical samples belong to a foreign episode")
++        initial = samples[0]
++        target = assignment["scene"]["scene_parameters"]["target"]
++        destination = assignment["scene"]["scene_parameters"]["destination"]
++        if any(
++            abs(a - b) > 0.005
++            for a, b in zip(initial["object_position_m"][:2], target["position"][:2], strict=True)
++        ) or any(
++            abs(a - b) > 0.003
++            for a, b in zip(
++                initial["object_half_extent_xy_m"], target["half_size"][:2], strict=True
++            )
++        ):
++            raise ValueError("selection physical source does not match assigned object geometry")
++        if any(
++            any(
++                abs(a - b) > 1e-6
++                for a, b in zip(
++                    sample["region_center_xy_m"], destination["position"][:2], strict=True
++                )
++            )
++            or any(
++                abs(a - b) > 1e-6
++                for a, b in zip(
++                    sample["region_half_extent_xy_m"], destination["half_size"][:2], strict=True
++                )
++            )
++            for sample in samples
++        ):
++            raise ValueError("selection physical source does not match fixed destination geometry")
++        if outcome.get("safety_assessment") not in {"SCOPED_NO_VIOLATION", "VIOLATION"}:
++            raise ValueError("selection physical safety assessment is incomplete")
++    audit = audit_pilot(directory)
++    summary = audit["summary"]
++    if (
++        not audit["physical_reconstruction_valid"]
++        or summary["recorded"] != 120
++        or summary["cost_publication_mismatches"]
++        or summary["inflight_requests"]
++    ):
++        raise ValueError("selection raw physical/cost reconstruction is incomplete or inconsistent")
++    cases = audit["cases"]
++    if any(case.get("errors") or type(case.get("safety_violation")) is not bool for case in cases):
++        raise ValueError(
++            "selection safety outcomes must be independently reconstructed for every assigned case"
++        )
++    durations = [case.get("wall_duration_s") for case in cases]
++    if any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in durations):
++        raise ValueError("every assigned case needs a finite measured wall duration")
++    requests = sum(case["costs"]["cloud_model_requests"] for case in cases)
++    return {
++        "period_s": period,
++        "assigned": 120,
++        "static_assigned": 40,
++        "stratum_counts": dict(counts),
++        "group_ids": groups,
++        "assignment_hash": audit["assignment_hash"],
++        "bindings": bindings,
++        "success_rate": summary["success_rate_all_assigned"],
++        "static_success_rate": summary["nominal_success_rate"],
++        "safety_violation_rate": summary["safety_violations"] / 120,
++        "actual_cloud_requests": requests,
++        "mean_wall_duration_s": sum(durations) / 120,
++        "false_completion_claims": summary["false_completion_claims"],
++        "audit_hash": _canonical_hash(audit),
++        "manifest_hash": _file_hash(directory / "selection-manifest.json"),
++    }
++
++
++def select_b0(period_directories: Mapping[float, Path]) -> dict[str, Any]:
++    """从四条完整原始曲线独立重算，先质量筛选再按云请求和延迟排序。"""
++    result: dict[str, Any] = {
++        "status": "INCOMPLETE",
++        "selected_period_s": None,
++        "savings_claim_allowed": False,
++        "curves": [],
++        "errors": [],
++    }
++    if set(period_directories) != set(B0_PERIODS):
++        result["errors"].append("all four registered periods .5/1/2/5 are required")
++        return result
++    for period in B0_PERIODS:
++        try:
++            result["curves"].append(_audit_curve(period, Path(period_directories[period])))
++        except (ValueError, TypeError, KeyError, OSError, OverflowError) as exc:
++            result["errors"].append(f"{period}: {type(exc).__name__}: {exc}")
++    if result["errors"]:
++        return result
++    curves = result["curves"]
++    reference = curves[0]
++    if any(
++        row["assignment_hash"] != reference["assignment_hash"]
++        or row["bindings"] != reference["bindings"]
++        for row in curves[1:]
++    ):
++        result["errors"].append(
++            "all methods must share fixed assignment/role/device/provider bindings"
++        )
++        return result
++    feasible = [
++        row
++        for row in curves
++        if row["static_success_rate"] >= 0.9
++        and row["success_rate"] >= 0.8
++        and row["safety_violation_rate"] <= 0.01
++    ]
++    if not feasible:
++        result["status"] = "NO_FEASIBLE_BASELINE"
++        return result
++    winner = min(
++        feasible,
++        key=lambda row: (
++            row["actual_cloud_requests"],
++            row["mean_wall_duration_s"],
++            row["period_s"],
++        ),
++    )
++    result.update(
++        status="SELECTED", selected_period_s=winner["period_s"], savings_claim_allowed=True
++    )
++    return result
++
++
++def mode_switch_source_hashes() -> dict[str, str]:
++    """读取模式提交和共同基线的实际源码hash，供selection冻结绑定。"""
++    base = Path(__file__).parent
++    return {
++        **_source_hashes(),
++        **{
++            f"auto_mode/{name}": _file_hash(base / name)
++            for name in (
++                "models.py",
++                "baseline_policies.py",
++                "transition_service.py",
++                "repository.py",
++            )
++        },
++    }
++
++
++def verify_mode_switch_policy(snapshot: Any) -> dict[str, Any]:
++    """独立重算全部selection候选物理/成本和模式日志，拒绝只有hash的声明。"""
++    from cloud_edge_robot_arm.auto_mode.models import ModeSwitchPolicySnapshot
++    from cloud_edge_robot_arm.contracts import AutoModeTransition, AutoModeTransitionStatus
++
++    verdict: dict[str, Any] = {"accepted": False, "errors": []}
++    try:
++        snapshot = ModeSwitchPolicySnapshot.model_validate(snapshot.model_dump())
++        if snapshot.method_id == "B2":
++            original = AutoModePolicy(version="auto-v1")
++            if (
++                snapshot.policy_version != original.version
++                or snapshot.min_dwell_s != original.min_dwell_seconds
++                or snapshot.cooldown_s != original.switch_cooldown_seconds
++                or snapshot.max_switches != original.max_switches_per_task
++                or snapshot.confirmation_count != original.confirmation_count
++            ):
++                raise ValueError("B2 original frozen mode rules cannot be rewritten by selection")
++        if snapshot.source_hashes != mode_switch_source_hashes():
++            raise ValueError("mode policy source identity changed")
++        directory = Path(snapshot.selection_directory)
++        path = directory / "mode-policy-selection.json"
++        if _file_hash(path) != snapshot.selection_manifest_hash:
++            raise ValueError("mode selection manifest hash mismatch")
++        manifest = json.loads(path.read_text())
++        if (
++            manifest.get("schema_version") != "ced.mode-selection.v1"
++            or manifest.get("stage") != "SELECTION"
++        ):
++            raise ValueError("mode policy requires an explicit selection manifest")
++        candidates = manifest["candidates"]
++        if not candidates or len({row["candidate_id"] for row in candidates}) != len(candidates):
++            raise ValueError("mode selection candidates are empty or duplicated")
++        curves = []
++        for candidate in candidates:
++            params = candidate["parameters"]
++            if candidate["source_hashes"] != snapshot.source_hashes:
++                raise ValueError("mode selection candidate source mismatch")
++            relative = Path(candidate["directory"])
++            if relative.is_absolute() or ".." in relative.parts:
++                raise ValueError("mode selection raw directory must stay inside its snapshot")
++            raw = (directory / relative).resolve()
++            if not raw.is_relative_to(directory.resolve()):
++                raise ValueError("mode selection directory escapes snapshot")
++            curve = _audit_curve(float(candidate["b0_period_s"]), raw)
++            assignments = json.loads((raw / "assignments.json").read_text())
++            commits = 0
++            for assignment in assignments:
++                log = json.loads(
++                    (
++                        raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json"
++                    ).read_text()
++                )
++                if (
++                    log["policy_parameters"] != params
++                    or log["source_hashes"] != snapshot.source_hashes
++                ):
++                    raise ValueError("case mode policy binding mismatch")
++                transitions = [
++                    AutoModeTransition.model_validate(row) for row in log["committed_transitions"]
++                ]
++                from cloud_edge_robot_arm.auto_mode.models import ModeTransitionCheckpoint
++
++                checkpoints = [
++                    ModeTransitionCheckpoint.model_validate(row) for row in log["checkpoints"]
++                ]
++                if len(checkpoints) != len(transitions):
++                    raise ValueError("every mode commit must have one verified checkpoint")
++                episode = json.loads(
++                    (raw / "cases" / assignment["assignment_id"] / "episode.json").read_text()
++                )
++                previous_at = None
++                previous_version = None
++                for ordinal, transition in enumerate(transitions):
++                    checkpoint = checkpoints[ordinal]
++                    if (
++                        checkpoint.task_id != transition.task_id
++                        or transition.task_id != episode["episode_id"]
++                        or checkpoint.mode_version != transition.expected_mode_version
++                        or checkpoint.atomic_action_active
++                        or checkpoint.confirmation_count < params["confirmation_count"]
++                        or transition.committed_at is None
++                        or checkpoint.persisted_at > transition.committed_at
++                    ):
++                        raise ValueError(
++                            "mode selection checkpoint identity/boundary/confirmation is invalid"
++                        )
++                    if (
++                        transition.status != AutoModeTransitionStatus.COMMITTED
++                        or transition.committed_at is None
++                        or transition.committed_at < transition.prepared_at
++                        or transition.new_mode_version != transition.expected_mode_version + 1
++                        or (
++                            previous_version is not None
++                            and transition.expected_mode_version != previous_version
++                        )
++                        or ordinal >= params["max_switches"]
++                    ):
++                        raise ValueError(
++                            "mode selection transition CAS/order/limit evidence is invalid"
++                        )
++                    baseline_at = previous_at or datetime.fromisoformat(
++                        log["initial_last_switch_at"]
++                    )
++                    required = max(float(params["min_dwell_s"]), float(params["cooldown_s"]))
++                    if (
++                        baseline_at.tzinfo is None
++                        or transition.committed_at.tzinfo is None
++                        or (transition.committed_at - baseline_at).total_seconds() < required
++                    ):
++                        raise ValueError("mode selection transition violates frozen dwell/cooldown")
++                    previous_at = transition.committed_at
++                    previous_version = transition.new_mode_version
++                    commits += 1
++            if commits == 0:
++                raise ValueError("mode selection did not exercise any actual mode commits")
++            curve.update(candidate_id=candidate["candidate_id"], parameters=params)
++            curves.append(curve)
++        reference = curves[0]
++        if any(
++            curve["assignment_hash"] != reference["assignment_hash"]
++            or curve["bindings"] != reference["bindings"]
++            for curve in curves[1:]
++        ):
++            raise ValueError("mode selection candidates do not share assignments and frozen roles")
++        feasible = [
++            curve
++            for curve in curves
++            if curve["static_success_rate"] >= 0.9
++            and curve["success_rate"] >= 0.8
++            and curve["safety_violation_rate"] <= 0.01
++        ]
++        if not feasible:
++            raise ValueError("mode selection has no feasible candidate")
++        winner = min(
++            feasible,
++            key=lambda curve: (
++                curve["actual_cloud_requests"],
++                curve["mean_wall_duration_s"],
++                curve["candidate_id"],
++            ),
++        )
++        if (
++            manifest["selected_candidate_id"] != winner["candidate_id"]
++            or snapshot.parameters() != winner["parameters"]
++        ):
++            raise ValueError("mode policy snapshot is not the verified selection winner")
++        verdict.update(
++            accepted=True,
++            selection_manifest_hash=snapshot.selection_manifest_hash,
++            policy_parameters=snapshot.parameters(),
++        )
++    except (ValueError, TypeError, KeyError, OSError, OverflowError, AttributeError) as exc:
++        verdict["errors"].append(f"{type(exc).__name__}: {exc}")
++    return verdict
+--- a/src/cloud_edge_robot_arm/auto_mode/models.py
++++ b/src/cloud_edge_robot_arm/auto_mode/models.py
+@@ -2,9 +2,10 @@
+ 
+ from __future__ import annotations
+ 
++from datetime import datetime
+ from typing import Any
+ 
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, ConfigDict, Field, field_validator
+ 
+ from cloud_edge_robot_arm.contracts import (
+     AutoModeDecision,
+@@ -61,3 +62,54 @@
+     atomic_step_active: bool
+     mode_history: list[ControlMode] = Field(default_factory=list)
+     extra: dict[str, Any] = Field(default_factory=dict)
++
++
++class ModeTransitionCheckpoint(BaseModel):
++    """模式提交边界证明，关联已持久化的执行checkpoint和当前版本。"""
++
++    model_config = ConfigDict(extra="forbid", frozen=True)
++    task_id: str = Field(min_length=1)
++    checkpoint_id: str = Field(min_length=1)
++    plan_version: int = Field(ge=0, strict=True)
++    command_seq: int = Field(ge=0, strict=True)
++    mode_version: int = Field(ge=0, strict=True)
++    atomic_action_active: bool = Field(strict=True)
++    confirmation_count: int = Field(default=0, ge=0, strict=True)
++    persisted_at: datetime
++
++    @field_validator("persisted_at")
++    @classmethod
++    def timezone_required(cls, value: datetime) -> datetime:
++        """拒绝无时区checkpoint时间，避免无法比较提交顺序。"""
++        if value.tzinfo is None or value.utcoffset() is None:
++            raise ValueError("checkpoint time must include timezone")
++        return value
++
++
++class ModeSwitchPolicySnapshot(BaseModel):
++    """绑定selection原始目录和实现源码的模式驻留、确认与切换限制。"""
++
++    model_config = ConfigDict(extra="forbid", frozen=True)
++    method_id: str = Field(min_length=1)
++    policy_version: str = Field(min_length=1)
++    min_dwell_s: float = Field(ge=0, allow_inf_nan=False)
++    cooldown_s: float = Field(ge=0, allow_inf_nan=False)
++    max_switches: int = Field(ge=1, strict=True)
++    confirmation_count: int = Field(ge=1, strict=True)
++    source_hashes: dict[str, str]
++    selection_directory: str = Field(min_length=1)
++    selection_manifest_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
++
++    def parameters(self) -> dict[str, Any]:
++        """输出需要与selection候选逐字段一致的冻结参数。"""
++        return {
++            name: getattr(self, name)
++            for name in (
++                "method_id",
++                "policy_version",
++                "min_dwell_s",
++                "cooldown_s",
++                "max_switches",
++                "confirmation_count",
++            )
++        }
+--- a/src/cloud_edge_robot_arm/auto_mode/repository.py
++++ b/src/cloud_edge_robot_arm/auto_mode/repository.py
+@@ -5,6 +5,7 @@
+ import hashlib
+ import json
+ import sqlite3
++import threading
+ from collections.abc import Callable
+ from datetime import UTC, datetime
+ from pathlib import Path
+@@ -12,10 +13,12 @@
+ 
+ from pydantic import BaseModel
+ 
++from cloud_edge_robot_arm.auto_mode.models import ModeSwitchPolicySnapshot, ModeTransitionCheckpoint
+ from cloud_edge_robot_arm.contracts import (
+     AutoModeDecision,
+     AutoModeStatus,
+     AutoModeTransition,
++    AutoModeTransitionStatus,
+     RiskSnapshot,
+ )
+ from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
+@@ -63,6 +66,39 @@
+ 
+     def get_status(self, task_id: str) -> AutoModeStatus | None:
+         """按任务查询当前 AUTO 模式状态。"""
++        ...
++
++    def prepare_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
++        """原子准备相同幂等事务。"""
++        ...
++
++    def save_transition_checkpoint(
++        self, transition_id: str, checkpoint: ModeTransitionCheckpoint
++    ) -> ModeTransitionCheckpoint:
++        """持久化模式提交边界证明。"""
++        ...
++
++    def get_transition_checkpoint(self, transition_id: str) -> ModeTransitionCheckpoint | None:
++        """读取模式提交边界证明。"""
++        ...
++
++    def commit_transition_if_current(
++        self,
++        transition_id: str,
++        *,
++        committed_at: datetime,
++        boundary: ModeTransitionCheckpoint | None = None,
++        require_verified_boundary: bool = False,
++        mode_policy: ModeSwitchPolicySnapshot | None = None,
++        commit_guard: Callable[[], ModeTransitionCheckpoint | None] | None = None,
++    ) -> AutoModeTransition:
++        """原子比较当前模式版本并提交。"""
++        ...
++
++    def abort_transition(
++        self, transition_id: str, *, reason: str, aborted_at: datetime
++    ) -> AutoModeTransition:
++        """只中止prepared事务。"""
+         ...
+ 
+     def record_audit_event(
+@@ -85,6 +121,8 @@
+ 
+     def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
+         self._clock = clock or _utc_now
++        self._lock = threading.RLock()
++        self._checkpoints: dict[str, tuple[str, ModeTransitionCheckpoint]] = {}
+         self._snapshots: dict[str, RiskSnapshot] = {}
+         self._decisions: dict[str, AutoModeDecision] = {}
+         self._transitions: dict[str, AutoModeTransition] = {}
+@@ -121,26 +159,15 @@
+ 
+     def save_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
+         """保存模式切换记录，并在幂等键冲突时抛出显式错误。"""
+-        h = _hash(transition)
+-        existing_id = self._transition_idempotency.get(transition.idempotency_key)
+-        if existing_id is not None:
+-            existing = self._transitions[existing_id]
+-            if _hash(existing) != h and existing.transition_id != transition.transition_id:
+-                raise IdempotencyConflictError("mode transition idempotency conflict")
+-        existing_transition = self._transitions.get(transition.transition_id)
+-        if (
+-            existing_transition is not None
+-            and existing_transition.payload_hash
+-            and transition.payload_hash
+-        ):
+-            if (
+-                existing_transition.payload_hash != transition.payload_hash
+-                and existing_transition.status == transition.status
+-            ):
+-                raise IdempotencyConflictError("mode transition payload conflict")
+-        self._transitions[transition.transition_id] = transition.model_copy(deep=True)
+-        self._transition_idempotency[transition.idempotency_key] = transition.transition_id
+-        return transition
++        with self._lock:
++            existing_id = self._transition_idempotency.get(transition.idempotency_key)
++            existing = self._transitions.get(existing_id) if existing_id is not None else None
++            _validate_transition_save(existing, transition)
++            existing = self._transitions.get(transition.transition_id)
++            _validate_transition_save(existing, transition)
++            self._transitions[transition.transition_id] = transition.model_copy(deep=True)
++            self._transition_idempotency[transition.idempotency_key] = transition.transition_id
++            return transition.model_copy(deep=True)
+ 
+     def get_transition(self, transition_id: str) -> AutoModeTransition | None:
+         """按 transition_id 返回模式切换记录的深拷贝。"""
+@@ -167,8 +194,9 @@
+ 
+     def save_status(self, status: AutoModeStatus) -> AutoModeStatus:
+         """保存任务 AUTO 模式状态的深拷贝。"""
+-        self._statuses[status.task_id] = status.model_copy(deep=True)
+-        return status
++        with self._lock:
++            self._statuses[status.task_id] = status.model_copy(deep=True)
++            return status.model_copy(deep=True)
+ 
+     def get_status(self, task_id: str) -> AutoModeStatus | None:
+         """按任务读取当前 AUTO 模式状态。"""
+@@ -192,6 +220,97 @@
+         """内存仓储没有外部连接，关闭操作保持幂等空实现。"""
+         return None
+ 
++    def prepare_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
++        """原子准备或返回相同幂等请求，不复用冲突的请求内容。"""
++        with self._lock:
++            existing = self.get_transition_by_idempotency(transition.idempotency_key)
++            if existing is not None:
++                if existing.payload_hash != transition.payload_hash:
++                    raise IdempotencyConflictError("mode transition idempotency conflict")
++                return existing
++            return self.save_transition(transition)
++
++    def save_transition_checkpoint(
++        self, transition_id: str, checkpoint: ModeTransitionCheckpoint
++    ) -> ModeTransitionCheckpoint:
++        """保存绑定prepared请求hash的checkpoint，不允许在旧版本上换绑。"""
++        checkpoint = ModeTransitionCheckpoint.model_validate(checkpoint.model_dump())
++        with self._lock:
++            record = self.get_transition(transition_id)
++            _validate_checkpoint(record, checkpoint)
++            assert record is not None
++            self._checkpoints[transition_id] = (
++                record.payload_hash,
++                checkpoint.model_copy(deep=True),
++            )
++            return checkpoint.model_copy(deep=True)
++
++    def get_transition_checkpoint(self, transition_id: str) -> ModeTransitionCheckpoint | None:
++        """读取绑定当前请求hash的持久化checkpoint证明。"""
++        with self._lock:
++            pair = self._checkpoints.get(transition_id)
++            record = self.get_transition(transition_id)
++            if pair is None or record is None or pair[0] != record.payload_hash:
++                return None
++            return pair[1].model_copy(deep=True)
++
++    def commit_transition_if_current(
++        self,
++        transition_id: str,
++        *,
++        committed_at: datetime,
++        boundary: ModeTransitionCheckpoint | None = None,
++        require_verified_boundary: bool = False,
++        mode_policy: ModeSwitchPolicySnapshot | None = None,
++        commit_guard: Callable[[], ModeTransitionCheckpoint | None] | None = None,
++    ) -> AutoModeTransition:
++        """同一临界区内比较当前模式版本并同时提交状态和事务。"""
++        with self._lock:
++            record = self.get_transition(transition_id)
++            if record is None:
++                raise ValueError("mode transition does not exist")
++            if record.status == AutoModeTransitionStatus.COMMITTED:
++                return record
++            current = self.get_status(record.task_id)
++            _validate_commit(
++                record,
++                current,
++                committed_at,
++                boundary,
++                self.get_transition_checkpoint(transition_id),
++                require_verified_boundary,
++                mode_policy,
++                commit_guard,
++            )
++            assert current is not None
++            updated, status = _committed_values(record, current, committed_at)
++            self._transitions[transition_id] = updated.model_copy(deep=True)
++            self._statuses[record.task_id] = status.model_copy(deep=True)
++            return updated
++
++    def abort_transition(
++        self, transition_id: str, *, reason: str, aborted_at: datetime
++    ) -> AutoModeTransition:
++        """只允许prepared事务中止；重复中止返回最初结果。"""
++        with self._lock:
++            record = self.get_transition(transition_id)
++            if record is None:
++                raise KeyError(transition_id)
++            if record.status == AutoModeTransitionStatus.COMMITTED:
++                raise ValueError("COMMITTED transition cannot be aborted")
++            if record.status != AutoModeTransitionStatus.PREPARED:
++                return record
++            updated = record.model_copy(
++                update={
++                    "status": AutoModeTransitionStatus.ABORTED,
++                    "aborted_at": aborted_at,
++                    "reason": reason,
++                },
++                deep=True,
++            )
++            self._transitions[transition_id] = updated
++            return updated.model_copy(deep=True)
++
+ 
+ class SQLiteAutoModeRepository:
+     """SQLite AUTO 模式仓储，将审计记录和状态快照落盘保存。"""
+@@ -200,6 +319,7 @@
+         self.path = Path(path)
+         self.path.parent.mkdir(parents=True, exist_ok=True)
+         self._clock = clock or _utc_now
++        self._lock = threading.RLock()
+         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
+         self._conn.row_factory = sqlite3.Row
+         self._create_schema()
+@@ -230,31 +350,63 @@
+ 
+     def save_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
+         """保存模式切换记录，并保持幂等冲突检查与 SQLite 落盘一致。"""
+-        saved = self._memory.save_transition(transition)
+-        self._upsert_transition(saved)
+-        return saved
++        with self._lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            _validate_transition_save(
++                self.get_transition_by_idempotency(transition.idempotency_key), transition
++            )
++            _validate_transition_save(self.get_transition(transition.transition_id), transition)
++            self._upsert_transition(transition, commit=False)
++            return transition.model_copy(deep=True)
+ 
+     def get_transition(self, transition_id: str) -> AutoModeTransition | None:
+         """按 transition_id 读取模式切换记录。"""
+-        return self._memory.get_transition(transition_id)
++        with self._lock:
++            row = self._conn.execute(
++                "SELECT payload_json FROM mode_transitions WHERE transition_id=?", (transition_id,)
++            ).fetchone()
++            return (
++                None if row is None else AutoModeTransition.model_validate_json(row["payload_json"])
++            )
+ 
+     def get_transition_by_idempotency(self, idempotency_key: str) -> AutoModeTransition | None:
+         """按幂等键读取模式切换记录。"""
+-        return self._memory.get_transition_by_idempotency(idempotency_key)
++        with self._lock:
++            row = self._conn.execute(
++                "SELECT payload_json FROM mode_transitions WHERE idempotency_key=?",
++                (idempotency_key,),
++            ).fetchone()
++            return (
++                None if row is None else AutoModeTransition.model_validate_json(row["payload_json"])
++            )
+ 
+     def latest_prepared_transition(self, task_id: str) -> AutoModeTransition | None:
+         """读取任务最近一次 PREPARED 切换，用于恢复未完成切换。"""
+-        return self._memory.latest_prepared_transition(task_id)
++        with self._lock:
++            rows = self._conn.execute(
++                "SELECT payload_json FROM mode_transitions WHERE task_id=? "
++                "ORDER BY created_at DESC",
++                (task_id,),
++            )
++            for row in rows:
++                record = AutoModeTransition.model_validate_json(row["payload_json"])
++                if record.status == AutoModeTransitionStatus.PREPARED:
++                    return record
++            return None
+ 
+     def save_status(self, status: AutoModeStatus) -> AutoModeStatus:
+         """保存当前 AUTO 模式状态到内存镜像和 SQLite 表。"""
+-        saved = self._memory.save_status(status)
+-        self._upsert("auto_mode_statuses", "task_id", status.task_id, status.task_id, saved)
+-        return saved
++        with self._lock:
++            self._upsert("auto_mode_statuses", "task_id", status.task_id, status.task_id, status)
++            return status.model_copy(deep=True)
+ 
+     def get_status(self, task_id: str) -> AutoModeStatus | None:
+         """按任务读取当前 AUTO 模式状态。"""
+-        return self._memory.get_status(task_id)
++        with self._lock:
++            row = self._conn.execute(
++                "SELECT payload_json FROM auto_mode_statuses WHERE task_id=?", (task_id,)
++            ).fetchone()
++            return None if row is None else AutoModeStatus.model_validate_json(row["payload_json"])
+ 
+     def record_audit_event(
+         self, task_id: str, event_type: str, details: dict[str, object] | None = None
+@@ -310,6 +462,11 @@
+                 payload_hash TEXT NOT NULL,
+                 updated_at TEXT NOT NULL
+             );
++            CREATE TABLE IF NOT EXISTS mode_transition_checkpoints (
++                transition_id TEXT PRIMARY KEY,
++                payload_hash TEXT NOT NULL,
++                checkpoint_json TEXT NOT NULL
++            );
+             CREATE TABLE IF NOT EXISTS auto_mode_audit_events (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 task_id TEXT NOT NULL,
+@@ -333,9 +490,9 @@
+         for row in self._conn.execute(
+             "SELECT payload_json FROM mode_transitions ORDER BY created_at"
+         ):
+-            self._memory.save_transition(
+-                AutoModeTransition.model_validate_json(row["payload_json"])
+-            )
++            record = AutoModeTransition.model_validate_json(row["payload_json"])
++            self._memory._transitions[record.transition_id] = record
++            self._memory._transition_idempotency[record.idempotency_key] = record.transition_id
+         for row in self._conn.execute(
+             "SELECT payload_json FROM auto_mode_statuses ORDER BY updated_at"
+         ):
+@@ -348,6 +505,8 @@
+         key_value: str,
+         task_id: str,
+         payload: BaseModel,
++        *,
++        commit: bool = True,
+     ) -> None:
+         payload_json = payload.model_dump_json()
+         payload_hash = _hash(payload)
+@@ -375,9 +534,10 @@
+                 """,
+                 (key_value, task_id, payload_json, payload_hash, now),
+             )
+-        self._conn.commit()
+-
+-    def _upsert_transition(self, transition: AutoModeTransition) -> None:
++        if commit:
++            self._conn.commit()
++
++    def _upsert_transition(self, transition: AutoModeTransition, *, commit: bool = True) -> None:
+         payload_json = transition.model_dump_json()
+         payload_hash = _hash(transition)
+         now = self._clock().isoformat()
+@@ -407,9 +567,230 @@
+                 now,
+             ),
+         )
+-        self._conn.commit()
++        if commit:
++            self._conn.commit()
++
++    def prepare_transition(self, transition: AutoModeTransition) -> AutoModeTransition:
++        """SQLite写事务内准备幂等请求，跨连接不会创建重复事务。"""
++        with self._lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            existing = self.get_transition_by_idempotency(transition.idempotency_key)
++            if existing is not None:
++                if existing.payload_hash != transition.payload_hash:
++                    raise IdempotencyConflictError("mode transition idempotency conflict")
++                return existing
++            self._upsert_transition(transition, commit=False)
++            return transition.model_copy(deep=True)
++
++    def save_transition_checkpoint(
++        self, transition_id: str, checkpoint: ModeTransitionCheckpoint
++    ) -> ModeTransitionCheckpoint:
++        """将checkpoint与prepared payload hash原子绑定并保存到SQLite。"""
++        checkpoint = ModeTransitionCheckpoint.model_validate(checkpoint.model_dump())
++        with self._lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            record = self.get_transition(transition_id)
++            _validate_checkpoint(record, checkpoint)
++            assert record is not None
++            self._conn.execute(
++                """INSERT INTO mode_transition_checkpoints(
++                transition_id, payload_hash, checkpoint_json) VALUES (?, ?, ?)
++                ON CONFLICT(transition_id) DO UPDATE SET
++                payload_hash=excluded.payload_hash, checkpoint_json=excluded.checkpoint_json""",
++                (transition_id, record.payload_hash, checkpoint.model_dump_json()),
++            )
++            return checkpoint.model_copy(deep=True)
++
++    def get_transition_checkpoint(self, transition_id: str) -> ModeTransitionCheckpoint | None:
++        """直接读取SQLite中的checkpoint，拒绝换绑或过期请求hash。"""
++        with self._lock:
++            row = self._conn.execute(
++                """SELECT c.payload_hash, c.checkpoint_json,
++                t.payload_json FROM mode_transition_checkpoints c JOIN mode_transitions t
++                ON c.transition_id=t.transition_id WHERE c.transition_id=?""",
++                (transition_id,),
++            ).fetchone()
++            if row is None:
++                return None
++            record = AutoModeTransition.model_validate_json(row["payload_json"])
++            if record.payload_hash != row["payload_hash"]:
++                return None
++            return ModeTransitionCheckpoint.model_validate_json(row["checkpoint_json"])
++
++    def commit_transition_if_current(
++        self,
++        transition_id: str,
++        *,
++        committed_at: datetime,
++        boundary: ModeTransitionCheckpoint | None = None,
++        require_verified_boundary: bool = False,
++        mode_policy: ModeSwitchPolicySnapshot | None = None,
++        commit_guard: Callable[[], ModeTransitionCheckpoint | None] | None = None,
++    ) -> AutoModeTransition:
++        """BEGIN IMMEDIATE内比较当前版本并同时更新状态和提交记录。"""
++        with self._lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            record = self.get_transition(transition_id)
++            if record is None:
++                raise ValueError("mode transition does not exist")
++            if record.status == AutoModeTransitionStatus.COMMITTED:
++                return record
++            current = self.get_status(record.task_id)
++            _validate_commit(
++                record,
++                current,
++                committed_at,
++                boundary,
++                self.get_transition_checkpoint(transition_id),
++                require_verified_boundary,
++                mode_policy,
++                commit_guard,
++            )
++            assert current is not None
++            updated, status = _committed_values(record, current, committed_at)
++            self._upsert_transition(updated, commit=False)
++            self._upsert(
++                "auto_mode_statuses",
++                "task_id",
++                record.task_id,
++                record.task_id,
++                status,
++                commit=False,
++            )
++            return updated
++
++    def abort_transition(
++        self, transition_id: str, *, reason: str, aborted_at: datetime
++    ) -> AutoModeTransition:
++        """写事务内中止prepared记录；已提交记录不可改写。"""
++        with self._lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            record = self.get_transition(transition_id)
++            if record is None:
++                raise KeyError(transition_id)
++            if record.status == AutoModeTransitionStatus.COMMITTED:
++                raise ValueError("COMMITTED transition cannot be aborted")
++            if record.status != AutoModeTransitionStatus.PREPARED:
++                return record
++            updated = record.model_copy(
++                update={
++                    "status": AutoModeTransitionStatus.ABORTED,
++                    "aborted_at": aborted_at,
++                    "reason": reason,
++                },
++                deep=True,
++            )
++            self._upsert_transition(updated, commit=False)
++            return updated
+ 
+ 
+ def _hash(value: BaseModel) -> str:
+     canonical = json.dumps(value.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
++
++
++def _validate_checkpoint(
++    record: AutoModeTransition | None, checkpoint: ModeTransitionCheckpoint
++) -> None:
++    if record is None or record.status != AutoModeTransitionStatus.PREPARED:
++        raise ValueError("checkpoint requires a prepared transition")
++    if (
++        checkpoint.task_id != record.task_id
++        or checkpoint.mode_version != record.expected_mode_version
++    ):
++        raise ValueError("checkpoint identity/version mismatch")
++
++
++def _validate_commit(
++    record: AutoModeTransition,
++    current: AutoModeStatus | None,
++    now: datetime,
++    boundary: ModeTransitionCheckpoint | None,
++    stored: ModeTransitionCheckpoint | None,
++    require_boundary: bool,
++    mode_policy: ModeSwitchPolicySnapshot | None,
++    commit_guard: Callable[[], ModeTransitionCheckpoint | None] | None,
++) -> None:
++    if record.status != AutoModeTransitionStatus.PREPARED:
++        raise ValueError(f"only prepared transitions can commit: {record.status}")
++    if current is None:
++        raise ValueError("current mode state is missing")
++    if (
++        current.current_mode != record.from_mode
++        or current.mode_version != record.expected_mode_version
++    ):
++        raise ValueError("current mode/version changed before commit")
++    if record.new_mode_version != record.expected_mode_version + 1:
++        raise ValueError("new mode version must advance exactly once")
++    if now.tzinfo is None or now.utcoffset() is None or now < record.prepared_at:
++        raise ValueError("commit time must be aware and after preparation")
++    if require_boundary:
++        from cloud_edge_robot_arm.auto_mode.baseline_policies import verify_mode_switch_policy
++
++        if mode_policy is None or not verify_mode_switch_policy(mode_policy)["accepted"]:
++            raise ValueError("research mode commit requires verified selection policy evidence")
++        if commit_guard is None:
++            raise ValueError("verified current boundary guard is required")
++    if commit_guard is not None:
++        boundary = commit_guard()
++    if require_boundary and (boundary is None or stored is None):
++        raise ValueError("verified boundary guard and durable checkpoint are required")
++    if boundary is not None:
++        boundary = ModeTransitionCheckpoint.model_validate(boundary.model_dump())
++        _validate_checkpoint(record, boundary)
++        if boundary.atomic_action_active:
++            raise ValueError("atomic action must finish before mode commit")
++        if stored is None or stored != boundary:
++            raise ValueError("current boundary differs from durable checkpoint")
++        if boundary.persisted_at > now:
++            raise ValueError("checkpoint is from the future")
++        if mode_policy is not None:
++            if boundary.confirmation_count < mode_policy.confirmation_count:
++                raise ValueError("mode proposal confirmation count is insufficient")
++            if current.switch_count >= mode_policy.max_switches:
++                raise ValueError("mode switch limit exhausted")
++            if current.last_switch_at is None:
++                if mode_policy.min_dwell_s > 0 or mode_policy.cooldown_s > 0:
++                    raise ValueError("last mode switch time is unknown")
++            else:
++                elapsed = (now - current.last_switch_at).total_seconds()
++                if elapsed < max(mode_policy.min_dwell_s, mode_policy.cooldown_s):
++                    raise ValueError("frozen dwell/cooldown time is not met")
++
++
++def _committed_values(
++    record: AutoModeTransition, current: AutoModeStatus, now: datetime
++) -> tuple[AutoModeTransition, AutoModeStatus]:
++    transition = record.model_copy(
++        update={"status": AutoModeTransitionStatus.COMMITTED, "committed_at": now}, deep=True
++    )
++    status = current.model_copy(
++        update={
++            "current_mode": record.to_mode,
++            "mode_version": record.new_mode_version,
++            "switch_count": current.switch_count + 1,
++            "last_switch_at": now,
++            "last_decision_id": record.decision_id,
++            "updated_at": now,
++        },
++        deep=True,
++    )
++    return transition, status
++
++
++def _validate_transition_save(
++    existing: AutoModeTransition | None, incoming: AutoModeTransition
++) -> None:
++    if existing is None:
++        if incoming.status != AutoModeTransitionStatus.PREPARED:
++            raise ValueError("terminal transition must be created by commit/abort CAS")
++        return
++    if existing.status == AutoModeTransitionStatus.PREPARED and incoming.status != existing.status:
++        raise ValueError("terminal transition must be created by commit/abort CAS")
++    if (
++        existing.transition_id != incoming.transition_id
++        or existing.payload_hash != incoming.payload_hash
++    ):
++        raise IdempotencyConflictError("mode transition idempotency/payload conflict")
++    if existing.status != AutoModeTransitionStatus.PREPARED and existing != incoming:
++        raise ValueError("terminal mode transition cannot be overwritten")
+--- a/src/cloud_edge_robot_arm/auto_mode/transition_service.py
++++ b/src/cloud_edge_robot_arm/auto_mode/transition_service.py
+@@ -1,16 +1,22 @@
+-"""AUTO 模式转换服务，记录切换原因并限制非法模式跳转。"""
++"""AUTO 模式事务服务，将幂等准备和模式版本提交交给同一仓储。"""
+ 
+ from __future__ import annotations
+ 
++import hashlib
++import json
+ from collections.abc import Callable
+ from datetime import UTC, datetime
++from uuid import uuid4
+ 
+ from cloud_edge_robot_arm.auto_mode.models import (
++    AutoModeState,
+     AutoModeTransitionRecord,
+     AutoModeTransitionRequest,
++    ModeSwitchPolicySnapshot,
++    ModeTransitionCheckpoint,
+ )
++from cloud_edge_robot_arm.auto_mode.repository import AutoModeRepository, InMemoryAutoModeRepository
+ from cloud_edge_robot_arm.contracts import AutoModeTransitionStatus, ControlMode
+-from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
+ 
+ 
+ def _utc_now() -> datetime:
+@@ -18,27 +24,49 @@
+ 
+ 
+ class ModeTransitionService:
+-    """模式切换服务，准备、提交或中止 AUTO 模式状态变更。"""
++    """保留prepare/commit/abort API，研究提交额外要求真实边界证明。"""
+ 
+     def __init__(
+-        self, *, clock: Callable[[], datetime] | None = None, repository: object | None = None
++        self,
++        *,
++        clock: Callable[[], datetime] | None = None,
++        repository: AutoModeRepository | None = None,
++        commit_guard: Callable[[AutoModeTransitionRecord], ModeTransitionCheckpoint | None]
++        | None = None,
++        require_verified_boundary: bool = False,
++        mode_switch_policy: ModeSwitchPolicySnapshot | None = None,
+     ) -> None:
+         self._clock = clock or _utc_now
+-        self._repository = repository
+-        self._transitions: dict[str, AutoModeTransitionRecord] = {}
+-        self._by_idempotency: dict[str, str] = {}
++        self._legacy_local = repository is None and not require_verified_boundary
++        self._repository = (
++            repository if repository is not None else InMemoryAutoModeRepository(clock=self._clock)
++        )
++        self._commit_guard = commit_guard
++        self._require_verified_boundary = require_verified_boundary
++        self._mode_switch_policy = (
++            ModeSwitchPolicySnapshot.model_validate(mode_switch_policy.model_dump())
++            if mode_switch_policy is not None
++            else None
++        )
+ 
+     def prepare(self, request: AutoModeTransitionRequest) -> AutoModeTransitionRecord:
+-        """准备一次模式切换，并用幂等键防止重复或冲突提交。"""
+-        if request.idempotency_key in self._by_idempotency:
+-            existing_id = self._by_idempotency[request.idempotency_key]
+-            existing = self._transitions[existing_id]
+-            if existing.payload_hash != self._payload_hash(request):
+-                raise IdempotencyConflictError("auto mode transition idempotency conflict")
+-            return existing
+-        transition_id = f"transition-{request.task_id}-{len(self._transitions) + 1}"
++        """幂等准备请求，重启后仍从仓储返回原来的prepared或terminal记录。"""
++        if self._legacy_local and self._repository.get_status(request.task_id) is None:
++            # Historical standalone callers own no persistent or physical mode state.
++            # External repositories and research services never infer current state.
++            self._repository.save_status(
++                AutoModeState(
++                    task_id=request.task_id,
++                    current_mode=request.from_mode,
++                    mode_version=request.expected_mode_version,
++                    updated_at=self._clock(),
++                )
++            )
++        canonical = json.dumps(
++            request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
++        )
+         record = AutoModeTransitionRecord(
+-            transition_id=transition_id,
++            transition_id=f"transition-{uuid4().hex}",
+             task_id=request.task_id,
+             from_mode=request.from_mode,
+             to_mode=request.to_mode,
+@@ -49,26 +77,33 @@
+             decision_id=request.decision_id,
+             prepared_at=self._clock(),
+             reason=request.reason,
+-            payload_hash=self._payload_hash(request),
++            payload_hash=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+         )
+-        self._transitions[transition_id] = record
+-        self._by_idempotency[request.idempotency_key] = transition_id
+-        return record
++        return self._repository.prepare_transition(record)
+ 
+     def commit(self, transition_id: str) -> AutoModeTransitionRecord:
+-        """提交已准备的模式切换并记录提交时间。"""
+-        record = self._transitions[transition_id]
+-        updated = record.model_copy(
+-            update={"status": AutoModeTransitionStatus.COMMITTED, "committed_at": self._clock()},
+-            deep=True,
++        """提交时重新读取原子边界，并在仓储写事务内比较模式版本。"""
++        record = self._repository.get_transition(transition_id)
++        if record is None:
++            raise KeyError(transition_id)
++        if record.status == AutoModeTransitionStatus.COMMITTED:
++            return record
++        if self._require_verified_boundary and self._commit_guard is None:
++            raise ValueError("research mode commit requires a current boundary guard")
++        callback = self._commit_guard
++        guard = (lambda: callback(record)) if callback is not None else None
++        return self._repository.commit_transition_if_current(
++            transition_id,
++            committed_at=self._clock(),
++            require_verified_boundary=self._require_verified_boundary,
++            mode_policy=self._mode_switch_policy,
++            commit_guard=guard,
+         )
+-        self._transitions[transition_id] = updated
+-        return updated
+ 
+     def abort(self, transition_id: str, *, reason: str) -> AutoModeTransitionRecord:
+-        """中止模式切换；缺失记录时返回可审计的 ABORTED 占位记录。"""
+-        record = self._transitions.get(transition_id)
+-        if record is None:
++        """中止prepared事务；缺失时保留历史可审计占位语义。"""
++        if self._repository.get_transition(transition_id) is None:
++            now = self._clock()
+             return AutoModeTransitionRecord(
+                 transition_id=transition_id,
+                 task_id="unknown",
+@@ -78,26 +113,10 @@
+                 expected_mode_version=0,
+                 new_mode_version=0,
+                 idempotency_key=f"missing-{transition_id}",
+-                prepared_at=self._clock(),
+-                aborted_at=self._clock(),
++                prepared_at=now,
++                aborted_at=now,
+                 reason=reason,
+             )
+-        updated = record.model_copy(
+-            update={
+-                "status": AutoModeTransitionStatus.ABORTED,
+-                "aborted_at": self._clock(),
+-                "reason": reason,
+-            },
+-            deep=True,
++        return self._repository.abort_transition(
++            transition_id, reason=reason, aborted_at=self._clock()
+         )
+-        self._transitions[transition_id] = updated
+-        return updated
+-
+-    def _payload_hash(self, request: AutoModeTransitionRequest) -> str:
+-        import hashlib
+-        import json
+-
+-        canonical = json.dumps(
+-            request.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+-        )
+-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+--- /dev/null
++++ b/configs/research/baselines.yaml
+@@ -0,0 +1,27 @@
++# 共同在线基线的软件默认配置；无真实完整selection证据时禁止启用收益结论。
++schema_version: ced.baselines.v1
++status: SOFTWARE_ONLY
++b0:
++  periods_s: [0.5, 1.0, 2.0, 5.0]
++  selected_period_s: null
++b1:
++  selected_threshold: null
++b2:
++  source: ORIGINAL_RISK_EVALUATOR_AND_AUTO_SELECTOR
++  risk_policy_version: risk-v1
++  auto_policy_version: auto-v1
++  frozen_snapshot_hash: null
++selection:
++  assigned_groups: 120
++  strata: 12
++  groups_per_stratum: 10
++  static_min_success_rate: 0.9
++  overall_min_success_rate: 0.8
++  max_physical_safety_violation_rate: 0.01
++  rank: [actual_cloud_requests, mean_wall_duration_s]
++provider:
++  max_inflight_requests: 1
++  pending_observation: LATEST_ONLY
++mode_commit:
++  require_verified_boundary: true
++  dwell_snapshot_hash: null
+--- /dev/null
++++ b/tests/test_runtime_auto_baselines.py
+@@ -0,0 +1,630 @@
++"""共同在线基线的软件边界，不把离线物理结果交给决策器。"""
++
++from __future__ import annotations
++
++from dataclasses import replace
++from datetime import UTC, datetime, timedelta
++from importlib import import_module
++from pathlib import Path
++
++import pytest
++
++from cloud_edge_robot_arm.auto_mode.runtime_events import (
++    DecisionAction,
++    DecisionEvent,
++    DecisionEventKind,
++)
++from cloud_edge_robot_arm.contracts import ControlMode, Pose, RobotState
++from cloud_edge_robot_arm.edge.evidence.conditions import (
++    ConditionStatus,
++    ConditionVerdict,
++    OnlineEvidenceSnapshot,
++)
++from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++from cloud_edge_robot_arm.edge.recovery.verification_router import (
++    VerificationBudget,
++    VerificationBudgetState,
++)
++from cloud_edge_robot_arm.research.network import NetworkCostSnapshot
++from cloud_edge_robot_arm.vision.observations import RGBDObservation
++from cloud_edge_robot_arm.vision.risk.models import RiskEstimate, RiskFeatures
++from tests.test_rgbd_observations import observation_payload
++
++NOW = datetime(2026, 10, 4, tzinfo=UTC)
++
++
++def context(kind=DecisionEventKind.SKILL_BOUNDARY, **changes):
++    events = import_module("cloud_edge_robot_arm.auto_mode.runtime_events")
++    assert hasattr(events, "DecisionContext"), "T11 DecisionContext is missing"
++    payload = observation_payload()
++    payload.update(
++        frame_id="fresh",
++        observation_id="",
++        captured_at=NOW,
++        episode_id="episode",
++        calibration_version="cal",
++    )
++    obs = RGBDObservation.model_validate(payload)
++    values = dict(
++        task_id="task",
++        episode_id="episode",
++        mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
++        mode_version=1,
++        plan_version=1,
++        command_seq=1,
++        event=DecisionEvent("event", kind, NOW, "fresh", False, ConditionStatus.PASS),
++        online_evidence=OnlineEvidenceSnapshot(
++            obs, RobotState(connected=True, tcp_pose=Pose(x=0.2, y=0, z=0.3)), {}, 1, 1, "ctx"
++        ),
++        evidence_verdict=EvidenceVerdict("VALID", ()),
++        condition_verdicts=(ConditionVerdict(ConditionStatus.PASS, "target_visible", "fresh"),),
++        risk_features=RiskFeatures({}, "fresh"),
++        risk_estimate=RiskEstimate(0.1, {"CONTINUE": 0.1}, 0.001, 0.001, "VALID"),
++        network_cost=NetworkCostSnapshot(
++            observed_rtt_s=None,
++            observed_loss_rate=None,
++            observed_bandwidth_bytes_s=None,
++            sampled_at=NOW,
++        ),
++        capabilities={
++            DecisionAction.CONTINUE,
++            DecisionAction.REOBSERVE,
++            DecisionAction.REQUEST_CLOUD,
++            DecisionAction.STOP,
++        },
++        verification_budget=VerificationBudgetState.start(VerificationBudget(2, 2, 2, 60), now=NOW),
++    )
++    values.update(changes)
++    return events.DecisionContext(**values)
++
++
++def policies():
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    return [
++        module.PeriodicPolicy(1),
++        module.ThresholdPolicy(0.5),
++        module.FrozenRuleAutoPolicy(module.freeze_legacy_rule_snapshot()),
++    ]
++
++
++@pytest.mark.parametrize("kind", list(DecisionEventKind))
++def test_every_policy_receives_same_runtime_events(kind):
++    for policy in policies():
++        action = policy.decide(context(kind))
++        assert action in DecisionAction
++
++
++def test_successful_step_with_moved_target_redecides():
++    for policy in policies()[:2]:
++        ctx = context(evidence_verdict=EvidenceVerdict("INVALID", ("target_moved",)))
++        assert policy.decide(ctx) == DecisionAction.REQUEST_CLOUD
++
++
++def test_final_verification_failure_reenters_policy():
++    for policy in policies()[:2]:
++        ctx = context(
++            DecisionEventKind.VERIFICATION_FAILED,
++            condition_verdicts=(ConditionVerdict("FAIL", "object_placed", "fresh"),),
++        )
++        assert policy.decide(ctx) == DecisionAction.REQUEST_CLOUD
++
++
++@pytest.mark.parametrize("period", [0.5, 1, 2, 5])
++def test_b0_ticks_independently_of_skill_completion(period):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    policy = module.PeriodicPolicy(period)
++    with policy.supervision(lambda frame: frame, lambda: "fresh") as ticker:
++        assert ticker.period_s == period
++        # The existing independent ticker is the only timing engine; converting
++        # its counters must not depend on a successful atomic skill return.
++        ticks = policy.tick_events(
++            {"ticks": 3}, occurred_at=NOW, observation_id="fresh", atomic_action_active=True
++        )
++        assert len(ticks) == 1 and ticks[0].kind == DecisionEventKind.SUPERVISION_TICK
++        assert ticks[0].atomic_action_active is True
++        assert (
++            policy.tick_events(
++                {"ticks": 3}, occurred_at=NOW, observation_id="fresh", atomic_action_active=False
++            )
++            == ()
++        )
++        assert (
++            policy.decide(context(event=replace(ticks[0], atomic_action_active=False)))
++            == DecisionAction.REQUEST_CLOUD
++        )
++
++
++def test_non_safety_decision_waits_for_atomic_boundary():
++    for policy in policies():
++        ctx = context(
++            event=DecisionEvent("atomic", DecisionEventKind.ANOMALY, NOW, "fresh", True, "FAIL")
++        )
++        assert policy.decide(ctx) == DecisionAction.CONTINUE
++
++
++def test_hard_stop_bypasses_atomic_dwell_and_capability_filter():
++    for policy in policies():
++        ctx = context(
++            capabilities=set(),
++            event=DecisionEvent("atomic", DecisionEventKind.ANOMALY, NOW, "fresh", True, "FAIL"),
++        )
++        ctx = replace(
++            ctx,
++            online_evidence=replace(
++                ctx.online_evidence,
++                robot_state=ctx.online_evidence.robot_state.model_copy(
++                    update={"estop_engaged": True}
++                ),
++            ),
++        )
++        assert policy.decide(ctx) == DecisionAction.STOP
++
++
++def test_unknown_evidence_reserves_budget_and_never_continues():
++    for policy in policies()[:2]:
++        ctx = context(evidence_verdict=EvidenceVerdict("UNKNOWN", ("depth_missing",)))
++        assert policy.decide(ctx) == DecisionAction.REOBSERVE
++        assert ctx.verification_budget.remaining_reobservations == 1
++        assert policy.decide(ctx) == DecisionAction.REOBSERVE
++        assert ctx.verification_budget.remaining_reobservations == 1
++        ctx = replace(ctx, event=replace(ctx.event, event_id="next"))
++        assert policy.decide(ctx) == DecisionAction.REOBSERVE
++        ctx = replace(ctx, event=replace(ctx.event, event_id="third"))
++        assert policy.decide(ctx) == DecisionAction.STOP
++
++
++def test_unaccepted_recovery_never_appears_in_baselines():
++    for policy in policies()[:2]:
++        ctx = context(
++            evidence_verdict=EvidenceVerdict("INVALID", ("moved",)),
++            capabilities={DecisionAction.LOCAL_RECOVER, DecisionAction.STOP},
++        )
++        assert policy.decide(ctx) == DecisionAction.STOP
++
++
++@pytest.mark.parametrize(
++    "invalid",
++    [
++        {"oracle": True},
++        {"nested": {"ground_truth": (1, 2, 3)}},
++        {"fault_schedule": [(3, "move")]},
++        {"source": "physical_evaluator"},
++    ],
++)
++def test_oracle_and_future_schedule_are_rejected_before_policy(invalid):
++    ctx = context()
++    with pytest.raises(ValueError, match="online"):
++        replace(ctx, online_evidence=replace(ctx.online_evidence, visual_facts=invalid))
++
++
++def test_observation_and_version_mismatch_cannot_construct_context():
++    with pytest.raises(ValueError, match="identity|version"):
++        context(
++            event=DecisionEvent("old", DecisionEventKind.CLOUD_RETURN, NOW, "old", False, "PASS")
++        )
++    with pytest.raises(ValueError, match="identity|version"):
++        context(plan_version=2)
++
++
++def test_deadline_exhaustion_prevents_all_ordinary_decisions():
++    for policy in policies():
++        ctx = context()
++        ctx.verification_budget.deadline_at = NOW
++        assert policy.decide(ctx) == DecisionAction.STOP
++
++
++def test_b1_requires_calibrated_continue_risk():
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    assert (
++        module.ThresholdPolicy(0.5).decide(
++            context(risk_estimate=RiskEstimate(0.1, {}, 0.01, 0.01, "VALID"))
++        )
++        == DecisionAction.REOBSERVE
++    )
++    assert (
++        module.ThresholdPolicy(0.5).decide(
++            context(risk_estimate=RiskEstimate(0.1, {"CONTINUE": 0.8}, 0.01, 0.01, "VALID"))
++        )
++        == DecisionAction.REQUEST_CLOUD
++    )
++
++
++def test_b2_missing_legacy_online_inputs_is_unavailable():
++    assert policies()[2].decide(context()) == DecisionAction.STOP
++
++
++def test_b2_rule_snapshot_unchanged():
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    snapshot = module.freeze_legacy_rule_snapshot()
++    old = snapshot.digest()
++    with pytest.raises((AttributeError, TypeError, ValueError)):
++        snapshot.risk_policy["network_weight"] = 0.9
++    assert snapshot.digest() == old
++    damaged = replace(
++        snapshot, source_hashes={**snapshot.source_hashes, "auto_mode/selector.py": "0" * 64}
++    )
++    with pytest.raises(ValueError, match="source"):
++        module.FrozenRuleAutoPolicy(damaged)
++
++
++def test_no_feasible_baseline_disables_savings_claim(tmp_path: Path):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    result = module.select_b0(
++        {0.5: tmp_path / "a", 1: tmp_path / "b", 2: tmp_path / "c", 5: tmp_path / "d"}
++    )
++    assert result["status"] == "INCOMPLETE"
++    assert result["savings_claim_allowed"] is False
++    assert result["selected_period_s"] is None
++
++
++def test_selection_requires_all_registered_curves(tmp_path: Path):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    result = module.select_b0({2: tmp_path})
++    assert result["status"] == "INCOMPLETE" and result["selected_period_s"] is None
++
++
++def test_hard_stop_overrides_a_cached_ordinary_decision():
++    for policy in policies()[:2]:
++        ctx = context()
++        assert policy.decide(ctx) == DecisionAction.CONTINUE
++        fault = ctx.online_evidence.robot_state.model_copy(update={"collision_detected": True})
++        same_event = replace(ctx, online_evidence=replace(ctx.online_evidence, robot_state=fault))
++        assert policy.decide(same_event) == DecisionAction.STOP
++
++
++def test_event_unknown_verification_cannot_continue():
++    for policy in policies()[:2]:
++        ctx = context(
++            event=DecisionEvent(
++                "unknown", DecisionEventKind.RESULT_VERIFIED, NOW, "fresh", False, "UNKNOWN"
++            )
++        )
++        assert policy.decide(ctx) == DecisionAction.REOBSERVE
++
++
++def test_b2_reuses_original_weights_and_online_mode_selection():
++    from cloud_edge_robot_arm.auto_mode.models import AutoModeState
++    from cloud_edge_robot_arm.risk.models import RiskPolicy
++    from cloud_edge_robot_arm.skill_cache.models import SkillCacheLookupResult
++    from tests.test_phase7_auto_mode_repository import _risk_input
++
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    original = _risk_input().model_copy(
++        update={
++            "task_id": "task",
++            "current_time": NOW,
++            "scene_updated_at": NOW,
++            "last_heartbeat_at": NOW,
++            "current_mode": ControlMode.PERIODIC_CLOUD_SUPERVISION,
++        }
++    )
++    state = AutoModeState(
++        task_id="task",
++        current_mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
++        mode_version=1,
++        last_switch_at=NOW - timedelta(minutes=10),
++    )
++    legacy = module.LegacyRuleEvidence(
++        state, original, SkillCacheLookupResult(match_type="exact_match"), True, True, True, True
++    )
++    snapshot = module.freeze_legacy_rule_snapshot(RiskPolicy(version="risk-v1"))
++    policy = module.FrozenRuleAutoPolicy(snapshot)
++    ctx = context(legacy_rule_evidence=legacy)
++    assert policy.decide(ctx) == DecisionAction.CONTINUE
++    assert policy.last_mode_decision.selected_mode == ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
++    assert policy.last_mode_decision.risk_score == pytest.approx(11.95)
++    # Model-calibrated probability cannot alter frozen B2 legacy rule scores.
++    ctx = replace(
++        ctx,
++        event=replace(ctx.event, event_id="different"),
++        risk_estimate=RiskEstimate(0.99, {"CONTINUE": 0.99}, 0.1, 0.1, "VALID"),
++    )
++    assert policy.decide(ctx) == DecisionAction.CONTINUE
++    assert policy.last_mode_decision.risk_score == pytest.approx(11.95)
++
++
++def _selection_tree(
++    root: Path, period: float, *, failed: int = 0, requests: int = 1, duration: float = 10
++):
++    """构造完整独立评分输入；此合成测试fixture绝不写入研究产物。"""
++    import hashlib
++    import json
++    from dataclasses import asdict
++
++    from cloud_edge_robot_arm.research.cost_ledger import CostLedger, RequestCost
++    from cloud_edge_robot_arm.research.protocol import build_scene_pools
++    from cloud_edge_robot_arm.simulation.mujoco.episode_evaluator import (
++        CompletionCriteria,
++        evaluate_evidence,
++    )
++    from tests.test_rgbd_trajectory_dataset import _sample, _sequence
++
++    root.mkdir()
++    assignments = build_scene_pools(908, set(), protocol_version="ced.research.v2")["selection"]
++    successes = [
++        replace(s, self_collision_checked_pairs=(("link4", "link6"),)) for s in _sequence()
++    ]
++    failure = [
++        replace(_sample(step), self_collision_checked_pairs=(("link4", "link6"),))
++        for step in (0, 1)
++    ]
++
++    def write(path, value):
++        path.write_text(json.dumps(value, sort_keys=True))
++
++    write(root / "good.json", [asdict(s) for s in successes])
++    write(root / "bad.json", [asdict(s) for s in failure])
++    result = []
++    for index, assignment in enumerate(assignments):
++        case = root / "cases" / assignment["assignment_id"]
++        case.mkdir(parents=True)
++        template = failure if index < failed else successes
++        scene = assignment["scene"]["scene_parameters"]
++        target, destination = scene["target"], scene["destination"]
++        episode_id = assignment["assignment_id"]
++        samples = []
++        for sample in template:
++            placed = sample.physics_step > 101
++            height = target["half_size"][2] + (
++                0.05 if sample.physics_step > 0 and not placed else 0
++            )
++            xy = destination["position"][:2] if placed else target["position"][:2]
++            samples.append(
++                replace(
++                    sample,
++                    episode_id=episode_id,
++                    object_position_m=(*xy, height),
++                    object_bottom_z_m=height - target["half_size"][2],
++                    object_half_extent_xy_m=tuple(target["half_size"][:2]),
++                    region_center_xy_m=tuple(destination["position"][:2]),
++                    region_half_extent_xy_m=tuple(destination["half_size"][:2]),
++                )
++            )
++        outcome = asdict(
++            evaluate_evidence(
++                samples, CompletionCriteria("object", "target_region"), evaluation_start_step=0
++            )
++        )
++        success = index >= failed
++        assert outcome["success"] is success
++        write(case / "physical-evidence.json", [asdict(sample) for sample in samples])
++        write(case / "physical-outcome.json", outcome)
++        write(
++            case / "episode.json",
++            {
++                "episode_id": episode_id,
++                "online_reported_complete": success,
++                "terminal_reason": None,
++                "success": success,
++                "verification_records": [],
++            },
++        )
++        ledger = CostLedger()
++        for n in range(requests):
++            ledger.record_request(
++                RequestCost(
++                    request_id=f"{index}-{n}",
++                    sent_at=NOW,
++                    finished_at=NOW + timedelta(seconds=1),
++                    is_cloud_model=True,
++                    model_role="PLANNER",
++                    deployment="CLOUD",
++                    provider_location="REMOTE_SERVICE",
++                    provider_version="frozen-cloud",
++                    status="SUCCESS",
++                    serialized_sent_bytes=100,
++                    serialized_received_bytes=10,
++                )
++            )
++        summary = ledger.snapshot().model_dump(mode="json")
++        costs = {
++            "summary": summary,
++            "requests": [r.model_dump(mode="json") for r in ledger.requests()],
++        }
++        write(case / "costs.json", costs)
++        row = {
++            "assignment_id": assignment["assignment_id"],
++            "stratum_id": assignment["stratum_id"],
++            "success": success,
++            "wall_duration_s": duration,
++            "costs": summary,
++            "terminal_reason": None,
++        }
++        write(case / "case-result.json", row)
++        result.append(row)
++    write(root / "assignments.json", assignments)
++    write(root / "results.json", result)
++    write(
++        root / "selection-manifest.json",
++        {
++            "stage": "SELECTION",
++            "period_s": period,
++            "snapshot_id": "common",
++            "role_bundle_hash": "c" * 64,
++            "device_pipeline_hash": "d" * 64,
++            "edge_provider_hash": "e" * 64,
++            "assignments_sha256": hashlib.sha256(
++                (root / "assignments.json").read_bytes()
++            ).hexdigest(),
++            "results_sha256": hashlib.sha256((root / "results.json").read_bytes()).hexdigest(),
++        },
++    )
++    return root
++
++
++def test_b0_selected_from_feasible_periods(tmp_path: Path):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    curves = {
++        0.5: _selection_tree(tmp_path / "half", 0.5, requests=1, failed=20),
++        1: _selection_tree(tmp_path / "one", 1, requests=2, duration=4),
++        2: _selection_tree(tmp_path / "two", 2, requests=1, duration=8),
++        5: _selection_tree(tmp_path / "five", 5, requests=1, duration=9),
++    }
++    result = module.select_b0(curves)
++    assert result["errors"] == []
++    assert result["status"] == "SELECTED" and result["selected_period_s"] == 2
++    assert len(result["curves"]) == 4 and all(row["assigned"] == 120 for row in result["curves"])
++
++
++def test_complete_no_feasible_baseline_disables_savings_claim(tmp_path: Path):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    curves = {p: _selection_tree(tmp_path / str(p), p, failed=30) for p in [0.5, 1, 2, 5]}
++    result = module.select_b0(curves)
++    assert result["status"] == "NO_FEASIBLE_BASELINE"
++    assert result["selected_period_s"] is None and result["savings_claim_allowed"] is False
++
++
++def test_selection_rejects_published_success_without_raw_physical_success(tmp_path: Path):
++    import json
++
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    curves = {p: _selection_tree(tmp_path / str(p), p) for p in [0.5, 1, 2, 5]}
++    root = curves[1]
++    assignments = json.loads((root / "assignments.json").read_text())
++    case = root / "cases" / assignments[0]["assignment_id"]
++    (case / "physical-evidence.json").unlink()
++    (case / "physical-evidence.json").write_bytes((root / "bad.json").read_bytes())
++    result = module.select_b0(curves)
++    assert result["status"] == "INCOMPLETE" and result["selected_period_s"] is None
++    assert result["errors"]
++
++
++def mode_policy_snapshot(root: Path, **updates):
++    """合成完整selection目录供事务软件测试，不输出真实方法验收。"""
++    import hashlib
++    import json
++
++    from cloud_edge_robot_arm.auto_mode.models import (
++        ModeSwitchPolicySnapshot,
++        ModeTransitionCheckpoint,
++    )
++    from cloud_edge_robot_arm.contracts import AutoModeTransition, AutoModeTransitionStatus
++
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    root.mkdir()
++    params = dict(
++        method_id="B2",
++        policy_version="auto-v1",
++        min_dwell_s=120.0,
++        cooldown_s=300.0,
++        max_switches=5,
++        confirmation_count=2,
++    )
++    params.update(updates)
++    source_hashes = module.mode_switch_source_hashes()
++    raw = _selection_tree(root / "candidate", 1)
++    assignments = json.loads((raw / "assignments.json").read_text())
++    for assignment in assignments:
++        transition = AutoModeTransition(
++            transition_id=assignment["assignment_id"],
++            task_id=assignment["assignment_id"],
++            from_mode=ControlMode.PERIODIC_CLOUD_SUPERVISION,
++            to_mode=ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY,
++            status=AutoModeTransitionStatus.COMMITTED,
++            expected_mode_version=1,
++            new_mode_version=2,
++            idempotency_key=assignment["assignment_id"],
++            decision_id="d",
++            prepared_at=NOW - timedelta(seconds=1),
++            committed_at=NOW,
++            payload_hash="a" * 64,
++        )
++        checkpoint = ModeTransitionCheckpoint(
++            task_id=assignment["assignment_id"],
++            checkpoint_id="cp",
++            plan_version=1,
++            command_seq=1,
++            mode_version=1,
++            atomic_action_active=False,
++            confirmation_count=2,
++            persisted_at=NOW,
++        )
++        log = {
++            "policy_parameters": params,
++            "source_hashes": source_hashes,
++            "initial_last_switch_at": (NOW - timedelta(seconds=600)).isoformat(),
++            "committed_transitions": [transition.model_dump(mode="json")],
++            "checkpoints": [checkpoint.model_dump(mode="json")],
++        }
++        (raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json").write_text(
++            json.dumps(log)
++        )
++    manifest = {
++        "schema_version": "ced.mode-selection.v1",
++        "stage": "SELECTION",
++        "selected_candidate_id": "original",
++        "candidates": [
++            {
++                "candidate_id": "original",
++                "directory": "candidate",
++                "b0_period_s": 1,
++                "parameters": params,
++                "source_hashes": source_hashes,
++            }
++        ],
++    }
++    path = root / "mode-policy-selection.json"
++    path.write_text(json.dumps(manifest))
++    return ModeSwitchPolicySnapshot(
++        **params,
++        source_hashes=source_hashes,
++        selection_directory=str(root),
++        selection_manifest_hash=hashlib.sha256(path.read_bytes()).hexdigest(),
++    )
++
++
++def test_mode_policy_requires_raw_selection_not_a_bare_manifest_hash(tmp_path: Path):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    snapshot = mode_policy_snapshot(tmp_path / "mode")
++    assert module.verify_mode_switch_policy(snapshot)["accepted"] is True
++    assignments = __import__("json").loads(
++        (Path(snapshot.selection_directory) / "candidate" / "assignments.json").read_text()
++    )
++    missing = (
++        Path(snapshot.selection_directory)
++        / "candidate"
++        / "cases"
++        / assignments[0]["assignment_id"]
++        / "physical-evidence.json"
++    )
++    missing.unlink()
++    verdict = module.verify_mode_switch_policy(snapshot)
++    assert verdict["accepted"] is False
++
++
++@pytest.mark.parametrize(
++    "damage", ["missing_checkpoint", "atomic_checkpoint", "unconfirmed_checkpoint"]
++)
++def test_mode_selection_rejects_unverified_boundary_trace(tmp_path: Path, damage):
++    import json
++
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    snapshot = mode_policy_snapshot(tmp_path / "mode")
++    raw = Path(snapshot.selection_directory) / "candidate"
++    assignment = json.loads((raw / "assignments.json").read_text())[0]
++    path = raw / "cases" / assignment["assignment_id"] / "mode-transition-events.json"
++    log = json.loads(path.read_text())
++    if damage == "missing_checkpoint":
++        log["checkpoints"] = []
++    elif damage == "atomic_checkpoint":
++        log["checkpoints"][0]["atomic_action_active"] = True
++    else:
++        log["checkpoints"][0]["confirmation_count"] = 1
++    path.write_text(json.dumps(log))
++    assert module.verify_mode_switch_policy(snapshot)["accepted"] is False
++
++
++def test_b2_mode_selection_cannot_rewrite_original_dwell_rule(tmp_path: Path):
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    snapshot = mode_policy_snapshot(tmp_path / "mode", min_dwell_s=0)
++    assert module.verify_mode_switch_policy(snapshot)["accepted"] is False
++
++
++def test_context_freezes_calibrated_action_probabilities():
++    module = import_module("cloud_edge_robot_arm.auto_mode.baseline_policies")
++    probabilities = {"CONTINUE": 0.1}
++    ctx = context(risk_estimate=RiskEstimate(0.1, probabilities, 0.001, 0.001, "VALID"))
++    probabilities["CONTINUE"] = 0.99
++    assert module.ThresholdPolicy(0.5).decide(ctx) == DecisionAction.CONTINUE
++    with pytest.raises(TypeError):
++        ctx.risk_estimate.failure_probability_by_action["CONTINUE"] = 0.99
+--- /dev/null
++++ b/tests/test_mode_transition_cas.py
+@@ -0,0 +1,334 @@
++"""模式事务必须以仓储原子版本比较提交，跨重启仍保持幂等。"""
++
++from __future__ import annotations
++
++from datetime import UTC, datetime
++from importlib import import_module
++from pathlib import Path
++
++import pytest
++
++from cloud_edge_robot_arm.auto_mode.models import AutoModeState, AutoModeTransitionRequest
++from cloud_edge_robot_arm.auto_mode.repository import (
++    InMemoryAutoModeRepository,
++    SQLiteAutoModeRepository,
++)
++from cloud_edge_robot_arm.auto_mode.transition_service import ModeTransitionService
++from cloud_edge_robot_arm.contracts import AutoModeTransitionStatus, ControlMode
++from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
++
++NOW = datetime(2026, 10, 4, tzinfo=UTC)
++PCSC = ControlMode.PERIODIC_CLOUD_SUPERVISION
++ETEA = ControlMode.EVENT_TRIGGERED_EDGE_AUTONOMY
++
++
++def request(key="first", **changes):
++    values = dict(
++        task_id="task",
++        from_mode=PCSC,
++        to_mode=ETEA,
++        expected_mode_version=1,
++        idempotency_key=key,
++        decision_id="decision",
++        reason="online boundary",
++    )
++    values.update(changes)
++    return AutoModeTransitionRequest(**values)
++
++
++def initialize(repo):
++    repo.save_status(
++        AutoModeState(
++            task_id="task",
++            current_mode=PCSC,
++            mode_version=1,
++            policy_version="original",
++            updated_at=NOW,
++        )
++    )
++
++
++@pytest.mark.parametrize("sqlite", [False, True])
++def test_transition_commit_rechecks_mode_version(tmp_path: Path, sqlite):
++    repo = (
++        SQLiteAutoModeRepository(tmp_path / "mode.db") if sqlite else InMemoryAutoModeRepository()
++    )
++    initialize(repo)
++    service = ModeTransitionService(repository=repo, clock=lambda: NOW)
++    a = service.prepare(request())
++    b = service.prepare(request("second"))
++    service.commit(b.transition_id)
++    with pytest.raises(ValueError, match="version|current"):
++        service.commit(a.transition_id)
++    assert repo.get_status("task").mode_version == 2
++    assert repo.get_transition(a.transition_id).status == AutoModeTransitionStatus.PREPARED
++    repo.close()
++
++
++def test_duplicate_transition_is_idempotent_and_preserves_original_time(tmp_path: Path):
++    repo = SQLiteAutoModeRepository(tmp_path / "mode.db")
++    initialize(repo)
++    service = ModeTransitionService(repository=repo, clock=lambda: NOW)
++    prepared = service.prepare(request())
++    committed = service.commit(prepared.transition_id)
++    repo.close()
++    repo = SQLiteAutoModeRepository(tmp_path / "mode.db")
++    restarted = ModeTransitionService(
++        repository=repo, clock=lambda: datetime(2026, 10, 5, tzinfo=UTC)
++    )
++    assert restarted.prepare(request()) == committed
++    assert restarted.commit(prepared.transition_id) == committed
++    status = repo.get_status("task")
++    assert (
++        status.mode_version == 2
++        and status.switch_count == 1
++        and status.policy_version == "original"
++    )
++    assert status.last_switch_at == NOW
++    repo.close()
++
++
++def test_abort_prepared_transition_prevents_later_commit_and_committed_is_terminal():
++    repo = InMemoryAutoModeRepository()
++    initialize(repo)
++    service = ModeTransitionService(repository=repo, clock=lambda: NOW)
++    prepared = service.prepare(request())
++    aborted = service.abort(prepared.transition_id, reason="cancelled")
++    with pytest.raises(ValueError, match="ABORTED|prepared"):
++        service.commit(aborted.transition_id)
++    second = service.prepare(request("second"))
++    service.commit(second.transition_id)
++    with pytest.raises(ValueError, match="COMMITTED|committed"):
++        service.abort(second.transition_id, reason="too late")
++    assert repo.get_status("task").mode_version == 2
++
++
++def test_conflicting_prepare_is_rejected_across_restart(tmp_path: Path):
++    path = tmp_path / "mode.db"
++    repo = SQLiteAutoModeRepository(path)
++    initialize(repo)
++    service = ModeTransitionService(repository=repo)
++    service.prepare(request())
++    repo.close()
++    repo = SQLiteAutoModeRepository(path)
++    service = ModeTransitionService(repository=repo)
++    with pytest.raises(IdempotencyConflictError):
++        service.prepare(request(reason="different intent"))
++    repo.close()
++
++
++def test_two_sqlite_connections_cannot_commit_stale_modes(tmp_path: Path):
++    path = tmp_path / "mode.db"
++    one = SQLiteAutoModeRepository(path)
++    initialize(one)
++    two = SQLiteAutoModeRepository(path)
++    first = ModeTransitionService(repository=one, clock=lambda: NOW)
++    second = ModeTransitionService(repository=two, clock=lambda: NOW)
++    a = first.prepare(request())
++    b = second.prepare(request("second"))
++    first.commit(a.transition_id)
++    with pytest.raises(ValueError, match="version|current"):
++        second.commit(b.transition_id)
++    assert two.get_status("task").mode_version == 2
++    one.close()
++    two.close()
++
++
++def test_missing_current_state_cannot_commit():
++    service = ModeTransitionService(repository=InMemoryAutoModeRepository())
++    prepared = service.prepare(request())
++    with pytest.raises(ValueError, match="current|state"):
++        service.commit(prepared.transition_id)
++
++
++def test_research_commit_requires_durable_boundary_and_current_guard(tmp_path: Path):
++    module = import_module("cloud_edge_robot_arm.auto_mode.models")
++    assert hasattr(module, "ModeTransitionCheckpoint"), "durable boundary contract is missing"
++    from tests.test_runtime_auto_baselines import mode_policy_snapshot
++
++    snapshot = mode_policy_snapshot(tmp_path / "selection")
++    repo = SQLiteAutoModeRepository(tmp_path / "mode.db")
++    initialize(repo)
++    status = repo.get_status("task")
++    repo.save_status(
++        status.model_copy(
++            update={"last_switch_at": NOW - __import__("datetime").timedelta(seconds=600)}
++        )
++    )
++    boundary = module.ModeTransitionCheckpoint(
++        task_id="task",
++        checkpoint_id="cp",
++        plan_version=1,
++        command_seq=1,
++        mode_version=1,
++        atomic_action_active=False,
++        confirmation_count=2,
++        persisted_at=NOW,
++    )
++    service = ModeTransitionService(
++        repository=repo,
++        clock=lambda: NOW,
++        require_verified_boundary=True,
++        mode_switch_policy=snapshot,
++        commit_guard=lambda record: boundary,
++    )
++    prepared = service.prepare(request())
++    with pytest.raises(ValueError, match="checkpoint|boundary"):
++        service.commit(prepared.transition_id)
++    repo.save_transition_checkpoint(prepared.transition_id, boundary)
++    committed = service.commit(prepared.transition_id)
++    assert committed.status == AutoModeTransitionStatus.COMMITTED
++    repo.close()
++
++
++def test_non_safety_switch_waits_for_atomic_boundary():
++    module = import_module("cloud_edge_robot_arm.auto_mode.models")
++    assert hasattr(module, "ModeTransitionCheckpoint")
++    repo = InMemoryAutoModeRepository()
++    initialize(repo)
++    boundary = module.ModeTransitionCheckpoint(
++        task_id="task",
++        checkpoint_id="cp",
++        plan_version=1,
++        command_seq=1,
++        mode_version=1,
++        atomic_action_active=True,
++        persisted_at=NOW,
++    )
++    service = ModeTransitionService(
++        repository=repo,
++        clock=lambda: NOW,
++        require_verified_boundary=False,
++        commit_guard=lambda record: boundary,
++    )
++    prepared = service.prepare(request())
++    repo.save_transition_checkpoint(
++        prepared.transition_id, boundary.model_copy(update={"atomic_action_active": False})
++    )
++    with pytest.raises(ValueError, match="atomic"):
++        service.commit(prepared.transition_id)
++    assert repo.get_status("task").mode_version == 1
++
++
++def test_research_commit_without_guard_never_falls_back_to_legacy():
++    repo = InMemoryAutoModeRepository()
++    initialize(repo)
++    assert (
++        "require_verified_boundary"
++        in __import__("inspect").signature(ModeTransitionService).parameters
++    )
++    service = ModeTransitionService(repository=repo, require_verified_boundary=True)
++    prepared = service.prepare(request())
++    with pytest.raises(ValueError, match="boundary|guard"):
++        service.commit(prepared.transition_id)
++
++
++@pytest.mark.parametrize("sqlite", [False, True])
++def test_public_transition_save_cannot_forge_a_committed_transaction(tmp_path: Path, sqlite):
++    repo = (
++        SQLiteAutoModeRepository(tmp_path / "mode.db") if sqlite else InMemoryAutoModeRepository()
++    )
++    initialize(repo)
++    service = ModeTransitionService(repository=repo, clock=lambda: NOW)
++    prepared = service.prepare(request())
++    forged = prepared.model_copy(
++        update={"status": AutoModeTransitionStatus.COMMITTED, "committed_at": NOW}
++    )
++    with pytest.raises(ValueError, match="commit|terminal"):
++        repo.save_transition(forged)
++    assert repo.get_status("task").mode_version == 1
++    repo.close()
++
++
++def test_checkpoint_model_copy_cannot_bypass_strict_version_validation():
++    module = import_module("cloud_edge_robot_arm.auto_mode.models")
++    repo = InMemoryAutoModeRepository()
++    initialize(repo)
++    service = ModeTransitionService(repository=repo, clock=lambda: NOW)
++    prepared = service.prepare(request())
++    checkpoint = module.ModeTransitionCheckpoint(
++        task_id="task",
++        checkpoint_id="cp",
++        plan_version=1,
++        command_seq=1,
++        mode_version=1,
++        atomic_action_active=False,
++        persisted_at=NOW,
++    )
++    with pytest.raises(ValueError):
++        repo.save_transition_checkpoint(
++            prepared.transition_id, checkpoint.model_copy(update={"mode_version": True})
++        )
++
++
++def test_research_missing_selection_policy_cannot_commit():
++    module = import_module("cloud_edge_robot_arm.auto_mode.models")
++    repo = InMemoryAutoModeRepository()
++    initialize(repo)
++    boundary = module.ModeTransitionCheckpoint(
++        task_id="task",
++        checkpoint_id="cp",
++        plan_version=1,
++        command_seq=1,
++        mode_version=1,
++        atomic_action_active=False,
++        confirmation_count=2,
++        persisted_at=NOW,
++    )
++    service = ModeTransitionService(
++        repository=repo,
++        clock=lambda: NOW,
++        require_verified_boundary=True,
++        commit_guard=lambda record: boundary,
++    )
++    prepared = service.prepare(request())
++    repo.save_transition_checkpoint(prepared.transition_id, boundary)
++    with pytest.raises(ValueError, match="selection"):
++        service.commit(prepared.transition_id)
++    assert repo.get_status("task").mode_version == 1
++
++
++@pytest.mark.parametrize(
++    "change,reason",
++    [
++        ({"last_switch_at": NOW - __import__("datetime").timedelta(seconds=100)}, "dwell"),
++        ({"last_switch_at": NOW - __import__("datetime").timedelta(seconds=200)}, "cooldown"),
++        ({"switch_count": 5}, "limit"),
++        ({"last_switch_at": None}, "unknown"),
++    ],
++)
++def test_verified_selection_still_enforces_live_mode_limits(tmp_path: Path, change, reason):
++    from datetime import timedelta
++
++    from tests.test_runtime_auto_baselines import mode_policy_snapshot
++
++    module = import_module("cloud_edge_robot_arm.auto_mode.models")
++    snapshot = mode_policy_snapshot(tmp_path / "selection")
++    repo = InMemoryAutoModeRepository()
++    initialize(repo)
++    state = repo.get_status("task").model_copy(
++        update={"last_switch_at": NOW - timedelta(seconds=600), **change}
++    )
++    repo.save_status(state)
++    boundary = module.ModeTransitionCheckpoint(
++        task_id="task",
++        checkpoint_id="cp",
++        plan_version=1,
++        command_seq=1,
++        mode_version=1,
++        atomic_action_active=False,
++        confirmation_count=2,
++        persisted_at=NOW,
++    )
++    service = ModeTransitionService(
++        repository=repo,
++        clock=lambda: NOW,
++        require_verified_boundary=True,
++        mode_switch_policy=snapshot,
++        commit_guard=lambda record: boundary,
++    )
++    prepared = service.prepare(request())
++    repo.save_transition_checkpoint(prepared.transition_id, boundary)
++    with pytest.raises(ValueError, match=reason):
++        service.commit(prepared.transition_id)
++    assert repo.get_status("task").mode_version == 1

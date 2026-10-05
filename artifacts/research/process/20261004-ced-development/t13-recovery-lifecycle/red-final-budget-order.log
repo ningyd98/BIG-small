@@ -1,0 +1,134 @@
+F.....F.....FF                                                           [100%]
+=================================== FAILURES ===================================
+__ test_actual_completion_order_and_identity_are_required[memory-early_start] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7ff34ff25040>
+change = 'early_start'
+
+    @pytest.mark.parametrize("change", ["early_start", "future_finish", "old_task", "old_attempt",
+                                        "wrong_checkpoint", "missing_attempt_count"])
+    def test_actual_completion_order_and_identity_are_required(lifecycle_repo, change):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        authorized = atomic_authorize(lifecycle_repo, saved).recovery
+        proof = execution_proof(lifecycle_repo, authorized)
+        if change == "early_start":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={
+                "started_at": datetime(2000, 1, 1, tzinfo=UTC)}))
+        elif change == "future_finish":
+            proof = replace(proof, completion=proof.completion.model_copy(update={
+                "timestamp": datetime.now(UTC) + timedelta(seconds=5)}))
+        elif change == "old_task":
+            proof = replace(proof, completion=proof.completion.model_copy(update={"task_id": "other"}))
+        elif change == "old_attempt":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={"repair_id": "other"}))
+        elif change == "wrong_checkpoint":
+            proof = replace(proof, checkpoint_hash="wrong")
+        else:
+            from uuid import uuid4
+            cp = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(cp.model_copy(update={
+                "checkpoint_id": uuid4().hex, "checkpoint_hash": "", "step_attempts": {}}))
+        service = RecoveryLifecycleService(repository=lifecycle_repo, execution_provider=lambda _: proof)
+        actual = service.advance_recovery(saved.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ())
+>       assert actual == authorized
+E       AssertionError: assert RecoveryRecor...bdde3c59e7e0') == RecoveryRecor...bdde3c59e7e0')
+E         
+E         Omitting 23 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'reason',
+E          'revision',
+E          'task_budget_revision',...
+E         
+E         ...Full output truncated (33 lines hidden), use '-vv' to show
+
+tests/test_recovery_lifecycle_module.py:661: AssertionError
+__ test_actual_completion_order_and_identity_are_required[sqlite-early_start] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7ff34f8a1760>
+change = 'early_start'
+
+    @pytest.mark.parametrize("change", ["early_start", "future_finish", "old_task", "old_attempt",
+                                        "wrong_checkpoint", "missing_attempt_count"])
+    def test_actual_completion_order_and_identity_are_required(lifecycle_repo, change):
+        from dataclasses import replace
+        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
+        saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
+        authorized = atomic_authorize(lifecycle_repo, saved).recovery
+        proof = execution_proof(lifecycle_repo, authorized)
+        if change == "early_start":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={
+                "started_at": datetime(2000, 1, 1, tzinfo=UTC)}))
+        elif change == "future_finish":
+            proof = replace(proof, completion=proof.completion.model_copy(update={
+                "timestamp": datetime.now(UTC) + timedelta(seconds=5)}))
+        elif change == "old_task":
+            proof = replace(proof, completion=proof.completion.model_copy(update={"task_id": "other"}))
+        elif change == "old_attempt":
+            proof = replace(proof, receipt=proof.receipt.model_copy(update={"repair_id": "other"}))
+        elif change == "wrong_checkpoint":
+            proof = replace(proof, checkpoint_hash="wrong")
+        else:
+            from uuid import uuid4
+            cp = lifecycle_repo.get_latest_execution_checkpoint("task")
+            lifecycle_repo.save_execution_checkpoint(cp.model_copy(update={
+                "checkpoint_id": uuid4().hex, "checkpoint_hash": "", "step_attempts": {}}))
+        service = RecoveryLifecycleService(repository=lifecycle_repo, execution_provider=lambda _: proof)
+        actual = service.advance_recovery(saved.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ())
+>       assert actual == authorized
+E       AssertionError: assert RecoveryRecor...705ce799ee8b') == RecoveryRecor...705ce799ee8b')
+E         
+E         Omitting 23 identical items, use -vv to show
+E         Differing attributes:
+E         ['state',
+E          'reason',
+E          'revision',
+E          'task_budget_revision',...
+E         
+E         ...Full output truncated (33 lines hidden), use '-vv' to show
+
+tests/test_recovery_lifecycle_module.py:661: AssertionError
+___ test_initial_task_mirror_respects_already_spent_frozen_retry_cap[memory] ___
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7ff35150e720>
+
+    def test_initial_task_mirror_respects_already_spent_frozen_retry_cap(lifecycle_repo):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        lifecycle_repo.initialize_retry_budget_if_absent(RecoveryBudget(
+            task_id="task", per_step_retry_limit=9, per_skill_retry_limit=9, task_total_retry_limit=9,
+            task_retry_count=2, retry_count_used=2, remaining_retries=7,
+        ))
+        record = lifecycle_repo.initialize_verification_budget_if_absent(
+            "task", VerificationBudgetState.start(VerificationBudget(2, 2, 3, 60)))
+>       assert record.state.remaining_retries == 0
+E       AssertionError: assert 2 == 0
+E        +  where 2 = VerificationBudgetState(remaining_reobservations=2, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...max_retries=2, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0).remaining_retries
+E        +    where VerificationBudgetState(remaining_reobservations=2, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...max_retries=2, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0) = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=2...566322, tzinfo=datetime.timezone.utc), content_hash='37370afed79b7a98329547be3183fd59940effea3fb732d039aedba24e14ee59').state
+
+tests/test_recovery_lifecycle_module.py:708: AssertionError
+___ test_initial_task_mirror_respects_already_spent_frozen_retry_cap[sqlite] ___
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7ff34d1ef380>
+
+    def test_initial_task_mirror_respects_already_spent_frozen_retry_cap(lifecycle_repo):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        lifecycle_repo.initialize_retry_budget_if_absent(RecoveryBudget(
+            task_id="task", per_step_retry_limit=9, per_skill_retry_limit=9, task_total_retry_limit=9,
+            task_retry_count=2, retry_count_used=2, remaining_retries=7,
+        ))
+        record = lifecycle_repo.initialize_verification_budget_if_absent(
+            "task", VerificationBudgetState.start(VerificationBudget(2, 2, 3, 60)))
+>       assert record.state.remaining_retries == 0
+E       AssertionError: assert 2 == 0
+E        +  where 2 = VerificationBudgetState(remaining_reobservations=2, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...max_retries=2, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0).remaining_retries
+E        +    where VerificationBudgetState(remaining_reobservations=2, remaining_retries=2, consecutive_no_progress=0, deadline_at=dateti...max_retries=2, max_no_progress=3, deadline_s=60), previous_conditions={}, exhausted_reason=None, verification_rounds=0) = VerificationBudgetRecord(task_id='task', state=VerificationBudgetState(remaining_reobservations=2, remaining_retries=2...806526, tzinfo=datetime.timezone.utc), content_hash='5c08ab4dbc6f9ef0582acd6f04c3fca607a5893fbf6164ea9b46dfda5e5e8e6c').state
+
+tests/test_recovery_lifecycle_module.py:708: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_actual_completion_order_and_identity_are_required[memory-early_start]
+FAILED tests/test_recovery_lifecycle_module.py::test_actual_completion_order_and_identity_are_required[sqlite-early_start]
+FAILED tests/test_recovery_lifecycle_module.py::test_initial_task_mirror_respects_already_spent_frozen_retry_cap[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_initial_task_mirror_respects_already_spent_frozen_retry_cap[sqlite]
+4 failed, 10 passed, 89 deselected in 2.41s

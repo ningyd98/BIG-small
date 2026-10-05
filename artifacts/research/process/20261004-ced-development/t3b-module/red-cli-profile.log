@@ -1,0 +1,25 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_cli_missing_profile_database_writes_machine_readable_blocked _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-453/test_cli_missing_profile_datab0')
+
+    def test_cli_missing_profile_database_writes_machine_readable_blocked(tmp_path):
+        import subprocess
+        import sys
+    
+        output = tmp_path / "missing-profile"
+        result = subprocess.run([sys.executable, "-m", "scripts.probe_rgbd_roles", "--execute",
+            "--model-control-db", str(tmp_path / "absent.db"), "--profile-id", "absent-profile",
+            "--output", str(output)], capture_output=True, text=True, check=False)
+        assert result.returncode == 2
+>       assert result.stdout.startswith("{")
+E       AssertionError: assert False
+E        +  where False = <built-in method startswith of str object at 0xb3c3f0>('{')
+E        +    where <built-in method startswith of str object at 0xb3c3f0> = ''.startswith
+E        +      where '' = CompletedProcess(args=['/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python', '-m', 'scripts.probe_rgbd_roles', '--execu...         [--allow-paid]\nprobe_rgbd_roles.py: error: --execute requires an existing profile database and profile ID\n').stdout
+
+tests/test_rgbd_role_models.py:454: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_cli_missing_profile_database_writes_machine_readable_blocked
+1 failed, 25 deselected in 0.19s

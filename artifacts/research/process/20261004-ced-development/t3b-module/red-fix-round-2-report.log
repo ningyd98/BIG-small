@@ -1,0 +1,36 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_profile_failure_name_containing_credential_is_never_persisted ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-495/test_profile_failure_name_cont0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x70e5ab91ac60>
+
+    def test_profile_failure_name_containing_credential_is_never_persisted(tmp_path, monkeypatch):
+        from pathlib import Path
+        from scripts.probe_rgbd_roles import run_probe
+        from cloud_edge_robot_arm.model_control.models import PlannerProviderKind
+        from cloud_edge_robot_arm.model_control.secret_store import InMemorySecretStore
+        from cloud_edge_robot_arm.model_control.service import ModelControlService
+        from cloud_edge_robot_arm.model_control.sqlite_repository import SQLiteModelProfileRepository
+        secret = "credential-marker"
+        service = ModelControlService(repository=SQLiteModelProfileRepository(tmp_path / "models.db"),
+                                      secret_store=InMemorySecretStore())
+        profile = service.create_profile(display_name="max", provider_kind=PlannerProviderKind.OPENAI_COMPATIBLE,
+            model_name="qwen3.8-max", base_url="https://dashscope.aliyuncs.com", api_key=secret)
+        failure = type(secret, (RuntimeError,), {})
+        def failed_profile(_):
+            raise failure(secret)
+        monkeypatch.setattr(service, "get_profile", failed_profile)
+        output = tmp_path / "blocked-profile"
+        report = run_probe(Path("configs/research/ced_roles.yaml"), output, service=service,
+                           profile_id=profile.profile_id, execute=True, allow_paid=True)
+        assert report["status"] == "BLOCKED"
+>       assert report.get("details_suppressed") is True
+E       AssertionError: assert None is True
+E        +  where None = <built-in method get of dict object at 0x70e5ab4fb2c0>('details_suppressed')
+E        +    where <built-in method get of dict object at 0x70e5ab4fb2c0> = {'acceptance_scope': 'nominal cloud RGB-D planning probe only', 'attempts': [], 'billing_cost': None, 'blocked_reason': 'credential-marker', ...}.get
+
+tests/test_rgbd_role_models.py:993: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_rgbd_role_models.py::test_profile_failure_name_containing_credential_is_never_persisted
+1 failed, 63 deselected in 0.32s

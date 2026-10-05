@@ -1,0 +1,128 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_______ test_remote_declared_ledger_fee_is_not_independent_billing[0.0] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-807/test_remote_declared_ledger_fe0')
+declared_fee = 0.0
+
+    @pytest.mark.parametrize("declared_fee", [0.0, 0.5, 10000.0])
+    def test_remote_declared_ledger_fee_is_not_independent_billing(tmp_path, declared_fee):
+        import json
+    
+        rows, _ = request_fixture(tmp_path)
+        for row in rows:
+            row["monetary_cost"] = declared_fee
+        (tmp_path / "requests.json").write_text(json.dumps(rows))
+        result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
+>       assert result["monetary_cost"] is None
+E       assert 0.0 is None
+
+tests/test_research_resource_plan.py:231: AssertionError
+_______ test_remote_declared_ledger_fee_is_not_independent_billing[0.5] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-807/test_remote_declared_ledger_fe1')
+declared_fee = 0.5
+
+    @pytest.mark.parametrize("declared_fee", [0.0, 0.5, 10000.0])
+    def test_remote_declared_ledger_fee_is_not_independent_billing(tmp_path, declared_fee):
+        import json
+    
+        rows, _ = request_fixture(tmp_path)
+        for row in rows:
+            row["monetary_cost"] = declared_fee
+        (tmp_path / "requests.json").write_text(json.dumps(rows))
+        result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
+>       assert result["monetary_cost"] is None
+E       assert 2.0 is None
+
+tests/test_research_resource_plan.py:231: AssertionError
+_____ test_remote_declared_ledger_fee_is_not_independent_billing[10000.0] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-807/test_remote_declared_ledger_fe2')
+declared_fee = 10000.0
+
+    @pytest.mark.parametrize("declared_fee", [0.0, 0.5, 10000.0])
+    def test_remote_declared_ledger_fee_is_not_independent_billing(tmp_path, declared_fee):
+        import json
+    
+        rows, _ = request_fixture(tmp_path)
+        for row in rows:
+            row["monetary_cost"] = declared_fee
+        (tmp_path / "requests.json").write_text(json.dumps(rows))
+        result = api()._read_request_costs(tmp_path, "requests.json", "wire.json")
+>       assert result["monetary_cost"] is None
+E       assert 40000.0 is None
+
+tests/test_research_resource_plan.py:231: AssertionError
+_____________ test_public_compiler_cannot_admit_edited_remote_fees _____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-807/test_public_compiler_cannot_ad0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x73ba7cbc57c0>
+
+    def test_public_compiler_cannot_admit_edited_remote_fees(tmp_path, monkeypatch):
+        # The physical auditor and auxiliary costs are SOFTWARE_ONLY stubs. The
+        # public compiler and every case's original ledger/wire reader remain real.
+        import json
+        import shutil
+    
+        from cloud_edge_robot_arm.research import freeze_evidence
+    
+        base = {
+            "available": True,
+            "errors": [],
+            "pools": {"foundation": [{"scene": {"group_id": "SOFTWARE_ONLY"}}]},
+            "role_bundle_hash": "b" * 64,
+            "cloud_model_snapshot_hash": "a" * 64,
+            "selected_period_s": 2.0,
+            "evidence_hash": "c" * 64,
+        }
+        original = tmp_path / "SOFTWARE_ONLY-ledger-template"
+        original.mkdir()
+        request_fixture(original)
+        audits = {}
+        for stage, count in (("foundation", 120), ("selection", 480)):
+            stage_root = tmp_path if stage == "foundation" else tmp_path / "selection-evidence"
+            rows = []
+            for index in range(count):
+                assignment = f"{stage}-{index:04d}"
+                case = stage_root / "cases" / assignment
+                shutil.copytree(original, case)
+                (case / "requests.json").rename(case / "costs.json")
+                (case / "wire.json").rename(case / "wire-index.json")
+                rows.append(
+                    {
+                        "assignment_id": assignment,
+                        "scope": "REAL_RUNTIME",
+                        "success": stage == "foundation" and index == 0,
+                        "wall_duration_s": 100.0,
+                    }
+                )
+            audits[stage] = {**base, "cases": rows}
+        monkeypatch.setattr(
+            freeze_evidence, "audit_ced_pilot_stage", lambda root, stage: audits[stage]
+        )
+        monkeypatch.setattr(
+            api(),
+            "_read_resource_phase",
+            lambda *args, **kwargs: {**amount(), "coverage": {"group_ids": ["SOFTWARE_ONLY-aux"]}},
+        )
+        (tmp_path / "protocol-evidence").mkdir()
+        (tmp_path / "protocol-evidence/opportunities.json").write_text(
+            json.dumps([{"seed": {"opportunity_id": "SOFTWARE_ONLY-opportunity"}}])
+        )
+        auxiliary = tmp_path / "resource-evidence"
+        for phase in api().AUXILIARY_PHASES:
+            (auxiliary / phase).mkdir(parents=True)
+        plan = api().compile_resource_plan(
+            tmp_path, declared_ceilings=ceilings(), auxiliary_cost_evidence=auxiliary
+        )
+>       assert plan["available"] is False and plan["budget_status"] == "INCOMPLETE"
+E       assert (True is False)
+
+tests/test_research_resource_plan.py:297: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_resource_plan.py::test_remote_declared_ledger_fee_is_not_independent_billing[0.0]
+FAILED tests/test_research_resource_plan.py::test_remote_declared_ledger_fee_is_not_independent_billing[0.5]
+FAILED tests/test_research_resource_plan.py::test_remote_declared_ledger_fee_is_not_independent_billing[10000.0]
+FAILED tests/test_research_resource_plan.py::test_public_compiler_cannot_admit_edited_remote_fees
+4 failed, 34 deselected in 2.77s

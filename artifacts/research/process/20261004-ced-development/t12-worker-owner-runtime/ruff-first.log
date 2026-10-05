@@ -1,0 +1,470 @@
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/worker_owner.py:159:101
+    |
+157 |         leases = [
+158 |             row for row in SQLiteSimulationJobRepository.list_leases(repository, run_id)
+159 |             if row.job_id == job_id and row.released_at is None and _aware(row.expires_at) > observed
+    |                                                                                                     ^
+160 |         ]
+161 |         if len(leases) != 1:
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/vision/worker_owner.py:274:101
+    |
+272 |     Supplied source hashes are consistency inputs, not actual-source admission.
+273 |     """
+274 |     if type(lease_source) is not WorkerLeaseObservation or type(identity) is not VisualOwnerIdentity:
+    |                                                                                                     ^
+275 |         raise ValueError("concrete lease observation and owner identity required")
+276 |     contract = TaskContract.model_validate_json(_model_json(contract, TaskContract))
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/vision/worker_owner.py:315:101
+    |
+313 |         requirements[step.step_id] = OriginalActionRequirements(
+314 |             step,
+315 |             tuple(condition(name) for name in dict.fromkeys((*step.preconditions, *_PRE[step.skill]))),
+    |                                                                                                     ^^^
+316 |             tuple(condition(name) for name in dict.fromkeys((*step.success_conditions, *_POST[step.skill]))),
+317 |             0.01, ("rgbd",), 5.0, max(step.timeout_ms, step.expected_duration_ms) / 1000,
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/vision/worker_owner.py:316:101
+    |
+314 |             step,
+315 |             tuple(condition(name) for name in dict.fromkeys((*step.preconditions, *_PRE[step.skill]))),
+316 |             tuple(condition(name) for name in dict.fromkeys((*step.success_conditions, *_POST[step.skill]))),
+    |                                                                                                     ^^^^^^^^^
+317 |             0.01, ("rgbd",), 5.0, max(step.timeout_ms, step.expected_duration_ms) / 1000,
+318 |             sources,
+    |
+
+E501 Line too long (104 > 100)
+   --> src/cloud_edge_robot_arm/vision/worker_owner.py:355:101
+    |
+353 |         != (original.contract.plan_version, original.contract.command_seq)
+354 |         or grounding.original_requirements.digest() != requirement.digest()
+355 |         or any(original.source_hashes.get(k) != v for k, v in grounding.grounding_source_hashes.items())
+    |                                                                                                     ^^^^
+356 |         or not original.registered_at <= grounding.created_at < grounding.valid_until
+357 |         or grounding.valid_until > original.effective_deadline_at
+    |
+
+E501 Line too long (126 > 100)
+  --> tests/test_visual_worker_owner.py:34:101
+   |
+32 |     stale = repo.get_job(job.job_id)
+33 |     attempt = repo.start_attempt(job.job_id,worker_id="source-worker")
+34 |     for old,new in [(RuntimeJobStatus.LEASED,RuntimeJobStatus.STARTING),(RuntimeJobStatus.STARTING,RuntimeJobStatus.RUNNING)]:
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 |         assert repo.update_status_cas(job.job_id,expected=old,next_status=new,reason_code="software",
+36 |             worker_id="source-worker",lease_id=lease.lease_id,expected_lease_id=lease.lease_id)
+   |
+
+E501 Line too long (101 > 100)
+  --> tests/test_visual_worker_owner.py:35:101
+   |
+33 |     attempt = repo.start_attempt(job.job_id,worker_id="source-worker")
+34 |     for old,new in [(RuntimeJobStatus.LEASED,RuntimeJobStatus.STARTING),(RuntimeJobStatus.STARTING,RuntimeJobStatus.RUNNING)]:
+35 |         assert repo.update_status_cas(job.job_id,expected=old,next_status=new,reason_code="software",
+   |                                                                                                     ^
+36 |             worker_id="source-worker",lease_id=lease.lease_id,expected_lease_id=lease.lease_id)
+37 |     return repo,stale,lease,attempt
+   |
+
+E701 Multiple statements on one line (colon)
+  --> tests/test_visual_worker_owner.py:62:35
+   |
+60 | @pytest.mark.parametrize("field",["run_id","worker_id","lease_id"])
+61 | def test_foreign_source_identity_cannot_attach(running,field):
+62 |     with pytest.raises(ValueError): read(running,**{field:"foreign"})
+   |                                   ^
+   |
+
+E701 Multiple statements on one line (colon)
+  --> tests/test_visual_worker_owner.py:68:26
+   |
+66 | def test_missing_live_lease_or_unique_open_attempt_rejects(running,kind):
+67 |     repo,job,lease,attempt = running
+68 |     if kind == "released": repo.release_lease(lease.lease_id)
+   |                          ^
+69 |     elif kind == "cancelled": repo.request_cancel(job.job_id)
+70 |     elif kind == "ended": repo.finish_attempt(job.job_id,attempt=attempt.attempt,result="FAILED",error="software",artifact_paths={})
+   |
+
+E701 Multiple statements on one line (colon)
+  --> tests/test_visual_worker_owner.py:69:29
+   |
+67 |     repo,job,lease,attempt = running
+68 |     if kind == "released": repo.release_lease(lease.lease_id)
+69 |     elif kind == "cancelled": repo.request_cancel(job.job_id)
+   |                             ^
+70 |     elif kind == "ended": repo.finish_attempt(job.job_id,attempt=attempt.attempt,result="FAILED",error="software",artifact_paths={})
+71 |     elif kind == "two_open": repo.start_attempt(job.job_id,worker_id=lease.worker_id)
+   |
+
+E701 Multiple statements on one line (colon)
+  --> tests/test_visual_worker_owner.py:70:25
+   |
+68 |     if kind == "released": repo.release_lease(lease.lease_id)
+69 |     elif kind == "cancelled": repo.request_cancel(job.job_id)
+70 |     elif kind == "ended": repo.finish_attempt(job.job_id,attempt=attempt.attempt,result="FAILED",error="software",artifact_paths={})
+   |                         ^
+71 |     elif kind == "two_open": repo.start_attempt(job.job_id,worker_id=lease.worker_id)
+72 |     with pytest.raises(ValueError):
+   |
+
+E501 Line too long (132 > 100)
+  --> tests/test_visual_worker_owner.py:70:101
+   |
+68 |     if kind == "released": repo.release_lease(lease.lease_id)
+69 |     elif kind == "cancelled": repo.request_cancel(job.job_id)
+70 |     elif kind == "ended": repo.finish_attempt(job.job_id,attempt=attempt.attempt,result="FAILED",error="software",artifact_paths={})
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+71 |     elif kind == "two_open": repo.start_attempt(job.job_id,worker_id=lease.worker_id)
+72 |     with pytest.raises(ValueError):
+   |
+
+E701 Multiple statements on one line (colon)
+  --> tests/test_visual_worker_owner.py:71:28
+   |
+69 |     elif kind == "cancelled": repo.request_cancel(job.job_id)
+70 |     elif kind == "ended": repo.finish_attempt(job.job_id,attempt=attempt.attempt,result="FAILED",error="software",artifact_paths={})
+71 |     elif kind == "two_open": repo.start_attempt(job.job_id,worker_id=lease.worker_id)
+   |                            ^
+72 |     with pytest.raises(ValueError):
+73 |         read(running,**({"now":lease.expires_at} if kind == "expired" else {}))
+   |
+
+E501 Line too long (117 > 100)
+  --> tests/test_visual_worker_owner.py:94:101
+   |
+92 |         **data["online"].observation.model_dump(), "captured_at":now, "checksum_sha256":"",
+93 |     })
+94 |     contract = before.contract.model_copy(update={"issued_at":now,"valid_until":now+timedelta(seconds=60)},deep=True)
+   |                                                                                                     ^^^^^^^^^^^^^^^^^
+95 |     identity = source.identity(episode_id=observation.episode_id,task_id=contract.task_id,
+96 |         plan_id="source-plan",robot_id="simulator-instance")
+   |
+
+E501 Line too long (110 > 100)
+   --> tests/test_visual_worker_owner.py:109:101
+    |
+107 |     assert original.contract.model_dump(mode="json")==data["contract"].model_dump(mode="json")
+108 |     requirement=original.requirements["move"]
+109 |     assert {c.name for c in requirement.preconditions} >= {"target_visible","target_reachable","gripper_open"}
+    |                                                                                                     ^^^^^^^^^^
+110 |     assert "tcp_above_target" in {c.name for c in requirement.postconditions}
+111 |     target=next(c for c in requirement.postconditions if c.name=="tcp_at_resolved_target")
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:125:31
+    |
+123 | def test_complete_registered_identity_frame_sources_and_deadlines_required(running,kind):
+124 |     data=compilation(running)
+125 |     if kind=="foreign_attempt": data["identity"]=replace(data["identity"],attempt=2)
+    |                               ^
+126 |     elif kind=="foreign_frame": data["observation"]=data["observation"].model_copy(update={"episode_id":"foreign"},deep=True)
+127 |     elif kind=="missing_calibration": data["observation"]=data["observation"].model_copy(update={"calibration_version":None},deep=Tru…
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:126:31
+    |
+124 |     data=compilation(running)
+125 |     if kind=="foreign_attempt": data["identity"]=replace(data["identity"],attempt=2)
+126 |     elif kind=="foreign_frame": data["observation"]=data["observation"].model_copy(update={"episode_id":"foreign"},deep=True)
+    |                               ^
+127 |     elif kind=="missing_calibration": data["observation"]=data["observation"].model_copy(update={"calibration_version":None},deep=Tru…
+128 |     elif kind=="missing_source": data["source_hashes"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+    |
+
+E501 Line too long (125 > 100)
+   --> tests/test_visual_worker_owner.py:126:101
+    |
+124 |     data=compilation(running)
+125 |     if kind=="foreign_attempt": data["identity"]=replace(data["identity"],attempt=2)
+126 |     elif kind=="foreign_frame": data["observation"]=data["observation"].model_copy(update={"episode_id":"foreign"},deep=True)
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+127 |     elif kind=="missing_calibration": data["observation"]=data["observation"].model_copy(update={"calibration_version":None},deep=Tru…
+128 |     elif kind=="missing_source": data["source_hashes"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:127:37
+    |
+125 |     if kind=="foreign_attempt": data["identity"]=replace(data["identity"],attempt=2)
+126 |     elif kind=="foreign_frame": data["observation"]=data["observation"].model_copy(update={"episode_id":"foreign"},deep=True)
+127 |     elif kind=="missing_calibration": data["observation"]=data["observation"].model_copy(update={"calibration_version":None},deep=Tru…
+    |                                     ^
+128 |     elif kind=="missing_source": data["source_hashes"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+129 |     elif kind=="empty_source": data["source_hashes"]={}
+    |
+
+E501 Line too long (135 > 100)
+   --> tests/test_visual_worker_owner.py:127:101
+    |
+125 | …lace(data["identity"],attempt=2)
+126 | …data["observation"].model_copy(update={"episode_id":"foreign"},deep=True)
+127 | …ion"]=data["observation"].model_copy(update={"calibration_version":None},deep=True)
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+128 | …"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+129 | …={}
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:128:32
+    |
+126 |     elif kind=="foreign_frame": data["observation"]=data["observation"].model_copy(update={"episode_id":"foreign"},deep=True)
+127 |     elif kind=="missing_calibration": data["observation"]=data["observation"].model_copy(update={"calibration_version":None},deep=Tru…
+128 |     elif kind=="missing_source": data["source_hashes"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+    |                                ^
+129 |     elif kind=="empty_source": data["source_hashes"]={}
+130 |     elif kind=="expired": data["task_deadline_at"]=data["registered_at"]
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_visual_worker_owner.py:128:101
+    |
+126 |     elif kind=="foreign_frame": data["observation"]=data["observation"].model_copy(update={"episode_id":"foreign"},deep=True)
+127 |     elif kind=="missing_calibration": data["observation"]=data["observation"].model_copy(update={"calibration_version":None},deep=Tru…
+128 |     elif kind=="missing_source": data["source_hashes"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+    |                                                                                                     ^^^
+129 |     elif kind=="empty_source": data["source_hashes"]={}
+130 |     elif kind=="expired": data["task_deadline_at"]=data["registered_at"]
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:129:30
+    |
+127 |     elif kind=="missing_calibration": data["observation"]=data["observation"].model_copy(update={"calibration_version":None},deep=Tru…
+128 |     elif kind=="missing_source": data["source_hashes"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+129 |     elif kind=="empty_source": data["source_hashes"]={}
+    |                              ^
+130 |     elif kind=="expired": data["task_deadline_at"]=data["registered_at"]
+131 |     with pytest.raises(ValueError): api().compile_worker_original_plan(**data)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:130:25
+    |
+128 |     elif kind=="missing_source": data["source_hashes"].pop(next(iter(api().REQUIRED_COMPILER_SOURCES)))
+129 |     elif kind=="empty_source": data["source_hashes"]={}
+130 |     elif kind=="expired": data["task_deadline_at"]=data["registered_at"]
+    |                         ^
+131 |     with pytest.raises(ValueError): api().compile_worker_original_plan(**data)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:131:35
+    |
+129 |     elif kind=="empty_source": data["source_hashes"]={}
+130 |     elif kind=="expired": data["task_deadline_at"]=data["registered_at"]
+131 |     with pytest.raises(ValueError): api().compile_worker_original_plan(**data)
+    |                                   ^
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:138:35
+    |
+136 |     contract=data["contract"]
+137 |     contract.steps[0]=contract.steps[0].model_copy(update={"skill":SkillName.HOME},deep=True)
+138 |     with pytest.raises(ValueError): api().compile_worker_original_plan(**data)
+    |                                   ^
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:152:35
+    |
+150 |     alias=tmp_path/"alias"
+151 |     alias.symlink_to(root,target_is_directory=True)
+152 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(alias,expected,required_paths={"source.py"})
+    |                                   ^
+153 |     target.write_text("SOURCE = 2\n")
+154 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(root,expected,required_paths={"source.py"})
+    |
+
+E501 Line too long (114 > 100)
+   --> tests/test_visual_worker_owner.py:152:101
+    |
+150 |     alias=tmp_path/"alias"
+151 |     alias.symlink_to(root,target_is_directory=True)
+152 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(alias,expected,required_paths={"source.py"})
+    |                                                                                                     ^^^^^^^^^^^^^^
+153 |     target.write_text("SOURCE = 2\n")
+154 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(root,expected,required_paths={"source.py"})
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:154:35
+    |
+152 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(alias,expected,required_paths={"source.py"})
+153 |     target.write_text("SOURCE = 2\n")
+154 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(root,expected,required_paths={"source.py"})
+    |                                   ^
+    |
+
+E501 Line too long (113 > 100)
+   --> tests/test_visual_worker_owner.py:154:101
+    |
+152 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(alias,expected,required_paths={"source.py"})
+153 |     target.write_text("SOURCE = 2\n")
+154 |     with pytest.raises(ValueError): api().pin_worker_source_inventory(root,expected,required_paths={"source.py"})
+    |                                                                                                     ^^^^^^^^^^^^^
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_visual_worker_owner.py:176:101
+    |
+174 |     conditions = api().grounded_worker_effect_conditions(original,grounding)
+175 |     target = next(c for c in conditions if c.name=="tcp_at_resolved_target")
+176 |     assert {axis:target.tolerances[f"target_{axis}"] for axis in "xyz"} == {"x":0.2,"y":0.1,"z":0.16}
+    |                                                                                                     ^
+177 |     template = next(c for c in original.requirements["move"].postconditions if c.name==target.name)
+178 |     assert all(target.tolerances[key]==value for key,value in template.tolerances.items())
+    |
+
+E501 Line too long (103 > 100)
+   --> tests/test_visual_worker_owner.py:180:101
+    |
+178 |     assert all(target.tolerances[key]==value for key,value in template.tolerances.items())
+179 |     assert not any(f"target_{axis}" in template.tolerances for axis in "xyz")
+180 |     assert [c.name for c in conditions]==[c.name for c in original.requirements["move"].postconditions]
+    |                                                                                                     ^^^
+181 |     assert original.digest()==original_hash
+182 |     with pytest.raises(TypeError): target.tolerances["target_x"] = 99
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:182:34
+    |
+180 |     assert [c.name for c in conditions]==[c.name for c in original.requirements["move"].postconditions]
+181 |     assert original.digest()==original_hash
+182 |     with pytest.raises(TypeError): target.tolerances["target_x"] = 99
+    |                                  ^
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:189:28
+    |
+187 |     import json
+188 |     original,grounding = effect_values(running)
+189 |     if kind=="foreign_hash": grounding=replace(grounding,original_plan_hash="f"*64)
+    |                            ^
+190 |     elif kind=="foreign_identity": grounding=replace(grounding,current_identity=replace(original.identity,attempt=2))
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:190:34
+    |
+188 |     original,grounding = effect_values(running)
+189 |     if kind=="foreign_hash": grounding=replace(grounding,original_plan_hash="f"*64)
+190 |     elif kind=="foreign_identity": grounding=replace(grounding,current_identity=replace(original.identity,attempt=2))
+    |                                  ^
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+192 |     elif kind=="foreign_requirement": grounding=replace(grounding,original_requirements=values()["original"].requirements["move"])
+    |
+
+E501 Line too long (117 > 100)
+   --> tests/test_visual_worker_owner.py:190:101
+    |
+188 |     original,grounding = effect_values(running)
+189 |     if kind=="foreign_hash": grounding=replace(grounding,original_plan_hash="f"*64)
+190 |     elif kind=="foreign_identity": grounding=replace(grounding,current_identity=replace(original.identity,attempt=2))
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+192 |     elif kind=="foreign_requirement": grounding=replace(grounding,original_requirements=values()["original"].requirements["move"])
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:191:33
+    |
+189 |     if kind=="foreign_hash": grounding=replace(grounding,original_plan_hash="f"*64)
+190 |     elif kind=="foreign_identity": grounding=replace(grounding,current_identity=replace(original.identity,attempt=2))
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+    |                                 ^
+192 |     elif kind=="foreign_requirement": grounding=replace(grounding,original_requirements=values()["original"].requirements["move"])
+193 |     elif kind=="foreign_source": grounding=replace(grounding,grounding_source_hashes={"foreign.py":"a"*64})
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:192:37
+    |
+190 |     elif kind=="foreign_identity": grounding=replace(grounding,current_identity=replace(original.identity,attempt=2))
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+192 |     elif kind=="foreign_requirement": grounding=replace(grounding,original_requirements=values()["original"].requirements["move"])
+    |                                     ^
+193 |     elif kind=="foreign_source": grounding=replace(grounding,grounding_source_hashes={"foreign.py":"a"*64})
+194 |     else:
+    |
+
+E501 Line too long (130 > 100)
+   --> tests/test_visual_worker_owner.py:192:101
+    |
+190 |     elif kind=="foreign_identity": grounding=replace(grounding,current_identity=replace(original.identity,attempt=2))
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+192 |     elif kind=="foreign_requirement": grounding=replace(grounding,original_requirements=values()["original"].requirements["move"])
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+193 |     elif kind=="foreign_source": grounding=replace(grounding,grounding_source_hashes={"foreign.py":"a"*64})
+194 |     else:
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:193:32
+    |
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+192 |     elif kind=="foreign_requirement": grounding=replace(grounding,original_requirements=values()["original"].requirements["move"])
+193 |     elif kind=="foreign_source": grounding=replace(grounding,grounding_source_hashes={"foreign.py":"a"*64})
+    |                                ^
+194 |     else:
+195 |         step=grounding.grounded_step
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_visual_worker_owner.py:193:101
+    |
+191 |     elif kind=="foreign_version": grounding=replace(grounding,command_seq=grounding.command_seq+1)
+192 |     elif kind=="foreign_requirement": grounding=replace(grounding,original_requirements=values()["original"].requirements["move"])
+193 |     elif kind=="foreign_source": grounding=replace(grounding,grounding_source_hashes={"foreign.py":"a"*64})
+    |                                                                                                     ^^^^^^^
+194 |     else:
+195 |         step=grounding.grounded_step
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:196:32
+    |
+194 |     else:
+195 |         step=grounding.grounded_step
+196 |         if kind=="missing_pose": step.parameters.pop("target_pose")
+    |                                ^
+197 |         else: step.parameters["target_pose"]["x"]=True
+198 |         grounding=replace(grounding,_grounded_step_json=json.dumps(step.model_dump(mode="json")))
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:197:13
+    |
+195 |         step=grounding.grounded_step
+196 |         if kind=="missing_pose": step.parameters.pop("target_pose")
+197 |         else: step.parameters["target_pose"]["x"]=True
+    |             ^
+198 |         grounding=replace(grounding,_grounded_step_json=json.dumps(step.model_dump(mode="json")))
+199 |     with pytest.raises(ValueError): api().grounded_worker_effect_conditions(original,grounding)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> tests/test_visual_worker_owner.py:199:35
+    |
+197 |         else: step.parameters["target_pose"]["x"]=True
+198 |         grounding=replace(grounding,_grounded_step_json=json.dumps(step.model_dump(mode="json")))
+199 |     with pytest.raises(ValueError): api().grounded_worker_effect_conditions(original,grounding)
+    |                                   ^
+    |
+
+Found 44 errors.

@@ -1,0 +1,46 @@
+..................................F                                      [100%]
+=================================== FAILURES ===================================
+________ test_registration_cannot_omit_helpers_or_duplicate_an_original ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-836/test_registration_cannot_omit_0')
+
+    def test_registration_cannot_omit_helpers_or_duplicate_an_original(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+        with pytest.raises(ValueError, match="helpers"):
+>           RiskSourceRegistration(
+                tmp_path, ROOT, {}, (case,), CompletionCriteria("object", "target_region")
+            )
+
+tests/test_research_risk_sources.py:528: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+<string>:9: in __init__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = RiskSourceRegistration(artifact_root=PosixPath('/tmp/pytest-of-ningyd/pytest-836/test_registration_cannot_omit_0'), so...e_xy_radius_m=0.85, workspace_min_m=(-0.85, -0.85, 0.0), workspace_max_m=(0.85, 0.85, 1.2)), current_role_binding=None)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "artifact_root", Path(self.artifact_root))
+        object.__setattr__(self, "source_root", Path(self.source_root))
+        sources = _hashes(self.current_source_hashes)
+        if not set(required_source_paths()) <= set(sources):
+>           raise ValueError("registration omits validating production helper sources")
+E           ValueError: registration omits validating production helper sources
+
+src/cloud_edge_robot_arm/research/risk_sources.py:152: ValueError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-836/test_registration_cannot_omit_0')
+
+    def test_registration_cannot_omit_helpers_or_duplicate_an_original(tmp_path: Path) -> None:
+        case, _ = fixture_case(tmp_path)
+>       with pytest.raises(ValueError, match="helpers"):
+E       AssertionError: Regex pattern did not match.
+E        Regex: 'helpers'
+E        Input: 'registration omits validating production helper sources'
+
+tests/test_research_risk_sources.py:527: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_sources.py::test_registration_cannot_omit_helpers_or_duplicate_an_original
+1 failed, 34 passed in 9.77s

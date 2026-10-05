@@ -1,0 +1,120 @@
+E501 Line too long (105 > 100)
+    --> src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py:2396:101
+     |
+2394 |         ).fetchone()
+2395 |         if row is not None:
+2396 |             for name in ("step_retry_counts_json", "skill_retry_counts_json", "event_retry_counts_json"):
+     |                                                                                                     ^^^^^
+2397 |                 for value in _load(row[name]).values():
+2398 |                     counter(value)
+     |
+
+E501 Line too long (135 > 100)
+   --> tests/test_visual_verification_repository.py:473:101
+    |
+471 | …onal persistence; memory pre-encodes rows")
+472 | …
+473 | …N visual_verification_routes BEGIN SELECT RAISE(ABORT, 'fixture write fault'); END"
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+474 | …
+475 | …
+    |
+
+E501 Line too long (132 > 100)
+   --> tests/test_visual_verification_repository.py:576:101
+    |
+574 |             repo._active_contracts[task]=repo._active_contracts[task].model_copy(update={'undeclared_source':True})
+575 |     else:
+576 |         table,column=('execution_checkpoints','payload_json') if row_kind=='checkpoint' else ('active_task_contracts','record_json')
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+577 |         row=repo._conn.execute(f'SELECT {column} FROM {table} WHERE task_id=?',(task,)).fetchone()
+578 |         payload=json.loads(row[0]);payload['undeclared_source']=True
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_visual_verification_repository.py:578:35
+    |
+576 |         table,column=('execution_checkpoints','payload_json') if row_kind=='checkpoint' else ('active_task_contracts','record_json')
+577 |         row=repo._conn.execute(f'SELECT {column} FROM {table} WHERE task_id=?',(task,)).fetchone()
+578 |         payload=json.loads(row[0]);payload['undeclared_source']=True
+    |                                   ^
+579 |         repo._conn.execute(f'UPDATE {table} SET {column}=? WHERE task_id=?',(json.dumps(payload),task));repo._conn.commit()
+580 |     assert repo.route_visual_verification_if_current(request=request_for(data)) is None
+    |
+
+E501 Line too long (123 > 100)
+   --> tests/test_visual_verification_repository.py:579:101
+    |
+577 |         row=repo._conn.execute(f'SELECT {column} FROM {table} WHERE task_id=?',(task,)).fetchone()
+578 |         payload=json.loads(row[0]);payload['undeclared_source']=True
+579 |         repo._conn.execute(f'UPDATE {table} SET {column}=? WHERE task_id=?',(json.dumps(payload),task));repo._conn.commit()
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+580 |     assert repo.route_visual_verification_if_current(request=request_for(data)) is None
+581 |     assert repo.get_verification_budget(task).state.remaining_reobservations==3
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_visual_verification_repository.py:579:104
+    |
+577 |         row=repo._conn.execute(f'SELECT {column} FROM {table} WHERE task_id=?',(task,)).fetchone()
+578 |         payload=json.loads(row[0]);payload['undeclared_source']=True
+579 |         repo._conn.execute(f'UPDATE {table} SET {column}=? WHERE task_id=?',(json.dumps(payload),task));repo._conn.commit()
+    |                                                                                                        ^
+580 |     assert repo.route_visual_verification_if_current(request=request_for(data)) is None
+581 |     assert repo.get_verification_budget(task).state.remaining_reobservations==3
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_visual_verification_repository.py:591:30
+    |
+589 |     )
+590 |     _,data=source
+591 |     original=data['original'];old=original.requirements['move']
+    |                              ^
+592 |     descriptor=api().camera_source_descriptor_sha256(data['online'].observation)
+593 |     pre=tuple(ConditionSpec(c.name,c.target_id,{**dict(c.tolerances),
+    |
+
+E501 Line too long (174 > 100)
+   --> tests/test_visual_verification_repository.py:594:101
+    |
+592 | …ervation)
+593 | …
+594 | …ion':data['online'].observation.calibration_version},c.sensor_requirements) for c in old.preconditions)
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+595 | …quirements(old.original_step,pre,old.postconditions,
+596 | …old.expected_duration_s,old.policy_source_hashes)}
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_visual_verification_repository.py:604:32
+    |
+602 |     # Same descriptor-inventory source, NEW synthetic frame with changed intrinsics.
+603 |     pub=repo.get_visual_owner_publication(original.identity.task_id)
+604 |     data=next_frame(data,pub,8);raw=data['online'].observation.model_dump(mode='json')
+    |                                ^
+605 |     raw.update(intrinsics=[120.0,120.0,1.0,1.0],checksum_sha256='')
+606 |     online=replace(data['online'],observation=RGBDObservation.model_validate(raw))
+    |
+
+E501 Line too long (128 > 100)
+   --> tests/test_visual_verification_repository.py:607:101
+    |
+605 |     raw.update(intrinsics=[120.0,120.0,1.0,1.0],checksum_sha256='')
+606 |     online=replace(data['online'],observation=RGBDObservation.model_validate(raw))
+607 |     assert repo.route_visual_verification_if_current(request=request_for(data,online=online,event_key='changed-camera')) is None
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> tests/test_visual_verification_repository.py:620:12
+    |
+618 | def test_transaction_clock_requires_aware_domain_without_writing(source):
+619 |     repo,data=source
+620 |     m=api();publication=data['publication']
+    |            ^
+621 |     with pytest.raises(ValueError):
+622 |         m.derive_route(request_for(data),data['original'],publication,None,
+    |
+
+Found 13 errors (2 fixed, 11 remaining).

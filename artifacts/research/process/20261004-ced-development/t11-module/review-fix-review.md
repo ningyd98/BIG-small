@@ -1,0 +1,19 @@
+# T11 corrected snapshot independent re-review
+
+Verdict: **PASS for the reviewed software scope**. All three findings in `review.md` are closed. This does not accept actual selection, research-mode execution, role/provider binding, INITIAL/FINAL or physical success.
+
+Reviewed the explicitly released `review-fixed.diff` against the original saved release, report append and `review-fix-report.json`, and all nineteen immutable `review-fixed-source/` files. Live/saved SHA256 values match `review-fixed-source-hashes.json`; manifest byte SHA256 is `5a9334414ae928e93239d8c8219eb4959784f8303ffe63b7259cdcbf494f15de`. Base/head remains `ddbeb92a1aa1dfa8039f6260d6b5887c58072383`. No production/test/shared-document edits were made.
+
+- PREPARED and terminal records now require identical content on public save, and save/prepare revalidate Pydantic data so invalid model_copy fields cannot bypass enum validation. Independent in-memory and SQLite reproductions reject the original changed destination, retain the exact original request on prepare retry, and later commit its original destination. The repository regression covers every immutable request field in both implementations. Internal commit/abort transitions retain their dedicated atomic path.
+- The raw mode-selection verifier now requires explicit initial_current_mode and a strict positive initial_mode_version, and carries both mode and version forward after every transition. It rejects the former version-contiguous but impossible mode chain. Independently recreating that exact chain returns accepted=False with the CAS/order/limit error; missing or incompatible initial state is covered by scoped regressions.
+- Policy cache identity now hashes the complete relevant frozen context, including calibrated risk, online facts, measured conditions, network input and B2 legacy evidence. Limits/deadline are bound while quota reservations remain mutable so identical duplicate events do not charge twice. The live hard-stop/deadline check still runs before cache access. The former VALID->UNKNOWN same-event case returns STOP instead of stale CONTINUE, and a fresh UNKNOWN event returns REOBSERVE. Changed duplicates fail closed as requested.
+
+No additional blocking counterexample was found in this fix. The original shared-gate, original B2, selection denominator/quality, checkpoint and SQLite atomicity requirements remain as documented in the initial review. The separate root API/harness fixes remain covered by their narrow PASS report and the current combined tests.
+
+Independent verification:
+
+- `.venv/bin/python -m pytest -q tests/test_runtime_auto_baselines.py tests/test_mode_transition_cas.py tests/test_phase8_1_mode_transition_commit.py tests/test_phase9_auto_safe_transition.py tests/test_phase7_auto_mode.py tests/test_phase7_auto_mode_repository.py tests/test_research_supervision.py tests/test_runtime_harness_mode_commit.py tests/test_phase7_api_config.py`: **112 passed in 60.58s**, exit 0. Two expected Pydantic serialization warnings occur only in intentional invalid model_copy enum regressions; rejection is asserted. The implementer's distinct 115-test scope was inspected but is not claimed as this independent run.
+- Ruff over the four changed Python files: **All checks passed**, exit 0.
+- Independently reran the original prepared mutation in both repositories, same-event UNKNOWN cache transition, and impossible raw selection chain; all now fail closed while valid original prepare/commit and fresh UNKNOWN behavior remain correct.
+
+Only this review report was written. No network/provider/model/GPU/render/physical execution, real selection or broad project suite was attempted. Software fixture selection is not physical acceptance, and actual request-to-frozen-role provenance remains a strict integration prerequisite.

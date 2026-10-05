@@ -1,0 +1,600 @@
+..............................F....FFFFFFFFFF                            [100%]
+=================================== FAILURES ===================================
+__ test_authorized_development_train_history_is_retained_and_formal_forbidden __
+
+    def test_authorized_development_train_history_is_retained_and_formal_forbidden():
+        allocations, rows = numeric_fixture()
+        for row in rows:
+            if row["split"] == "train":
+                row["used_purposes"] = ("DEVELOPMENT_FEEDBACK", "TRAIN")
+        result = replay(allocations, rows)
+        assert result["status"] == "VALID"
+>       assert result["component_usage_histories"]["train-g-0"] == ("DEVELOPMENT_FEEDBACK", "TRAIN")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'component_usage_histories'
+
+tests/test_research_risk_replay.py:317: KeyError
+________ test_registered_invalid_initial_is_preserved_as_invalid_source ________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_registered_invalid_initia0')
+
+    def test_registered_invalid_initial_is_preserved_as_invalid_source(tmp_path):
+        from tests.test_research_admission import _registration
+        registration, source, artifacts, _, _ = registered_replay(tmp_path)
+        initial_dir = tmp_path / "initial"
+        initial_dir.mkdir()
+        initial = _registration(initial_dir)
+        initial.protocol_path.write_text("null\n")
+        source = replace(source, initial_registration=initial)
+        config=json.loads((artifacts/"config.json").read_text())
+        config["supervision_registration_hash"] = api().supervision_registration_hash(source)
+        json_file(artifacts/"config.json", config)
+        registration=replace(registration, original_file_hashes=hashes(artifacts))
+        result=api().RiskArtifactAuditor({"replay":registration},{"source":source}).audit("replay")
+>       assert result.status == result.actual_source_status == "INVALID"
+E       AssertionError: assert 'UNKNOWN' == 'INVALID'
+E         
+E         - INVALID
+E         + UNKNOWN
+
+tests/test_research_risk_replay.py:354: AssertionError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[coefficient] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric0')
+kind = 'coefficient'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764dffd0e750>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[raw_probability] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric1')
+kind = 'raw_probability'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764dffd0c110>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[omit_candidate] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric2')
+kind = 'omit_candidate'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764dffd0f200>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+___ test_rehashed_original_numeric_files_cannot_override_full_replay[winner] ___
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric3')
+kind = 'winner'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764df9b82060>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[source_flag] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric4')
+kind = 'source_flag'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764dffeae6c0>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[unknown_schema] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric5')
+kind = 'unknown_schema'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764dffe923c0>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[bool_coefficient] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric6')
+kind = 'bool_coefficient'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764dffe91670>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+_ test_rehashed_original_numeric_files_cannot_override_full_replay[wrong_filename] _
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_rehashed_original_numeric7')
+kind = 'wrong_filename'
+
+    @pytest.mark.parametrize("kind", ["coefficient", "raw_probability", "omit_candidate", "winner", "source_flag", "unknown_schema", "bool_coefficient", "wrong_filename"])
+    def test_rehashed_original_numeric_files_cannot_override_full_replay(tmp_path, kind):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764df9b80470>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+______ test_complete_original_numeric_comparison_remains_diagnostic_only _______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-962/test_complete_original_numeric0')
+
+    def test_complete_original_numeric_comparison_remains_diagnostic_only(tmp_path):
+>       registered,result=original_numeric_artifacts(tmp_path)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_research_risk_replay.py:425: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_research_risk_replay.py:373: in original_numeric_artifacts
+    registered=module.RiskReplayRegistration(tmp_path, hashes(tmp_path), "config.json", "source", registrations, "selection.json")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<string>:9: in __init__
+    ???
+src/cloud_edge_robot_arm/research/risk_replay.py:421: in __post_init__
+    object.__setattr__(self, "candidate_artifacts", _copied(artifacts))
+                                                    ^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/research/risk_sources.py:87: in _copied
+    return _freeze(json.loads(json.dumps(_plain(value), allow_nan=False)))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x764dffeaeae0>
+o = RiskReplayArtifactRegistration(model_path='1a911a177d9036a6f47985ff8519362f9abd53284038a2569cfe051e1d7d991f/model.json...62f9abd53284038a2569cfe051e1d7d991f/calibration-3fb1e2a83aecedbd261ed1fd312ae26c522e561ed051da20e05ed994172e397f.json')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type RiskReplayArtifactRegistration is not JSON serializable
+
+/usr/lib/python3.12/json/encoder.py:180: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_research_risk_replay.py::test_authorized_development_train_history_is_retained_and_formal_forbidden
+FAILED tests/test_research_risk_replay.py::test_registered_invalid_initial_is_preserved_as_invalid_source
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[coefficient]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[raw_probability]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[omit_candidate]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[winner]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[source_flag]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[unknown_schema]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[bool_coefficient]
+FAILED tests/test_research_risk_replay.py::test_rehashed_original_numeric_files_cannot_override_full_replay[wrong_filename]
+FAILED tests/test_research_risk_replay.py::test_complete_original_numeric_comparison_remains_diagnostic_only
+11 failed, 34 passed in 2.52s

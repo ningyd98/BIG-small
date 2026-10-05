@@ -1,0 +1,66 @@
+.............................F.....F.F...                                [100%]
+=================================== FAILURES ===================================
+___________ test_metric_lift_and_fresh_half_second_hold_prove_effect ___________
+
+    def test_metric_lift_and_fresh_half_second_hold_prove_effect():
+        initial = scene()
+        tracked = tracker(initial)
+        for index in range(7):
+            facts = tracked.facts(
+                scene(f"lift-{index}", time=0.1 + index * 0.1, lift=0.06, started=initial.captured_at),
+                held(),
+            )
+            if index < 5:
+                assert facts["object_stable"]["value"] is None
+        assert facts["object_lifted"]["value"] is True
+>       assert facts["object_stable"]["value"] is True
+E       assert None is True
+
+tests/test_visual_effect_evidence.py:38: AssertionError
+_______ test_release_requires_fresh_full_extent_and_one_second_stability _______
+
+    def test_release_requires_fresh_full_extent_and_one_second_stability():
+        initial = scene()
+        tracked = tracker(initial)
+        for index, x in enumerate((20, 30, 40, 48), 1):
+            tracked.facts(scene(str(index), time=index * 0.1, x=x, started=initial.captured_at), held())
+        released = RobotState(connected=True, gripper_open=True, holding_object_id=None)
+        for index in range(12):
+            facts = tracked.facts(
+                scene(f"placed-{index}", time=0.5 + index * 0.1, x=48, started=initial.captured_at),
+                released,
+            )
+            if index < 10:
+                assert facts["object_placed"]["value"] is None
+        assert facts["object_inside_target_region"]["value"] is True
+>       assert facts["placement_stable"]["value"] is True
+E       assert None is True
+
+tests/test_visual_effect_evidence.py:102: AssertionError
+_ test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance _
+
+    def test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance():
+        initial = scene().model_copy(update={"source": "mujoco_camera"})
+        tracked = tracker(initial)
+        for index in range(7):
+            current = scene(
+                f"sim-{index}",
+                time=0.1 + index * 0.1,
+                lift=0.06,
+                started=initial.captured_at,
+            ).model_copy(
+                update={
+                    "source": "mujoco_camera",
+                    "captured_at": initial.captured_at + timedelta(seconds=0.001 * (index + 1)),
+                }
+            )
+            facts = tracked.facts(current, held())
+>       assert facts["object_stable"]["value"] is True
+E       assert None is True
+
+tests/test_visual_effect_evidence.py:131: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_visual_effect_evidence.py::test_metric_lift_and_fresh_half_second_hold_prove_effect
+FAILED tests/test_visual_effect_evidence.py::test_release_requires_fresh_full_extent_and_one_second_stability
+FAILED tests/test_visual_effect_evidence.py::test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance
+3 failed, 38 passed in 0.98s

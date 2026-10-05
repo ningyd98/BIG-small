@@ -1,0 +1,28 @@
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+_____ test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges _____
+
+    def test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges():
+        from cloud_edge_robot_arm.datasets.rgbd.teacher import EpisodeRecorder, run_teacher_episode
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+        from tests.test_rgbd_teacher_smoke import _fixed_scene
+    
+        observed, actions, controls = [], [], []
+        with MuJoCoCaptureSession(SimulatorConfig(camera_width=64, camera_height=64)) as session:
+            scene = _fixed_scene()
+            session.apply_scene(scene)
+            physical = session._backend
+            with physical.observe_actuator_steps(controls.append):
+>               outcome = run_teacher_episode(
+                    scene, MuJoCoSkillRobot(physical), EpisodeRecorder(),
+                    case="NO_CONTACT", settle_steps=3, physical_observer=observed.append,
+                    action_observer=actions.append,
+                )
+E               TypeError: run_teacher_episode() got an unexpected keyword argument 'physical_observer'
+
+tests/test_protocol_raw_observers.py:85: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_protocol_raw_observers.py::test_teacher_passive_hooks_cover_real_steps_and_exact_command_ranges
+1 failed, 3 passed in 0.41s

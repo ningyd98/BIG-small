@@ -1,0 +1,13 @@
+# INITIAL source auditor independent review
+
+Verdict: **PASS for bounded software scope**. No actual INITIAL source was accepted; **METHOD and EXECUTION remain unavailable**.
+
+Root verified every SHA256 and Python AST in the immutable 768-file closure with manifest `db5ab161b94d4ee1c49b3f527cd4203b99475781d6cd2023148600f60bee2b22`, checked the two owned live files, and copied only the frozen package into a fresh review directory. Independent results: **160 CPU tests passed in 9.40s**, Ruff and format checks for two files passed, cold mypy for the source passed, and all 768 post-test hashes remained equal. These include 31 auditor cases and the related T8/resource reconstruction cases; they do not constitute 160 independent research successes. Exact setup and commands are in `root-review-setup.json`, with `root-review-{tests,ruff,format,cold-mypy}.log`.
+
+The owner registers opaque IDs, exact evidence/protocol paths, current role bindings and collector sources. The public audit accepts no caller VALID callback or accepted receipt. It inventories all raw files, including failed/unconsumed records, rejects symlinks/path escapes, rereads current source bytes, reconstructs INITIAL using the real `initial_spec_from_evidence`, and compares every protocol field plus role identity. Before/after source and evidence inventories must agree. Missing evidence yields UNKNOWN; malformed, inconsistent or drifted evidence yields INVALID. Result maps are detached and immutable, with observed drift digests retained.
+
+INITIAL_SOURCE is a distinct scope. Its genuine complete reconstruction could establish that scope only. METHOD always returns UNKNOWN with missing risk-source, weight-selection and owner-registration reasons. Both method/execution admission flags are enforced false even when constructing a result. A protocol hash, rehashed metadata, software comparator or role fixture cannot confer actual method authority. No synthetic public positive fixture was used to pretend genuine INITIAL acceptance.
+
+The reviewed registration is an authoritative owner's source binding, not proof of a fresh running provider or current execution checkpoint/mode. The read-only filesystem snapshots are not an atomic transaction and do not claim protection against change-and-restore between reads. Current registered source changes require new evidence and cannot reuse an old admission.
+
+No HTTP/model/capture/robot operation, protocol publication, policy activation, task dispatch or physical success occurred. Remote billing is still unavailable in the accepted resource dependency. The actual source/method/owner core remains incomplete despite this independently reviewed source-audit component.

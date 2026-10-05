@@ -9,13 +9,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import threading
 import time
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Mapping
+from contextlib import ExitStack
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from cloud_edge_robot_arm.cloud.planning.adapter import PlannerAdapter
 from cloud_edge_robot_arm.dashboard.redaction import redact
@@ -39,6 +43,27 @@ from cloud_edge_robot_arm.simulation_workbench.models import (
     SimulationBackend,
     SimulationMetric,
     TimelineEvent,
+)
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.repositories.event_autonomy import EventAutonomyRepository
+    from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
+
+
+VISUAL_WORKER_FACTORY_SOURCE_PATHS = frozenset(
+    {
+        "src/cloud_edge_robot_arm/vision/capture.py",
+        "src/cloud_edge_robot_arm/vision/runtime_binding.py",
+        "src/cloud_edge_robot_arm/vision/role_models.py",
+        "src/cloud_edge_robot_arm/simulation/config.py",
+        "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+        "src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py",
+        "src/cloud_edge_robot_arm/edge/runtime/skill_executor.py",
+        "src/cloud_edge_robot_arm/edge/runtime/skill_registry.py",
+        "src/cloud_edge_robot_arm/edge/evidence/models.py",
+        "src/cloud_edge_robot_arm/edge/evidence/validator.py",
+        "src/cloud_edge_robot_arm/edge/recovery/verification_router.py",
+    }
 )
 
 
@@ -70,16 +95,38 @@ class SimulationWorker:
         artifact_root: Path,
         lease_ttl_seconds: int = 30,
         planner_factory: Callable[[], PlannerAdapter] | None = None,
+        visual_role_binding: RoleRuntimeBinding | None = None,
+        visual_event_repository: EventAutonomyRepository | None = None,
+        visual_robot_id: str | None = None,
     ) -> None:
+        visual_configuration = (
+            visual_role_binding,
+            visual_event_repository,
+            visual_robot_id,
+        )
+        if any(value is not None for value in visual_configuration) and any(
+            value is None for value in visual_configuration
+        ):
+            raise ValueError(
+                "visual role binding, event repository and robot ID are required together"
+            )
+        if visual_robot_id is not None:
+            from cloud_edge_robot_arm.vision.worker_owner import _identity_string
+
+            _identity_string(visual_robot_id)
         self.worker_id = worker_id
         self.backend = backend
         self.repository = repository
         self.artifact_root = artifact_root
         self.lease_ttl_seconds = lease_ttl_seconds
         self.planner_factory = planner_factory
+        self.visual_role_binding = visual_role_binding
+        self.visual_event_repository = visual_event_repository
+        self.visual_robot_id = visual_robot_id
         self.active_job_id = ""
         self.heartbeat_at: str | None = None
         self._heartbeat_failed = threading.Event()
+        self._active_task_origin: tuple[str, float, datetime] | None = None
 
     def poll_once(self) -> bool:
         # acquire_lease 是跨进程/跨线程的唯一消费门；没有租约就不能执行 job。
@@ -117,6 +164,7 @@ class SimulationWorker:
             heartbeat.join(timeout=1)
             self.repository.release_lease(lease.lease_id)
             self.active_job_id = ""
+            self._active_task_origin = None
         return True
 
     def _execute(self, job_id: str, lease_id: str) -> None:
@@ -158,6 +206,7 @@ class SimulationWorker:
             self._transition(job_id, RuntimeJobStatus.LEASED, RuntimeJobStatus.STARTING, lease_id)
             self._transition(job_id, RuntimeJobStatus.STARTING, RuntimeJobStatus.RUNNING, lease_id)
             start_monotonic = time.monotonic()
+            self._active_task_origin = (job_id, start_monotonic, datetime.now(UTC))
             result, events, metrics = self._run(job, start_monotonic=start_monotonic)
             self._raise_if_cancelled_or_timed_out(job_id, job, start_monotonic)
             terminal = RuntimeJobStatus.SUCCEEDED
@@ -631,6 +680,9 @@ class SimulationWorker:
         from cloud_edge_robot_arm.vision.execution import run_visual_episode
         from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
         from cloud_edge_robot_arm.vision.task_semantics import apply_s01_task_semantics
+        from cloud_edge_robot_arm.vision.top_grasp import calibration_asset_sha256
+
+        binding = self.visual_role_binding
 
         if job.backend != "MUJOCO" or job.scenario_id != "S01_NORMAL_STATIC":
             raise RGBDModelUnavailable("RGBD_MODEL_UNAVAILABLE: unsupported online asset/scenario")
@@ -642,22 +694,197 @@ class SimulationWorker:
         snapshot = getattr(planner, "model_snapshot", None)
         if (
             snapshot is None
-            or not snapshot.weight_digest
-            or snapshot.grasp_profile != "mujoco_upright_box_v1"
+            or (binding is None and not snapshot.weight_digest)
+            or calibration_asset_sha256(snapshot.grasp_profile) is None
         ):
             raise RGBDModelUnavailable(
                 "RGBD_MODEL_UNAVAILABLE: configure a verified research snapshot"
             )
         self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
+        runtime_source = None
+        verification_limits = None
+        source_hashes: Mapping[str, str] | None = None
+        required_sources: frozenset[str] = frozenset()
+        supervision_period_s: float | None = None
+        advance_physics_during_wait = False
+        if binding is not None:
+            from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+                SQLiteSimulationJobRepository,
+            )
+            from cloud_edge_robot_arm.vision.raw_recorder_v3 import RECORDER_SOURCE_PATHS
+            from cloud_edge_robot_arm.vision.worker_owner import (
+                pin_worker_source_inventory,
+                read_visual_worker_lease,
+            )
+            from cloud_edge_robot_arm.vision.worker_runtime import (
+                REQUIRED_WORKER_RUNTIME_SOURCES,
+                WorkerRuntimeSource,
+            )
+
+            if self.visual_event_repository is None or self.visual_robot_id is None:
+                raise ValueError("visual worker configuration changed")
+            if type(self.repository) is not SQLiteSimulationJobRepository:
+                raise TypeError("persisted OpenCV worker requires a concrete SQLite job repository")
+            job_repository = cast(SQLiteSimulationJobRepository, self.repository)
+            origin = self._active_task_origin
+            if origin is None or origin[:2] != (job.job_id, start_monotonic):
+                raise ValueError("OpenCV factory requires the current worker task clock")
+            original_parameters = job.draft.get("parameter_overrides", {})
+            if type(original_parameters) is not dict:
+                raise ValueError("concrete original worker parameter sources required")
+            period_ms = original_parameters.get("supervision_period_ms")
+            if period_ms is not None and (
+                type(period_ms) not in {int, float}
+                or not math.isfinite(period_ms)
+                or period_ms <= 0
+            ):
+                raise ValueError("finite positive original supervision period source required")
+            original_waits = original_parameters.get("advance_physics_during_wait", False)
+            if type(original_waits) is not bool:
+                raise ValueError("strict original passive wait flag source required")
+            supervision_period_s = None if period_ms is None else period_ms / 1000
+            advance_physics_during_wait = original_waits
+            budget_data = binding.edge_policy.get("verification_budget")
+            if not isinstance(budget_data, Mapping):
+                raise ValueError("frozen verification limits are missing")
+            verification_limits = VerificationBudget(**dict(cast(Mapping[str, Any], budget_data)))
+            required_sources = (
+                REQUIRED_WORKER_RUNTIME_SOURCES
+                | VISUAL_WORKER_FACTORY_SOURCE_PATHS
+                | RECORDER_SOURCE_PATHS
+            )
+            inventory: dict[str, str] = {}
+            for role_sources in (
+                binding.bundle.cloud_snapshot.source_hashes,
+                binding.edge_snapshot.source_hashes,
+                binding.device_source_hashes,
+            ):
+                for name, expected in role_sources.items():
+                    if name in inventory and inventory[name] != expected:
+                        raise ValueError("role source inventories disagree")
+                    inventory[name] = expected
+            for name in required_sources:
+                current_hash = hashlib.sha256((binding.root / name).read_bytes()).hexdigest()
+                if name in inventory and inventory[name] != current_hash:
+                    raise ValueError("required worker source differs from frozen role source")
+                inventory[name] = current_hash
+            source_hashes = pin_worker_source_inventory(
+                binding.root, inventory, required_paths=required_sources
+            )
+            # This first concrete re-read precedes all backend initialization.
+            read_visual_worker_lease(
+                job_repository,
+                job_id=job.job_id,
+                run_id=job.run_id,
+                worker_id=self.worker_id,
+                lease_id=job.lease_id,
+            )
+            binding.validate(planner)
+            runtime_source = WorkerRuntimeSource(
+                job_repository=job_repository,
+                event_repository=self.visual_event_repository,
+                job_id=job.job_id,
+                run_id=job.run_id,
+                worker_id=self.worker_id,
+                lease_id=job.lease_id,
+                source_root=binding.root,
+                source_hashes=source_hashes,
+                robot_id=self.visual_robot_id,
+                plan_id=f"visual-plan:{uuid.uuid4().hex}",
+                task_started_at=origin[2],
+                task_timeout_s=float(job.timeout_seconds),
+            )
+
+        def check_setup_boundary() -> None:
+            self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
+            if binding is not None:
+                assert source_hashes is not None
+                read_visual_worker_lease(
+                    job_repository,
+                    job_id=job.job_id,
+                    run_id=job.run_id,
+                    worker_id=self.worker_id,
+                    lease_id=job.lease_id,
+                )
+                pin_worker_source_inventory(
+                    binding.root, source_hashes, required_paths=required_sources
+                )
+                binding.validate(planner)
+
         config = SimulatorConfig(render_rgb=True, render_depth=True, seed=job.seed)
         backend = MuJoCoPhysicsBackend()
         run_dir = self._rgbd_work_dir(job)
         try:
             backend.initialize(config)
-            backend.reset(PhysicalScenarioConfig.scenario(job.scenario_id, seed=job.seed))
-            backend.step(steps=120)  # Initialization settling precedes the evaluated episode.
-            robot = MuJoCoSkillRobot(backend)
-            with MuJoCoCaptureSession(config, backend=backend) as capture:
+            with ExitStack() as resources:
+                raw_recorder = None
+                if runtime_source is not None:
+                    from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
+                    from cloud_edge_robot_arm.edge.runtime.skill_registry import SkillRegistry
+                    from cloud_edge_robot_arm.vision.raw_recorder_v3 import VisualRawRecorderV3
+
+                    assert binding is not None
+                    check_setup_boundary()
+                    robot = MuJoCoSkillRobot(backend)
+                    capture = resources.enter_context(MuJoCoCaptureSession(config, backend=backend))
+                    executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
+                    raw_recorder = resources.enter_context(
+                        VisualRawRecorderV3(
+                            backend,
+                            capture,
+                            executor,
+                            directory=run_dir / "raw_episode_v3",
+                            source_root=binding.root,
+                            source_hashes=runtime_source.source_hashes,
+                        )
+                    )
+                    check_setup_boundary()
+                # OPENCV enters the source observer before this actual RESET;
+                # LEGACY retains its original reset/settle/capture order.
+                backend.reset(PhysicalScenarioConfig.scenario(job.scenario_id, seed=job.seed))
+                if runtime_source is not None:
+                    check_setup_boundary()
+                if raw_recorder is not None:
+                    with raw_recorder.purpose("SETTLE"):
+                        backend.step(steps=120)
+                else:
+                    backend.step(steps=120)
+                if runtime_source is not None:
+                    check_setup_boundary()
+                else:
+                    robot = MuJoCoSkillRobot(backend)
+                    capture = resources.enter_context(MuJoCoCaptureSession(config, backend=backend))
+                worker_runtime = None
+                if runtime_source is not None:
+                    from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+
+                    assert binding is not None and verification_limits is not None
+                    # reset supplies the actual shared backend episode, never a request ID.
+                    episode_id = backend._episode_id
+                    if type(episode_id) is not str or not episode_id:
+                        raise ValueError("shared backend did not supply an episode identity")
+                    worker_runtime = VisualWorkerRuntime(
+                        runtime_source,
+                        episode_id=episode_id,
+                        instruction=draft.user_instruction,
+                        role_binding=binding,
+                        model_snapshot_hash=snapshot.digest(),
+                        verification_limits=verification_limits,
+                    )
+                    worker_runtime.check_active(robot.get_state())
+                policy_arguments: dict[str, Any] = {}
+                if worker_runtime is not None:
+                    worker_runtime.check_active(robot.get_state())
+                    policy_arguments.update(
+                        device_pipeline="OPENCV",
+                        role_binding=binding,
+                        verification_budget=verification_limits,
+                        worker_runtime=worker_runtime,
+                        raw_recorder=raw_recorder,
+                        supervision_period_s=supervision_period_s,
+                        advance_physics_during_wait=advance_physics_during_wait,
+                    )
                 outcome = run_visual_episode(
                     planner,
                     robot,
@@ -670,8 +897,11 @@ class SimulationWorker:
                         ),
                         cancelled=lambda: self._active_job_cancelled(job),
                         output_dir=run_dir / "visual_episode",
+                        **policy_arguments,
                     ),
                 )
+                if worker_runtime is not None:
+                    check_setup_boundary()
         finally:
             backend.shutdown()
         self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
@@ -680,7 +910,11 @@ class SimulationWorker:
             self.repository.append_event(
                 job.job_id, event_type="rgbd_episode_evidence", source="rgbd_visual", payload=record
             )
-        result = apply_s01_task_semantics(episode_payload, draft.user_instruction)
+        result = apply_s01_task_semantics(
+            episode_payload,
+            draft.user_instruction,
+            grasp_profile=snapshot.grasp_profile,
+        )
         result.update(
             task_execution="EXECUTED" if outcome.executed_actions else "NOT_EXECUTED",
             blocked_by_env=(outcome.terminal_reason or "").startswith("BLOCKED_BY_ENV"),

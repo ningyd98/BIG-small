@@ -1,0 +1,640 @@
+--- artifacts/research/process/20261004-ced-development/t7b-module/fix-round-1-baseline/tracking.py
++++ src/cloud_edge_robot_arm/vision/tracking.py
+@@ -35,6 +35,8 @@
+ _MAX_SAMPLE_GAP_S = 0.2
+ _STABILITY_M = 0.012
+ _MAX_VISUAL_SPEED_M_S = 1.5
++_MAX_STABLE_SPEED_M_S = 0.02
++_MAX_STABLE_ANGULAR_SPEED_RAD_S = 0.5
+ 
+ 
+ def _rgb(observation: RGBDObservation) -> np.ndarray:
+@@ -69,6 +71,9 @@
+             else None
+         )
+         self._reference = observation
++        reason = self._binding_reason(observation)
++        if reason:
++            raise ValueError(f"initial acquisition unavailable: {reason}")
+         rgb = _rgb(observation)
+         self.target_color = self._color(rgb, self.target_pixel)
+         self.destination_color = self._color(rgb, self.destination_pixel)
+@@ -126,7 +131,12 @@
+         return cast(np.ndarray, camera @ transform[:3, :3].T + transform[:3, 3])
+ 
+     def _geometry(
+-        self, observation: RGBDObservation, color: np.ndarray, *, target: bool
++        self,
++        observation: RGBDObservation,
++        color: np.ndarray,
++        *,
++        target: bool,
++        occlusion_geometry: dict[str, Any] | None = None,
+     ) -> tuple[dict[str, Any] | None, str | None]:
+         rgb = _rgb(observation).astype(float)
+         chroma = rgb / np.maximum(rgb.sum(axis=2, keepdims=True), 1.0)
+@@ -138,6 +148,16 @@
+         if len(candidates) != 1:
+             return None, "target_missing" if not candidates else "color_identity_ambiguous"
+         selected = labels == candidates[0]
++        topology = selected.copy()
++        if not target and occlusion_geometry is not None:
++            # Only the currently complete, independently depth-verified block can
++            # account for missing region color. Arbitrary holes remain unsupported.
++            reference_region = self.destination["mask"] if self.destination else topology
++            topology |= occlusion_geometry["mask"] & reference_region
++        if not target:
++            ty, tx = np.nonzero(topology)
++            if not topology[ty.min() : ty.max() + 1, tx.min() : tx.max() + 1].all():
++                return None, "region_topology_not_supported_axis_aligned_rectangle"
+         ys, xs = np.nonzero(selected)
+         if (
+             xs.min() == 0
+@@ -168,14 +188,26 @@
+             # top. A nearer adjacent surface prevents certifying its outer boundary.
+             ring = cv2.dilate(selected.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+             ring &= ~selected
+-            nearest_top = float(depth[ys, xs].min())
+-            margin = max(0.005, 2 * (self.depth_error_bound_m or 0.0))
+-            if np.any((depth[ring] > 0) & (depth[ring] < nearest_top - margin)):
+-                return None, "foreground_occludes_target_boundary"
++            bound = self.depth_error_bound_m or 0.0
++            if not np.all(
++                (valid[ring] > 0)
++                & np.isfinite(depth[ring])
++                & (depth[ring] - bound > float(depth[ys, xs].max()) + bound)
++            ):
++                return None, "target_outer_boundary_depth_unresolved"
+         points = self._points(observation, xs, ys, depth[ys, xs])
+         if float(np.ptp(points[:, 2])) > 0.012:
+             return None, "depth_surface_not_scoped_upright_top"
+         center = np.median(points, axis=0)
++        if not target:
++            corner_x = np.array([xs.min(), xs.max(), xs.max(), xs.min()])
++            corner_y = np.array([ys.min(), ys.min(), ys.max(), ys.max()])
++            rectangle = self._points(
++                observation, corner_x, corner_y, np.full(4, np.median(depth[ys, xs]))
++            )[:, :2]
++            edges = np.roll(rectangle, -1, axis=0) - rectangle
++            if np.any(np.min(np.abs(edges), axis=1) > 1e-7):
++                return None, "region_world_orientation_not_supported"
+         bound = self.depth_error_bound_m or 0.0
+         corners = [
+             self._points(observation, xs + dx, ys + dy, depth[ys, xs] + dz)
+@@ -191,6 +223,11 @@
+         inner_min = points.min(axis=0) + uncertainty
+         inner_max = points.max(axis=0) - uncertainty
+         nearest = int(np.argmin(np.linalg.norm(points - center, axis=1)))
++        _, rectangle_size, angle = cv2.minAreaRect(points[:, :2].astype(np.float32))
++        diagonal = float(np.linalg.norm(rectangle_size))
++        orientation_error = math.atan2(
++            2 * float(np.linalg.norm(uncertainty[:2])), max(diagonal, 1e-12)
++        )
+         return {
+             "pixel": [int(xs[nearest]), int(ys[nearest])],
+             "center": center.tolist(),
+@@ -199,6 +236,8 @@
+             "inner_min": inner_min.tolist(),
+             "inner_max": inner_max.tolist(),
+             "uncertainty_m": uncertainty.tolist(),
++            "orientation_rad": math.radians(angle) % (math.pi / 2),
++            "orientation_error_rad": orientation_error,
+             "visible_pixels": int(len(xs)),
+             "extent_complete": True,
+             "depth_error_bound_m": self.depth_error_bound_m,
+@@ -256,6 +295,8 @@
+                 return f"observation_{field}_changed"
+         if not observation.calibration_version:
+             return "calibration_version_missing"
++        if not observation.episode_id or not observation.episode_id.strip():
++            return "episode_binding_missing"
+         age = (datetime.now(UTC) - observation.captured_at).total_seconds()
+         if age < -0.05 or age > 5.0:
+             return "capture_time_not_fresh"
+@@ -270,14 +311,43 @@
+             "captured_at": observation.captured_at.isoformat(),
+             "sim_time_s": observation.sim_time_s,
+             "center": target["center"],
++            "uncertainty_m": target["uncertainty_m"],
++            "orientation_rad": target["orientation_rad"],
++            "orientation_error_rad": target["orientation_error_rad"],
+             "minimum_visual_lift_m": lift,
+         }
+ 
+-    @staticmethod
+-    def _append(samples: list[dict[str, Any]], sample: dict[str, Any]) -> None:
++    def _append(self, samples: list[dict[str, Any]], sample: dict[str, Any]) -> None:
+         if samples:
++            previous = samples[-1]
++            elapsed = (
++                sample["sim_time_s"] - previous["sim_time_s"]
++                if self._reference.source in {"mujoco_camera", "isaac_camera"}
++                else (
++                    datetime.fromisoformat(sample["captured_at"])
++                    - datetime.fromisoformat(previous["captured_at"])
++                ).total_seconds()
++            )
++            displacement = float(
++                np.linalg.norm(np.asarray(sample["center"]) - np.asarray(previous["center"]))
++            )
++            uncertainty = float(np.linalg.norm(sample["uncertainty_m"])) + float(
++                np.linalg.norm(previous["uncertainty_m"])
++            )
++            speed_upper = (displacement + uncertainty) / elapsed
++            delta_angle = abs(sample["orientation_rad"] - previous["orientation_rad"])
++            delta_angle = min(delta_angle, math.pi / 2 - delta_angle)
++            angular_upper = (
++                delta_angle + sample["orientation_error_rad"] + previous["orientation_error_rad"]
++            ) / elapsed
++            sample["linear_speed_upper_m_s"] = speed_upper
++            sample["angular_speed_upper_rad_s"] = angular_upper
+             first_center = np.asarray(samples[0]["center"])
+-            if np.linalg.norm(np.asarray(sample["center"]) - first_center) > _STABILITY_M:
++            if (
++                speed_upper > _MAX_STABLE_SPEED_M_S
++                or angular_upper > _MAX_STABLE_ANGULAR_SPEED_RAD_S
++                or np.linalg.norm(np.asarray(sample["center"]) - first_center) > _STABILITY_M
++            ):
+                 samples.clear()
+         samples.append(sample)
+         # Bounded history keeps the active one-second stability window plus margin.
+@@ -313,6 +383,8 @@
+             else None,
+             "maximum_sample_gap_s": _MAX_SAMPLE_GAP_S,
+             "stability_tolerance_m": _STABILITY_M,
++            "maximum_stable_linear_speed_m_s": _MAX_STABLE_SPEED_M_S,
++            "maximum_stable_angular_speed_rad_s": _MAX_STABLE_ANGULAR_SPEED_RAD_S,
+         }
+ 
+     def facts(
+@@ -345,6 +417,11 @@
+         initial_widths = np.asarray(self.initial["max"])[:2] - np.asarray(self.initial["min"])[:2]
+         if np.any(np.abs(widths / initial_widths - 1.0) > 0.15):
+             return self._unknown(observation, "target_extent_changed_or_partially_occluded")
++        # Sampling tolerance cannot shrink the full body's conservative envelope.
++        for axis in (0, 1):
++            deficit = max(0.0, initial_widths[axis] - widths[axis])
++            target["min"][axis] -= deficit
++            target["max"][axis] += deficit
+         displacement = np.linalg.norm(
+             np.asarray(target["center"]) - np.asarray(self._last_geometry["center"])
+         )
+@@ -386,16 +463,19 @@
+             return result
+         error = target["uncertainty_m"][2] + self.initial["uncertainty_m"][2]
+         lift = float(target["center"][2] - self.initial["center"][2] - error)
+-        lifted = lift >= 0.05
++        lift_upper = float(target["center"][2] - self.initial["center"][2] + error)
++        lifted = True if lift >= 0.05 else False if lift_upper < 0.05 else None
+         result["object_lifted"] = {
+             **envelope,
+             "value": lifted,
+             "measured_values": {
+                 "minimum_visual_lift_m": lift,
++                "maximum_visual_lift_m": lift_upper,
+                 "required_lift_m": 0.05,
+                 "height_difference_error_bound_m": error,
+                 "target": public,
+             },
++            "reasons": ["lift_threshold_overlaps_measurement_interval"] if lifted is None else [],
+         }
+         holding = bool(
+             robot_state
+@@ -431,8 +511,10 @@
+             }
+         else:
+             self._lift_samples.clear()
+-        destination, reason = self._geometry(observation, self.destination_color, target=False)
+-        inside = False
++        destination, reason = self._geometry(
++            observation, self.destination_color, target=False, occlusion_geometry=target
++        )
++        inside: bool | None = None
+         if destination is not None:
+             # Current visible region must retain every previously established boundary.
+             region_error = np.asarray(self.destination["uncertainty_m"])[:2] * 2 + 0.003
+@@ -444,13 +526,26 @@
+                 <= region_error
+             )
+             if boundary_complete:
+-                inside = all(
++                contained = all(
+                     target["min"][axis] >= destination["inner_min"][axis]
+                     and target["max"][axis] <= destination["inner_max"][axis]
+                     for axis in (0, 1)
+                 )
+-                on_support = abs(target["center"][2] - self.initial["center"][2]) + error <= 0.012
+-                inside = inside and on_support
++                height_delta = abs(target["center"][2] - self.initial["center"][2])
++                on_support = height_delta + error <= 0.012
++                definitely_outside = any(
++                    target["inner_min"][axis] < destination["min"][axis]
++                    or target["inner_max"][axis] > destination["max"][axis]
++                    for axis in (0, 1)
++                )
++                definitely_off_support = height_delta - error > 0.012
++                inside = (
++                    True
++                    if contained and on_support
++                    else False
++                    if definitely_outside or definitely_off_support
++                    else None
++                )
+                 result["object_inside_target_region"] = {
+                     **envelope,
+                     "value": inside,
+@@ -461,6 +556,9 @@
+                         "target": public,
+                         "destination": self._public(destination),
+                     },
++                    "reasons": ["placement_threshold_overlaps_measurement_interval"]
++                    if inside is None
++                    else [],
+                 }
+             else:
+                 result["object_inside_target_region"]["reasons"] = ["region_boundary_incomplete"]
+--- artifacts/research/process/20261004-ced-development/t7b-module/fix-round-1-baseline/test_opencv_target_evidence.py
++++ tests/test_opencv_target_evidence.py
+@@ -14,7 +14,17 @@
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
+ 
+ 
+-def scene(frame="initial", *, time=0.0, x=10, lift=0.0, damage=None, started=None):
++def scene(
++    frame="initial",
++    *,
++    time=0.0,
++    x=10,
++    lift=0.0,
++    damage=None,
++    started=None,
++    resolution=1,
++    **metadata,
++):
+     """Downward optical camera: red 60mm top, green 160mm flat target."""
+     rgb = np.full((64, 80, 3), 100, dtype=np.uint8)
+     depth = np.full((64, 80), 1.0, dtype="<f4")
+@@ -34,23 +44,31 @@
+         depth[24:30, x : x + 2] = 0.8
+     elif damage == "edge_occluder":
+         depth[24:30, x - 1] = 0.8
++    elif damage == "invalid_edge":
++        depth[24:30, x - 1] = 0
++    elif damage == "mild_edge":
++        depth[24:30, x - 1] = 0.938
++    elif damage == "coplanar_edge":
++        depth[24:30, x - 1] = 0.94 - lift
+     elif damage == "depth":
+         depth[26, x + 2] = 0
+     elif damage == "depth_spike":
+         depth[26, x + 2] = 0.8
+     elif damage == "wrong_color":
+         rgb[24:30, x : x + 6] = [20, 20, 230]
++    rgb = np.repeat(np.repeat(rgb, resolution, axis=0), resolution, axis=1)
++    depth = np.repeat(np.repeat(depth, resolution, axis=0), resolution, axis=1)
+     stream = io.BytesIO()
+     Image.fromarray(rgb).save(stream, format="PNG")
+     return RGBDObservation(
+         frame_id=frame,
+         captured_at=(started or datetime.now(UTC) - timedelta(seconds=2)) + timedelta(seconds=time),
+         sim_time_s=time,
+-        width=80,
+-        height=64,
++        width=80 * resolution,
++        height=64 * resolution,
+         rgb_png_base64=base64.b64encode(stream.getvalue()).decode(),
+         depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
+-        intrinsics=(100.0, 100.0, 40.0, 32.0),
++        intrinsics=tuple(v * resolution for v in (100.0, 100.0, 40.0, 32.0)),
+         camera_to_world=(
+             1.0,
+             0.0,
+@@ -69,19 +87,23 @@
+             0.0,
+             1.0,
+         ),
+-        source="rgbd_camera",
+-        episode_id="device-evidence",
+-        calibration_version="test-cal",
++        **{
++            "source": "rgbd_camera",
++            "episode_id": "device-evidence",
++            "calibration_version": "test-cal",
++            **metadata,
++        },
+     )
+ 
+ 
+ def tracker(observation=None, **changes):
+     module = import_module("cloud_edge_robot_arm.vision.tracking")
++    resolution = (observation.width // 80) if observation is not None else 1
+     return module.OpenCVTargetTracker(
+         observation or scene(),
+         {
+-            "original_pixel_target": [12, 26],
+-            "original_pixel_destination": [57, 32],
++            "original_pixel_target": [12 * resolution, 26 * resolution],
++            "original_pixel_destination": [57 * resolution, 32 * resolution],
+             "top_grasp_support_height_m": 0.0,
+             "depth_error_bound_m": 0.001,
+             **changes,
+@@ -184,3 +206,110 @@
+     fact = tracker(initial).facts(initial)["target_visible"]
+     assert fact["measured_values"]["full_extent_min"][2] <= 0.0
+     assert fact["measured_values"]["full_extent_max"][2] >= 0.06
++
++
++def image_variant(observation, change):
++    """Build valid checksummed acquisitions after a test-owned raster mutation."""
++    rgb = np.array(Image.open(io.BytesIO(base64.b64decode(observation.rgb_png_base64))))
++    depth = np.asarray(observation.depth_values(), dtype="<f4").reshape(
++        observation.height, observation.width
++    )
++    change(rgb, depth)
++    stream = io.BytesIO()
++    Image.fromarray(rgb).save(stream, format="PNG")
++    payload = observation.model_dump()
++    payload.update(
++        rgb_png_base64=base64.b64encode(stream.getvalue()).decode(),
++        depth_float32_base64=base64.b64encode(depth.tobytes()).decode(),
++        valid_mask_base64=None,
++        checksum_sha256="",
++    )
++    return RGBDObservation.model_validate(payload)
++
++
++@pytest.mark.parametrize("topology", ["rotated", "hole", "notch"])
++def test_unsupported_region_topology_cannot_certify_aabb_placement(topology):
++    def alter(rgb, depth):
++        if topology == "rotated":
++            rgb[20:36, 45:61] = 100
++            yy, xx = np.indices(depth.shape)
++            rgb[(abs(xx - 53) + abs(yy - 28)) <= 11] = [20, 230, 20]
++        elif topology == "hole":
++            rgb[23:27, 48:52] = 100
++        else:
++            rgb[20:29, 45:50] = 100
++
++    invalid = image_variant(scene(), alter)
++    with pytest.raises(ValueError):
++        tracker(invalid)
++
++
++@pytest.mark.parametrize("damage", ["invalid_edge", "mild_edge", "coplanar_edge"])
++def test_unresolved_depth_at_outer_boundary_is_unknown(damage):
++    initial = scene()
++    facts = tracker(initial).facts(
++        scene("new", time=0.1, damage=damage, started=initial.captured_at)
++    )
++    assert facts["target_visible"]["value"] is None
++
++
++@pytest.mark.parametrize("episode", [None, ""])
++def test_initial_capture_requires_nonempty_episode_binding(episode):
++    with pytest.raises(ValueError):
++        tracker(scene(episode_id=episode))
++
++
++def test_stale_initial_capture_cannot_establish_lift_baseline():
++    with pytest.raises(ValueError):
++        tracker(scene(started=datetime.now(UTC) - timedelta(seconds=10)))
++
++
++def test_placement_uncertainty_overlap_is_unknown_not_definite_failure():
++    initial = scene()
++    tracked = tracker(initial)
++    for index, x in enumerate((20, 30, 40, 46), 1):
++        facts = tracked.facts(scene(str(index), time=index * 0.1, x=x, started=initial.captured_at))
++    assert facts["object_inside_target_region"]["value"] is None
++
++
++@pytest.mark.parametrize("occluder_depth", [0.0, 0.938, 0.94])
++def test_small_missing_strip_with_unresolved_depth_cannot_shrink_full_extent(occluder_depth):
++    initial = scene(resolution=3)
++    tracked = tracker(initial)
++    current = scene("new", time=0.1, resolution=3, started=initial.captured_at)
++
++    def hide_strip(rgb, depth):
++        rgb[72:90, 30:32] = 100
++        depth[72:90, 30:32] = occluder_depth
++
++    facts = tracked.facts(image_variant(current, hide_strip))
++    assert facts["target_visible"]["value"] is None
++    assert facts["object_inside_target_region"]["value"] is None
++
++
++def test_world_rotated_region_is_rejected_even_with_rectangular_image_support():
++    angle = np.pi / 4
++    payload = scene().model_dump()
++    payload.update(
++        camera_to_world=(
++            np.cos(angle),
++            np.sin(angle),
++            0.0,
++            0.0,
++            np.sin(angle),
++            -np.cos(angle),
++            0.0,
++            0.0,
++            0.0,
++            0.0,
++            -1.0,
++            1.0,
++            0.0,
++            0.0,
++            0.0,
++            1.0,
++        ),
++        checksum_sha256="",
++    )
++    with pytest.raises(ValueError):
++        tracker(RGBDObservation.model_validate(payload))
+--- artifacts/research/process/20261004-ced-development/t7b-module/fix-round-1-baseline/test_visual_effect_evidence.py
++++ tests/test_visual_effect_evidence.py
+@@ -2,12 +2,14 @@
+ 
+ from __future__ import annotations
+ 
+-from datetime import timedelta
+-
++from datetime import UTC, datetime, timedelta
++
++import cv2
++import numpy as np
+ import pytest
+ 
+ from cloud_edge_robot_arm.contracts import Pose, RobotState
+-from tests.test_opencv_target_evidence import scene, tracker
++from tests.test_opencv_target_evidence import image_variant, scene, tracker
+ 
+ 
+ def held(z=0.1):
+@@ -25,11 +27,18 @@
+ 
+ 
+ def test_metric_lift_and_fresh_half_second_hold_prove_effect():
+-    initial = scene()
+-    tracked = tracker(initial)
++    initial = scene(resolution=10, source="mujoco_camera")
++    tracked = tracker(initial, depth_error_bound_m=0.000001)
+     for index in range(7):
+         facts = tracked.facts(
+-            scene(f"lift-{index}", time=0.1 + index * 0.1, lift=0.06, started=initial.captured_at),
++            scene(
++                f"lift-{index}",
++                time=0.1 + index * 0.1,
++                lift=0.06,
++                started=datetime.now(UTC) - timedelta(seconds=0.1 + index * 0.1),
++                resolution=10,
++                source="mujoco_camera",
++            ),
+             held(),
+         )
+         if index < 5:
+@@ -48,7 +57,7 @@
+     facts = tracker(initial).facts(
+         scene("next", time=0.1, lift=lift, started=initial.captured_at), held()
+     )
+-    assert facts["object_lifted"]["value"] is not True
++    assert facts["object_lifted"]["value"] is None
+ 
+ 
+ def test_occlusion_breaks_continuous_lift_hold():
+@@ -86,14 +95,31 @@
+ 
+ 
+ def test_release_requires_fresh_full_extent_and_one_second_stability():
+-    initial = scene()
+-    tracked = tracker(initial)
++    initial = scene(resolution=10, source="mujoco_camera")
++    tracked = tracker(initial, depth_error_bound_m=0.000001)
+     for index, x in enumerate((20, 30, 40, 48), 1):
+-        tracked.facts(scene(str(index), time=index * 0.1, x=x, started=initial.captured_at), held())
++        tracked.facts(
++            scene(
++                str(index),
++                time=index * 0.1,
++                x=x,
++                started=datetime.now(UTC) - timedelta(seconds=index * 0.1),
++                resolution=10,
++                source="mujoco_camera",
++            ),
++            held(),
++        )
+     released = RobotState(connected=True, gripper_open=True, holding_object_id=None)
+     for index in range(12):
+         facts = tracked.facts(
+-            scene(f"placed-{index}", time=0.5 + index * 0.1, x=48, started=initial.captured_at),
++            scene(
++                f"placed-{index}",
++                time=0.5 + index * 0.1,
++                x=48,
++                started=datetime.now(UTC) - timedelta(seconds=0.5 + index * 0.1),
++                resolution=10,
++                source="mujoco_camera",
++            ),
+             released,
+         )
+         if index < 10:
+@@ -113,21 +139,93 @@
+ 
+ 
+ def test_unpaced_simulator_hold_uses_physics_duration_with_real_capture_provenance():
+-    initial = scene().model_copy(update={"source": "mujoco_camera"})
+-    tracked = tracker(initial)
++    initial = scene(resolution=10, source="mujoco_camera")
++    tracked = tracker(initial, depth_error_bound_m=0.000001)
+     for index in range(7):
+         current = scene(
+             f"sim-{index}",
+             time=0.1 + index * 0.1,
+             lift=0.06,
+             started=initial.captured_at,
+-        ).model_copy(
+-            update={
+-                "source": "mujoco_camera",
+-                "captured_at": initial.captured_at + timedelta(seconds=0.001 * (index + 1)),
+-            }
+-        )
++            resolution=10,
++            source="mujoco_camera",
++        )
++        payload = current.model_dump()
++        payload.update(
++            captured_at=initial.captured_at + timedelta(seconds=0.001 * (index + 1)),
++            checksum_sha256="",
++        )
++        current = type(current).model_validate(payload)
+         facts = tracked.facts(current, held())
+     assert facts["object_stable"]["value"] is True
+     assert facts["object_stable"]["measured_values"]["observed_sim_duration_s"] >= 0.5
+     assert facts["object_stable"]["measured_values"]["observed_capture_duration_s"] < 0.01
++
++
++@pytest.mark.parametrize("phase", ["lift", "placement"])
++def test_visible_fast_oscillation_cannot_accumulate_stability(phase):
++    initial = scene()
++    tracked = tracker(initial)
++    x = 10
++    if phase == "placement":
++        for index, x in enumerate((20, 30, 40, 48), 1):
++            tracked.facts(
++                scene(str(index), time=index * 0.1, x=x, started=initial.captured_at), held()
++            )
++    for index in range(14):
++        facts = tracked.facts(
++            scene(
++                f"oscillate-{index}",
++                time=0.5 + index * 0.1,
++                x=x + index % 2,
++                lift=0.06 if phase == "lift" else 0,
++                started=initial.captured_at,
++            ),
++            held() if phase == "lift" else RobotState(connected=True, gripper_open=True),
++        )
++    condition = "object_stable" if phase == "lift" else "object_placed"
++    assert facts[condition]["value"] is not True
++
++
++def test_coarse_center_uncertainty_cannot_prove_slow_stability():
++    initial = scene()
++    tracked = tracker(initial)
++    for index in range(7):
++        facts = tracked.facts(
++            scene(str(index), time=0.1 + index * 0.1, lift=0.06, started=initial.captured_at),
++            held(),
++        )
++    assert facts["object_stable"]["value"] is None
++
++
++def test_observed_orientation_oscillation_cannot_prove_angular_stability():
++    initial = scene(resolution=10, source="mujoco_camera")
++    tracked = tracker(initial, depth_error_bound_m=0.000001)
++    for index in range(8):
++        time = 0.1 + index * 0.1
++        current = scene(
++            str(index),
++            time=time,
++            lift=0.06,
++            resolution=10,
++            source="mujoco_camera",
++            started=datetime.now(UTC) - timedelta(seconds=time),
++        )
++
++        def rotate_top(rgb, depth, angle=(index % 2) * 5.0):
++            mask = (rgb[:, :, 0] > 200).astype(np.uint8)
++            transform = cv2.getRotationMatrix2D((129.5, 269.5), angle, 1.0)
++            rotated = (
++                cv2.warpAffine(
++                    mask, transform, (rgb.shape[1], rgb.shape[0]), flags=cv2.INTER_NEAREST
++                )
++                > 0
++            )
++            rgb[mask > 0] = 100
++            depth[mask > 0] = 1.0
++            rgb[rotated] = [230, 20, 20]
++            depth[rotated] = 0.88
++
++        facts = tracked.facts(image_variant(current, rotate_top), held())
++        assert facts["target_visible"]["value"] is True
++    assert facts["object_stable"]["value"] is None

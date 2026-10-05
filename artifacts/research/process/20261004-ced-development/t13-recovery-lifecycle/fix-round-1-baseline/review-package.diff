@@ -1,0 +1,3151 @@
+--- baseline/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py
++++ source/src/cloud_edge_robot_arm/edge/recovery/lifecycle.py
+@@ -0,0 +1,1022 @@
++"""Durable verified recovery contracts; authorization and ACK are not resolution."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from collections.abc import Callable, Mapping, Sequence
++from copy import deepcopy
++from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
++from datetime import UTC, datetime
++from math import isfinite
++from types import MappingProxyType
++from typing import TYPE_CHECKING, Any
++
++from cloud_edge_robot_arm.auto_mode.runtime_events import DecisionAction
++from cloud_edge_robot_arm.contracts.models import (
++    ActiveTaskContractRecord,
++    EdgeEvent,
++    ExecutionCheckpoint,
++    RecoveryBudget,
++    ReplanExecutionReceipt,
++    RobotState,
++    SkillExecutionResult,
++    replan_payload_hash,
++)
++from cloud_edge_robot_arm.edge.evidence.conditions import (
++    ConditionSpec,
++    ConditionVerdict,
++    OnlineEvidenceSnapshot,
++    evaluate_conditions,
++)
++from cloud_edge_robot_arm.edge.evidence.models import (
++    ActionEvidenceContract,
++    CommitContext,
++    DecisionEnvelope,
++)
++from cloud_edge_robot_arm.edge.evidence.validator import validate_decision_commit, validate_evidence
++from cloud_edge_robot_arm.edge.recovery.verification_router import (
++    VerificationBudget,
++    VerificationBudgetState,
++)
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import EventAutonomyRepository
++
++
++def _utc_clock() -> datetime:
++    return datetime.now(UTC)
++
++
++def _hash(payload: dict[str, Any]) -> str:
++    return hashlib.sha256(
++        json.dumps(
++            payload,
++            sort_keys=True,
++            separators=(",", ":"),
++            allow_nan=False,
++        ).encode()
++    ).hexdigest()
++
++
++def _identity(value: str) -> None:
++    if not isinstance(value, str) or not value.strip():
++        raise ValueError("nonempty identity required")
++
++
++def _aware(value: datetime) -> None:
++    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
++        raise ValueError("aware source clock required")
++
++
++def _state_payload(state: VerificationBudgetState) -> dict[str, Any]:
++    state.__post_init__()
++    if any(
++        not isinstance(name, str) or status not in {"UNKNOWN", "FAIL", "PASS"}
++        for name, (status, _) in state.previous_conditions.items()
++    ):
++        raise ValueError("invalid verified progress state")
++    return {**asdict(state), "deadline_at": state.deadline_at.isoformat()}
++
++
++def _state_from_payload(payload: dict[str, Any]) -> VerificationBudgetState:
++    values = dict(payload)
++    values["deadline_at"] = datetime.fromisoformat(values["deadline_at"])
++    values["limits"] = VerificationBudget(**values["limits"])
++    values["previous_conditions"] = {
++        name: tuple(value) for name, value in values["previous_conditions"].items()
++    }
++    state = VerificationBudgetState(**values)
++    _state_payload(state)
++    return state
++
++
++def copy_budget(state: VerificationBudgetState) -> VerificationBudgetState:
++    return _state_from_payload(json.loads(json.dumps(_state_payload(state), allow_nan=False)))
++
++
++@dataclass(frozen=True)
++class VerificationBudgetRecord:
++    task_id: str
++    state: VerificationBudgetState
++    revision: int
++    created_at: datetime
++    updated_at: datetime
++    content_hash: str = ""
++
++    def __post_init__(self) -> None:
++        _identity(self.task_id)
++        _aware(self.created_at)
++        _aware(self.updated_at)
++        if type(self.revision) is not int or self.revision < 0:
++            raise ValueError("invalid verification budget revision")
++        object.__setattr__(self, "state", copy_budget(self.state))
++        digest = _hash(self.to_payload(include_hash=False))
++        if self.content_hash and self.content_hash != digest:
++            raise ValueError("verification budget content hash mismatch")
++        object.__setattr__(self, "content_hash", digest)
++
++    def to_payload(self, *, include_hash: bool = True) -> dict[str, Any]:
++        payload = {
++            "schema_version": "recovery.verification-budget.v1",
++            "task_id": self.task_id,
++            "state": _state_payload(self.state),
++            "revision": self.revision,
++            "created_at": self.created_at.isoformat(),
++            "updated_at": self.updated_at.isoformat(),
++        }
++        if include_hash:
++            payload["content_hash"] = self.content_hash
++        return payload
++
++    @classmethod
++    def from_payload(cls, payload: dict[str, Any]) -> VerificationBudgetRecord:
++        values = dict(payload)
++        if values.pop("schema_version") != "recovery.verification-budget.v1":
++            raise ValueError("unknown verification budget schema")
++        values["state"] = _state_from_payload(values["state"])
++        for name in ("created_at", "updated_at"):
++            values[name] = datetime.fromisoformat(values[name])
++        return cls(**values)
++
++    @classmethod
++    def create(cls, task_id: str, state: VerificationBudgetState) -> VerificationBudgetRecord:
++        now = datetime.now(UTC)
++        return cls(task_id, state, 0, now, now)
++
++    def detached(self) -> VerificationBudgetRecord:
++        return type(self).from_payload(self.to_payload())
++
++
++# Keep the ten roadmap fields positional; binding/CAS metadata is keyword-only.
++@dataclass(frozen=True)
++class RecoveryRecord:
++    recovery_id: str
++    event_id: str
++    task_id: str
++    attempt_id: str
++    state: str
++    budget_state: VerificationBudgetState
++    progress_signature: str
++    last_verified_at: datetime | None
++    resolution_observation_id: str
++    reason: str
++    revision: int = field(default=0, kw_only=True)
++    task_budget_revision: int = field(default=0, kw_only=True)
++    failure_plan_version: int | None = field(default=None, kw_only=True)
++    failure_command_seq: int | None = field(default=None, kw_only=True)
++    plan_version: int | None = field(default=None, kw_only=True)
++    command_seq: int | None = field(default=None, kw_only=True)
++    episode_id: str = field(default="", kw_only=True)
++    step_id: str = field(default="", kw_only=True)
++    skill: str = field(default="", kw_only=True)
++    payload_hash: str = field(default="", kw_only=True)
++    checkpoint_hash: str = field(default="", kw_only=True)
++    conditions: tuple[ConditionSpec, ...] = field(default=(), kw_only=True)
++    execution_receipt: ReplanExecutionReceipt | None = field(default=None, kw_only=True)
++    executed_at: datetime | None = field(default=None, kw_only=True)
++    execution_completion: SkillExecutionResult | None = field(default=None, kw_only=True)
++    executed_checkpoint_hash: str = field(default="", kw_only=True)
++    reobservation_reserved: bool = field(default=False, kw_only=True)
++    last_observation_id: str = field(default="", kw_only=True)
++    last_observation_captured_at: datetime | None = field(default=None, kw_only=True)
++    last_verification_hash: str = field(default="", kw_only=True)
++    authorization_hash: str = field(default="", kw_only=True)
++    evidence_scope: str = field(default="UNAVAILABLE", kw_only=True)
++    authorized_at: datetime | None = field(default=None, kw_only=True)
++
++    def __post_init__(self) -> None:
++        for value in (self.recovery_id, self.event_id, self.task_id, self.attempt_id):
++            _identity(value)
++        if self.evidence_scope not in {"UNAVAILABLE", "SOFTWARE_ONLY", "ACTUAL_SOURCE"}:
++            raise ValueError("unsupported recovery evidence scope")
++        if self.state not in RECOVERY_STATES:
++            raise ValueError("unsupported recovery state")
++        for name in (
++            "revision",
++            "task_budget_revision",
++            "failure_plan_version",
++            "failure_command_seq",
++            "plan_version",
++            "command_seq",
++        ):
++            value = getattr(self, name)
++            if value is not None and (type(value) is not int or value < 0):
++                raise ValueError("invalid recovery version or revision")
++        for timestamp in (
++            self.authorized_at,
++            self.last_verified_at,
++            self.executed_at,
++            self.last_observation_captured_at,
++        ):
++            if timestamp is not None:
++                _aware(timestamp)
++        object.__setattr__(self, "budget_state", copy_budget(self.budget_state))
++        object.__setattr__(
++            self,
++            "conditions",
++            tuple(
++                ConditionSpec(
++                    item.name,
++                    item.target_id,
++                    _freeze_data(item.tolerances),
++                    tuple(item.sensor_requirements),
++                )
++                for item in self.conditions
++            ),
++        )
++
++    def to_payload(self) -> dict[str, Any]:
++        payload = {item.name: getattr(self, item.name) for item in fields(self)}
++        payload["schema_version"] = "recovery.record.v1"
++        payload["budget_state"] = _state_payload(self.budget_state)
++        payload["conditions"] = [_condition_payload(item) for item in self.conditions]
++        payload["execution_completion"] = (
++            self.execution_completion.model_dump(mode="json") if self.execution_completion else None
++        )
++        payload["execution_receipt"] = (
++            self.execution_receipt.model_dump(mode="json") if self.execution_receipt else None
++        )
++        for name in (
++            "authorized_at",
++            "last_verified_at",
++            "executed_at",
++            "last_observation_captured_at",
++        ):
++            value = getattr(self, name)
++            payload[name] = value.isoformat() if value else None
++        return payload
++
++    @classmethod
++    def from_payload(cls, payload: dict[str, Any]) -> RecoveryRecord:
++        values = dict(payload)
++        if values.pop("schema_version") != "recovery.record.v1":
++            raise ValueError("unknown recovery record schema")
++        values["budget_state"] = _state_from_payload(values["budget_state"])
++        values["conditions"] = tuple(ConditionSpec(**item) for item in values["conditions"])
++        if values["execution_completion"] is not None:
++            values["execution_completion"] = SkillExecutionResult.model_validate_json(
++                json.dumps(values["execution_completion"])
++            )
++        if values["execution_receipt"] is not None:
++            values["execution_receipt"] = ReplanExecutionReceipt.model_validate_json(
++                json.dumps(values["execution_receipt"])
++            )
++        for name in (
++            "authorized_at",
++            "last_verified_at",
++            "executed_at",
++            "last_observation_captured_at",
++        ):
++            if values[name] is not None:
++                values[name] = datetime.fromisoformat(values[name])
++        return cls(**values)
++
++    def detached(self) -> RecoveryRecord:
++        return type(self).from_payload(self.to_payload())
++
++    def content_hash(self) -> str:
++        return _hash(self.to_payload())
++
++    def bindings_hash(self) -> str:
++        names = (
++            "recovery_id",
++            "event_id",
++            "task_id",
++            "attempt_id",
++            "failure_plan_version",
++            "failure_command_seq",
++            "plan_version",
++            "command_seq",
++            "episode_id",
++            "step_id",
++            "skill",
++            "payload_hash",
++            "checkpoint_hash",
++            "conditions",
++        )
++        payload = self.to_payload()
++        return _hash({name: payload[name] for name in names})
++
++
++RECOVERY_STATES = frozenset(
++    {
++        "DETECTED",
++        "RECOVERY_AUTHORIZED",
++        "RETRY_EXECUTED",
++        "VERIFIED_RESOLVED",
++        "EXHAUSTED",
++        "UNRECOVERABLE",
++    }
++)
++
++
++def _condition_payload(condition: ConditionSpec) -> dict[str, Any]:
++    return {
++        "name": condition.name,
++        "target_id": condition.target_id,
++        "tolerances": _plain_data(condition.tolerances),
++        "sensor_requirements": list(condition.sensor_requirements),
++    }
++
++
++def validate_detected(
++    record: RecoveryRecord, event: EdgeEvent | None, pool: VerificationBudgetRecord | None
++) -> None:
++    if (
++        record.state != "DETECTED"
++        or record.revision != 0
++        or record.execution_receipt is not None
++        or record.executed_at is not None
++        or record.last_verified_at is not None
++        or record.resolution_observation_id
++        or record.authorization_hash
++        or record.execution_completion is not None
++        or record.executed_checkpoint_hash
++        or record.reobservation_reserved
++        or record.last_observation_id
++        or record.last_verification_hash
++        or record.progress_signature
++        or record.authorized_at
++        or record.evidence_scope != "UNAVAILABLE"
++    ):
++        raise ValueError("public initialization cannot assert recovery effects")
++    if (
++        event is None
++        or event.task_id != record.task_id
++        or record.failure_plan_version != event.plan_version
++        or record.failure_command_seq != event.command_seq
++    ):
++        raise ValueError("recovery failure event identity mismatch")
++    if (
++        pool is None
++        or pool.task_id != record.task_id
++        or pool.state != record.budget_state
++        or pool.revision != record.task_budget_revision
++    ):
++        raise ValueError("recovery must use the existing complete task verification pool")
++
++
++def _freeze_data(value: Any) -> Any:
++    if isinstance(value, Mapping):
++        return MappingProxyType({key: _freeze_data(item) for key, item in value.items()})
++    if isinstance(value, (tuple, list)):
++        return tuple(_freeze_data(item) for item in value)
++    return deepcopy(value)
++
++
++@dataclass(frozen=True)
++class RecoveryAuthorizationEvidence:
++    """Frozen canonical inputs supplied by the actual source provider.
++
++    v1 binds candidate_set_hash to the whole current contract and context_hash
++    to the checkpoint; a future T12 adapter must explicitly map its distinct
++    candidate/choice/context identities rather than replacing those hashes.
++    """
++
++    recovery_id: str
++    decision: DecisionEnvelope
++    current: CommitContext
++    action: ActionEvidenceContract
++    online_evidence: OnlineEvidenceSnapshot
++    evidence_scope: str = field(default="UNAVAILABLE", kw_only=True)
++
++    def __post_init__(self) -> None:
++        _identity(self.recovery_id)
++        if not isinstance(self.online_evidence, OnlineEvidenceSnapshot):
++            raise ValueError("actual online snapshot required")
++        observation = type(self.online_evidence.observation).model_validate(
++            self.online_evidence.observation.model_dump()
++        )
++        object.__setattr__(
++            self,
++            "online_evidence",
++            replace(
++                self.online_evidence,
++                observation=observation,
++                robot_state=self.online_evidence.robot_state.model_copy(deep=True),
++                visual_facts=_freeze_data(self.online_evidence.visual_facts),
++            ),
++        )
++
++    def digest(self) -> str:
++        return _hash(
++            {
++                "recovery_id": self.recovery_id,
++                "evidence_scope": self.evidence_scope,
++                "decision": _plain_data(self.decision),
++                "current": _plain_data(self.current),
++                "action": _plain_data(self.action),
++                "online": {
++                    "observation": self.online_evidence.observation.model_dump(mode="json"),
++                    "robot": self.online_evidence.robot_state.model_dump(mode="json"),
++                    "facts": _plain_data(self.online_evidence.visual_facts),
++                    "plan_version": self.online_evidence.plan_version,
++                    "command_seq": self.online_evidence.command_seq,
++                    "context_hash": self.online_evidence.context_hash,
++                },
++            }
++        )
++
++
++def _plain_data(value: Any) -> Any:
++    if isinstance(value, Mapping):
++        return {key: _plain_data(item) for key, item in value.items()}
++    if isinstance(value, (tuple, list)):
++        return [_plain_data(item) for item in value]
++    if isinstance(value, datetime):
++        return value.isoformat()
++    if is_dataclass(value):
++        return {item.name: _plain_data(getattr(value, item.name)) for item in fields(value)}
++    return value
++
++
++@dataclass(frozen=True)
++class RecoveryAuthorizationResult:
++    authorized: bool
++    recovery: RecoveryRecord | None
++    retry_budget: RecoveryBudget | None
++    verification_budget: VerificationBudgetRecord | None
++    reasons: tuple[str, ...]
++
++
++def authorization_reasons(
++    record: RecoveryRecord,
++    pool: VerificationBudgetRecord | None,
++    budget: RecoveryBudget | None,
++    event: EdgeEvent | None,
++    active: ActiveTaskContractRecord | None,
++    checkpoint: ExecutionCheckpoint | None,
++    cancelled: bool,
++    proof: RecoveryAuthorizationEvidence,
++    step_id: str,
++    skill: str,
++    now: datetime,
++) -> tuple[str, ...]:
++    if not isinstance(proof, RecoveryAuthorizationEvidence):
++        return ("typed_authorization_source_unavailable",)
++    if proof.evidence_scope != "SOFTWARE_ONLY":
++        # Existing TaskStep list[str] has no certified target/tolerance binding.
++        # A source flag alone cannot invent the absent physical admission proof.
++        return ("actual_frozen_recovery_requirement_binding_unavailable",)
++    if not _safe_robot(proof.online_evidence.robot_state):
++        return ("actual_robot_hard_stop",)
++    if (
++        pool is None
++        or budget is None
++        or active is None
++        or checkpoint is None
++        or event is None
++        or record.state != "DETECTED"
++        or cancelled
++    ):
++        return ("authorization_source_or_state_unavailable",)
++    if (
++        now >= pool.state.deadline_at
++        or pool.state.exhausted_reason
++        or (budget.retry_deadline is not None and now >= budget.retry_deadline)
++        or pool.state.remaining_retries <= 0
++        or budget.task_retry_count >= pool.state.limits.max_retries
++    ):
++        return ("authorization_budget_or_deadline_exhausted",)
++    if (
++        event.task_id != record.task_id
++        or event.plan_version != record.failure_plan_version
++        or event.command_seq != record.failure_command_seq
++        or proof.recovery_id != record.recovery_id
++        or active.plan_version != record.plan_version
++        or active.command_seq != record.command_seq
++        or active.contract_hash != record.payload_hash
++        or replan_payload_hash(active.contract) != record.payload_hash
++        or checkpoint.plan_version != record.plan_version
++        or checkpoint.command_seq != record.command_seq
++        or checkpoint_digest(checkpoint) != record.checkpoint_hash
++        or step_id != record.step_id
++        or skill != record.skill
++        or not record.episode_id
++        or not record.conditions
++    ):
++        return ("authorization_current_identity_mismatch",)
++    for condition in record.conditions:
++        expected_target = (
++            active.contract.task_target.target_region_id
++            if condition.name == "tcp_above_region"
++            else active.contract.task_target.object_id
++        )
++        if condition.target_id != expected_target:
++            return ("condition_target_not_bound_to_current_contract",)
++    step = next((item for item in active.contract.steps if item.step_id == step_id), None)
++    if step is not None:
++        required = set(step.success_conditions)
++        supplied = {item.name for item in record.conditions}
++        if (required and supplied != required) or (
++            skill == "GRASP" and "object_held" not in supplied
++        ):
++            return ("frozen_recovery_conditions_missing_or_weakened",)
++    if (
++        step is None
++        or step.skill.value != skill
++        or budget.step_retry_counts.get(step_id, 0) >= step.retry_limit
++        or budget.skill_retry_counts.get(skill, 0)
++        >= active.contract.failure_policy.local_retry_limit
++    ):
++        return ("frozen_step_retry_limit_exhausted",)
++    if (
++        proof.current.plan_version != record.plan_version
++        or proof.current.command_seq != record.command_seq
++        or proof.current.task_id != record.task_id
++        or proof.current.episode_id != record.episode_id
++        or proof.current.context_hash != record.checkpoint_hash
++        or proof.current.candidate_set_hash != record.payload_hash
++        or proof.current.cancelled
++        or proof.action.plan_version != record.plan_version
++        or proof.action.command_seq != record.command_seq
++        or proof.action.context_hash != record.checkpoint_hash
++        or proof.online_evidence.observation.episode_id != record.episode_id
++        or proof.action.expected_duration_s < max(step.timeout_ms, step.expected_duration_ms) / 1000
++        or [_condition_payload(item) for item in proof.action.postconditions]
++        != [_condition_payload(item) for item in record.conditions]
++        or proof.decision.action not in {DecisionAction.LOCAL_RECOVER, DecisionAction.REQUEST_CLOUD}
++    ):
++        return ("authorization_action_or_context_binding_mismatch",)
++    verdict = validate_decision_commit(proof.decision, proof.current, now)
++    if verdict.status != "VALID":
++        return verdict.reasons
++    verdict = validate_evidence(
++        proof.action,
++        now,
++        record.checkpoint_hash,
++        proof.online_evidence.observation.calibration_version or "",
++        online_evidence=proof.online_evidence,
++    )
++    return () if verdict.status == "VALID" else verdict.reasons
++
++
++def checkpoint_digest(checkpoint: ExecutionCheckpoint) -> str:
++    payload = checkpoint.model_dump(mode="json")
++    payload["checkpoint_hash"] = ""
++    return replan_payload_hash(payload)
++
++
++def authorized_values(
++    record: RecoveryRecord,
++    pool: VerificationBudgetRecord,
++    retry: RecoveryBudget,
++    proof: RecoveryAuthorizationEvidence,
++    now: datetime,
++) -> tuple[RecoveryRecord, VerificationBudgetRecord]:
++    state = copy_budget(pool.state)
++    state.remaining_retries = min(
++        state.remaining_retries - 1,
++        retry.remaining_retries,
++        max(0, state.limits.max_retries - retry.task_retry_count),
++    )
++    next_pool = replace(
++        pool, state=state, revision=pool.revision + 1, updated_at=now, content_hash=""
++    )
++    next_record = replace(
++        record,
++        state="RECOVERY_AUTHORIZED",
++        revision=record.revision + 1,
++        task_budget_revision=next_pool.revision,
++        budget_state=state,
++        authorization_hash=proof.digest(),
++        authorized_at=now,
++        evidence_scope=proof.evidence_scope,
++        reason="canonical recovery authorized",
++    )
++    return next_record, next_pool
++
++
++@dataclass(frozen=True)
++class RecoveryExecutionEvidence:
++    receipt: ReplanExecutionReceipt
++    completion: SkillExecutionResult | None
++    checkpoint_hash: str
++    evidence_scope: str = field(default="UNAVAILABLE", kw_only=True)
++
++    def __post_init__(self) -> None:
++        object.__setattr__(
++            self,
++            "receipt",
++            ReplanExecutionReceipt.model_validate_json(self.receipt.model_dump_json()),
++        )
++        if self.completion is not None:
++            object.__setattr__(
++                self,
++                "completion",
++                SkillExecutionResult.model_validate_json(self.completion.model_dump_json()),
++            )
++
++
++@dataclass(frozen=True)
++class RecoveryTransitionEvidence:
++    requested_state: str
++    verification: tuple[ConditionVerdict, ...] = ()
++    execution: RecoveryExecutionEvidence | None = None
++    online_evidence: OnlineEvidenceSnapshot | None = None
++
++    def __post_init__(self) -> None:
++        object.__setattr__(
++            self,
++            "verification",
++            tuple(
++                ConditionVerdict(
++                    item.status,
++                    item.condition_name,
++                    item.observation_id,
++                    _freeze_data(item.measured_values),
++                    tuple(item.reasons),
++                )
++                for item in self.verification
++            ),
++        )
++        if self.online_evidence is not None:
++            source = self.online_evidence
++            object.__setattr__(
++                self,
++                "online_evidence",
++                replace(
++                    source,
++                    observation=type(source.observation).model_validate_json(
++                        source.observation.model_dump_json()
++                    ),
++                    robot_state=source.robot_state.model_copy(deep=True),
++                    visual_facts=_freeze_data(source.visual_facts),
++                ),
++            )
++        if self.execution is not None:
++            object.__setattr__(
++                self,
++                "execution",
++                RecoveryExecutionEvidence(
++                    self.execution.receipt,
++                    self.execution.completion,
++                    self.execution.checkpoint_hash,
++                    evidence_scope=self.execution.evidence_scope,
++                ),
++            )
++
++
++def _current_source(
++    record: RecoveryRecord,
++    active: ActiveTaskContractRecord | None,
++    checkpoint: ExecutionCheckpoint | None,
++    cancelled: bool,
++) -> bool:
++    return bool(
++        not cancelled
++        and active
++        and checkpoint
++        and active.task_id == record.task_id
++        and checkpoint.task_id == record.task_id
++        and active.plan_version == record.plan_version
++        and active.command_seq == record.command_seq
++        and checkpoint.plan_version == record.plan_version
++        and checkpoint.command_seq == record.command_seq
++        and active.contract_hash == record.payload_hash
++        and replan_payload_hash(active.contract) == record.payload_hash
++    )
++
++
++def _execution_available(
++    record: RecoveryRecord,
++    proof: RecoveryExecutionEvidence | None,
++    checkpoint: ExecutionCheckpoint,
++    now: datetime,
++) -> bool:
++    if proof is None or proof.completion is None or proof.evidence_scope != record.evidence_scope:
++        return False
++    receipt, completion = proof.receipt, proof.completion
++    return bool(
++        record.authorized_at
++        and receipt.started_at >= record.authorized_at
++        and receipt.repair_id == record.attempt_id
++        and receipt.task_id == record.task_id
++        and receipt.plan_version == record.plan_version
++        and receipt.command_seq == record.command_seq
++        and receipt.payload_hash == record.payload_hash
++        and completion.task_id == record.task_id
++        and completion.plan_version == record.plan_version
++        and completion.command_seq == record.command_seq
++        and completion.step_id == record.step_id
++        and completion.skill.value == record.skill
++        and completion.details.get("recovery_id") == record.recovery_id
++        and completion.details.get("attempt_id") == record.attempt_id
++        and proof.checkpoint_hash == checkpoint_digest(checkpoint)
++        and checkpoint.step_attempts.get(record.step_id, 0) > 0
++        and receipt.started_at <= completion.timestamp <= checkpoint.updated_at <= now
++    )
++
++
++def _update_progress(
++    state: VerificationBudgetState,
++    conditions: tuple[ConditionSpec, ...],
++    verdicts: tuple[ConditionVerdict, ...],
++    valid_source: bool,
++) -> None:
++    rank = {"UNKNOWN": 0, "FAIL": 1, "PASS": 2}
++    progress = False
++    for condition, verdict in zip(conditions, verdicts, strict=True):
++        key = _hash(_condition_payload(condition))
++        status = str(verdict.status) if valid_source else "UNKNOWN"
++        value = verdict.measured_values.get("residual_m")
++        residual = (
++            float(value)
++            if valid_source
++            and status != "UNKNOWN"
++            and isinstance(value, (int, float))
++            and not isinstance(value, bool)
++            and isfinite(value)
++            and value >= 0
++            and verdict.measured_values.get("source") == "rgbd_estimate"
++            else None
++        )
++        previous = state.previous_conditions.get(key)
++        if previous is not None:
++            old_status, old_residual = previous
++            progress |= rank[status] > rank[old_status] or (
++                residual is not None and old_residual is not None and residual < old_residual - 1e-6
++            )
++            candidates = [item for item in (old_residual, residual) if item is not None]
++            state.previous_conditions[key] = (
++                status if rank[status] > rank[old_status] else old_status,
++                min(candidates) if candidates else None,
++            )
++        else:
++            state.previous_conditions[key] = (status, residual)
++    state.consecutive_no_progress = 0 if progress else state.consecutive_no_progress + 1
++    state.verification_rounds += 1
++    if state.consecutive_no_progress >= state.limits.max_no_progress:
++        state.exhausted_reason = "no_progress_exhausted"
++
++
++def transition_values(
++    record: RecoveryRecord,
++    pool: VerificationBudgetRecord,
++    proof: RecoveryTransitionEvidence,
++    active: ActiveTaskContractRecord | None,
++    checkpoint: ExecutionCheckpoint | None,
++    cancelled: bool,
++    now: datetime,
++) -> tuple[RecoveryRecord, VerificationBudgetRecord] | None:
++    """Pure derivation inside repository CAS; providers are never invoked under its lock."""
++    if not isinstance(proof, RecoveryTransitionEvidence):
++        raise ValueError("typed actual transition source required")
++    if record.state in {"VERIFIED_RESOLVED", "EXHAUSTED", "UNRECOVERABLE"}:
++        return None
++    state = copy_budget(pool.state)
++    changes: dict[str, Any] = {}
++    next_state = record.state
++    if now >= state.deadline_at or state.exhausted_reason:
++        state.exhausted_reason = state.exhausted_reason or "deadline_exhausted"
++        next_state = "EXHAUSTED"
++    elif proof.requested_state == "UNRECOVERABLE":
++        next_state = "UNRECOVERABLE"
++    elif not _current_source(record, active, checkpoint, cancelled) or checkpoint is None:
++        return None
++    elif record.state == "RECOVERY_AUTHORIZED" and proof.requested_state == "RETRY_EXECUTED":
++        if not _execution_available(record, proof.execution, checkpoint, now):
++            return None
++        assert proof.execution is not None and proof.execution.completion is not None
++        next_state = "RETRY_EXECUTED"
++        changes.update(
++            execution_receipt=proof.execution.receipt,
++            execution_completion=proof.execution.completion,
++            executed_at=proof.execution.completion.timestamp,
++            executed_checkpoint_hash=proof.execution.checkpoint_hash,
++        )
++    elif record.state == "RETRY_EXECUTED" and proof.requested_state in {
++        "RETRY_EXECUTED",
++        "VERIFIED_RESOLVED",
++    }:
++        source = proof.online_evidence
++        if (
++            source is None
++            or not _safe_robot(source.robot_state)
++            or (record.last_observation_id and not record.reobservation_reserved)
++        ):
++            return None
++        actual = tuple(evaluate_conditions(record.conditions, source, now=now))
++        if _plain_data(actual) != _plain_data(proof.verification):
++            raise ValueError("supplied verdict differs from canonical actual source")
++        observation = source.observation
++        valid = bool(
++            record.executed_at
++            and observation.captured_at > record.executed_at
++            and observation.captured_at <= now
++            and observation.episode_id == record.episode_id
++            and source.plan_version == record.plan_version
++            and source.command_seq == record.command_seq
++            and source.context_hash == checkpoint_digest(checkpoint)
++            and observation.observation_id != record.last_observation_id
++            and (
++                record.last_observation_captured_at is None
++                or observation.captured_at > record.last_observation_captured_at
++            )
++        )
++        _update_progress(state, record.conditions, actual, valid)
++        all_pass = valid and bool(actual) and all(str(item.status) == "PASS" for item in actual)
++        next_state = (
++            "VERIFIED_RESOLVED"
++            if all_pass
++            else ("EXHAUSTED" if state.exhausted_reason else "RETRY_EXECUTED")
++        )
++        changes.update(
++            last_verified_at=now,
++            last_observation_id=observation.observation_id,
++            last_observation_captured_at=observation.captured_at,
++            last_verification_hash=_hash(
++                {
++                    "verdicts": _plain_data(actual),
++                    "observation": observation.model_dump(mode="json"),
++                    "facts": _plain_data(source.visual_facts),
++                    "robot": source.robot_state.model_dump(mode="json"),
++                    "plan_version": source.plan_version,
++                    "command_seq": source.command_seq,
++                    "context_hash": source.context_hash,
++                }
++            ),
++            progress_signature=_hash(_plain_data(state.previous_conditions)),
++            reobservation_reserved=False,
++            resolution_observation_id=observation.observation_id if all_pass else "",
++        )
++    else:
++        return None
++    next_pool = replace(
++        pool, state=state, revision=pool.revision + 1, updated_at=now, content_hash=""
++    )
++    updated = replace(
++        record,
++        **changes,
++        state=next_state,
++        revision=record.revision + 1,
++        budget_state=state,
++        task_budget_revision=next_pool.revision,
++        reason=state.exhausted_reason or next_state.lower(),
++    )
++    return updated, next_pool
++
++
++def _safe_robot(robot: RobotState) -> bool:
++    return bool(robot.connected and not robot.estop_engaged and not robot.collision_detected)
++
++
++@dataclass(frozen=True)
++class RecoveryReservationEvidence:
++    robot_state: RobotState
++    checkpoint_hash: str
++    captured_at: datetime
++    evidence_scope: str = field(default="UNAVAILABLE", kw_only=True)
++
++    def __post_init__(self) -> None:
++        _aware(self.captured_at)
++        object.__setattr__(
++            self, "robot_state", RobotState.model_validate_json(self.robot_state.model_dump_json())
++        )
++
++
++def reservation_available(
++    record: RecoveryRecord,
++    proof: RecoveryReservationEvidence | None,
++    active: ActiveTaskContractRecord | None,
++    checkpoint: ExecutionCheckpoint | None,
++    cancelled: bool,
++    now: datetime,
++) -> bool:
++    return bool(
++        isinstance(proof, RecoveryReservationEvidence)
++        and checkpoint
++        and _current_source(record, active, checkpoint, cancelled)
++        and proof.evidence_scope == record.evidence_scope
++        and proof.evidence_scope != "UNAVAILABLE"
++        and _safe_robot(proof.robot_state)
++        and proof.checkpoint_hash == checkpoint_digest(checkpoint)
++        and 0 <= (now - proof.captured_at).total_seconds() <= 5
++    )
++
++
++def reserved_values(
++    record: RecoveryRecord, pool: VerificationBudgetRecord, now: datetime
++) -> tuple[RecoveryRecord, VerificationBudgetRecord] | None:
++    if record.state != "RETRY_EXECUTED" or record.reobservation_reserved:
++        return None
++    state = copy_budget(pool.state)
++    if now >= state.deadline_at or state.exhausted_reason:
++        state.exhausted_reason = state.exhausted_reason or "deadline_exhausted"
++    elif state.remaining_reobservations <= 0:
++        state.exhausted_reason = "reobservation_exhausted"
++    else:
++        state.remaining_reobservations -= 1
++    next_pool = replace(
++        pool, state=state, revision=pool.revision + 1, updated_at=now, content_hash=""
++    )
++    updated = replace(
++        record,
++        revision=record.revision + 1,
++        task_budget_revision=next_pool.revision,
++        budget_state=state,
++        reobservation_reserved=not bool(state.exhausted_reason),
++        state="EXHAUSTED" if state.exhausted_reason else record.state,
++        reason=state.exhausted_reason or "reobservation reserved before capture",
++    )
++    return updated, next_pool
++
++
++class RecoveryLifecycleService:
++    """Provider-backed software coordination. Missing actual providers stays unavailable."""
++
++    def __init__(
++        self,
++        *,
++        repository: EventAutonomyRepository,
++        execution_provider: Callable[[RecoveryRecord], RecoveryExecutionEvidence | None]
++        | None = None,
++        evidence_provider: Callable[[RecoveryRecord], OnlineEvidenceSnapshot | None] | None = None,
++        current_state_provider: Callable[[RecoveryRecord], RecoveryReservationEvidence | None]
++        | None = None,
++    ) -> None:
++        self.repository = repository
++        self.execution_provider = execution_provider
++        self.evidence_provider = evidence_provider
++        self.current_state_provider = current_state_provider
++
++    def _source_preflight(self, record: RecoveryRecord, pool: VerificationBudgetRecord) -> bool:
++        if _utc_clock() >= pool.state.deadline_at or pool.state.exhausted_reason:
++            return False
++        cancelled = self.repository.get_state(record.task_id) in {
++            "CANCELLED",
++            "ABORTED",
++            "STOPPED",
++            "SAFETY_STOPPED",
++            "COMPLETED",
++        } or any(
++            event.severity == "CRITICAL" or event.event_type.value == "MANUAL_INTERRUPT"
++            for event in self.repository.list_events(record.task_id)
++        )
++        return _current_source(
++            record,
++            self.repository.get_active_contract(record.task_id),
++            self.repository.get_latest_execution_checkpoint(record.task_id),
++            cancelled,
++        )
++
++    def advance_recovery(
++        self,
++        recovery_id: str,
++        expected_state: str,
++        next_state: str,
++        verification: Sequence[ConditionVerdict],
++    ) -> RecoveryRecord:
++        record = self.repository.get_recovery(recovery_id)
++        if record is None:
++            raise ValueError("unknown recovery identity")
++        if record.state != expected_state:
++            return record
++        pool = self.repository.get_verification_budget(record.task_id)
++        if pool is None:
++            return record
++        source_available = self._source_preflight(record, pool)
++        execution = (
++            self.execution_provider(record.detached())
++            if source_available
++            and next_state == "RETRY_EXECUTED"
++            and expected_state == "RECOVERY_AUTHORIZED"
++            and self.execution_provider is not None
++            else None
++        )
++        source = (
++            self.evidence_provider(record.detached())
++            if source_available
++            and expected_state == "RETRY_EXECUTED"
++            and self.evidence_provider is not None
++            and (not record.last_observation_id or record.reobservation_reserved)
++            else None
++        )
++        proof = RecoveryTransitionEvidence(next_state, tuple(verification), execution, source)
++        updated = self.repository.advance_recovery_if_current(
++            record,
++            expected_state=expected_state,
++            expected_revision=record.revision,
++            expected_budget_revision=pool.revision,
++            verified_transition=proof,
++        )
++        return updated or self.repository.get_recovery(recovery_id) or record
++
++    def reserve_reobservation(self, recovery_id: str) -> RecoveryRecord | None:
++        record = self.repository.get_recovery(recovery_id)
++        if record is None:
++            return None
++        pool = self.repository.get_verification_budget(record.task_id)
++        if pool is None:
++            return None
++        if self.current_state_provider is None or not self._source_preflight(record, pool):
++            return None
++        proof = self.current_state_provider(record.detached())
++        updated = self.repository.reserve_reobservation_if_current(
++            recovery_id=recovery_id,
++            expected_revision=record.revision,
++            expected_budget_revision=pool.revision,
++            reservation=proof,
++        )
++        return updated if updated and updated.reobservation_reserved else None
+--- baseline/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
++++ source/src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py
+@@ -31,6 +31,15 @@
+ 
+ if TYPE_CHECKING:
+     from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++        RecoveryAuthorizationEvidence,
++        RecoveryAuthorizationResult,
++        RecoveryRecord,
++        RecoveryReservationEvidence,
++        RecoveryTransitionEvidence,
++        VerificationBudgetRecord,
++    )
++    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+ 
+ 
+ class RepositoryConflictError(RuntimeError):
+@@ -90,6 +99,52 @@
+         event_id: str = "",
+     ) -> tuple[bool, RecoveryBudget | None]:
+         """Atomically consume one retry across task, step, skill, and event dimensions."""
++        ...
++
++    def initialize_verification_budget_if_absent(
++        self, task_id: str, state: VerificationBudgetState,
++    ) -> VerificationBudgetRecord:
++        """Create the task verification pool once without refilling allowances."""
++        ...
++
++    def get_verification_budget(self, task_id: str) -> VerificationBudgetRecord | None:
++        """Return a detached durable task verification pool."""
++        ...
++
++    def initialize_recovery_if_absent(self, record: RecoveryRecord) -> RecoveryRecord:
++        """Persist DETECTED only, preserving exact same-identity initialization."""
++        ...
++
++    def get_recovery(self, recovery_id: str) -> RecoveryRecord | None:
++        ...
++
++    def list_unresolved_recoveries(self, task_id: str) -> list[RecoveryRecord]:
++        """Exclude only evidence-verified resolved records, not exhausted failures."""
++        ...
++
++    def list_recoveries(self, task_id: str) -> list[RecoveryRecord]:
++        """All detached event-linked records, including evidence-resolved history."""
++        ...
++
++    def advance_recovery_if_current(
++        self, record: RecoveryRecord, *, expected_state: str, expected_revision: int,
++        expected_budget_revision: int, verified_transition: RecoveryTransitionEvidence,
++    ) -> RecoveryRecord | None:
++        ...
++
++    def reserve_reobservation_if_current(
++        self, *, recovery_id: str, expected_revision: int, expected_budget_revision: int,
++        reservation: RecoveryReservationEvidence | None = None,
++    ) -> RecoveryRecord | None:
++        """Reserve a durable task allowance before the caller captures a new frame."""
++        ...
++
++    def consume_retry_and_authorize_recovery_if_current(
++        self, *, recovery_id: str, expected_recovery_revision: int,
++        expected_verification_budget_revision: int, expected_retry_count: int,
++        step_id: str, skill: str, authorization: RecoveryAuthorizationEvidence,
++    ) -> RecoveryAuthorizationResult:
++        """Atomically authorize and consume the existing task retry authority once."""
+         ...
+ 
+     # ── State Machine ───────────────────────────────────────────────────
+--- baseline/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
++++ source/src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py
+@@ -67,6 +67,15 @@
+ 
+ if TYPE_CHECKING:
+     from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++        RecoveryAuthorizationEvidence,
++        RecoveryAuthorizationResult,
++        RecoveryRecord,
++        RecoveryReservationEvidence,
++        RecoveryTransitionEvidence,
++        VerificationBudgetRecord,
++    )
++    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+ 
+ 
+ class InMemoryEventAutonomyRepository:
+@@ -78,6 +87,9 @@
+         self._event_hashes: dict[str, str] = {}
+         self._events_by_task: dict[str, list[str]] = {}
+         self._budgets: dict[str, RecoveryBudget] = {}
++        self._verification_budgets: dict[str, VerificationBudgetRecord] = {}
++        self._recoveries: dict[str, RecoveryRecord] = {}
++        self._recovery_initial_hashes: dict[str, str] = {}
+         self._states: dict[str, str] = {}
+         self._transitions: dict[str, list[dict[str, object]]] = {}
+         self._failure_summaries: dict[str, FailureSummary] = {}
+@@ -174,52 +186,240 @@
+         event_id: str = "",
+     ) -> tuple[bool, RecoveryBudget | None]:
+         with self._lock:
+-            budget = self._budgets.get(task_id)
+-            if budget is None:
+-                return False, None
+-            if budget.retry_count_used != expected_count:
+-                return False, budget.model_copy(deep=True)
+-            if budget.remaining_retries <= 0:
+-                return False, budget.model_copy(deep=True)
+-            if event_id and budget.event_retry_counts.get(event_id, 0) > 0:
+-                return False, budget.model_copy(deep=True)
+-
+-            step_counts = dict(budget.step_retry_counts)
+-            skill_counts = dict(budget.skill_retry_counts)
+-            event_counts = dict(budget.event_retry_counts)
+-            step_count = step_counts.get(step_id, 0)
+-            skill_count = skill_counts.get(skill, 0)
+-            task_count = budget.task_retry_count
+-            effective_remaining = min(
+-                max(0, budget.task_total_retry_limit - task_count),
+-                max(0, budget.per_step_retry_limit - step_count),
+-                max(0, budget.per_skill_retry_limit - skill_count),
+-                budget.remaining_retries,
+-            )
+-            if effective_remaining <= 0:
+-                return False, budget.model_copy(deep=True)
+-
+-            now = _utc_now()
+-            if step_id:
+-                step_counts[step_id] = step_count + 1
+-            if skill:
+-                skill_counts[skill] = skill_count + 1
+-            if event_id:
+-                event_counts[event_id] = 1
+-            updated = budget.model_copy(
+-                update={
+-                    "retry_count_used": budget.retry_count_used + 1,
+-                    "task_retry_count": budget.task_retry_count + 1,
+-                    "step_retry_counts": step_counts,
+-                    "skill_retry_counts": skill_counts,
+-                    "event_retry_counts": event_counts,
+-                    "remaining_retries": budget.remaining_retries - 1,
+-                    "updated_at": now,
+-                },
+-                deep=True,
+-            )
++            return self._consume_retry_locked(task_id, step_id, skill, expected_count, event_id)
++
++    def _consume_retry_locked(
++        self, task_id: str, step_id: str, skill: str, expected_count: int,
++        event_id: str = "", *, persist: bool = True,
++    ) -> tuple[bool, RecoveryBudget | None]:
++        budget = self._budgets.get(task_id)
++        if budget is None:
++            return False, None
++        if budget.retry_count_used != expected_count:
++            return False, budget.model_copy(deep=True)
++        if budget.remaining_retries <= 0:
++            return False, budget.model_copy(deep=True)
++        if event_id and budget.event_retry_counts.get(event_id, 0) > 0:
++            return False, budget.model_copy(deep=True)
++
++        step_counts = dict(budget.step_retry_counts)
++        skill_counts = dict(budget.skill_retry_counts)
++        event_counts = dict(budget.event_retry_counts)
++        step_count = step_counts.get(step_id, 0)
++        skill_count = skill_counts.get(skill, 0)
++        task_count = budget.task_retry_count
++        effective_remaining = min(
++            max(0, budget.task_total_retry_limit - task_count),
++            max(0, budget.per_step_retry_limit - step_count),
++            max(0, budget.per_skill_retry_limit - skill_count),
++            budget.remaining_retries,
++        )
++        if effective_remaining <= 0:
++            return False, budget.model_copy(deep=True)
++
++        now = _utc_now()
++        if step_id:
++            step_counts[step_id] = step_count + 1
++        if skill:
++            skill_counts[skill] = skill_count + 1
++        if event_id:
++            event_counts[event_id] = 1
++        updated = budget.model_copy(
++            update={
++                "retry_count_used": budget.retry_count_used + 1,
++                "task_retry_count": budget.task_retry_count + 1,
++                "step_retry_counts": step_counts,
++                "skill_retry_counts": skill_counts,
++                "event_retry_counts": event_counts,
++                "remaining_retries": budget.remaining_retries - 1,
++                "updated_at": now,
++            },
++            deep=True,
++        )
++        if persist:
+             self._budgets[task_id] = updated
+-            return True, updated.model_copy(deep=True)
++        return True, updated.model_copy(deep=True)
++
++    def initialize_verification_budget_if_absent(
++        self, task_id: str, state: VerificationBudgetState,
++    ) -> VerificationBudgetRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++
++        if not isinstance(task_id, str) or not task_id.strip():
++            raise ValueError("nonempty task identity required")
++        with self._lock:
++            existing = self._verification_budgets.get(task_id)
++            if existing is None:
++                existing = VerificationBudgetRecord.create(task_id, state)
++                retry = self._budgets.get(task_id)
++                existing.state.remaining_retries = min(
++                    max(0, existing.state.limits.max_retries
++                        - retry.task_retry_count) if retry else 0,
++                    retry.remaining_retries if retry else 0,
++                    max(0, retry.task_total_retry_limit - retry.task_retry_count) if retry else 0,
++                )
++                if (retry and retry.retry_deadline
++                        and existing.state.deadline_at > retry.retry_deadline):
++                    copied = existing.state
++                    copied.deadline_at = retry.retry_deadline
++                    existing = VerificationBudgetRecord.create(task_id, copied)
++                existing = VerificationBudgetRecord.create(task_id, existing.state)
++                self._verification_budgets[task_id] = existing
++            return existing.detached()
++
++    def get_verification_budget(self, task_id: str) -> VerificationBudgetRecord | None:
++        with self._lock:
++            existing = self._verification_budgets.get(task_id)
++            return existing.detached() if existing else None
++
++    def initialize_recovery_if_absent(self, record: RecoveryRecord) -> RecoveryRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import validate_detected
++
++        record = record.detached()
++        with self._lock:
++            existing = self._recoveries.get(record.recovery_id)
++            if existing is not None:
++                self._ensure_same_hash("RecoveryRecord", record.recovery_id,
++                                       self._recovery_initial_hashes[record.recovery_id],
++                                       record.content_hash())
++                return existing.detached()
++            if any(item.event_id == record.event_id for item in self._recoveries.values()):
++                raise IdempotencyConflictError("event already has a recovery record")
++            if any(item.attempt_id == record.attempt_id and item.task_id == record.task_id
++                   for item in self._recoveries.values()):
++                raise ValueError("execution attempt already belongs to a failure event")
++            validate_detected(record, self._events.get(record.event_id),
++                              self._verification_budgets.get(record.task_id))
++            self._recoveries[record.recovery_id] = record
++            self._recovery_initial_hashes[record.recovery_id] = record.content_hash()
++            return record.detached()
++
++    def get_recovery(self, recovery_id: str) -> RecoveryRecord | None:
++        with self._lock:
++            record = self._recoveries.get(recovery_id)
++            return record.detached() if record else None
++
++    def list_unresolved_recoveries(self, task_id: str) -> list[RecoveryRecord]:
++        with self._lock:
++            return [record.detached() for record in self._recoveries.values()
++                    if record.task_id == task_id
++                    and not (record.state == "VERIFIED_RESOLVED"
++                             and record.evidence_scope == "ACTUAL_SOURCE")]
++
++    def list_recoveries(self, task_id: str) -> list[RecoveryRecord]:
++        with self._lock:
++            return [record.detached() for record in self._recoveries.values()
++                    if record.task_id == task_id]
++
++    def advance_recovery_if_current(
++        self, record: RecoveryRecord, *, expected_state: str, expected_revision: int,
++        expected_budget_revision: int, verified_transition: RecoveryTransitionEvidence,
++    ) -> RecoveryRecord | None:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import transition_values
++
++        with self._lock:
++            current = self._recoveries.get(record.recovery_id)
++            pool = self._verification_budgets.get(current.task_id) if current else None
++            if not (all(type(value) is int and value >= 0 for value in (
++                    expected_revision, expected_budget_revision)) and current and pool
++                    and current.state == expected_state and current.revision == expected_revision
++                    and pool.revision == expected_budget_revision):
++                return None
++            if current.content_hash() != record.content_hash():
++                raise ValueError("caller cannot overwrite immutable recovery source")
++            ids = self._checkpoints_by_task.get(current.task_id, [])
++            checkpoint = self._checkpoints.get(ids[-1]) if ids else None
++            values = transition_values(current, pool, verified_transition,
++                self._active_contracts.get(current.task_id), checkpoint,
++                self._replan_cancelled_locked(current.task_id), _utc_now())
++            if values is None:
++                return current.detached()
++            updated, next_pool = values
++            self._recoveries[current.recovery_id] = updated
++            self._verification_budgets[current.task_id] = next_pool
++            return updated.detached()
++
++    def reserve_reobservation_if_current(
++        self, *, recovery_id: str, expected_revision: int, expected_budget_revision: int,
++        reservation: RecoveryReservationEvidence | None = None,
++    ) -> RecoveryRecord | None:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++            reservation_available,
++            reserved_values,
++        )
++
++        with self._lock:
++            current = self._recoveries.get(recovery_id)
++            pool = self._verification_budgets.get(current.task_id) if current else None
++            if not (all(type(value) is int and value >= 0 for value in (
++                    expected_revision, expected_budget_revision)) and current and pool
++                    and current.revision == expected_revision
++                    and pool.revision == expected_budget_revision
++                    and not self._replan_cancelled_locked(current.task_id)):
++                return None
++            ids = self._checkpoints_by_task.get(current.task_id, [])
++            checkpoint = self._checkpoints.get(ids[-1]) if ids else None
++            if not reservation_available(current, reservation,
++                    self._active_contracts.get(current.task_id), checkpoint,
++                    self._replan_cancelled_locked(current.task_id), _utc_now()):
++                return None
++            values = reserved_values(current, pool, _utc_now())
++            if values is None:
++                return None
++            updated, next_pool = values
++            self._recoveries[recovery_id] = updated
++            self._verification_budgets[current.task_id] = next_pool
++            return updated.detached()
++
++    def consume_retry_and_authorize_recovery_if_current(
++        self, *, recovery_id: str, expected_recovery_revision: int,
++        expected_verification_budget_revision: int, expected_retry_count: int,
++        step_id: str, skill: str, authorization: RecoveryAuthorizationEvidence,
++    ) -> RecoveryAuthorizationResult:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++            RecoveryAuthorizationResult,
++            authorization_reasons,
++            authorized_values,
++        )
++
++        with self._lock:
++            record = self._recoveries.get(recovery_id)
++            pool = self._verification_budgets.get(record.task_id) if record else None
++            budget = self._budgets.get(record.task_id) if record else None
++            reasons: tuple[str, ...] = ("authorization_compare_and_set_conflict",)
++            if (all(type(value) is int and value >= 0 for value in (
++                    expected_recovery_revision, expected_verification_budget_revision,
++                    expected_retry_count))
++                    and record and pool and budget and record.revision == expected_recovery_revision
++                    and pool.revision == expected_verification_budget_revision
++                    and budget.retry_count_used == expected_retry_count):
++                ids = self._checkpoints_by_task.get(record.task_id, [])
++                checkpoint = self._checkpoints.get(ids[-1]) if ids else None
++                now = _utc_now()
++                reasons = authorization_reasons(
++                    record, pool, budget, self._events.get(record.event_id),
++                    self._active_contracts.get(record.task_id), checkpoint,
++                    self._replan_cancelled_locked(record.task_id), authorization,
++                    step_id, skill, now,
++                )
++                if not reasons:
++                    consumed, retry = self._consume_retry_locked(
++                        record.task_id, step_id, skill, expected_retry_count,
++                        record.event_id, persist=False,
++                    )
++                    if consumed and retry:
++                        updated, next_pool = authorized_values(
++                            record, pool, retry, authorization, now
++                        )
++                        self._budgets[record.task_id] = retry
++                        self._recoveries[recovery_id] = updated
++                        self._verification_budgets[record.task_id] = next_pool
++                        return RecoveryAuthorizationResult(True, updated.detached(),
++                            retry.model_copy(deep=True), next_pool.detached(), ())
++                    reasons = ("retry_authority_exhausted",)
++            return RecoveryAuthorizationResult(False, record.detached() if record else None,
++                budget.model_copy(deep=True) if budget else None, pool.detached() if pool else None,
++                reasons)
+ 
+     # ── State Machine ───────────────────────────────────────────────────
+ 
+--- baseline/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
++++ source/src/cloud_edge_robot_arm/repositories/event_autonomy/sqlite.py
+@@ -69,6 +69,15 @@
+ 
+ if TYPE_CHECKING:
+     from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++        RecoveryAuthorizationEvidence,
++        RecoveryAuthorizationResult,
++        RecoveryRecord,
++        RecoveryReservationEvidence,
++        RecoveryTransitionEvidence,
++        VerificationBudgetRecord,
++    )
++    from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+ 
+ 
+ class SQLiteEventAutonomyRepository:
+@@ -88,6 +97,22 @@
+     def _create_schema(self) -> None:
+         self._conn.executescript(
+             """
++            CREATE TABLE IF NOT EXISTS recovery_records (
++                recovery_id TEXT PRIMARY KEY,
++                event_id TEXT UNIQUE NOT NULL,
++                task_id TEXT NOT NULL,
++                revision INTEGER NOT NULL,
++                state TEXT NOT NULL,
++                payload_json TEXT NOT NULL,
++                content_hash TEXT NOT NULL,
++                initial_hash TEXT NOT NULL
++            );
++            CREATE TABLE IF NOT EXISTS verification_budgets (
++                task_id TEXT PRIMARY KEY,
++                revision INTEGER NOT NULL,
++                payload_json TEXT NOT NULL,
++                content_hash TEXT NOT NULL
++            );
+             CREATE TABLE IF NOT EXISTS edge_events (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 event_id TEXT NOT NULL UNIQUE,
+@@ -620,64 +645,295 @@
+         expected_count: int,
+         event_id: str = "",
+     ) -> tuple[bool, RecoveryBudget | None]:
++        with self._write_lock:
++            return self._consume_retry_locked(task_id, step_id, skill, expected_count, event_id)
++
++    def _consume_retry_locked(
++        self, task_id: str, step_id: str, skill: str, expected_count: int,
++        event_id: str = "", *, commit: bool = True,
++    ) -> tuple[bool, RecoveryBudget | None]:
+         now = _iso_now()
+-        with self._write_lock:
+-            budget = self.get_retry_budget(task_id)
+-            if budget is None:
+-                return False, None
+-            if budget.retry_count_used != expected_count or budget.remaining_retries <= 0:
+-                return False, budget
+-            if event_id and budget.event_retry_counts.get(event_id, 0) > 0:
+-                return False, budget
+-            step_counts = dict(budget.step_retry_counts)
+-            skill_counts = dict(budget.skill_retry_counts)
+-            event_counts = dict(budget.event_retry_counts)
+-            step_count = step_counts.get(step_id, 0)
+-            skill_count = skill_counts.get(skill, 0)
+-            effective_remaining = min(
+-                max(0, budget.task_total_retry_limit - budget.task_retry_count),
+-                max(0, budget.per_step_retry_limit - step_count),
+-                max(0, budget.per_skill_retry_limit - skill_count),
+-                budget.remaining_retries,
+-            )
+-            if effective_remaining <= 0:
+-                return False, budget
+-            if step_id:
+-                step_counts[step_id] = step_count + 1
+-            if skill:
+-                skill_counts[skill] = skill_count + 1
+-            if event_id:
+-                event_counts[event_id] = 1
+-            cursor = self._conn.execute(
+-                """UPDATE recovery_budgets
+-                   SET retry_count_used = retry_count_used + 1,
+-                       task_retry_count = task_retry_count + 1,
+-                       step_retry_counts_json = ?,
+-                       skill_retry_counts_json = ?,
+-                       event_retry_counts_json = ?,
+-                       remaining_retries = remaining_retries - 1,
+-                       updated_at = ?
+-                   WHERE task_id = ? AND retry_count_used = ? AND remaining_retries > 0""",
+-                (
+-                    self._json(step_counts),
+-                    self._json(skill_counts),
+-                    self._json(event_counts),
+-                    now,
+-                    task_id,
+-                    expected_count,
+-                ),
+-            )
+-            if cursor.rowcount != 1:
++        budget = self.get_retry_budget(task_id)
++        if budget is None:
++            return False, None
++        if budget.retry_count_used != expected_count or budget.remaining_retries <= 0:
++            return False, budget
++        if event_id and budget.event_retry_counts.get(event_id, 0) > 0:
++            return False, budget
++        step_counts = dict(budget.step_retry_counts)
++        skill_counts = dict(budget.skill_retry_counts)
++        event_counts = dict(budget.event_retry_counts)
++        step_count = step_counts.get(step_id, 0)
++        skill_count = skill_counts.get(skill, 0)
++        effective_remaining = min(
++            max(0, budget.task_total_retry_limit - budget.task_retry_count),
++            max(0, budget.per_step_retry_limit - step_count),
++            max(0, budget.per_skill_retry_limit - skill_count),
++            budget.remaining_retries,
++        )
++        if effective_remaining <= 0:
++            return False, budget
++        if step_id:
++            step_counts[step_id] = step_count + 1
++        if skill:
++            skill_counts[skill] = skill_count + 1
++        if event_id:
++            event_counts[event_id] = 1
++        cursor = self._conn.execute(
++            """UPDATE recovery_budgets
++               SET retry_count_used = retry_count_used + 1,
++                   task_retry_count = task_retry_count + 1,
++                   step_retry_counts_json = ?,
++                   skill_retry_counts_json = ?,
++                   event_retry_counts_json = ?,
++                   remaining_retries = remaining_retries - 1,
++                   updated_at = ?
++               WHERE task_id = ? AND retry_count_used = ? AND remaining_retries > 0""",
++            (
++                self._json(step_counts),
++                self._json(skill_counts),
++                self._json(event_counts),
++                now,
++                task_id,
++                expected_count,
++            ),
++        )
++        if cursor.rowcount != 1:
++            if commit:
+                 self._conn.commit()
+-                return False, self.get_retry_budget(task_id)
+-            self._conn.execute(
+-                """INSERT INTO recovery_attempts
+-                   (task_id, step_id, skill, event_id, attempt_number, created_at)
+-                   VALUES (?, ?, ?, ?, ?, ?)""",
+-                (task_id, step_id, skill, event_id, expected_count + 1, now),
+-            )
++            return False, self.get_retry_budget(task_id)
++        self._conn.execute(
++            """INSERT INTO recovery_attempts
++               (task_id, step_id, skill, event_id, attempt_number, created_at)
++               VALUES (?, ?, ?, ?, ?, ?)""",
++            (task_id, step_id, skill, event_id, expected_count + 1, now),
++        )
++        if commit:
+             self._conn.commit()
+-            return True, self.get_retry_budget(task_id)
++        return True, self.get_retry_budget(task_id)
++
++
++    def initialize_verification_budget_if_absent(
++        self, task_id: str, state: VerificationBudgetState,
++    ) -> VerificationBudgetRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++
++        if not isinstance(task_id, str) or not task_id.strip():
++            raise ValueError("nonempty task identity required")
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            existing = self.get_verification_budget(task_id)
++            if existing is None:
++                existing = VerificationBudgetRecord.create(task_id, state)
++                retry = self.get_retry_budget(task_id)
++                existing.state.remaining_retries = min(
++                    max(0, existing.state.limits.max_retries
++                        - retry.task_retry_count) if retry else 0,
++                    retry.remaining_retries if retry else 0,
++                    max(0, retry.task_total_retry_limit - retry.task_retry_count) if retry else 0,
++                )
++                if (retry and retry.retry_deadline
++                        and existing.state.deadline_at > retry.retry_deadline):
++                    copied = existing.state
++                    copied.deadline_at = retry.retry_deadline
++                    existing = VerificationBudgetRecord.create(task_id, copied)
++                existing = VerificationBudgetRecord.create(task_id, existing.state)
++                self._conn.execute(
++                    "INSERT INTO verification_budgets VALUES (?, ?, ?, ?)",
++                    (task_id, existing.revision, self._json(existing.to_payload()),
++                     existing.content_hash),
++                )
++            return existing.detached()
++
++    def get_verification_budget(self, task_id: str) -> VerificationBudgetRecord | None:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import VerificationBudgetRecord
++
++        row = self._conn.execute(
++            "SELECT * FROM verification_budgets WHERE task_id=?",
++            (task_id,),
++        ).fetchone()
++        if row is None:
++            return None
++        result = VerificationBudgetRecord.from_payload(json.loads(row["payload_json"]))
++        if (result.content_hash != row["content_hash"] or result.task_id != row["task_id"]
++                or result.revision != row["revision"]):
++            raise ValueError("verification budget stored hash mismatch")
++        return result
++
++    def initialize_recovery_if_absent(self, record: RecoveryRecord) -> RecoveryRecord:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import validate_detected
++
++        record = record.detached()
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            row = self._conn.execute(
++                "SELECT initial_hash FROM recovery_records WHERE recovery_id=?",
++                (record.recovery_id,),
++            ).fetchone()
++            if row is not None:
++                _same_or_conflict("RecoveryRecord", record.recovery_id,
++                                  row["initial_hash"], record.content_hash())
++                existing = self.get_recovery(record.recovery_id)
++                assert existing is not None
++                return existing
++            if self._conn.execute("SELECT 1 FROM recovery_records WHERE event_id=?",
++                                  (record.event_id,)).fetchone():
++                raise IdempotencyConflictError("event already has a recovery record")
++            if any(item.attempt_id == record.attempt_id
++                   for item in self.list_recoveries(record.task_id)):
++                raise ValueError("execution attempt already belongs to a failure event")
++            validate_detected(record, self.get_event(record.event_id),
++                              self.get_verification_budget(record.task_id))
++            self._conn.execute("INSERT INTO recovery_records VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
++                               (record.recovery_id, record.event_id, record.task_id,
++                                record.revision,
++                                record.state, self._json(record.to_payload()),
++                                record.content_hash(),
++                                record.content_hash()))
++            return record.detached()
++
++    def get_recovery(self, recovery_id: str) -> RecoveryRecord | None:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
++
++        row = self._conn.execute("SELECT * FROM recovery_records WHERE recovery_id=?",
++                                 (recovery_id,)).fetchone()
++        if row is None:
++            return None
++        record = RecoveryRecord.from_payload(json.loads(row["payload_json"]))
++        if (record.content_hash() != row["content_hash"] or record.revision != row["revision"]
++                or record.state != row["state"] or record.task_id != row["task_id"]
++                or record.event_id != row["event_id"] or record.recovery_id != row["recovery_id"]):
++            raise ValueError("stored recovery content mismatch")
++        return record
++
++    def list_unresolved_recoveries(self, task_id: str) -> list[RecoveryRecord]:
++        return [record for record in self.list_recoveries(task_id)
++                if not (record.state == "VERIFIED_RESOLVED"
++                        and record.evidence_scope == "ACTUAL_SOURCE")]
++
++    def list_recoveries(self, task_id: str) -> list[RecoveryRecord]:
++        rows = self._conn.execute(
++            "SELECT recovery_id FROM recovery_records WHERE task_id=? ORDER BY rowid", (task_id,),
++        ).fetchall()
++        return [record for row in rows if (record := self.get_recovery(row["recovery_id"]))]
++
++    def advance_recovery_if_current(
++        self, record: RecoveryRecord, *, expected_state: str, expected_revision: int,
++        expected_budget_revision: int, verified_transition: RecoveryTransitionEvidence,
++    ) -> RecoveryRecord | None:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import transition_values
++
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            current = self.get_recovery(record.recovery_id)
++            pool = self.get_verification_budget(current.task_id) if current else None
++            if not (all(type(value) is int and value >= 0 for value in (
++                    expected_revision, expected_budget_revision)) and current and pool
++                    and current.state == expected_state and current.revision == expected_revision
++                    and pool.revision == expected_budget_revision):
++                return None
++            if current.content_hash() != record.content_hash():
++                raise ValueError("caller cannot overwrite immutable recovery source")
++            values = transition_values(current, pool, verified_transition,
++                self.get_active_contract(current.task_id),
++                self.get_latest_execution_checkpoint(current.task_id),
++                self._replan_cancelled_locked(current.task_id), datetime.now(UTC))
++            if values is None:
++                return current
++            updated, next_pool = values
++            self._update_recovery_locked(updated, next_pool)
++            return updated
++
++    def reserve_reobservation_if_current(
++        self, *, recovery_id: str, expected_revision: int, expected_budget_revision: int,
++        reservation: RecoveryReservationEvidence | None = None,
++    ) -> RecoveryRecord | None:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++            reservation_available,
++            reserved_values,
++        )
++
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            current = self.get_recovery(recovery_id)
++            pool = self.get_verification_budget(current.task_id) if current else None
++            if not (all(type(value) is int and value >= 0 for value in (
++                    expected_revision, expected_budget_revision)) and current and pool
++                    and current.revision == expected_revision
++                    and pool.revision == expected_budget_revision
++                    and not self._replan_cancelled_locked(current.task_id)):
++                return None
++            if not reservation_available(current, reservation,
++                    self.get_active_contract(current.task_id),
++                    self.get_latest_execution_checkpoint(current.task_id),
++                    self._replan_cancelled_locked(current.task_id), datetime.now(UTC)):
++                return None
++            values = reserved_values(current, pool, datetime.now(UTC))
++            if values is None:
++                return None
++            updated, next_pool = values
++            self._update_recovery_locked(updated, next_pool)
++            return updated
++
++    def consume_retry_and_authorize_recovery_if_current(
++        self, *, recovery_id: str, expected_recovery_revision: int,
++        expected_verification_budget_revision: int, expected_retry_count: int,
++        step_id: str, skill: str, authorization: RecoveryAuthorizationEvidence,
++    ) -> RecoveryAuthorizationResult:
++        from cloud_edge_robot_arm.edge.recovery.lifecycle import (
++            RecoveryAuthorizationResult,
++            authorization_reasons,
++            authorized_values,
++        )
++
++        with self._write_lock, self._conn:
++            self._conn.execute("BEGIN IMMEDIATE")
++            record = self.get_recovery(recovery_id)
++            pool = self.get_verification_budget(record.task_id) if record else None
++            budget = self.get_retry_budget(record.task_id) if record else None
++            reasons: tuple[str, ...] = ("authorization_compare_and_set_conflict",)
++            if (all(type(value) is int and value >= 0 for value in (
++                    expected_recovery_revision, expected_verification_budget_revision,
++                    expected_retry_count))
++                    and record and pool and budget and record.revision == expected_recovery_revision
++                    and pool.revision == expected_verification_budget_revision
++                    and budget.retry_count_used == expected_retry_count):
++                now = datetime.now(UTC)
++                reasons = authorization_reasons(
++                    record, pool, budget, self.get_event(record.event_id),
++                    self.get_active_contract(record.task_id),
++                    self.get_latest_execution_checkpoint(record.task_id),
++                    self._replan_cancelled_locked(record.task_id), authorization,
++                    step_id, skill, now,
++                )
++                if not reasons:
++                    consumed, retry = self._consume_retry_locked(
++                        record.task_id, step_id, skill, expected_retry_count,
++                        record.event_id, commit=False,
++                    )
++                    if consumed and retry:
++                        updated, next_pool = authorized_values(
++                            record, pool, retry, authorization, now
++                        )
++                        self._update_recovery_locked(updated, next_pool)
++                        return RecoveryAuthorizationResult(True, updated, retry, next_pool, ())
++                    reasons = ("retry_authority_exhausted",)
++            return RecoveryAuthorizationResult(False, record, budget, pool, reasons)
++
++    def _update_recovery_locked(
++        self, record: RecoveryRecord, pool: VerificationBudgetRecord,
++    ) -> None:
++        self._conn.execute(
++            "UPDATE recovery_records SET revision=?,state=?,payload_json=?,content_hash=? "
++            "WHERE recovery_id=?",
++            (record.revision, record.state, self._json(record.to_payload()),
++             record.content_hash(), record.recovery_id),
++        )
++        self._conn.execute(
++            "UPDATE verification_budgets SET revision=?,payload_json=?,content_hash=? "
++            "WHERE task_id=?",
++            (pool.revision, self._json(pool.to_payload()), pool.content_hash, pool.task_id),
++        )
+ 
+     # ── State Machine ───────────────────────────────────────────────────
+ 
+--- baseline/tests/test_recovery_lifecycle_module.py
++++ source/tests/test_recovery_lifecycle_module.py
+@@ -16,8 +16,11 @@
+ 
+ @pytest.fixture(params=["memory", "sqlite"])
+ def lifecycle_repo(request, tmp_path):
+-    repo = (SQLiteEventAutonomyRepository(tmp_path / "lifecycle.sqlite")
+-            if request.param == "sqlite" else InMemoryEventAutonomyRepository())
++    repo = (
++        SQLiteEventAutonomyRepository(tmp_path / "lifecycle.sqlite")
++        if request.param == "sqlite"
++        else InMemoryEventAutonomyRepository()
++    )
+     yield repo
+     if request.param == "sqlite":
+         repo.close()
+@@ -26,10 +29,13 @@
+ def verification_pool():
+     now = datetime.now(UTC)
+     return VerificationBudgetState(
+-        remaining_reobservations=1, remaining_retries=0, consecutive_no_progress=2,
++        remaining_reobservations=1,
++        remaining_retries=0,
++        consecutive_no_progress=2,
+         deadline_at=now + timedelta(seconds=60),
+         limits=VerificationBudget(2, 0, 3, 60),
+-        previous_conditions={"object_held:obj-1": ("FAIL", .1)}, verification_rounds=3,
++        previous_conditions={"object_held:obj-1": ("FAIL", 0.1)},
++        verification_rounds=3,
+     )
+ 
+ 
+@@ -55,7 +61,7 @@
+     saved.state.deadline_at += timedelta(days=1)
+     read = lifecycle_repo.get_verification_budget("task")
+     assert read.state.remaining_reobservations == 1
+-    assert read.state.previous_conditions == {"object_held:obj-1": ("FAIL", .1)}
++    assert read.state.previous_conditions == {"object_held:obj-1": ("FAIL", 0.1)}
+     assert read.state.deadline_at == original_deadline
+     read.state.previous_conditions.clear()
+     assert lifecycle_repo.get_verification_budget("task").state.previous_conditions
+@@ -65,15 +71,23 @@
+     path = tmp_path / "restart.sqlite"
+     repo = SQLiteEventAutonomyRepository(path)
+     original = repo.initialize_verification_budget_if_absent("task", verification_pool())
+-    row_before = tuple(repo._conn.execute(
+-        "SELECT * FROM verification_budgets WHERE task_id='task'").fetchone())
++    row_before = tuple(
++        repo._conn.execute("SELECT * FROM verification_budgets WHERE task_id='task'").fetchone()
++    )
+     repo.close()
+     restarted = SQLiteEventAutonomyRepository(path)
+     actual = restarted.initialize_verification_budget_if_absent(
+-        "task", VerificationBudgetState.start(VerificationBudget(100, 100, 100, 999)))
++        "task", VerificationBudgetState.start(VerificationBudget(100, 100, 100, 999))
++    )
+     assert actual == original
+-    assert tuple(restarted._conn.execute(
+-        "SELECT * FROM verification_budgets WHERE task_id='task'").fetchone()) == row_before
++    assert (
++        tuple(
++            restarted._conn.execute(
++                "SELECT * FROM verification_budgets WHERE task_id='task'"
++            ).fetchone()
++        )
++        == row_before
++    )
+     restarted.close()
+ 
+ 
+@@ -83,12 +97,16 @@
+     proposals = [verification_pool(), verification_pool()]
+     proposals[1].remaining_reobservations = 0
+     barrier = Barrier(2)
++
+     def initialize(repo, proposal):
+         barrier.wait(timeout=5)
+         return repo.initialize_verification_budget_if_absent("task", proposal)
++
+     with ThreadPoolExecutor(max_workers=2) as executor:
+-        futures = [executor.submit(initialize, repo, proposal)
+-                   for repo, proposal in zip((first, second), proposals, strict=True)]
++        futures = [
++            executor.submit(initialize, repo, proposal)
++            for repo, proposal in zip((first, second), proposals, strict=True)
++        ]
+         results = [future.result(timeout=10) for future in futures]
+     assert results[0] == results[1]
+     assert first.get_verification_budget("task") == second.get_verification_budget("task")
+@@ -102,3 +120,1259 @@
+     with pytest.raises(ValueError):
+         lifecycle_repo.initialize_verification_budget_if_absent(invalid, verification_pool())
+     assert lifecycle_repo.get_verification_budget(invalid) is None
++
++
++@pytest.mark.parametrize("retry_available", [False, True])
++def test_task_pool_retry_allowance_only_mirrors_existing_authority(lifecycle_repo, retry_available):
++    from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++
++    now = datetime.now(UTC)
++    if retry_available:
++        lifecycle_repo.initialize_retry_budget_if_absent(
++            RecoveryBudget(
++                budget_id="authority",
++                task_id="task",
++                remaining_retries=1,
++                task_total_retry_limit=4,
++                task_retry_count=3,
++                retry_count_used=3,
++                retry_deadline=now + timedelta(seconds=10),
++            )
++        )
++    proposed = VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now)
++    actual = lifecycle_repo.initialize_verification_budget_if_absent("task", proposed)
++    assert actual.state.remaining_retries == (1 if retry_available else 0)
++    if retry_available:
++        assert actual.state.deadline_at == now + timedelta(seconds=10)
++
++
++def detected_record(repo, *, event_id="event-1", recovery_id="recovery-1"):
++    """Complete software failure identity, with no gateway or physical effect."""
++    from cloud_edge_robot_arm.contracts.models import EdgeEvent, ExecutionCheckpoint, RecoveryBudget
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryRecord
++    from tests.test_phase6_2_replan_resume import _contract
++
++    now = datetime.now(UTC)
++    active = repo.get_active_contract("task")
++    if active is None:
++        repo.save_active_contract(
++            _contract(task_id="task", retry_limit=3), plan_id="plan", robot_id="robot"
++        )
++        repo.initialize_retry_budget_if_absent(
++            RecoveryBudget(
++                budget_id="authority",
++                task_id="task",
++                per_step_retry_limit=3,
++                per_skill_retry_limit=8,
++                task_total_retry_limit=8,
++                remaining_retries=8,
++                retry_deadline=now + timedelta(seconds=60),
++            )
++        )
++        repo.initialize_verification_budget_if_absent(
++            "task", VerificationBudgetState.start(VerificationBudget(2, 8, 3, 60), now=now)
++        )
++        repo.save_execution_checkpoint(
++            ExecutionCheckpoint(
++                checkpoint_id="checkpoint",
++                task_id="task",
++                plan_id="plan",
++                robot_id="robot",
++                plan_version=1,
++                command_seq=1,
++                failed_step_id="grasp",
++                execution_state="PAUSED",
++                created_at=now,
++                updated_at=now,
++            )
++        )
++    repo.save_event(
++        EdgeEvent(
++            task_id="task",
++            plan_version=1,
++            command_seq=1,
++            event_id=event_id,
++            event_type="GRASP_FAILED",
++            step_id="grasp",
++            timestamp=now,
++            severity="ERROR",
++        )
++    )
++    active = repo.get_active_contract("task")
++    checkpoint = repo.get_latest_execution_checkpoint("task")
++    return RecoveryRecord(
++        recovery_id,
++        event_id,
++        "task",
++        f"MOCK-attempt-{event_id}",
++        "DETECTED",
++        repo.get_verification_budget("task").state,
++        "",
++        None,
++        "",
++        "software detection",
++        plan_version=1,
++        command_seq=1,
++        failure_plan_version=1,
++        failure_command_seq=1,
++        episode_id="episode",
++        step_id="grasp",
++        skill="GRASP",
++        payload_hash=active.contract_hash,
++        checkpoint_hash=checkpoint.checkpoint_hash,
++        conditions=(ConditionSpec("object_held", target_id="obj-1"),),
++    )
++
++
++def test_detected_recovery_is_persisted_and_remains_unresolved(lifecycle_repo):
++    proposal = detected_record(lifecycle_repo)
++    saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    assert saved.state == "DETECTED" and saved.resolution_observation_id == ""
++    assert lifecycle_repo.get_recovery(saved.recovery_id) == saved
++    assert lifecycle_repo.list_unresolved_recoveries("task") == [saved]
++    assert lifecycle_repo.initialize_recovery_if_absent(proposal) == saved
++
++
++def test_public_initialization_cannot_assert_authorized_or_resolved(lifecycle_repo):
++    from dataclasses import replace
++
++    proposal = detected_record(lifecycle_repo)
++    for state in ("RECOVERY_AUTHORIZED", "RETRY_EXECUTED", "VERIFIED_RESOLVED"):
++        with pytest.raises(ValueError):
++            lifecycle_repo.initialize_recovery_if_absent(replace(proposal, state=state))
++    assert lifecycle_repo.get_recovery(proposal.recovery_id) is None
++
++
++def test_recovery_identity_conflict_cannot_replace_original_event(lifecycle_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.repositories.event_autonomy.protocol import IdempotencyConflictError
++
++    proposal = detected_record(lifecycle_repo)
++    saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    with pytest.raises(IdempotencyConflictError):
++        lifecycle_repo.initialize_recovery_if_absent(replace(proposal, event_id="decoy"))
++    assert lifecycle_repo.get_recovery(proposal.recovery_id) == saved
++
++
++def test_detected_record_restart_preserves_bindings_and_shared_task_pool(tmp_path):
++    path = tmp_path / "record.sqlite"
++    repo = SQLiteEventAutonomyRepository(path)
++    proposal = detected_record(repo)
++    saved = repo.initialize_recovery_if_absent(proposal)
++    repo.close()
++    restarted = SQLiteEventAutonomyRepository(path)
++    assert restarted.get_recovery(saved.recovery_id) == saved
++    assert restarted.list_unresolved_recoveries("task") == [saved]
++    assert restarted.get_verification_budget("task").state == saved.budget_state
++    restarted.close()
++
++
++def authorization_proof(record):
++    """Synthetic complete canonical inputs, explicitly no real model/robot acceptance."""
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.edge.evidence.models import (
++        ActionEvidenceContract,
++        CommitContext,
++        DecisionEnvelope,
++        VisualEvidence,
++    )
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryAuthorizationEvidence
++    from tests.test_visual_evidence_contract import online_evidence
++
++    now = datetime.now(UTC)
++    source = online_evidence()
++    observation = type(source.observation).model_validate(
++        {
++            **source.observation.model_dump(),
++            "captured_at": now,
++            "episode_id": "episode",
++            "checksum_sha256": "",
++        }
++    )
++    online = replace(
++        source,
++        observation=observation,
++        plan_version=1,
++        command_seq=1,
++        context_hash=record.checkpoint_hash,
++        visual_facts={
++            "target_visible": {**source.visual_facts["target_visible"], "target_id": "obj-1"},
++        },
++    )
++    visual = VisualEvidence(
++        observation.observation_id, "cal-1", now, 0.001, 0.0, "CONFIRMED", "VALID"
++    )
++    action = ActionEvidenceContract(
++        visual,
++        3.0,
++        0.01,
++        ("rgbd",),
++        (ConditionSpec("target_visible", target_id="obj-1"),),
++        record.conditions,
++        1,
++        1,
++        record.checkpoint_hash,
++    )
++    decision = DecisionEnvelope(
++        "MOCK-decision",
++        "task",
++        "episode",
++        observation.observation_id,
++        1,
++        1,
++        1,
++        record.checkpoint_hash,
++        record.payload_hash,
++        "LOCAL_RECOVER",
++        "MOCK-policy",
++        "MOCK-provider",
++        now,
++        now + timedelta(seconds=60),
++    )
++    current = CommitContext(
++        "task",
++        "episode",
++        observation.observation_id,
++        1,
++        1,
++        1,
++        record.checkpoint_hash,
++        record.payload_hash,
++        False,
++    )
++    return RecoveryAuthorizationEvidence(
++        record.recovery_id, decision, current, action, online, evidence_scope="SOFTWARE_ONLY"
++    )
++
++
++def atomic_authorize(repo, saved, proof=None, **changes):
++    params = {
++        "recovery_id": saved.recovery_id,
++        "expected_recovery_revision": saved.revision,
++        "expected_verification_budget_revision": repo.get_verification_budget("task").revision,
++        "expected_retry_count": repo.get_retry_budget("task").retry_count_used,
++        "step_id": saved.step_id,
++        "skill": saved.skill,
++        "authorization": proof if proof is not None else authorization_proof(saved),
++    }
++    return repo.consume_retry_and_authorize_recovery_if_current(**{**params, **changes})
++
++
++def test_atomic_authorization_spends_existing_retry_once_but_does_not_resolve(lifecycle_repo):
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    proof = authorization_proof(saved)
++    result = atomic_authorize(lifecycle_repo, saved, proof)
++    assert result.authorized and result.recovery.state == "RECOVERY_AUTHORIZED"
++    assert result.recovery.resolution_observation_id == ""
++    assert result.retry_budget.task_retry_count == 1 and result.retry_budget.remaining_retries == 7
++    assert result.retry_budget.event_retry_counts == {"event-1": 1}
++    assert result.verification_budget.state.remaining_retries == 7
++    assert lifecycle_repo.list_unresolved_recoveries("task") == [result.recovery]
++    repeated = atomic_authorize(lifecycle_repo, saved, proof)
++    assert not repeated.authorized
++    assert lifecycle_repo.get_retry_budget("task").task_retry_count == 1
++    assert lifecycle_repo.get_recovery(saved.recovery_id) == result.recovery
++
++
++@pytest.mark.parametrize("change", ["caller_valid", "no_motion", "wrong_context", "decoy_target"])
++def test_invalid_authorization_proof_cannot_spend_any_pool(lifecycle_repo, change):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++    from cloud_edge_robot_arm.edge.evidence.models import EvidenceVerdict
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    proof = authorization_proof(saved)
++    if change == "caller_valid":
++        proof = EvidenceVerdict("VALID", ("caller assertion",))
++    elif change == "no_motion":
++        proof = replace(
++            proof,
++            action=replace(
++                proof.action, evidence=replace(proof.action.evidence, motion_bound_m_s=None)
++            ),
++        )
++    elif change == "wrong_context":
++        proof = replace(proof, current=replace(proof.current, context_hash="forged"))
++    else:
++        proof = replace(
++            proof,
++            action=replace(
++                proof.action, preconditions=(ConditionSpec("target_visible", target_id="decoy"),)
++            ),
++        )
++    retry_before = lifecycle_repo.get_retry_budget("task")
++    pool_before = lifecycle_repo.get_verification_budget("task")
++    result = atomic_authorize(lifecycle_repo, saved, proof)
++    assert not result.authorized and result.reasons
++    assert lifecycle_repo.get_recovery(saved.recovery_id) == saved
++    assert lifecycle_repo.get_retry_budget("task") == retry_before
++    assert lifecycle_repo.get_verification_budget("task") == pool_before
++
++
++@pytest.mark.parametrize(
++    "field",
++    ["expected_recovery_revision", "expected_verification_budget_revision", "expected_retry_count"],
++)
++def test_stale_authorization_cas_cannot_spend_retry_or_advance_state(lifecycle_repo, field):
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    before = lifecycle_repo.get_retry_budget("task")
++    result = atomic_authorize(lifecycle_repo, saved, **{field: 99})
++    assert not result.authorized
++    assert lifecycle_repo.get_retry_budget("task") == before
++    assert lifecycle_repo.get_recovery(saved.recovery_id) == saved
++
++
++def test_actual_step_zero_retry_limit_cannot_use_task_maximum(lifecycle_repo):
++    from dataclasses import replace
++
++    proposal = replace(detected_record(lifecycle_repo), step_id="approach", skill="APPROACH")
++    saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    result = atomic_authorize(lifecycle_repo, saved)
++    assert not result.authorized and lifecycle_repo.get_retry_budget("task").task_retry_count == 0
++
++
++def test_two_sqlite_authorizations_commit_one_recovery_retry_and_task_pool(tmp_path):
++    path = tmp_path / "authorize.sqlite"
++    first, second = (SQLiteEventAutonomyRepository(path) for _ in range(2))
++    saved = first.initialize_recovery_if_absent(detected_record(first))
++    proof = authorization_proof(saved)
++    barrier = Barrier(2)
++
++    def authorize(repo):
++        barrier.wait(timeout=5)
++        return atomic_authorize(repo, saved, proof)
++
++    with ThreadPoolExecutor(max_workers=2) as executor:
++        results = [
++            future.result(timeout=10)
++            for future in [executor.submit(authorize, repo) for repo in (first, second)]
++        ]
++    assert sum(result.authorized for result in results) == 1
++    assert first.get_retry_budget("task").task_retry_count == 1
++    assert second.get_retry_budget("task").event_retry_counts == {"event-1": 1}
++    assert first.get_recovery(saved.recovery_id) == second.get_recovery(saved.recovery_id)
++    assert first.get_verification_budget("task") == second.get_verification_budget("task")
++    first.close()
++    second.close()
++
++
++@pytest.mark.parametrize(
++    "change",
++    [
++        "cancel",
++        "checkpoint",
++        "critical_event",
++        "actual_skill_limit",
++        "boolean_counters",
++        "expired_retry",
++    ],
++)
++def test_authorization_rechecks_transaction_current_guards(lifecycle_repo, change):
++    from cloud_edge_robot_arm.contracts.models import EdgeEvent
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    proof = authorization_proof(saved)
++    params = {}
++    if change == "cancel":
++        lifecycle_repo.save_state("task", "CANCELLED", "MOCK late cancellation")
++    elif change == "checkpoint":
++        checkpoint = lifecycle_repo.get_latest_execution_checkpoint("task")
++        lifecycle_repo.save_execution_checkpoint(
++            checkpoint.model_copy(
++                update={
++                    "checkpoint_id": "changed",
++                    "checkpoint_hash": "",
++                    "updated_at": datetime.now(UTC),
++                }
++            )
++        )
++    elif change == "critical_event":
++        lifecycle_repo.save_event(
++            EdgeEvent(
++                task_id="task",
++                plan_version=1,
++                command_seq=1,
++                event_id="critical",
++                event_type="GRASP_FAILED",
++                severity="CRITICAL",
++                step_id="grasp",
++                timestamp=datetime.now(UTC),
++            )
++        )
++    elif change == "actual_skill_limit":
++        budget = lifecycle_repo.get_retry_budget("task")
++        lifecycle_repo.save_retry_budget(
++            budget.model_copy(
++                update={
++                    "skill_retry_counts": {"GRASP": 3},
++                    "retry_count_used": 3,
++                    "task_retry_count": 3,
++                    "remaining_retries": 5,
++                }
++            )
++        )
++    elif change == "boolean_counters":
++        params = {
++            "expected_recovery_revision": False,
++            "expected_verification_budget_revision": False,
++            "expected_retry_count": False,
++        }
++    else:
++        budget = lifecycle_repo.get_retry_budget("task")
++        lifecycle_repo.save_retry_budget(
++            budget.model_copy(
++                update={
++                    "retry_deadline": datetime.now(UTC) - timedelta(seconds=1),
++                }
++            )
++        )
++    before = lifecycle_repo.get_retry_budget("task")
++    pool_before = lifecycle_repo.get_verification_budget("task")
++    result = atomic_authorize(lifecycle_repo, saved, proof, **params)
++    assert not result.authorized
++    assert lifecycle_repo.get_retry_budget("task") == before
++    assert lifecycle_repo.get_verification_budget("task") == pool_before
++    assert lifecycle_repo.get_recovery(saved.recovery_id) == saved
++
++
++def execution_proof(repo, record, *, completed=True, success=False):
++    """MOCK start plus independent typed completion source, not a physical acceptance."""
++    from uuid import uuid4
++
++    from cloud_edge_robot_arm.contracts.models import ReplanExecutionReceipt, SkillExecutionResult
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryExecutionEvidence
++
++    started_at = datetime.now(UTC)
++    receipt = ReplanExecutionReceipt(
++        repair_id=record.attempt_id,
++        task_id=record.task_id,
++        plan_version=record.plan_version,
++        command_seq=record.command_seq,
++        activation_token="MOCK-execution-token",
++        payload_hash=record.payload_hash,
++        event_id=f"MOCK-start-{record.event_id}",
++        started_at=started_at,
++    )
++    completion = None
++    if completed:
++        completed_at = datetime.now(UTC)
++        completion = SkillExecutionResult(
++            task_id=record.task_id,
++            plan_version=record.plan_version,
++            command_seq=record.command_seq,
++            timestamp=completed_at,
++            step_id=record.step_id,
++            skill=record.skill,
++            scene_version=1,
++            success=success,
++            duration_ms=0,
++            details={
++                "source": "MOCK",
++                "recovery_id": record.recovery_id,
++                "attempt_id": record.attempt_id,
++            },
++        )
++        previous = repo.get_latest_execution_checkpoint(record.task_id)
++        repo.save_execution_checkpoint(
++            previous.model_copy(
++                update={
++                    "checkpoint_id": uuid4().hex,
++                    "checkpoint_hash": "",
++                    "updated_at": completed_at,
++                    "step_attempts": {record.step_id: 1},
++                    "completed_step_ids": [record.step_id] if success else [],
++                    "failed_step_id": "" if success else record.step_id,
++                }
++            )
++        )
++    checkpoint = repo.get_latest_execution_checkpoint(record.task_id)
++    return RecoveryExecutionEvidence(
++        receipt, completion, checkpoint.checkpoint_hash, evidence_scope="SOFTWARE_ONLY"
++    )
++
++
++def verification_snapshot(repo, record, status, *, residual=None, frame_id=None):
++    from dataclasses import replace
++    from uuid import uuid4
++
++    from tests.test_visual_evidence_contract import online_evidence
++
++    source = online_evidence()
++    now = datetime.now(UTC)
++    frame_id = frame_id or uuid4().hex
++    observation = type(source.observation).model_validate(
++        {
++            **source.observation.model_dump(),
++            "observation_id": frame_id,
++            "frame_id": frame_id,
++            "captured_at": now,
++            "episode_id": record.episode_id,
++            "checksum_sha256": "",
++        }
++    )
++    fact = {
++        "source": "rgbd_estimate",
++        "observation_id": frame_id,
++        "target_id": "obj-1",
++        "identity_confirmed": True,
++        "value": status == "PASS",
++        "pixel": [0, 0],
++    }
++    if residual is not None:
++        fact["measured_values"] = {"residual_m": residual}
++    return replace(
++        source,
++        observation=observation,
++        plan_version=record.plan_version,
++        command_seq=record.command_seq,
++        context_hash=repo.get_latest_execution_checkpoint(record.task_id).checkpoint_hash,
++        visual_facts={"object_held": fact} if status != "UNKNOWN" else {},
++    )
++
++
++def executed_recovery(repo, *, event_id="event-1", recovery_id="recovery-1", success=False):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    saved = repo.initialize_recovery_if_absent(
++        detected_record(repo, event_id=event_id, recovery_id=recovery_id)
++    )
++    authorized = atomic_authorize(repo, saved).recovery
++    proof = execution_proof(repo, authorized, success=success)
++    service = RecoveryLifecycleService(
++        repository=repo,
++        execution_provider=lambda _: proof,
++        current_state_provider=lambda record: reservation_proof(repo, record),
++    )
++    executed = service.advance_recovery(recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ())
++    return service, executed
++
++
++def canonical(record, snapshot):
++    from cloud_edge_robot_arm.edge.evidence.conditions import evaluate_conditions
++
++    return evaluate_conditions(record.conditions, snapshot, now=datetime.now(UTC))
++
++
++def test_missing_execution_provider_and_start_only_source_do_not_assert_execution(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    authorized = atomic_authorize(lifecycle_repo, saved).recovery
++    service = RecoveryLifecycleService(repository=lifecycle_repo)
++    assert (
++        service.advance_recovery(
++            saved.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ()
++        ).state
++        == "RECOVERY_AUTHORIZED"
++    )
++    proof = execution_proof(lifecycle_repo, authorized, completed=False)
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, execution_provider=lambda _: proof
++    )
++    actual = service.advance_recovery(
++        saved.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ()
++    )
++    assert actual.state == "RECOVERY_AUTHORIZED" and actual.execution_receipt is None
++    assert actual.resolution_observation_id == ""
++
++
++def test_completed_failed_retry_is_executed_but_remains_unresolved(lifecycle_repo):
++    _, executed = executed_recovery(lifecycle_repo, success=False)
++    assert executed.state == "RETRY_EXECUTED" and executed.execution_receipt is not None
++    assert executed.executed_at is not None and executed.resolution_observation_id == ""
++    assert lifecycle_repo.list_unresolved_recoveries("task") == [executed]
++
++
++def test_fresh_canonical_all_pass_resolves_only_its_event(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, executed = executed_recovery(lifecycle_repo)
++    snapshot = verification_snapshot(lifecycle_repo, executed, "PASS")
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, evidence_provider=lambda _: snapshot
++    )
++    resolved = service.advance_recovery(
++        executed.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", canonical(executed, snapshot)
++    )
++    assert resolved.state == "VERIFIED_RESOLVED"
++    assert resolved.event_id == "event-1"
++    assert resolved.resolution_observation_id == snapshot.observation.observation_id
++    assert resolved.evidence_scope == "SOFTWARE_ONLY"
++    assert lifecycle_repo.list_unresolved_recoveries("task") == [resolved]
++    assert lifecycle_repo.get_event("event-1") is not None
++
++
++@pytest.mark.parametrize("status", ["FAIL", "UNKNOWN"])
++def test_failed_or_unknown_verification_remains_unresolved(lifecycle_repo, status):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, executed = executed_recovery(lifecycle_repo)
++    snapshot = verification_snapshot(lifecycle_repo, executed, status)
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, evidence_provider=lambda _: snapshot
++    )
++    actual = service.advance_recovery(
++        executed.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", canonical(executed, snapshot)
++    )
++    assert actual.state == "RETRY_EXECUTED" and actual.resolution_observation_id == ""
++    assert lifecycle_repo.list_unresolved_recoveries("task") == [actual]
++
++
++def test_caller_pass_labels_without_actual_provider_cannot_resolve(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionVerdict
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, executed = executed_recovery(lifecycle_repo)
++    service = RecoveryLifecycleService(repository=lifecycle_repo)
++    actual = service.advance_recovery(
++        executed.recovery_id,
++        "RETRY_EXECUTED",
++        "VERIFIED_RESOLVED",
++        (ConditionVerdict("PASS", "object_held", "invented-frame"),),
++    )
++    assert actual.state == "RETRY_EXECUTED" and actual.resolution_observation_id == ""
++
++
++@pytest.mark.parametrize("change", ["foreign_episode", "old_version", "before_execution"])
++def test_pass_on_foreign_old_or_preexecution_source_cannot_resolve(lifecycle_repo, change):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, executed = executed_recovery(lifecycle_repo)
++    snapshot = verification_snapshot(lifecycle_repo, executed, "PASS")
++    if change == "old_version":
++        snapshot = replace(snapshot, command_seq=99)
++    else:
++        observation = snapshot.observation.model_copy(
++            update={
++                "episode_id": "foreign" if change == "foreign_episode" else "episode",
++                "captured_at": (
++                    executed.execution_receipt.started_at - timedelta(seconds=1)
++                    if change == "before_execution"
++                    else snapshot.observation.captured_at
++                ),
++                "checksum_sha256": "",
++            }
++        )
++        observation = type(observation).model_validate(observation.model_dump())
++        snapshot = replace(snapshot, observation=observation)
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, evidence_provider=lambda _: snapshot
++    )
++    actual = service.advance_recovery(
++        executed.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", canonical(executed, snapshot)
++    )
++    assert actual.state != "VERIFIED_RESOLVED" and actual.resolution_observation_id == ""
++
++
++def test_caller_verdict_must_match_canonical_actual_evidence(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionVerdict
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, executed = executed_recovery(lifecycle_repo)
++    snapshot = verification_snapshot(lifecycle_repo, executed, "UNKNOWN")
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, evidence_provider=lambda _: snapshot
++    )
++    with pytest.raises(ValueError):
++        service.advance_recovery(
++            executed.recovery_id,
++            "RETRY_EXECUTED",
++            "VERIFIED_RESOLVED",
++            (ConditionVerdict("PASS", "object_held", snapshot.observation.observation_id),),
++        )
++    assert lifecycle_repo.get_recovery(executed.recovery_id) == executed
++
++
++def verify_round(repo, recovery, status, *, residual=None, snapshot=None):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    source = snapshot or verification_snapshot(repo, recovery, status, residual=residual)
++    service = RecoveryLifecycleService(repository=repo, evidence_provider=lambda _: source)
++    return service.advance_recovery(
++        recovery.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", canonical(recovery, source)
++    )
++
++
++def test_all_recovery_reader_keeps_resolved_history_and_returns_detached_task_records(
++    lifecycle_repo,
++):
++    _, executed = executed_recovery(lifecycle_repo)
++    resolved = verify_round(lifecycle_repo, executed, "PASS")
++    assert lifecycle_repo.list_recoveries("task") == [resolved]
++    assert lifecycle_repo.list_recoveries("other-task") == []
++    detached = lifecycle_repo.list_recoveries("task")[0]
++    detached.budget_state.remaining_reobservations = 0
++    assert lifecycle_repo.get_recovery(resolved.recovery_id) == resolved
++
++
++def test_three_nonprogress_rounds_exhaust_even_with_distinct_frames(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    service, record = executed_recovery(lifecycle_repo)
++    for index in range(3):
++        if index:
++            assert service.reserve_reobservation(record.recovery_id) is not None
++            record = lifecycle_repo.get_recovery(record.recovery_id)
++        record = verify_round(lifecycle_repo, record, "UNKNOWN")
++        assert record.budget_state.consecutive_no_progress == index + 1
++    assert record.state == "EXHAUSTED"
++    assert record.budget_state.exhausted_reason == "no_progress_exhausted"
++    assert lifecycle_repo.list_unresolved_recoveries("task") == [record]
++    unavailable = RecoveryLifecycleService(repository=lifecycle_repo)
++    assert unavailable.reserve_reobservation(record.recovery_id) is None
++
++
++def test_unknown_to_fail_and_measured_residual_improvement_reset_only_no_progress(lifecycle_repo):
++    service, record = executed_recovery(lifecycle_repo)
++    record = verify_round(lifecycle_repo, record, "UNKNOWN")
++    deadline = record.budget_state.deadline_at
++    service.reserve_reobservation(record.recovery_id)
++    record = verify_round(
++        lifecycle_repo, lifecycle_repo.get_recovery(record.recovery_id), "FAIL", residual=0.2
++    )
++    assert record.budget_state.consecutive_no_progress == 0
++    service.reserve_reobservation(record.recovery_id)
++    record = verify_round(
++        lifecycle_repo, lifecycle_repo.get_recovery(record.recovery_id), "FAIL", residual=0.1
++    )
++    assert record.budget_state.consecutive_no_progress == 0
++    assert record.budget_state.remaining_reobservations == 0
++    assert record.budget_state.deadline_at == deadline
++    assert service.reserve_reobservation(record.recovery_id) is None
++    assert lifecycle_repo.get_recovery(record.recovery_id).state == "EXHAUSTED"
++
++
++def test_new_frame_provider_is_not_called_without_prior_reservation(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, record = executed_recovery(lifecycle_repo)
++    record = verify_round(lifecycle_repo, record, "UNKNOWN")
++    calls = []
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, evidence_provider=lambda _: calls.append("capture")
++    )
++    actual = service.advance_recovery(record.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", ())
++    assert calls == [] and actual == record
++
++
++def test_same_reservation_is_not_replayed_or_refilled(lifecycle_repo):
++    service, record = executed_recovery(lifecycle_repo)
++    first = service.reserve_reobservation(record.recovery_id)
++    assert first is not None
++    assert first.budget_state.remaining_reobservations == 1
++    assert service.reserve_reobservation(record.recovery_id) is None
++    assert lifecycle_repo.get_recovery(record.recovery_id) == first
++
++
++@pytest.mark.parametrize(
++    "change",
++    [
++        "early_start",
++        "future_finish",
++        "old_task",
++        "old_attempt",
++        "wrong_checkpoint",
++        "missing_attempt_count",
++    ],
++)
++def test_actual_completion_order_and_identity_are_required(lifecycle_repo, change):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    authorized = atomic_authorize(lifecycle_repo, saved).recovery
++    proof = execution_proof(lifecycle_repo, authorized)
++    if change == "early_start":
++        proof = replace(
++            proof,
++            receipt=proof.receipt.model_copy(
++                update={"started_at": datetime(2000, 1, 1, tzinfo=UTC)}
++            ),
++        )
++    elif change == "future_finish":
++        proof = replace(
++            proof,
++            completion=proof.completion.model_copy(
++                update={"timestamp": datetime.now(UTC) + timedelta(seconds=5)}
++            ),
++        )
++    elif change == "old_task":
++        proof = replace(proof, completion=proof.completion.model_copy(update={"task_id": "other"}))
++    elif change == "old_attempt":
++        proof = replace(proof, receipt=proof.receipt.model_copy(update={"repair_id": "other"}))
++    elif change == "wrong_checkpoint":
++        proof = replace(proof, checkpoint_hash="wrong")
++    else:
++        from uuid import uuid4
++
++        cp = lifecycle_repo.get_latest_execution_checkpoint("task")
++        lifecycle_repo.save_execution_checkpoint(
++            cp.model_copy(
++                update={"checkpoint_id": uuid4().hex, "checkpoint_hash": "", "step_attempts": {}}
++            )
++        )
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, execution_provider=lambda _: proof
++    )
++    actual = service.advance_recovery(
++        saved.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ()
++    )
++    assert actual == authorized
++
++
++def test_public_rehashed_record_cannot_promote_or_rebind(lifecycle_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryTransitionEvidence
++
++    _, record = executed_recovery(lifecycle_repo)
++    source = verification_snapshot(lifecycle_repo, record, "PASS")
++    proof = RecoveryTransitionEvidence(
++        "VERIFIED_RESOLVED", tuple(canonical(record, source)), online_evidence=source
++    )
++    pool = lifecycle_repo.get_verification_budget("task")
++    for changed in (
++        replace(record, state="VERIFIED_RESOLVED"),
++        replace(record, event_id="other"),
++        replace(record, reason="fake"),
++    ):
++        with pytest.raises(ValueError):
++            lifecycle_repo.advance_recovery_if_current(
++                changed,
++                expected_state=record.state,
++                expected_revision=record.revision,
++                expected_budget_revision=pool.revision,
++                verified_transition=proof,
++            )
++    assert lifecycle_repo.get_recovery(record.recovery_id) == record
++
++
++def test_reservation_restart_and_new_event_preserve_shared_spent_pool(tmp_path):
++    from dataclasses import replace
++
++    path = tmp_path / "reserved.sqlite"
++    repo = SQLiteEventAutonomyRepository(path)
++    service, record = executed_recovery(repo)
++    reserved = service.reserve_reobservation(record.recovery_id)
++    pool = repo.get_verification_budget("task")
++    repo.close()
++    restarted = SQLiteEventAutonomyRepository(path)
++    assert restarted.get_recovery(record.recovery_id) == reserved
++    assert restarted.get_verification_budget("task") == pool
++    proposal = detected_record(restarted, event_id="event-2", recovery_id="recovery-2")
++    proposal = replace(proposal, task_budget_revision=pool.revision)
++    second = restarted.initialize_recovery_if_absent(proposal)
++    assert second.budget_state == pool.state
++    assert restarted.get_verification_budget("task") == pool
++    restarted.close()
++
++
++def test_initial_task_mirror_respects_already_spent_frozen_retry_cap(lifecycle_repo):
++    from cloud_edge_robot_arm.contracts.models import RecoveryBudget
++
++    lifecycle_repo.initialize_retry_budget_if_absent(
++        RecoveryBudget(
++            task_id="task",
++            per_step_retry_limit=9,
++            per_skill_retry_limit=9,
++            task_total_retry_limit=9,
++            task_retry_count=2,
++            retry_count_used=2,
++            remaining_retries=7,
++        )
++    )
++    record = lifecycle_repo.initialize_verification_budget_if_absent(
++        "task", VerificationBudgetState.start(VerificationBudget(2, 2, 3, 60))
++    )
++    assert record.state.remaining_retries == 0
++
++
++def test_two_connections_reserve_exactly_one_allowance(tmp_path):
++    path = tmp_path / "reserve-race.sqlite"
++    first = SQLiteEventAutonomyRepository(path)
++    _, record = executed_recovery(first)
++    second = SQLiteEventAutonomyRepository(path)
++    pool = first.get_verification_budget("task")
++    barrier = Barrier(2)
++
++    def reserve(repo):
++        barrier.wait()
++        return repo.reserve_reobservation_if_current(
++            recovery_id=record.recovery_id,
++            expected_revision=record.revision,
++            expected_budget_revision=pool.revision,
++            reservation=reservation_proof(repo, record),
++        )
++
++    with ThreadPoolExecutor(max_workers=2) as executor:
++        results = list(executor.map(reserve, (first, second)))
++    assert sum(item is not None for item in results) == 1
++    assert first.get_verification_budget("task").state.remaining_reobservations == 1
++    first.close()
++    second.close()
++
++
++def test_atomic_authorization_rollback_preserves_all_three_sources(tmp_path, monkeypatch):
++    path = tmp_path / "rollback.sqlite"
++    repo = SQLiteEventAutonomyRepository(path)
++    saved = repo.initialize_recovery_if_absent(detected_record(repo))
++    pool = repo.get_verification_budget("task")
++    retry = repo.get_retry_budget("task")
++    original = repo._update_recovery_locked
++
++    def fail_after_update(record, budget):
++        original(record, budget)
++        raise RuntimeError("MOCK transaction fault")
++
++    monkeypatch.setattr(repo, "_update_recovery_locked", fail_after_update)
++    with pytest.raises(RuntimeError, match="MOCK transaction fault"):
++        atomic_authorize(repo, saved)
++    assert repo.get_recovery(saved.recovery_id) == saved
++    assert repo.get_retry_budget("task") == retry
++    assert repo.get_verification_budget("task") == pool
++    repo.close()
++    restarted = SQLiteEventAutonomyRepository(path)
++    assert restarted.get_recovery(saved.recovery_id) == saved
++    assert restarted.get_retry_budget("task") == retry
++    assert restarted.get_verification_budget("task") == pool
++    restarted.close()
++
++
++def test_resolution_rechecks_current_cancel_after_provider_returns(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, record = executed_recovery(lifecycle_repo)
++    source = verification_snapshot(lifecycle_repo, record, "PASS")
++
++    def acquire(_):
++        lifecycle_repo.save_state("task", "CANCELLED", "MOCK cancellation race")
++        return source
++
++    service = RecoveryLifecycleService(repository=lifecycle_repo, evidence_provider=acquire)
++    result = service.advance_recovery(
++        record.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", canonical(record, source)
++    )
++    assert result == record and not result.resolution_observation_id
++
++
++def test_sqlite_rehashed_payload_cannot_change_indexed_task_or_revision(tmp_path):
++    import json
++    from dataclasses import replace
++
++    repo = SQLiteEventAutonomyRepository(tmp_path / "index.sqlite")
++    saved = repo.initialize_recovery_if_absent(detected_record(repo))
++    pool = repo.get_verification_budget("task")
++    changed = replace(saved, task_id="foreign-task")
++    repo._conn.execute(
++        "UPDATE recovery_records SET payload_json=?,content_hash=? WHERE recovery_id=?",
++        (json.dumps(changed.to_payload()), changed.content_hash(), saved.recovery_id),
++    )
++    repo._conn.commit()
++    with pytest.raises(ValueError):
++        repo.get_recovery(saved.recovery_id)
++    changed_pool = replace(pool, task_id="foreign-task", revision=99, content_hash="")
++    repo._conn.execute(
++        "UPDATE verification_budgets SET payload_json=?,content_hash=? WHERE task_id=?",
++        (json.dumps(changed_pool.to_payload()), changed_pool.content_hash, "task"),
++    )
++    repo._conn.commit()
++    with pytest.raises(ValueError):
++        repo.get_verification_budget("task")
++    repo.close()
++
++
++def test_nonprogress_pool_cannot_be_revived_through_new_authorization(lifecycle_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryTransitionEvidence
++
++    service, record = executed_recovery(lifecycle_repo)
++    for index in range(3):
++        if index:
++            service.reserve_reobservation(record.recovery_id)
++            record = lifecycle_repo.get_recovery(record.recovery_id)
++        record = verify_round(lifecycle_repo, record, "UNKNOWN")
++    pool = lifecycle_repo.get_verification_budget("task")
++    proposal = detected_record(lifecycle_repo, event_id="new-event", recovery_id="new-recovery")
++    proposal = replace(proposal, task_budget_revision=pool.revision)
++    saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    retry = lifecycle_repo.get_retry_budget("task")
++    actual = atomic_authorize(lifecycle_repo, saved)
++    assert not actual.authorized and lifecycle_repo.get_retry_budget("task") == retry
++    terminal = lifecycle_repo.advance_recovery_if_current(
++        saved,
++        expected_state="DETECTED",
++        expected_revision=saved.revision,
++        expected_budget_revision=pool.revision,
++        verified_transition=RecoveryTransitionEvidence("EXHAUSTED"),
++    )
++    assert terminal.state == "EXHAUSTED"
++    assert terminal.budget_state.deadline_at == pool.state.deadline_at
++
++
++def test_best_condition_progress_survives_event_changes(lifecycle_repo):
++    from dataclasses import replace
++
++    service, first = executed_recovery(lifecycle_repo)
++    first = verify_round(lifecycle_repo, first, "FAIL", residual=0.1)
++    pool = lifecycle_repo.get_verification_budget("task")
++    proposal = detected_record(lifecycle_repo, event_id="new-event", recovery_id="new-recovery")
++    proposal = replace(proposal, task_budget_revision=pool.revision)
++    second = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    authorized = atomic_authorize(lifecycle_repo, second).recovery
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    proof = execution_proof(lifecycle_repo, authorized)
++    service = RecoveryLifecycleService(
++        repository=lifecycle_repo, execution_provider=lambda _: proof
++    )
++    second = service.advance_recovery(
++        second.recovery_id, "RECOVERY_AUTHORIZED", "RETRY_EXECUTED", ()
++    )
++    second = verify_round(lifecycle_repo, second, "FAIL", residual=0.2)
++    assert second.budget_state.consecutive_no_progress == 2
++    assert second.budget_state.deadline_at == first.budget_state.deadline_at
++    assert len(lifecycle_repo.list_unresolved_recoveries("task")) == 2
++
++
++def test_failure_events_cannot_share_one_execution_attempt_identity(lifecycle_repo):
++    from dataclasses import replace
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    second = detected_record(lifecycle_repo, event_id="second-event", recovery_id="second-recovery")
++    with pytest.raises(ValueError):
++        lifecycle_repo.initialize_recovery_if_absent(replace(second, attempt_id=saved.attempt_id))
++    assert lifecycle_repo.get_recovery(second.recovery_id) is None
++
++
++def test_same_camera_frame_replay_is_not_fresh_resolution(lifecycle_repo):
++    from dataclasses import replace
++
++    service, record = executed_recovery(lifecycle_repo)
++    source = verification_snapshot(lifecycle_repo, record, "FAIL")
++    record = verify_round(lifecycle_repo, record, "FAIL", snapshot=source)
++    service.reserve_reobservation(record.recovery_id)
++    record = lifecycle_repo.get_recovery(record.recovery_id)
++    pass_source = verification_snapshot(lifecycle_repo, record, "PASS")
++    observation = type(pass_source.observation).model_validate(
++        {
++            **pass_source.observation.model_dump(),
++            "observation_id": source.observation.observation_id,
++            "frame_id": source.observation.frame_id,
++            "checksum_sha256": "",
++        }
++    )
++    fact = dict(pass_source.visual_facts["object_held"])
++    fact["observation_id"] = observation.observation_id
++    pass_source = replace(pass_source, observation=observation, visual_facts={"object_held": fact})
++    result = verify_round(lifecycle_repo, record, "PASS", snapshot=pass_source)
++    assert result.state != "VERIFIED_RESOLVED" and not result.resolution_observation_id
++
++
++def test_authorization_conditions_cannot_select_decoy_target(lifecycle_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    proposal = detected_record(lifecycle_repo)
++    proposal = replace(proposal, conditions=(ConditionSpec("object_held", target_id="decoy"),))
++    saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    actual = atomic_authorize(lifecycle_repo, saved)
++    assert not actual.authorized
++    assert lifecycle_repo.get_retry_budget("task").retry_count_used == 0
++
++
++def test_nested_condition_bindings_are_not_mutable_aliases(lifecycle_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    tolerances = {"nested": {"margin": [1, 2]}}
++    proposal = replace(
++        detected_record(lifecycle_repo),
++        conditions=(ConditionSpec("object_held", "obj-1", tolerances),),
++    )
++    saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    tolerances["nested"]["margin"][0] = 99
++    assert lifecycle_repo.get_recovery(saved.recovery_id) == saved
++    with pytest.raises(TypeError):
++        saved.conditions[0].tolerances["nested"]["margin"][0] = 77
++
++
++@pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
++def test_robot_hard_stop_blocks_authorization_before_any_debit(lifecycle_repo, field):
++    from dataclasses import replace
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    proof = authorization_proof(saved)
++    robot = proof.online_evidence.robot_state.model_copy(update={field: field != "connected"})
++    proof = replace(proof, online_evidence=replace(proof.online_evidence, robot_state=robot))
++    pool = lifecycle_repo.get_verification_budget("task")
++    retry = lifecycle_repo.get_retry_budget("task")
++    assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
++    assert lifecycle_repo.get_verification_budget("task") == pool
++    assert lifecycle_repo.get_retry_budget("task") == retry
++
++
++def test_authorization_must_cover_full_timeout(lifecycle_repo):
++    from dataclasses import replace
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    proof = authorization_proof(saved)
++    proof = replace(proof, action=replace(proof.action, expected_duration_s=1.0))
++    assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
++    assert lifecycle_repo.get_retry_budget("task").retry_count_used == 0
++
++
++@pytest.mark.parametrize("field", ["estop_engaged", "collision_detected", "connected"])
++def test_robot_hard_stop_blocks_resolution_even_when_object_condition_passes(lifecycle_repo, field):
++    from dataclasses import replace
++
++    _, record = executed_recovery(lifecycle_repo)
++    source = verification_snapshot(lifecycle_repo, record, "PASS")
++    source = replace(
++        source, robot_state=source.robot_state.model_copy(update={field: field != "connected"})
++    )
++    actual = verify_round(lifecycle_repo, record, "PASS", snapshot=source)
++    assert actual == record and not actual.resolution_observation_id
++
++
++def test_grasp_visible_alone_cannot_be_recovery_success(lifecycle_repo):
++    from dataclasses import replace
++
++    from cloud_edge_robot_arm.edge.evidence.conditions import ConditionSpec
++
++    proposal = replace(
++        detected_record(lifecycle_repo), conditions=(ConditionSpec("target_visible", "obj-1"),)
++    )
++    saved = lifecycle_repo.initialize_recovery_if_absent(proposal)
++    assert not atomic_authorize(lifecycle_repo, saved).authorized
++
++
++@pytest.mark.parametrize("scope", ["UNAVAILABLE", "ACTUAL_SOURCE"])
++def test_unavailable_or_uncertified_actual_source_cannot_authorize_legacy_empty_steps(
++    lifecycle_repo, scope
++):
++    from dataclasses import replace
++
++    saved = lifecycle_repo.initialize_recovery_if_absent(detected_record(lifecycle_repo))
++    proof = replace(authorization_proof(saved), evidence_scope=scope)
++    assert not atomic_authorize(lifecycle_repo, saved, proof).authorized
++
++
++def test_absent_current_state_provider_cannot_reserve_recapture(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryLifecycleService
++
++    _, record = executed_recovery(lifecycle_repo)
++    pool = lifecycle_repo.get_verification_budget("task")
++    service = RecoveryLifecycleService(repository=lifecycle_repo)
++    assert service.reserve_reobservation(record.recovery_id) is None
++    assert lifecycle_repo.get_verification_budget("task") == pool
++
++
++def reservation_proof(repo, record, *, robot_changes=None):
++    from cloud_edge_robot_arm.contracts.models import RobotState
++    from cloud_edge_robot_arm.edge.recovery.lifecycle import RecoveryReservationEvidence
++
++    return RecoveryReservationEvidence(
++        RobotState(connected=True, **(robot_changes or {})),
++        repo.get_latest_execution_checkpoint(record.task_id).checkpoint_hash,
++        datetime.now(UTC),
++        evidence_scope="SOFTWARE_ONLY",
++    )
++
++
++def test_genuine_software_lifecycle_resolution_cannot_unblock_production_completion(lifecycle_repo):
++    from cloud_edge_robot_arm.edge.completion_evaluator import CompletionEvaluator
++
++    _, executed = executed_recovery(lifecycle_repo)
++    resolved = verify_round(lifecycle_repo, executed, "PASS")
++    contract = lifecycle_repo.get_active_contract("task").contract
++    result = CompletionEvaluator(repository=lifecycle_repo).evaluate(
++        contract=contract,
++        completed_step_ids=[item.step_id for item in contract.steps],
++        completion_criteria_results={"object_placed": True},
++        final_safety_decision="ALLOW",
++        final_robot_state={"connected": True, "gripper_open": True},
++        final_target_state={"object_at_target": True},
++        last_scene_update_at=datetime.now(UTC),
++    )
++    assert resolved.state == "VERIFIED_RESOLVED" and resolved.evidence_scope == "SOFTWARE_ONLY"
++    assert not result.completed
++    assert "CHECK_8_UNRESOLVED_RECOVERIES" in result.failed_checks
++    assert result.evidence["unresolved_recoveries"] == [resolved.recovery_id]
++
++
++@pytest.mark.parametrize(
++    "change",
++    [
++        "estop",
++        "collision",
++        "disconnected",
++        "future",
++        "stale",
++        "foreign_checkpoint",
++        "unavailable_scope",
++    ],
++)
++def test_reservation_requires_current_safe_source_before_capture(lifecycle_repo, change):
++    from dataclasses import replace
++
++    _, record = executed_recovery(lifecycle_repo)
++    pool = lifecycle_repo.get_verification_budget("task")
++    proof = reservation_proof(lifecycle_repo, record)
++    if change in {"estop", "collision", "disconnected"}:
++        field = {
++            "estop": "estop_engaged",
++            "collision": "collision_detected",
++            "disconnected": "connected",
++        }[change]
++        proof = replace(
++            proof, robot_state=proof.robot_state.model_copy(update={field: field != "connected"})
++        )
++    elif change in {"future", "stale"}:
++        proof = replace(
++            proof,
++            captured_at=datetime.now(UTC) + timedelta(seconds=1 if change == "future" else -10),
++        )
++    elif change == "foreign_checkpoint":
++        proof = replace(proof, checkpoint_hash="foreign")
++    else:
++        proof = replace(proof, evidence_scope="UNAVAILABLE")
++    result = lifecycle_repo.reserve_reobservation_if_current(
++        recovery_id=record.recovery_id,
++        expected_revision=record.revision,
++        expected_budget_revision=pool.revision,
++        reservation=proof,
++    )
++    assert result is None
++    assert lifecycle_repo.get_recovery(record.recovery_id) == record
++    assert lifecycle_repo.get_verification_budget("task") == pool
++
++
++def test_expired_preflight_does_not_acquire_another_evidence_frame(lifecycle_repo, monkeypatch):
++    import cloud_edge_robot_arm.edge.recovery.lifecycle as lifecycle
++
++    _, record = executed_recovery(lifecycle_repo)
++    source = verification_snapshot(lifecycle_repo, record, "UNKNOWN")
++    future = record.budget_state.deadline_at + timedelta(seconds=1)
++    monkeypatch.setattr(lifecycle, "_utc_clock", lambda: future)
++    calls = []
++
++    def acquire(_):
++        calls.append("MOCK acquisition")
++        return source
++
++    service = lifecycle.RecoveryLifecycleService(
++        repository=lifecycle_repo, evidence_provider=acquire
++    )
++    service.advance_recovery(record.recovery_id, "RETRY_EXECUTED", "VERIFIED_RESOLVED", ())
++    assert calls == []

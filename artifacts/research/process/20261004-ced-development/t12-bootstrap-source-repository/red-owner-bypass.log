@@ -1,0 +1,50 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_existing_bootstrap_cannot_be_bypassed_by_old_owner_initializer[memory] __
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x71fb46522ba0>, {...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_existing_bootstrap_cannot_be_bypassed_by_old_owner_initializer(store):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+        from tests.test_visual_owner_repository import fresh_source_values
+    
+        repo, data = store
+        bootstrap = repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        fixture = fresh_source_values()
+        original = fixture['original']
+        state = VerificationBudgetState.start(VerificationBudget(3, 2, 3, 40))
+        state.deadline_at = original.verification_deadline_at
+        retry = RecoveryBudget(budget_id='legacy-init',task_id=original.identity.task_id,
+            scene_version=original.contract.scene_version,remaining_retries=2,
+            retry_deadline=original.verification_deadline_at)
+>       with pytest.raises(IdempotencyConflictError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError'>
+
+tests/test_visual_bootstrap_repository.py:495: Failed
+_ test_existing_bootstrap_cannot_be_bypassed_by_old_owner_initializer[sqlite] __
+
+store = (<cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x71fb43532570>, {'d...2222222222222222222222222222', attempt_state_hash='3333333333333333333333333333333333333333333333333333333333333333')})
+
+    def test_existing_bootstrap_cannot_be_bypassed_by_old_owner_initializer(store):
+        from cloud_edge_robot_arm.contracts.models import RecoveryBudget
+        from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudgetState
+        from tests.test_visual_owner_repository import fresh_source_values
+    
+        repo, data = store
+        bootstrap = repo.initialize_visual_bootstrap_if_absent(data['definition'])
+        fixture = fresh_source_values()
+        original = fixture['original']
+        state = VerificationBudgetState.start(VerificationBudget(3, 2, 3, 40))
+        state.deadline_at = original.verification_deadline_at
+        retry = RecoveryBudget(budget_id='legacy-init',task_id=original.identity.task_id,
+            scene_version=original.contract.scene_version,remaining_retries=2,
+            retry_deadline=original.verification_deadline_at)
+>       with pytest.raises(IdempotencyConflictError):
+E       Failed: DID NOT RAISE <class 'cloud_edge_robot_arm.repositories.event_autonomy.protocol.IdempotencyConflictError'>
+
+tests/test_visual_bootstrap_repository.py:495: Failed
+=========================== short test summary info ============================
+FAILED tests/test_visual_bootstrap_repository.py::test_existing_bootstrap_cannot_be_bypassed_by_old_owner_initializer[memory]
+FAILED tests/test_visual_bootstrap_repository.py::test_existing_bootstrap_cannot_be_bypassed_by_old_owner_initializer[sqlite]
+2 failed, 43 deselected in 0.83s

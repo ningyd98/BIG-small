@@ -1,0 +1,95 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_____________ test_stall_and_fallback_keep_assignment_denominator ______________
+
+    def test_stall_and_fallback_keep_assignment_denominator():
+        rows = records(2)
+        changed = [
+            replace(
+                row,
+                run_status="FALLBACK" if row.assignment.group_id == "g0" else "STOP",
+                outcome=replace(row.outcome, terminal_reason="NO_PROGRESS"),
+            )
+            for row in rows
+        ]
+        metrics = api("metrics").compute_research_metrics(changed, (), (), software_only=True)
+        joint = metrics["methods"]["JOINT"]
+        assert joint["assigned_denominator"] == 2
+>       assert joint["fallback_episode_rate"] == 0.5
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'fallback_episode_rate'
+
+tests/test_research_acceptance.py:114: KeyError
+_ test_unknown_conditions_and_fallback_decisions_do_not_use_episode_denominators _
+
+    def test_unknown_conditions_and_fallback_decisions_do_not_use_episode_denominators():
+        rows = records(2)
+        changed = []
+        for row in rows:
+            if row.assignment.method_id == "JOINT" and row.assignment.group_id == "g0":
+                statuses = ({"status": "UNKNOWN"},) + tuple(
+                    {"status": "PASS"} for _ in range(99))
+                changed.append(replace(row, verification_records=statuses, run_status="FALLBACK"))
+            else:
+                changed.append(row)
+        joint = api("metrics").compute_research_metrics(
+            changed, (), (), software_only=True)["methods"]["JOINT"]
+>       assert joint["unknown_episode_rate"] == joint["fallback_episode_rate"] == .5
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'fallback_episode_rate'
+
+tests/test_research_acceptance.py:130: KeyError
+_ test_g2_preserves_definite_target_failure_and_clear_inferiority[requests0-success0] _
+
+requests = (0.2, 0.1, 0.25), success = (0, -0.04, 0.02)
+
+    @pytest.mark.parametrize("requests,success", [
+        ((.2,.1,.25),(0,-.04,.02)),
+        ((.4,.1,.6),(-.5,-.55,-.45)),
+    ])
+    def test_g2_preserves_definite_target_failure_and_clear_inferiority(requests,success):
+        from tests.test_research_assignments import frozen
+    
+        metrics = {"scope":"SOFTWARE_ONLY", "main_paired_group_denominator":600,
+            "effects": {"G2_REQUESTS": effect(*requests).__dict__,
+                        "G2_SUCCESS": effect(*success).__dict__,
+                        "G2_SAFETY": effect(0,-.005,.005).__dict__}}
+        verdict = next(value for value in api("acceptance").evaluate_goals(
+            metrics,frozen([]),software_only=True) if value.goal_id=="G2")
+>       assert verdict.status == "FAIL"
+E       AssertionError: assert 'INSUFFICIENT_EVIDENCE' == 'FAIL'
+E         
+E         - FAIL
+E         + INSUFFICIENT_EVIDENCE
+
+tests/test_research_acceptance.py:154: AssertionError
+_ test_g2_preserves_definite_target_failure_and_clear_inferiority[requests1-success1] _
+
+requests = (0.4, 0.1, 0.6), success = (-0.5, -0.55, -0.45)
+
+    @pytest.mark.parametrize("requests,success", [
+        ((.2,.1,.25),(0,-.04,.02)),
+        ((.4,.1,.6),(-.5,-.55,-.45)),
+    ])
+    def test_g2_preserves_definite_target_failure_and_clear_inferiority(requests,success):
+        from tests.test_research_assignments import frozen
+    
+        metrics = {"scope":"SOFTWARE_ONLY", "main_paired_group_denominator":600,
+            "effects": {"G2_REQUESTS": effect(*requests).__dict__,
+                        "G2_SUCCESS": effect(*success).__dict__,
+                        "G2_SAFETY": effect(0,-.005,.005).__dict__}}
+        verdict = next(value for value in api("acceptance").evaluate_goals(
+            metrics,frozen([]),software_only=True) if value.goal_id=="G2")
+>       assert verdict.status == "FAIL"
+E       AssertionError: assert 'INSUFFICIENT_EVIDENCE' == 'FAIL'
+E         
+E         - FAIL
+E         + INSUFFICIENT_EVIDENCE
+
+tests/test_research_acceptance.py:154: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_research_acceptance.py::test_stall_and_fallback_keep_assignment_denominator
+FAILED tests/test_research_acceptance.py::test_unknown_conditions_and_fallback_decisions_do_not_use_episode_denominators
+FAILED tests/test_research_acceptance.py::test_g2_preserves_definite_target_failure_and_clear_inferiority[requests0-success0]
+FAILED tests/test_research_acceptance.py::test_g2_preserves_definite_target_failure_and_clear_inferiority[requests1-success1]
+4 failed, 25 deselected in 0.37s

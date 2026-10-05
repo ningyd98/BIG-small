@@ -1,0 +1,166 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+_ test_task_verification_initialize_preserves_spent_pool_and_deadline[memory] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7e62ef74d4f0>
+
+    def test_task_verification_initialize_preserves_spent_pool_and_deadline(lifecycle_repo):
+>       original = lifecycle_repo.initialize_verification_budget_if_absent("task", verification_pool())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:37: AttributeError
+_ test_task_verification_initialize_preserves_spent_pool_and_deadline[sqlite] __
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7e62ef74d070>
+
+    def test_task_verification_initialize_preserves_spent_pool_and_deadline(lifecycle_repo):
+>       original = lifecycle_repo.initialize_verification_budget_if_absent("task", verification_pool())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:37: AttributeError
+_ test_task_pool_read_and_initialize_do_not_expose_mutable_saved_state[memory] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7e62ef78c2c0>
+
+    def test_task_pool_read_and_initialize_do_not_expose_mutable_saved_state(lifecycle_repo):
+        proposed = verification_pool()
+        original_deadline = proposed.deadline_at
+>       saved = lifecycle_repo.initialize_verification_budget_if_absent("task", proposed)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:51: AttributeError
+_ test_task_pool_read_and_initialize_do_not_expose_mutable_saved_state[sqlite] _
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7e62ef74fa70>
+
+    def test_task_pool_read_and_initialize_do_not_expose_mutable_saved_state(lifecycle_repo):
+        proposed = verification_pool()
+        original_deadline = proposed.deadline_at
+>       saved = lifecycle_repo.initialize_verification_budget_if_absent("task", proposed)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:51: AttributeError
+____________ test_sqlite_restart_preserves_task_pool_complete_bytes ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-663/test_sqlite_restart_preserves_0')
+
+    def test_sqlite_restart_preserves_task_pool_complete_bytes(tmp_path):
+        path = tmp_path / "restart.sqlite"
+        repo = SQLiteEventAutonomyRepository(path)
+>       original = repo.initialize_verification_budget_if_absent("task", verification_pool())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:67: AttributeError
+______ test_two_sqlite_initializers_share_one_task_pool_without_refilling ______
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-663/test_two_sqlite_initializers_s0')
+
+    def test_two_sqlite_initializers_share_one_task_pool_without_refilling(tmp_path):
+        path = tmp_path / "race.sqlite"
+        first, second = (SQLiteEventAutonomyRepository(path) for _ in range(2))
+        proposals = [verification_pool(), verification_pool()]
+        proposals[1].remaining_reobservations = 0
+        barrier = Barrier(2)
+        def initialize(repo, proposal):
+            barrier.wait(timeout=5)
+            return repo.initialize_verification_budget_if_absent("task", proposal)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(initialize, repo, proposal)
+                       for repo, proposal in zip((first, second), proposals, strict=True)]
+>           results = [future.result(timeout=10) for future in futures]
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_recovery_lifecycle_module.py:92: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+/usr/lib/python3.12/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7e62ef78c8f0>
+proposal = VerificationBudgetState(remaining_reobservations=1, remaining_retries=0, consecutive_no_progress=2, deadline_at=dateti...deadline_s=60), previous_conditions={'object_held:obj-1': ('FAIL', 0.1)}, exhausted_reason=None, verification_rounds=3)
+
+    def initialize(repo, proposal):
+        barrier.wait(timeout=5)
+>       return repo.initialize_verification_budget_if_absent("task", proposal)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:88: AttributeError
+______ test_task_verification_pool_rejects_missing_task_identity[memory-] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7e62ef78e870>
+invalid = ''
+
+    @pytest.mark.parametrize("invalid", ["", "   "])
+    def test_task_verification_pool_rejects_missing_task_identity(lifecycle_repo, invalid):
+        with pytest.raises(ValueError):
+>           lifecycle_repo.initialize_verification_budget_if_absent(invalid, verification_pool())
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:103: AttributeError
+____ test_task_verification_pool_rejects_missing_task_identity[memory-   ] _____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository object at 0x7e62ef78f3e0>
+invalid = '   '
+
+    @pytest.mark.parametrize("invalid", ["", "   "])
+    def test_task_verification_pool_rejects_missing_task_identity(lifecycle_repo, invalid):
+        with pytest.raises(ValueError):
+>           lifecycle_repo.initialize_verification_budget_if_absent(invalid, verification_pool())
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'InMemoryEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:103: AttributeError
+______ test_task_verification_pool_rejects_missing_task_identity[sqlite-] ______
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7e62ef78ff80>
+invalid = ''
+
+    @pytest.mark.parametrize("invalid", ["", "   "])
+    def test_task_verification_pool_rejects_missing_task_identity(lifecycle_repo, invalid):
+        with pytest.raises(ValueError):
+>           lifecycle_repo.initialize_verification_budget_if_absent(invalid, verification_pool())
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:103: AttributeError
+____ test_task_verification_pool_rejects_missing_task_identity[sqlite-   ] _____
+
+lifecycle_repo = <cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7e62eefe95e0>
+invalid = '   '
+
+    @pytest.mark.parametrize("invalid", ["", "   "])
+    def test_task_verification_pool_rejects_missing_task_identity(lifecycle_repo, invalid):
+        with pytest.raises(ValueError):
+>           lifecycle_repo.initialize_verification_budget_if_absent(invalid, verification_pool())
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'SQLiteEventAutonomyRepository' object has no attribute 'initialize_verification_budget_if_absent'. Did you mean: 'initialize_retry_budget_if_absent'?
+
+tests/test_recovery_lifecycle_module.py:103: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_recovery_lifecycle_module.py::test_task_verification_initialize_preserves_spent_pool_and_deadline[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_verification_initialize_preserves_spent_pool_and_deadline[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_pool_read_and_initialize_do_not_expose_mutable_saved_state[memory]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_pool_read_and_initialize_do_not_expose_mutable_saved_state[sqlite]
+FAILED tests/test_recovery_lifecycle_module.py::test_sqlite_restart_preserves_task_pool_complete_bytes
+FAILED tests/test_recovery_lifecycle_module.py::test_two_sqlite_initializers_share_one_task_pool_without_refilling
+FAILED tests/test_recovery_lifecycle_module.py::test_task_verification_pool_rejects_missing_task_identity[memory-]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_verification_pool_rejects_missing_task_identity[memory-   ]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_verification_pool_rejects_missing_task_identity[sqlite-]
+FAILED tests/test_recovery_lifecycle_module.py::test_task_verification_pool_rejects_missing_task_identity[sqlite-   ]
+10 failed in 1.37s
+
+COMMAND: .venv/bin/python -m pytest -q tests/test_recovery_lifecycle_module.py
+OBSERVED_EXIT_CODE: 1
