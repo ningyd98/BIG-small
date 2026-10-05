@@ -29,3 +29,5 @@ Max仍保留历史35 actual calls，当前T3b角色/凭据配置未就绪；没�
 本步读取已有原件并独立重算，没有再次运行capture/decoder或旧90/Go宽套件。采集wall为915.764513714s；独立render-pass总数、decoder wall/peakRSS未被原CLI记录，保持null。raw属于640×480/noise0的单development component，默认320×240/noise.001域资格、native/UTC/未来证书不提升。
 
 限定Git范围只收quiet R01派生结果/清单/8原RGB、已审R02源/tests/固定wrapper及原RED/独审、R03准备/root审查、R07审计和本步文档。完整519.9MB输入留本地；活动R03 worker/模块、R07 producer及新标记pilot不混入本步已审软件。每个指定路径再核对SHA、差异、staged blob后提交推送并验证远端，记录另写git-delivery-step55.json。完整raw不在远端，不能宣称远端独立完成原实验复现。
+
+第55步限定交付已推送 `c1c07a8c28c03c974b83e97599ac0501af2512c8`，128路径/15902070字节，本地/上游/远端SHA一致，push退出0。新增代码和文档diff检查退出0；原日志40处尾空白及原csv.writer的190行CRLF按已审SHA保留，全diff退出2。完整519937924字节raw、活动标记/R03/R07与下载SDK未混入。 见[机器交付记录](git-delivery-step55.json)。本段和记录随后续文档提交推送。

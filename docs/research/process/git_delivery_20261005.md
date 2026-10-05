@@ -99,3 +99,9 @@ This audit inspected filenames, sizes, content hashes, current literal source/te
 ## 第54步：Astra计划与V3软件修复交付
 
 第54步Git交付：Astra计划与10任务/48步骤报告、V3已审三份源/测试及本轮协议/反例/独审、RESET/UTC设计独审和配置/工具链报告已提交 `eed552283c1804e707f661c82ab547b7e1ac2916` 并推送；本地、上游及远端SHA一致，push退出0。112个变更路径/1,264,879字节。完整差异检查退出2，101处日志尾空白及1处已冻结legacy fixture末尾空行按原字节保留；新增代码与文档检查退出0。完整实际采集原件与活动离线结果、未验收R2源码和历史批量raw未混入。见[机器交付记录](../../../artifacts/research/process/20261004-ced-development/git-delivery-step54.json)。本段与机器记录随后续文档提交推送，采集退出0不表示完整性、decoder或正式验收通过。
+
+## Stage55: Astra R01 actual/offline and R02 pin fix
+
+第55步限定交付已推送 `c1c07a8c28c03c974b83e97599ac0501af2512c8`，128路径/15902070字节，本地/上游/远端SHA一致，push退出0。新增代码和文档diff检查退出0；原日志40处尾空白及原csv.writer的190行CRLF按已审SHA保留，全diff退出2。完整519937924字节raw、活动标记/R03/R07与下载SDK未混入。
+
+Included: quiet R01 derived 4807-row decode outputs, complete raw inventory, all 189 unknowns and eight original RGB exports; independently-reviewed R02 source/tests and fixed authored Go wrapper/source/license/build metadata, including the 2.75MB pinned Linux verifier; original qualified REDs and review records; quiet R03 preparation/root corrections, R07 audit and phase documents. These explicit dependencies total128 paths. The actual input raw remains local and the remote tree alone cannot reproduce the complete capture. Scope/check and [delivery JSON](../../../artifacts/research/process/20261004-ced-development/git-delivery-step55.json) preserve exact hashes and the unchanged raw whitespace/CRLF exceptions. No new broad tests or actual producers were run for this Git step.
