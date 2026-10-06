@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "round": "qwen38max-availability-20261006",
+  "planner_model": "gpt-6-astra",
+  "created_at": "2026-10-06T13:22:19.148417+08:00",
+  "status": "planned_not_executed",
+  "goal": "仅诊断指定凭据与既有端点下 qwen3.8-max 本次最小文本推理可用性，不修复项目代码。",
+  "inputs_sha256": {
+    "AGENTS.md": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+    "src/cloud_edge_robot_arm/datasets/external/network.py": "d5c078fdeb7145f8714cbc30ff0add20b207a1aaed079b697d675614aac84997",
+    "src/cloud_edge_robot_arm/model_control/secret_store.py": "3bc779cecb00ab7a2e1b0501d7e7dc24bcd65ec6c85e15e6b47197b9448f41c8",
+    "configs/research/ced_roles.yaml": "54cfa5787f81f284d999703e4fd5da47ae59c5d53784f8636393ab4d2e759f22",
+    "artifacts/research/process/20261004-qwen-cloud-comparison/transport-broker.py": "1e1479c41ace4d1f47f56056c723e4392a4a13c152c8739b6a067ac50e0d84a0",
+    "artifacts/research/process/20261004-qwen-cloud-comparison/acceptance.md": "2edb2847a5b257aac70b081e50f86d31258ede1cc01e37caef5ee389313025f6",
+    "artifacts/research/process/20261006-qwen38max-availability/preflight.json": "c2953d0ed144d4aee7b20606cd2cdfb53c9273f0d1743dd9c45f44f981881a46",
+    "artifacts/research/process/20261006-qwen38max-availability/initial-tool-failure.txt": "ed3471f7900377f86150471417911309833a36d664cb5af7409e139103f67ddf",
+    "artifacts/research/process/20261006-qwen38max-availability/input-sha256.json": "d2a743e3251fa2f3f1f8600a538b22de8a37fca2aa4acd55fdb5c56b05941617",
+    "/home/ningyd/.codex/plugins/cache/openai-curated-remote/superpowers/6.4.2/skills/using-superpowers/SKILL.md": "82c5c8866ad7f5dd4440ce66bd7806ba48a2f13771beae5cf112e53f08fe36ba",
+    "/home/ningyd/.codex/plugins/cache/openai-curated-remote/superpowers/6.4.2/skills/writing-plans/SKILL.md": "a6c67c1900064347c2a329990dd3c555657c51c3ec53b259a08aa01a2c26139a"
+  },
+  "hash_review": "全部 manifest 项已重新读取字节并匹配；技能文件为流程输入。凭据非文件输入，由控制器持有，本规划者未读取。",
+  "problems": [
+    {
+      "problem": "默认 exec 沙箱启动失败",
+      "evidence_path": "artifacts/research/process/20261006-qwen38max-availability/initial-tool-failure.txt",
+      "sha256": "ed3471f7900377f86150471417911309833a36d664cb5af7409e139103f67ddf",
+      "raw_failure": "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted",
+      "hypothesis": "受限环境不允许 bwrap 配置 loopback；已批准 escalated 只读调用成功，不能据此推断模型故障。"
+    },
+    {
+      "problem": "本轮规划只读命令使用的 python 别名不存在",
+      "evidence_location": "本 plan.json 与 plan.md 内嵌原始工具输出；未新增第三个文件",
+      "raw_failure": "/bin/bash: line 1: python: command not found\n",
+      "exit_code": 127,
+      "raw_failure_sha256": "d5fc4556bcd9138a80d56c28419f6c3758f29e88db2ec00a0a06d1b8335d06ea",
+      "hypothesis": "系统没有 python 别名；command -v python3 返回 /usr/bin/python3 且已成功执行哈希复核。实际测试使用控制器已确认的 .venv/bin/python，不做环境修复。"
+    },
+    {
+      "problem": "qwen3.8-max 的实时可用性尚无本次证据",
+      "evidence_path": "artifacts/research/process/20261006-qwen38max-availability/preflight.json",
+      "sha256": "c2953d0ed144d4aee7b20606cd2cdfb53c9273f0d1743dd9c45f44f981881a46",
+      "hypothesis": "环境变量无 API key、DB 无 matching profile、本地 .env 缺失仅说明现有配置未配置该模型；用户本次直接提供凭据后，可在进程内完成独立诊断。服务可用性、鉴权与模型路由仍待真实响应验证。"
+    }
+  ],
+  "scope": {
+    "planner_write_allowlist": [
+      "artifacts/research/process/20261004-ced-development/astra-rounds/qwen38max-availability-20261006/plan.md",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/qwen38max-availability-20261006/plan.json"
+    ],
+    "executor_output_root": "artifacts/research/process/20261006-qwen38max-availability",
+    "allowed": "新增临时诊断脚本及无密钥请求、响应、步骤报告、总结和哈希清单；仅本任务计划及 availability 目录可提交。",
+    "forbidden": [
+      "修改项目源码/配置/SDK/沙箱/网络系统设置",
+      "读写运行 DB、raw、模型权重或其他凭据",
+      "扫描其他 secret 或从聊天提取凭据",
+      "修改冻结原始证据",
+      "混入已有脏改动",
+      "更换端点、Key、协议、模型或绕过网络约束"
+    ]
+  },
+  "runtime_preconditions": [
+    "执行前再次复核全部输入 SHA256 与计划适用性；新增输入或哈希变化先评估，影响范围/根因时重新 Astra 规划。",
+    "控制器已确认 .venv Python 3.12.3、httpx 0.28.1、httpcore 1.0.9；实际命令固定 .venv/bin/python，禁止安装包。",
+    "使用自动审批通过的 require_escalated 通道；不修复 bwrap 配置。",
+    "enp7s0 为物理网卡，SO_BINDTODEVICE 创建及回读成功方可发送；失败即保留证据并停止。",
+    "本次用户凭据通过不回显 stdin/getpass 输入测试进程；必须先保证 TTY 关闭 echo，不支持隐藏输入则停止；不放命令参数、shell 历史、环境变量、文件或日志。",
+    "关闭 debug/header tracing；不得打印 Authorization、cookie、完整请求对象或异常中的秘密。"
+  ],
+  "network": {
+    "endpoint": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    "transport": "src/cloud_edge_robot_arm/datasets/external/network.py:create_direct_transport",
+    "policy": {
+      "mode": "direct",
+      "interface": "enp7s0",
+      "allowed_hosts": [
+        "token-plan.cn-beijing.maas.aliyuncs.com"
+      ],
+      "dns_servers": [
+        "223.5.5.5",
+        "223.6.6.6"
+      ],
+      "host_addresses": {},
+      "dns_timeout_seconds": 3
+    },
+    "trust_env": false,
+    "follow_redirects": false,
+    "verify_tls": true,
+    "provider_concurrency_max": 1,
+    "http_retries": 0,
+    "timeout_seconds": {
+      "connect": 15,
+      "read": 60,
+      "write": 15,
+      "pool": 15
+    },
+    "note": "沿用后端有限 DNS 服务器/公开 IP 尝试；无应用层、HTTP 或 provider 重试。绑定证据来自现有后端 setsockopt 后 getsockopt 核验，可在诊断脚本内只读观察返回 socket，不改源码或绑定行为。"
+  },
+  "requests": [
+    {
+      "sequence": 1,
+      "method": "GET",
+      "path": "/models",
+      "max_attempts": 1,
+      "body": null
+    },
+    {
+      "sequence": 2,
+      "method": "POST",
+      "path": "/chat/completions",
+      "max_attempts": 1,
+      "body": {
+        "model": "qwen3.8-max",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Return exactly OK."
+          }
+        ],
+        "max_tokens": 16,
+        "enable_thinking": false,
+        "temperature": 0,
+        "stream": false
+      }
+    }
+  ],
+  "execution_steps": [
+    "复核输入及 git status，记录当前分支、HEAD、上游和已有脏路径；只新增本轮允许文件。",
+    "创建一次性诊断脚本并进行离线语法/导入及请求配置检查；不添加项目测试、不执行网络预探测。脚本包含两次串行请求上限、关闭代理/重定向/TLS 校验开启、超时与凭据内存输入。",
+    "执行最多一次 GET /models，原样保存经内存秘密检测确认无敏感信息的 body 字节，另记状态码、允许列出的 request-id/content-type、总延迟及 socket 绑定观测。",
+    "GET 若为网络/TLS/绑定异常、401/403/429/5xx、重定向或其他非 200，则停止 POST，作为本次诊断失败/未验证结果；无重试。GET 200 后即使目录无该 model id 仍最多一次 POST，以实际推理响应判定。",
+    "执行最多一次规定 POST，记录原始非敏感请求 body、响应 body、HTTP、请求模型、返回模型、finish_reason、usage、内容及总延迟。响应可能含 credential 时不得落盘/打印，记录 evidence_withheld_sensitive 并停止，不能声称保存了完整原始响应。",
+    "形成步骤报告与本轮阶段总结，分别列出开发验证、真实 API 结果、正式研究验收状态；保留初始失败与所有非敏感错误原件，计算输出哈希。",
+    "审查允许路径内 diff 与秘密泄露风险，使用逐文件 git add 仅提交本轮无密钥产物；推送当前研发分支并记录 local HEAD、tracking upstream、git ls-remote 指向的相同 SHA。不 reset/stash/清理或提交无关变更。"
+  ],
+  "evidence_files": {
+    "request": "request.json",
+    "get_body": "models-response.body",
+    "post_body": "chat-response.body",
+    "result": "result.json",
+    "steps": "steps.md",
+    "stage_summary": "summary.md",
+    "hashes": "output-sha256.json",
+    "note": "以上位于 executor_output_root；未执行 POST 明确 recorded skipped，无响应时不伪造 body 文件。错误可追加独立文件，禁止覆盖 initial-tool-failure.txt/preflight.json/input-sha256.json。"
+  },
+  "validation": {
+    "offline": "验证脚本语法/导入、精确 URL/payload、次数限制、安全输入与日志过滤、哈希与路径范围。",
+    "live_success": "POST HTTP 200，返回 model 精确等于 qwen3.8-max，choices[0].message.content 为非空字符串，choices[0].finish_reason 等于 stop；缺字段、别名、空内容、length/tool_calls/content_filter 不算成功。",
+    "prompt_following": "content.strip() == OK 单独报告；与本次文本推理完成判据分开。",
+    "failure": "401/403/429/5xx、网络/TLS/绑定/协议错误均原样记录为诊断结果；不实施修复或自动补测。",
+    "git": "仅授权路径已审查且无密钥；推送后三方 commit SHA 一致，若 push 或 SHA 核验失败则如实记录未完成交付。"
+  },
+  "acceptance_boundary": {
+    "development": "离线检查仅证明本次诊断脚本与参数可执行。",
+    "real_run": "最多一次目录读取与一次文本推理，结果仅适用于该时间、端点、模型与本次凭据权限；GET 200 不能证明推理可用，模型不存在于目录也不是推理不可用的最终结论。",
+    "formal_research": "未执行视觉、云边端闭环、硬件、安全性、持续可靠性或正式研究验收；本轮不得标记其通过。"
+  },
+  "new_round_rule": "预期诊断 HTTP/网络错误只记录，不为取得成功而改动。需要修复、新根因、范围扩大或计划外失败时停止受影响动作，先生成下一轮 gpt-6-astra 计划；独立无影响工作可继续。",
+  "controller_reported_git": {
+    "branch": "research/20261004-continuation",
+    "HEAD": "be1c10cd596926d0184d7c13268ae3c3e22109d0",
+    "upstream_ahead": 1,
+    "origin": "https://github.com/ningyd98/BIG-small.git",
+    "provenance": "父控制器只读检查报告；执行前复核，规划者未执行 git 或网络操作。"
+  },
+  "self_review": "已覆盖原始失败、全部读取文件哈希、范围、秘密处理、请求次数、直连网络、原始响应、分层验收、Git 交付和下一轮触发；本轮规划者未执行 API、测试或项目修复。"
+}
