@@ -1,0 +1,15 @@
+{
+  "argv": [
+    ".venv/bin/python",
+    "-c",
+    "from pathlib import Path\nimport hashlib,json\nfrom cloud_edge_robot_arm.research.operational_prefix_schema_v1 import decode_original_json_v1\nfrom cloud_edge_robot_arm.research.operational_prefix_v1 import verify_operational_prefix_originals_v1\nattempt=Path(\"artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/actual-round93\")\ncat=decode_original_json_v1((attempt/\"capture-catalog.json\").read_bytes())\nassert cat[\"scope\"]==\"SOURCE_ONLY_NO_NATIVE_ADMISSION\"\nassert cat[\"receipt_path\"]==\"prefix-originals/prefix-receipt.json\"\nraw=(attempt/cat[\"receipt_path\"]).read_bytes()\nassert hashlib.sha256(raw).hexdigest()==cat[\"receipt_sha256\"]\nreceipt=decode_original_json_v1(raw)\nassert receipt==cat[\"entry\"]\nview=verify_operational_prefix_originals_v1(attempt/\"prefix-originals\",receipt)\nwith Path(\"artifacts/research/process/20261004-ced-development/t12-convergence-execution/P4/public-readout-round93/result.json\").open(\"x\") as out:\n    json.dump(view,out,ensure_ascii=False,indent=2,allow_nan=False)\nprint(json.dumps(view,ensure_ascii=False,allow_nan=False))\nassert view[\"original_integrity\"]==\"VERIFIED\" and view[\"source_prefix_complete\"] is True\nassert view[\"formal_accepted\"] is False and view[\"live_authority\"]==\"UNAVAILABLE\"\n"
+  ],
+  "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+  "env_overrides": {
+    "PYTHONPATH": "src:.",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "started_utc": "2026-10-07T17:28:36.544849+00:00",
+  "mode": "public_readout",
+  "max_invocations": 1
+}

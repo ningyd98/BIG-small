@@ -1,5 +1,14 @@
 # Current Authoritative Status
 
+## 2026-10-08 P4 真实来源限定验收完成
+
+修复后的单次 MuJoCo 来源采集与另一进程的公共 reader 均退出 0，独立 Astra 审查 22 项全部通过。完整事件为 RESET1、CONTROL120、PHYSICS120、CAPTURE3；缓存实例0/0、显式76800像素，0动作。225源在本次采集与读出前后无漂移，原件 VERIFIED、source_prefix_complete=true；原 D 年龄区间1.244654602–1.977729199秒。
+
+新63份原件共16700451字节，旧失败68份共25001424字节均保留并独立复核；累计实际2次为1失败、1成功。这里只接受 P4 startup→RESET→capture→current 来源正分支，不代表 native、live authority、九组、G1或T12实际决策完成。完整raw/DB继续本地，远端只交付限定小证据。
+
+P5/R100由原GPT-6.1-sol执行，唯一RED为27个预期缺接口失败；随后发现计划中年龄5秒等值允许与kind截止等值拒绝冲突，现场已冻结交实际Astra R101澄清，八个现存产品源未改，GREEN/static未运行。P3新角色actual probe仍待P8来源冻结，P6–P12尚未完成。后续合法源码变化不追溯改写本次冻结来源，不得借用已结束P4 owner。
+
+
 ## 2026-10-08 Git 整理：P3 与 P4/R93 软件交付
 
 已核实隔离交付分支 `codex/research-20261007-p1-delivery` 的软件 HEAD 为 `ed7efb48acbb86f7cb387a8a67e89d479700dc69`；本次文档整理前，本地、上游及实时远端一致。P4/R93 软件提交为 `a77568043bb5589471e3f15a07d3203998acb8b4`，P3 软件提交为该 HEAD。此前 P1/P2 交付仍保留。当前主工作区 15 个已修改源码、配置与测试文件均与交付工作区逐字节一致。
