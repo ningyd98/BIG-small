@@ -110,6 +110,7 @@ class VisualSupervisionDefinition:
         model_snapshot_hash: str,
         role_bundle: RoleModelBundle,
         job_configuration_hash: str | None = None,
+        operational_windows: list[dict[str, Any]] | None = None,
     ) -> None:
         if (
             type(original) is not VisualOriginalPlan
@@ -133,12 +134,18 @@ class VisualSupervisionDefinition:
                 job_configuration_hash=job_configuration_hash,
             )
         )
+        if operational_windows is not None:
+            body["operational_windows"] = operational_windows
         self._validate(body)
         object.__setattr__(self, "_json", canonical(body))
 
     @staticmethod
     def _validate(body: dict[str, Any]) -> None:
-        if set(body) != {
+        if "operational_windows" in body:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(body["operational_windows"])
+        if set(body) - {"operational_windows"} != {
             "schema_version",
             "scope",
             "original",
@@ -264,6 +271,7 @@ class VisualSupervisionTransitionInput:
         decision: SupervisionDecision | None = None,
         wait_duration_s: float | None = None,
         wait_elapsed_s: float | None = None,
+        operational_windows: list[dict[str, Any]] | None = None,
     ) -> None:
         if (
             type(record) is not VisualSupervisionRecord
@@ -301,12 +309,18 @@ class VisualSupervisionTransitionInput:
                 wait_elapsed_s=wait_elapsed_s,
             )
         )
+        if operational_windows is not None:
+            body["operational_windows"] = operational_windows
         self._validate(body)
         object.__setattr__(self, "_json", canonical(body))
 
     @staticmethod
     def _validate(body: dict[str, Any]) -> None:
-        if set(body) != {
+        if "operational_windows" in body:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(body["operational_windows"])
+        if set(body) - {"operational_windows"} != {
             "schema_version",
             "scope",
             "task_id",
@@ -824,6 +838,11 @@ def derive_supervision(
             return VisualSupervisionTransitionResult(
                 record, _claim_key(body), "HISTORICAL_DUPLICATE"
             )
+    from cloud_edge_robot_arm.vision.operational_windows import _consume_transition
+
+    _consume_transition(
+        body, required="operational_windows" in record.definition.to_payload()
+    )
     if (
         cancelled
         or not current_models_exact(active, checkpoint, retry)

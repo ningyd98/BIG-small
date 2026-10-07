@@ -42,6 +42,7 @@ class OnlineEvidenceSnapshot:
     plan_version: int = 0
     command_seq: int = 0
     context_hash: str = ""
+    operational_reference: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -130,9 +131,13 @@ def _evaluate(
     max_age = condition.tolerances.get("max_age_s", 5.0)
     if not _number(max_age) or max_age <= 0:
         return unknown("invalid_max_age_s")
-    age = (now - timestamp).total_seconds()
-    if age < 0 or age > max_age:
-        return unknown("observation_future_or_stale")
+    local = _operational_freshness(evidence, max_age)
+    if local is False:
+        return unknown("operational_observation_unavailable_or_stale")
+    if local is None:
+        age = (now - timestamp).total_seconds()
+        if age < 0 or age > max_age:
+            return unknown("observation_future_or_stale")
     calibration = condition.tolerances.get("calibration_version")
     if calibration is not None and calibration != observation.calibration_version:
         return unknown("calibration_version_mismatch")
@@ -303,3 +308,14 @@ def _visual_verdict(
 
 def _number(value: object) -> TypeGuard[int | float]:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+
+
+def _operational_freshness(evidence: OnlineEvidenceSnapshot, max_age: object) -> bool | None:
+    if evidence.operational_reference is None:
+        return None
+    from cloud_edge_robot_arm.vision.operational_windows import _check_observation
+
+    return _check_observation(
+        evidence.observation, "condition", max_age_s=max_age,
+        reference=dict(evidence.operational_reference),
+    )

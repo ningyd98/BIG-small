@@ -1,0 +1,507 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="32" time="75.520" timestamp="2026-10-08T04:11:19.980046+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_windows" name="test_five_seconds_inclusive_and_plus_one_ns_rejected" time="2.013" /><testcase classname="tests.test_operational_windows" name="test_deadline_equality_rejected[task]" time="1.289" /><testcase classname="tests.test_operational_windows" name="test_deadline_equality_rejected[verification]" time="1.309" /><testcase classname="tests.test_operational_windows" name="test_deadline_equality_rejected[parent_hard]" time="1.347" /><testcase classname="tests.test_operational_windows" name="test_missing_pair_foreign_domain_and_copied_handle_rejected" time="1.550" /><testcase classname="tests.test_operational_windows" name="test_valid_overlap_accepted_future_and_out_of_order_rejected" time="1.562" /><testcase classname="tests.test_operational_windows" name="test_reply_reobserve_and_new_event_do_not_refresh_origin" time="1.544" /><testcase classname="tests.test_operational_windows" name="test_cached_frame_preserves_original_acquisition_window" time="2.141" /><testcase classname="tests.test_operational_windows" name="test_external_utc_deadline_cannot_be_relabelled_operational" time="2.045" /><testcase classname="tests.test_operational_windows" name="test_utc_jump_is_diagnostic_only_for_supported_local_domain" time="2.004" /><testcase classname="tests.test_operational_windows" name="test_source_and_budget_changes_invalidate_window" time="1.337" /><testcase classname="tests.test_operational_windows" name="test_public_worker_or_source_without_startup_capability_cannot_issue" time="1.464" /><testcase classname="tests.test_operational_windows" name="test_ended_prefix_owner_or_lease_cannot_authorize_new_attempt" time="1.353" /><testcase classname="tests.test_operational_windows" name="test_closed_owner_or_changed_live_lease_attempt_fencing_rejected" time="1.350" /><testcase classname="tests.test_operational_windows" name="test_startup_origin_precedes_reset_and_settle" time="1.505" /><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[normal]" time="1.278" /><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[exception]" time="1.084" /><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[cancellation]" time="1.137" /><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[lease_loss]" time="1.126" /><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[bootstrap]" time="2.846" /><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[capture]" time="2.865" /><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[plan]" time="2.993" /><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[grounding]" time="5.320" /><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[supervision]" time="18.450" /><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[marker]" time="2.172"><failure message="TypeError: associate_marker_target() missing 1 required keyword-only argument: 'now'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x784024f66b10&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p5-r107-green/test_all_p5_categories_use_sam5')
+category = 'marker'
+
+    @pytest.mark.parametrize(
+        "category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"]
+    )
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(
+                    observation,
+                    RobotState(connected=True, stopped=True),
+                    operational_reference=reference,
+                )
+                assert (
+                    evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+                )
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+                from cloud_edge_robot_arm.vision.supervision import decide_supervision
+                from tests.test_visual_worker_supervision_runtime import context_for, decision_for
+    
+                usable_plan(runtime, observation)
+                runtime.adopt_plan(RobotState(connected=True))
+                runtime.initialize_supervision(0.000001, RobotState(connected=True))
+                claim = runtime.reserve_supervision_capture(1, RobotState(connected=True))
+                with supervision_cpu_utc(monkeypatch, runtime, claim) as software_now:
+                    payload = observation.model_dump(mode="json")
+                    payload.update(
+                        captured_at=software_now.isoformat(),
+                        observation_id="p5-supervisor",
+                        frame_id="p5-supervisor",
+                        checksum_sha256="",
+                    )
+                    fresh = RGBDObservation.model_validate(payload)
+                    context = context_for(claim, fresh).model_copy(
+                        update={
+                            "task_instruction": runtime.bootstrap.definition.user_instruction,
+                        }
+                    )
+                    runtime.complete_supervision_capture(
+                        claim, fresh, context, RobotState(connected=True)
+                    )
+                    frame = runtime.reserve_supervision_plan(claim, RobotState(connected=True))
+                    reply = decision_for(frame)
+                    reference = module._reference_for_observation(fresh, "supervision")
+                    assert (
+                        decide_supervision(
+                            reply,
+                            frame.context,
+                            frame.context,
+                            maximum_age_s=5,
+                            operational_reference=frozen_json(reference),
+                        )
+                        == "CONTINUE"
+                    )
+                    assert (
+                        decide_supervision(
+                            reply,
+                            frame.context,
+                            frame.context,
+                            maximum_age_s=6,
+                            operational_reference=frozen_json(reference),
+                        )
+                        == "DISCARD"
+                    )
+                    record = runtime.complete_supervision_plan(frame, reply, RobotState(connected=True))
+                    assert (
+                        record.to_payload()["claims"][frame.claim_id]["plan_completed_at"] is not None
+                    )
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(
+                    update={"preconditions": [], "success_conditions": []}
+                )
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(
+                    runtime.original.digest(),
+                    runtime.original.identity,
+                    runtime.original.requirements[step.step_id],
+                    publication.owner_revision,
+                    publication.state_generation + 1,
+                    publication.checkpoint.checkpoint_hash,
+                    observation.observation_id,
+                    observation.checksum_sha256,
+                    observation.calibration_version,
+                    contract.plan_version,
+                    contract.command_seq,
+                    "6" * 64,
+                    "7" * 64,
+                    None,
+                    runtime.source.source_hashes,
+                    step.model_dump_json(),
+                    runtime.original.requirements[step.step_id].expected_duration_s,
+                    now,
+                    now + timedelta(seconds=3),
+                )
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = marker_cpu_inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(
+                    episode_id=runtime.episode_id,
+                    captured_at=datetime.now(UTC).isoformat(),
+                    observation_id="cpu-marker",
+                    frame_id="cpu-marker",
+                    checksum_sha256="",
+                )
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(
+                    context,
+                    observation_id=fresh.observation_id,
+                    observation_sha256=fresh.checksum_sha256,
+                    episode_id=runtime.episode_id,
+                    operational_reference=module._reference_for_observation(fresh, "marker"),
+                )
+                frozen = context.operational_reference
+                assert isinstance(frozen, MappingProxyType)
+                assert isinstance(frozen["domain"], MappingProxyType)
+                assert type(frozen["hard_deadlines"]) is tuple
+                positive = associate_marker_target(fresh, registration, context)
+                assert positive.status == "OBSERVED_CANDIDATE"
+                assert positive.admission_status == "NOT_ADMITTED"
+                changed = module._descriptor_plain(frozen)
+                changed["source_identity"] = "0" * 64
+                assert (
+                    associate_marker_target(
+                        fresh, registration, replace(context, operational_reference=changed)
+                    ).status
+                    != "OBSERVED_CANDIDATE"
+                )
+                legacy_context = replace(context, operational_reference=None)
+                legacy_body = {
+                    name: getattr(legacy_context, name)
+                    for name in legacy_context.__dataclass_fields__
+                    if name != "operational_reference"
+                }
+                assert legacy_context.digest() == marker._digest(legacy_body)
+            raw.now = 5_000_000_000
+            assert module._check_reference(reference).status == "VALID"
+            raw.now += 1
+            assert module._check_reference(reference).status == "INVALID"
+            if category == "marker":
+                assert (
+                    associate_marker_target(fresh, registration, context).status != "OBSERVED_CANDIDATE"
+                )
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(
+            monkeypatch,
+            tmp_path,
+            run,
+            startup_parameters={"supervision_period_ms": 0.001} if category == "supervision" else None,
+        )
+
+tests/test_operational_windows.py:724: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:218: in exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:232: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:553: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:598: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:954: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_windows.py:178: in run
+    results.append(callback(module, runtime, counter, worker, repo, job))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = &lt;module 'cloud_edge_robot_arm.vision.operational_windows' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py'&gt;
+runtime = &lt;cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x783ffc175cd0&gt;
+raw = &lt;tests.test_operational_windows.CpuCounter object at 0x783ffd167d10&gt;
+args = (&lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x783ffc175be0&gt;, &lt;cloud_edge_robot_arm.sim...ge='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test'))
+owner = &lt;cloud_edge_robot_arm.vision.operational_windows.OperationalWindowOwner object at 0x783ffc1741d0&gt;
+observation = RGBDObservation(frame_id='p5-frame', observation_id='p5-frame', captured_at=datetime.datetime(2026, 10, 7, 20, 12, 22,...sode', calibration_version='cal-1', checksum_sha256='b8425f3a503d55eb4062e13363e943d9cea891f3b90f5aa74e3c083931a3f8eb')
+reference = {'age_constraints': [{'event_id': '63a159ef65f046d99c051aa3c4015384', 'expiry_upper_ns': 5000000000, 'lower_ns': 0, 'm..._ns': 0, 'max_age_ns': 5000000000, ...}], 'attempt': 1, 'budget_ns': 5000000000, 'budget_semantics': 'AGE_CLOSED', ...}
+
+    def run(module, runtime, raw, *args):
+        owner = runtime._operational_owner
+        observation = captured(runtime)
+        reference = module._reference_for_observation(observation, category)
+        assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+        assert module._check_reference(reference).status == "VALID"
+        if category in {"bootstrap", "capture", "plan"}:
+            usable_plan(runtime, observation)
+            assert runtime.bootstrap.planning_source_usable
+        elif category == "condition":
+            from cloud_edge_robot_arm.edge.evidence.conditions import (
+                ConditionSpec,
+                OnlineEvidenceSnapshot,
+                evaluate_conditions,
+            )
+    
+            evidence = OnlineEvidenceSnapshot(
+                observation,
+                RobotState(connected=True, stopped=True),
+                operational_reference=reference,
+            )
+            assert (
+                evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            )
+        elif category == "supervision":
+            from cloud_edge_robot_arm.vision.observations import RGBDObservation
+            from cloud_edge_robot_arm.vision.supervision import decide_supervision
+            from tests.test_visual_worker_supervision_runtime import context_for, decision_for
+    
+            usable_plan(runtime, observation)
+            runtime.adopt_plan(RobotState(connected=True))
+            runtime.initialize_supervision(0.000001, RobotState(connected=True))
+            claim = runtime.reserve_supervision_capture(1, RobotState(connected=True))
+            with supervision_cpu_utc(monkeypatch, runtime, claim) as software_now:
+                payload = observation.model_dump(mode="json")
+                payload.update(
+                    captured_at=software_now.isoformat(),
+                    observation_id="p5-supervisor",
+                    frame_id="p5-supervisor",
+                    checksum_sha256="",
+                )
+                fresh = RGBDObservation.model_validate(payload)
+                context = context_for(claim, fresh).model_copy(
+                    update={
+                        "task_instruction": runtime.bootstrap.definition.user_instruction,
+                    }
+                )
+                runtime.complete_supervision_capture(
+                    claim, fresh, context, RobotState(connected=True)
+                )
+                frame = runtime.reserve_supervision_plan(claim, RobotState(connected=True))
+                reply = decision_for(frame)
+                reference = module._reference_for_observation(fresh, "supervision")
+                assert (
+                    decide_supervision(
+                        reply,
+                        frame.context,
+                        frame.context,
+                        maximum_age_s=5,
+                        operational_reference=frozen_json(reference),
+                    )
+                    == "CONTINUE"
+                )
+                assert (
+                    decide_supervision(
+                        reply,
+                        frame.context,
+                        frame.context,
+                        maximum_age_s=6,
+                        operational_reference=frozen_json(reference),
+                    )
+                    == "DISCARD"
+                )
+                record = runtime.complete_supervision_plan(frame, reply, RobotState(connected=True))
+                assert (
+                    record.to_payload()["claims"][frame.claim_id]["plan_completed_at"] is not None
+                )
+        elif category == "grounding":
+            usable_plan(runtime, observation)
+            contract, publication = runtime.adopt_plan(RobotState(connected=True))
+            from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+            step = contract.steps[0].model_copy(
+                update={"preconditions": [], "success_conditions": []}
+            )
+            now = datetime.now(UTC)
+            binding = StepGroundingBinding(
+                runtime.original.digest(),
+                runtime.original.identity,
+                runtime.original.requirements[step.step_id],
+                publication.owner_revision,
+                publication.state_generation + 1,
+                publication.checkpoint.checkpoint_hash,
+                observation.observation_id,
+                observation.checksum_sha256,
+                observation.calibration_version,
+                contract.plan_version,
+                contract.command_seq,
+                "6" * 64,
+                "7" * 64,
+                None,
+                runtime.source.source_hashes,
+                step.model_dump_json(),
+                runtime.original.requirements[step.step_id].expected_duration_s,
+                now,
+                now + timedelta(seconds=3),
+            )
+            assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+        else:
+            # Real marker consumer's freshness gate over an actual CPU image source.
+            from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+            from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+            marker, original, registration, context = marker_cpu_inputs()
+            payload = original.model_dump(mode="json")
+            payload.update(
+                episode_id=runtime.episode_id,
+                captured_at=datetime.now(UTC).isoformat(),
+                observation_id="cpu-marker",
+                frame_id="cpu-marker",
+                checksum_sha256="",
+            )
+            fresh = RGBDObservation.model_validate(payload)
+            token, receipt = event(owner)
+            module._register_observation(owner, receipt, fresh)
+            context = replace(
+                context,
+                observation_id=fresh.observation_id,
+                observation_sha256=fresh.checksum_sha256,
+                episode_id=runtime.episode_id,
+                operational_reference=module._reference_for_observation(fresh, "marker"),
+            )
+            frozen = context.operational_reference
+            assert isinstance(frozen, MappingProxyType)
+            assert isinstance(frozen["domain"], MappingProxyType)
+            assert type(frozen["hard_deadlines"]) is tuple
+&gt;           positive = associate_marker_target(fresh, registration, context)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: associate_marker_target() missing 1 required keyword-only argument: 'now'
+
+tests/test_operational_windows.py:695: TypeError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[condition]" time="2.286" /><testcase classname="tests.test_operational_windows" name="test_public_replay_descriptor_never_live_authority" time="2.731"><failure message="TypeError: VisualBootstrapDefinition.__init__() got an unexpected keyword argument 'scope'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x783ffc2c2600&gt;
+tmp_path = PosixPath('/tmp/bigsmall-p5-r107-green/test_public_replay_descriptor_0')
+
+    def test_public_replay_descriptor_never_live_authority(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            observation = captured(runtime)
+            usable_plan(runtime, observation)
+            from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
+                InMemoryEventAutonomyRepository,
+            )
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+                VisualBootstrapDefinition,
+                VisualBootstrapRecord,
+                VisualBootstrapTransitionInput,
+                derive_bootstrap,
+            )
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import (
+                VisualSupervisionDefinition,
+            )
+            from tests.test_visual_supervision_repository import definition, initialize
+    
+            original = runtime.bootstrap
+            detached = VisualBootstrapRecord.from_json(original.to_json())
+            assert detached.to_json() == original.to_json()
+            historical_definition = VisualBootstrapDefinition.from_payload(
+                frozen_json(original.definition.to_payload())
+            )
+            assert historical_definition.digest() == original.definition.digest()
+            history = original.to_payload()["history"]
+            request = VisualBootstrapTransitionInput.from_payload(frozen_json(history[-1]["request"]))
+            references = request.to_payload()["operational_windows"]
+            assert references
+            result = derive_bootstrap(detached, request, now=datetime.now(UTC))
+            assert result.write_disposition == "HISTORICAL_DUPLICATE"
+            payload = request.to_payload()
+            payload["event_key"] = "public-forged-new-transition"
+            copied = VisualBootstrapTransitionInput.from_payload(payload)
+            with pytest.raises(OperationalTimeError):
+                derive_bootstrap(detached, copied, now=datetime.now(UTC))
+    
+            # Compare legacy no-new-field output to independently frozen pre-P5 codec.
+            legacy_arguments = {
+                name: getattr(original.definition, name)
+                for name in original.definition.__dataclass_fields__
+                if name != "operational_windows"
+            }
+            legacy = VisualBootstrapDefinition(**legacy_arguments)
+            old_bootstrap = legacy_codec("visual_bootstrap")
+            old_legacy = old_bootstrap["VisualBootstrapDefinition"](**legacy_arguments)
+            assert legacy.to_payload() == old_legacy.to_payload()
+            assert legacy.digest() == old_legacy.digest()
+            assert VisualBootstrapRecord.start(legacy).to_json() == (
+                old_bootstrap["VisualBootstrapRecord"].start(old_legacy).to_json()
+            )
+            repo = InMemoryEventAutonomyRepository()
+            try:
+                data = initialize(repo)
+                legacy_supervision = definition(data)
+                legacy_payload = legacy_supervision.to_payload()
+                old_supervision = legacy_codec("visual_supervision")
+                old_definition = old_supervision["VisualSupervisionDefinition"].from_payload(
+                    legacy_payload
+                )
+                assert legacy_supervision.to_payload() == old_definition.to_payload()
+                assert legacy_supervision.digest() == old_definition.digest()
+                assert legacy_supervision._json == old_definition._json
+                described = {**legacy_payload, "operational_windows": references}
+                immutable = VisualSupervisionDefinition.from_payload(frozen_json(described))
+                roundtrip = VisualSupervisionDefinition.from_payload(
+                    json.loads(module._json(described))
+                )
+                assert immutable.to_payload() == roundtrip.to_payload()
+                assert immutable.digest() == roundtrip.digest()
+            finally:
+                repo.close()
+            return references[0]
+    
+&gt;       reference, _, _ = exercise(monkeypatch, tmp_path, run)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_windows.py:806: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:218: in exercise
+    raise errors[0]
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:232: in _execute
+    result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:553: in _run
+    return self._run_rgbd(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:598: in _run_rgbd
+    return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:954: in _run_visual_closed_loop
+    outcome = run_visual_episode(
+tests/test_visual_worker_factory.py:158: in episode
+    during_episode(worker, repo, job, source_root)
+tests/test_operational_windows.py:178: in run
+    results.append(callback(module, runtime, counter, worker, repo, job))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+module = &lt;module 'cloud_edge_robot_arm.vision.operational_windows' from '/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/operational_windows.py'&gt;
+runtime = &lt;cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x783ffc2c1ac0&gt;
+raw = &lt;tests.test_operational_windows.CpuCounter object at 0x783ffc2c3fe0&gt;
+args = (&lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x783ffc2c0440&gt;, &lt;cloud_edge_robot_arm.sim...ge='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test'))
+observation = RGBDObservation(frame_id='p5-frame', observation_id='p5-frame', captured_at=datetime.datetime(2026, 10, 7, 20, 12, 26,...sode', calibration_version='cal-1', checksum_sha256='40e87d13fb839b9bff2778d70029b81ddb3ddc3e85ff0c17a5ba45595bb163e8')
+InMemoryEventAutonomyRepository = &lt;class 'cloud_edge_robot_arm.repositories.event_autonomy.memory.InMemoryEventAutonomyRepository'&gt;
+VisualBootstrapDefinition = &lt;class 'cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap.VisualBootstrapDefinition'&gt;
+
+    def run(module, runtime, raw, *args):
+        observation = captured(runtime)
+        usable_plan(runtime, observation)
+        from cloud_edge_robot_arm.repositories.event_autonomy.memory import (
+            InMemoryEventAutonomyRepository,
+        )
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+            VisualBootstrapDefinition,
+            VisualBootstrapRecord,
+            VisualBootstrapTransitionInput,
+            derive_bootstrap,
+        )
+        from cloud_edge_robot_arm.repositories.event_autonomy.visual_supervision import (
+            VisualSupervisionDefinition,
+        )
+        from tests.test_visual_supervision_repository import definition, initialize
+    
+        original = runtime.bootstrap
+        detached = VisualBootstrapRecord.from_json(original.to_json())
+        assert detached.to_json() == original.to_json()
+        historical_definition = VisualBootstrapDefinition.from_payload(
+            frozen_json(original.definition.to_payload())
+        )
+        assert historical_definition.digest() == original.definition.digest()
+        history = original.to_payload()["history"]
+        request = VisualBootstrapTransitionInput.from_payload(frozen_json(history[-1]["request"]))
+        references = request.to_payload()["operational_windows"]
+        assert references
+        result = derive_bootstrap(detached, request, now=datetime.now(UTC))
+        assert result.write_disposition == "HISTORICAL_DUPLICATE"
+        payload = request.to_payload()
+        payload["event_key"] = "public-forged-new-transition"
+        copied = VisualBootstrapTransitionInput.from_payload(payload)
+        with pytest.raises(OperationalTimeError):
+            derive_bootstrap(detached, copied, now=datetime.now(UTC))
+    
+        # Compare legacy no-new-field output to independently frozen pre-P5 codec.
+        legacy_arguments = {
+            name: getattr(original.definition, name)
+            for name in original.definition.__dataclass_fields__
+            if name != "operational_windows"
+        }
+&gt;       legacy = VisualBootstrapDefinition(**legacy_arguments)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: VisualBootstrapDefinition.__init__() got an unexpected keyword argument 'scope'
+
+tests/test_operational_windows.py:775: TypeError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_utc_lease_guard_remains_independent" time="1.077" /><testcase classname="tests.test_operational_windows" name="test_foreign_thread_has_no_owner_context" time="1.849" /><testcase classname="tests.test_operational_windows" name="test_parent_age_closed_boundary_and_no_refresh" time="1.374" /><testcase classname="tests.test_operational_windows" name="test_window_export_preserves_typed_boundary_constraints" time="1.444" /><testcase classname="tests.test_operational_windows" name="test_nonzero_bracket_age_uses_original_lower_boundary" time="1.315" /></testsuite></testsuites>

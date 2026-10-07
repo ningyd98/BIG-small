@@ -67,6 +67,14 @@ from cloud_edge_robot_arm.simulation_runtime.in_memory_repository import (
 )
 from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
 from cloud_edge_robot_arm.vision.observations import RGBDObservation
+from cloud_edge_robot_arm.vision.operational_windows import (
+    _bind_observation_policy,
+    _check_observation,
+    _consume_handoff,
+    _reference_for_observation,
+    _register_observation,
+    _transition_scope,
+)
 from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding, VisualOriginalPlan
 from cloud_edge_robot_arm.vision.role_models import configuration_hash
 from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
@@ -82,6 +90,8 @@ from cloud_edge_robot_arm.vision.worker_owner import (
 REQUIRED_WORKER_RUNTIME_SOURCES = REQUIRED_COMPILER_SOURCES | frozenset(
     {
         BOOTSTRAP_SOURCE_PATH,
+        "src/cloud_edge_robot_arm/vision/operational_windows.py",
+        "src/cloud_edge_robot_arm/research/operational_time_v1.py",
         "src/cloud_edge_robot_arm/vision/worker_runtime.py",
         "src/cloud_edge_robot_arm/repositories/event_autonomy/protocol.py",
         "src/cloud_edge_robot_arm/repositories/event_autonomy/memory.py",
@@ -252,11 +262,21 @@ class VisualWorkerRuntime:
         role_binding: RoleRuntimeBinding,
         model_snapshot_hash: str,
         verification_limits: VerificationBudget,
+        _operational_handoff: object | None = None,
     ) -> None:
         if type(source) is not WorkerRuntimeSource or type(role_binding) is not RoleRuntimeBinding:
             raise TypeError("concrete worker source and role binding required")
         self.source = source
         self.role_binding = role_binding
+        self._operational_owner = (
+            _consume_handoff(
+                _operational_handoff, source, role_binding, verification_limits, episode_id
+            )
+            if _operational_handoff is not None
+            else None
+        )
+        self._operational_pending = {}
+        self._operational_completed = {}
         self._lock = RLock()
         self._claims: dict[str, str] = {}
         self._capture_sources: dict[str, tuple[datetime, RGBDObservation]] = {}
@@ -286,6 +306,10 @@ class VisualWorkerRuntime:
                 model_snapshot_hash=model_snapshot_hash,
                 source_hashes=source.source_hashes,
                 registered_at=datetime.now(UTC),
+                operational_windows=(
+                    tuple(self._operational_references())
+                    if self._operational_owner is not None else None
+                ),
             )
         else:
             definition = existing.definition
@@ -308,6 +332,41 @@ class VisualWorkerRuntime:
         self._lease_identity = self._lease_key(definition.lease)
         self._last_observation = self.bootstrap.observation
         self._read_lease()
+
+    def _operational_begin(self, claim: str, kind: str, observation=None) -> None:
+        owner = self._operational_owner
+        if owner is None:
+            return
+        token = owner.clock.begin_event(kind + ":ENCLOSING_EFFECT")
+        owner.clock.mark_event(token)
+        self._operational_pending[claim] = (token, kind, observation)
+
+    def _operational_finish(self, claim: str):
+        owner = self._operational_owner
+        if owner is None:
+            return None
+        token, kind, observation = self._operational_pending.pop(claim)
+        receipt = owner.clock.end_event(token)
+        parents = ()
+        if observation is not None:
+            original = _reference_for_observation(observation, "capture")
+            parents = (original["window_id"],)
+        identifier = owner.issue(kind, receipt, budget_ns=5_000_000_000, parent_ids=parents)
+        if owner.check(identifier, after=token).status != "VALID":
+            raise RuntimeError("original enclosing effect window expired")
+        self._operational_completed[claim] = identifier
+        return receipt
+
+    def _operational_references(self, claim=None, observation=None):
+        owner = self._operational_owner
+        if owner is None:
+            return None
+        refs = [owner.export_record(owner.task_window)]
+        if claim in self._operational_completed:
+            refs.append(owner.export_record(self._operational_completed[claim]))
+        if observation is not None:
+            refs.append(_reference_for_observation(observation, "bootstrap"))
+        return refs
 
     @staticmethod
     def _lease_key(lease: WorkerLeaseObservation) -> tuple[str | int, ...]:
@@ -410,6 +469,11 @@ class VisualWorkerRuntime:
 
     def check_active(self, robot_state: RobotState) -> WorkerLeaseObservation:
         lease = self._read_lease()
+        owner = self._operational_owner
+        if owner is not None and owner.check(
+            owner.task_window, after=owner.task_origin_token
+        ).status != "VALID":
+            raise RuntimeError("original operational task/verification window unavailable")
         record = self.bootstrap
         self._validate_role_sources(record.definition.verification_limits)
         if type(robot_state) is not RobotState or (
@@ -577,6 +641,7 @@ class VisualWorkerRuntime:
                     model_snapshot_hash=frozen.model_snapshot_hash,
                     role_bundle=self.role_binding.bundle,
                     job_configuration_hash=self._frozen_job_configuration_hash,
+                    operational_windows=self._operational_references(),
                 )
             else:
                 definition = existing.definition
@@ -635,10 +700,14 @@ class VisualWorkerRuntime:
             decision=decision,
             wait_duration_s=wait_duration_s,
             wait_elapsed_s=wait_elapsed_s,
+            operational_windows=self._operational_references(
+                claim.claim_id if claim is not None else None
+            ),
         )
-        result = self.source.event_repository.transition_visual_supervision_if_current(
-            request=request
-        )
+        with _transition_scope(self._operational_owner, request.to_payload()):
+            result = self.source.event_repository.transition_visual_supervision_if_current(
+                request=request
+            )
         if result is None or result.write_disposition != "NEW_COMMIT":
             raise _VisualSupervisionCommitRejected(
                 "supervision source is stale or historical; no effect replay"
@@ -679,7 +748,9 @@ class VisualWorkerRuntime:
     ) -> VisualWorkerSupervisionClaim:
         with self._lock:
             result = self._supervision_transition("RESERVE_CAPTURE", robot_state, cursor=cursor)
-            return self._new_supervision_handle(result, kind="CAPTURE")
+            claim = self._new_supervision_handle(result, kind="CAPTURE")
+            self._operational_begin(claim.claim_id, "capture")
+            return claim
 
     def _owned_supervision_handle(self, claim: VisualWorkerSupervisionClaim, kind: str) -> None:
         if type(claim) is not VisualWorkerSupervisionClaim or (
@@ -702,6 +773,7 @@ class VisualWorkerRuntime:
                 or context.task_instruction != self.bootstrap.definition.user_instruction
             ):
                 raise RuntimeError("supervision context changed original instruction source")
+            receipt = self._operational_finish(claim.claim_id)
             self._supervision_transition(
                 "COMPLETE_CAPTURE",
                 robot_state,
@@ -710,6 +782,13 @@ class VisualWorkerRuntime:
                 observation=observation,
                 context=context,
             )
+            if receipt is not None:
+                _register_observation(self._operational_owner, receipt, observation)
+                requirement = claim.original.requirements[claim.step_id]
+                _bind_observation_policy(
+                    self._operational_owner, observation, "supervision",
+                    requirement.ordinary_ttl_s, {"requirement": requirement.to_payload()},
+                )
             self._supervision_handles[claim.claim_id] = ("CAPTURED", claim.digest())
             self._supervision_capture_data[claim.claim_id] = (
                 observation.model_copy(deep=True),
@@ -742,6 +821,7 @@ class VisualWorkerRuntime:
             )
             self._supervision_handles[claim.claim_id] = ("PLAN", frame.digest())
             self._supervision_known_frames[claim.claim_id] = frame.digest()
+            self._operational_begin(claim.claim_id, "supervision", observation)
             return frame
 
     def assert_supervision_plan_pending(self, frame: VisualWorkerSupervisionFrame) -> None:
@@ -804,6 +884,7 @@ class VisualWorkerRuntime:
         with self._lock:
             self.assert_supervision_plan_pending(frame)
             del self._supervision_handles[frame.claim_id]
+            self._operational_finish(frame.claim_id)
             try:
                 result = self._supervision_transition(
                     "COMPLETE_PLAN",
@@ -858,7 +939,8 @@ class VisualWorkerRuntime:
             if age < 0:
                 raise RuntimeError("supervisor frame clock is ahead of current source clock")
             ttl = original.requirements[frame.step_id].ordinary_ttl_s
-            return "EXPIRED" if age > ttl else "CURRENT"
+            local = _check_observation(frame.observation, "supervision", max_age_s=ttl)
+            return "EXPIRED" if local is False or age > ttl else "CURRENT"
 
     def reserve_wait(
         self, duration_s: float, robot_state: RobotState
@@ -912,10 +994,14 @@ class VisualWorkerRuntime:
             claim_id=claim_id,
             observation=observation,
             draft=draft,
+            operational_windows=self._operational_references(
+                claim_id, record.observation if kind != "COMPLETE_CAPTURE" else None
+            ),
         )
-        result = self.source.event_repository.transition_visual_bootstrap_if_current(
-            request=request
-        )
+        with _transition_scope(self._operational_owner, request.to_payload()):
+            result = self.source.event_repository.transition_visual_bootstrap_if_current(
+                request=request
+            )
         if result is None or result.write_disposition != "NEW_COMMIT":
             raise RuntimeError("source claim is stale or historical; no effect replay allowed")
         self.check_active(robot_state)
@@ -931,6 +1017,7 @@ class VisualWorkerRuntime:
                 self._ordinary_capture_claim = None
                 self._claims[claim] = "ORDINARY_CAPTURE"
                 self._capture_sources[claim] = (datetime.now(UTC), before)
+                self._operational_begin(claim, "capture")
                 return claim
             record = self._transition(
                 "RESERVE_INITIAL_CAPTURE" if initial else "RESERVE_REOBSERVATION", robot_state
@@ -938,6 +1025,7 @@ class VisualWorkerRuntime:
             if record.pending_claim_id is None:
                 raise RuntimeError("capture budget stopped without effect permission")
             self._claims[record.pending_claim_id] = "CAPTURE"
+            self._operational_begin(record.pending_claim_id, "capture")
             return record.pending_claim_id
 
     def complete_capture(
@@ -967,14 +1055,20 @@ class VisualWorkerRuntime:
                     )
                 ):
                     raise RuntimeError("ordinary capture source/frame/clock changed")
+                receipt = self._operational_finish(claim_id)
+                if receipt is not None:
+                    _register_observation(self._operational_owner, receipt, observation)
                 self._last_observation = observation.model_copy(deep=True)
                 self.check_active(robot_state)
                 return
             if self._claims.get(claim_id) != "CAPTURE":
                 raise RuntimeError("capture claim is not owned by this live coordinator")
+            receipt = self._operational_finish(claim_id)
             self._transition(
                 "COMPLETE_CAPTURE", robot_state, claim_id=claim_id, observation=observation
             )
+            if receipt is not None:
+                _register_observation(self._operational_owner, receipt, observation)
             self._last_observation = observation.model_copy(deep=True)
             del self._claims[claim_id]
 
@@ -984,12 +1078,14 @@ class VisualWorkerRuntime:
             if record.pending_claim_id is None:
                 raise RuntimeError("planning source stopped without effect claim")
             self._claims[record.pending_claim_id] = "PLAN"
+            self._operational_begin(record.pending_claim_id, "plan", record.observation)
             return record.pending_claim_id
 
     def complete_plan(self, claim_id: str, draft: PlannerDraft, robot_state: RobotState) -> None:
         with self._lock:
             if self._claims.get(claim_id) != "PLAN":
                 raise RuntimeError("planning claim is not owned by this live coordinator")
+            self._operational_finish(claim_id)
             self._transition("COMPLETE_PLAN", robot_state, claim_id=claim_id, draft=draft)
             del self._claims[claim_id]
 
@@ -1072,6 +1168,28 @@ class VisualWorkerRuntime:
             )
             if online.context_hash != publication.checkpoint.checkpoint_hash:
                 raise RuntimeError("online source binds a stale worker checkpoint")
+            if self._operational_owner is not None:
+                from dataclasses import replace
+
+                from cloud_edge_robot_arm.edge.evidence.conditions import _operational_freshness
+
+                requirement = self.original.requirements[step_id]
+                specs = (*requirement.preconditions, *requirement.postconditions)
+                ttl = min(
+                    requirement.ordinary_ttl_s,
+                    *(spec.tolerances.get("max_age_s", 5.0) for spec in specs),
+                )
+                _bind_observation_policy(
+                    self._operational_owner, online.observation, "condition", ttl,
+                    {"requirement": requirement.to_payload()},
+                )
+                reference = _reference_for_observation(
+                    online.observation, "condition", max_age_s=ttl
+                )
+                if _operational_freshness(
+                    replace(online, operational_reference=reference), ttl
+                ) is not True:
+                    raise RuntimeError("original condition acquisition window unavailable")
             request = VisualVerificationRouteInput(
                 original=self.original,
                 publication=publication,
@@ -1134,6 +1252,21 @@ class VisualWorkerRuntime:
             if type(binding) is not StepGroundingBinding:
                 raise TypeError("complete concrete grounding binding required")
             current = self.publication
+            if self._operational_owner is not None:
+                _bind_observation_policy(
+                    self._operational_owner, self._last_observation, "grounding",
+                    binding.original_requirements.ordinary_ttl_s,
+                    {"requirement": binding.original_requirements.to_payload()},
+                )
+                if self._last_observation is None or (
+                    binding.observation_id != self._last_observation.observation_id
+                    or binding.observation_checksum_sha256 != self._last_observation.checksum_sha256
+                    or _check_observation(
+                        self._last_observation, "grounding",
+                        max_age_s=binding.original_requirements.ordinary_ttl_s,
+                    ) is not True
+                ):
+                    raise RuntimeError("original grounding acquisition window unavailable")
             checkpoint = current.checkpoint
             checkpoint = checkpoint.model_copy(
                 update={
@@ -1281,6 +1414,7 @@ class VisualWorkerRuntime:
             self._effect_capture_claims.add(key)
             self._claims[claim] = "ORDINARY_CAPTURE"
             self._capture_sources[claim] = (now, self._last_observation.model_copy(deep=True))
+            self._operational_begin(claim, "capture")
             return claim
 
     def complete_step(self, step_id: str, robot_state: RobotState) -> VisualOwnerPublicationRecord:

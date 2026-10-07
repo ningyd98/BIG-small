@@ -12,6 +12,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from types import MappingProxyType
 from typing import Any, ClassVar, Literal, cast
 
 from pydantic import BaseModel
@@ -178,6 +179,7 @@ class VisualBootstrapDefinition:
     model_snapshot_hash: str
     source_hashes: Mapping[str, str]
     registered_at: datetime
+    operational_windows: tuple[Mapping[str, Any], ...] | None = None
     scope: ClassVar[str] = "BOOTSTRAP_SOURCE_ONLY"
 
     def __post_init__(self) -> None:
@@ -218,6 +220,20 @@ class VisualBootstrapDefinition:
         sha(self.role_bundle_hash)
         sha(self.model_snapshot_hash)
         object.__setattr__(self, "source_hashes", _sources(self.source_hashes))
+        if self.operational_windows is not None:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            detached = _plain(self.operational_windows)
+            _validate_references(detached)
+
+            def freeze(value):
+                if isinstance(value, Mapping):
+                    return MappingProxyType({key: freeze(item) for key, item in value.items()})
+                if isinstance(value, list):
+                    return tuple(freeze(item) for item in value)
+                return value
+
+            object.__setattr__(self, "operational_windows", freeze(detached))
         _plain(self.to_payload())
 
     @property
@@ -236,7 +252,7 @@ class VisualBootstrapDefinition:
         return digest(["visual.bootstrap.job-run.v1", self.lease.job_id, self.lease.run_id])
 
     def to_payload(self) -> dict[str, Any]:
-        return cast(
+        body = cast(
             dict[str, Any],
             _plain(
                 dict(
@@ -255,24 +271,33 @@ class VisualBootstrapDefinition:
                 )
             ),
         )
+        if self.operational_windows is not None:
+            body["operational_windows"] = _plain(self.operational_windows)
+        return body
 
     def digest(self) -> str:
         return digest(self.to_payload())
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapDefinition:
-        body = dict(_plain(raw))
+        normalized = _plain(raw)
+        body = dict(normalized)
         if (
             body.pop("schema_version", None) != "visual.bootstrap.definition.v1"
             or body.pop("scope", None) != cls.scope
         ):
             raise ValueError("fixed bootstrap definition schema/scope required")
+        if "operational_windows" in body:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(body["operational_windows"])
+            body["operational_windows"] = tuple(body["operational_windows"])
         body["lease"] = _lease(body["lease"])
         body["verification_limits"] = VerificationBudget(**body["verification_limits"])
         for name in ("task_started_at", "registered_at"):
             body[name] = aware(datetime.fromisoformat(body[name]))
         result = cls(**body)
-        if canonical(result.to_payload()) != canonical(raw):
+        if canonical(result.to_payload()) != canonical(normalized):
             raise ValueError("bootstrap definition changed during decoding")
         return result
 
@@ -429,6 +454,7 @@ class VisualBootstrapTransitionInput(_FrozenJSON):
         claim_id: str | None = None,
         observation: RGBDObservation | None = None,
         draft: PlannerDraft | None = None,
+        operational_windows: list[dict[str, Any]] | None = None,
     ) -> None:
         if (
             type(record) is not VisualBootstrapRecord
@@ -450,13 +476,19 @@ class VisualBootstrapTransitionInput(_FrozenJSON):
             observation=_model(observation, RGBDObservation) if observation is not None else None,
             draft=_model(draft, PlannerDraft) if draft is not None else None,
         )
+        if operational_windows is not None:
+            body["operational_windows"] = operational_windows
         checked = self.from_payload(body)
         object.__setattr__(self, "_json", checked.to_json())
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any]) -> VisualBootstrapTransitionInput:
         raw = cast(dict[str, Any], _plain(raw))
-        if set(raw) != {
+        if "operational_windows" in raw:
+            from cloud_edge_robot_arm.vision.operational_windows import _validate_references
+
+            _validate_references(raw["operational_windows"])
+        if set(raw) - {"operational_windows"} != {
             "schema_version",
             "scope",
             "bootstrap_id",
@@ -752,6 +784,11 @@ def derive_bootstrap(
             if canonical(event["request"]) != request.to_json():
                 raise ValueError("bootstrap event key changed original source")
             return VisualBootstrapTransitionResult(record, "HISTORICAL_DUPLICATE")
+    from cloud_edge_robot_arm.vision.operational_windows import _consume_transition
+
+    _consume_transition(
+        request.to_payload(), required=record.definition.operational_windows is not None
+    )
     return VisualBootstrapTransitionResult(_derive(record, request, now=now), "NEW_COMMIT")
 
 

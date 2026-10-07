@@ -170,6 +170,9 @@ class SimulationWorker:
             self.repository.release_lease(lease.lease_id)
             self.active_job_id = ""
             self._active_task_origin = None
+            from cloud_edge_robot_arm.vision.operational_windows import _revoke_worker
+
+            _revoke_worker(self)
         return True
 
     def _execute(self, job_id: str, lease_id: str) -> None:
@@ -210,9 +213,23 @@ class SimulationWorker:
                 raise CancelledByOperator("cancelled before start")
             self._transition(job_id, RuntimeJobStatus.LEASED, RuntimeJobStatus.STARTING, lease_id)
             self._transition(job_id, RuntimeJobStatus.STARTING, RuntimeJobStatus.RUNNING, lease_id)
+            from cloud_edge_robot_arm.vision.operational_windows import (
+                OperationalWindowOwner,
+                _prepare_startup,
+                _worker_scope,
+            )
+
+            operational_owner = None
+            if _prepare_startup(self, job):
+                operational_owner = OperationalWindowOwner.from_worker(self, job_id=job_id)
+                operational_owner._begin_origin()
             start_monotonic = time.monotonic()
             self._active_task_origin = (job_id, start_monotonic, datetime.now(UTC))
-            result, events, metrics = self._run(job, start_monotonic=start_monotonic)
+            if operational_owner is not None:
+                operational_owner._mark_origin()
+                operational_owner._seal_origin(self._active_task_origin)
+            with _worker_scope(self):
+                result, events, metrics = self._run(job, start_monotonic=start_monotonic)
             self._raise_if_cancelled_or_timed_out(job_id, job, start_monotonic)
             terminal = RuntimeJobStatus.SUCCEEDED
             if (
@@ -321,6 +338,10 @@ class SimulationWorker:
                 status=failure_terminal,
                 error=error,
             )
+        finally:
+            from cloud_edge_robot_arm.vision.operational_windows import _revoke_worker
+
+            _revoke_worker(self)
 
     def _recover_failed_publication(
         self,
@@ -742,6 +763,7 @@ class SimulationWorker:
             )
         self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
         runtime_source = None
+        operational_handoff = None
         verification_limits = None
         source_hashes: Mapping[str, str] | None = None
         required_sources: frozenset[str] = frozenset()
@@ -835,6 +857,9 @@ class SimulationWorker:
                 task_started_at=origin[2],
                 task_timeout_s=float(job.timeout_seconds),
             )
+            from cloud_edge_robot_arm.vision.operational_windows import _new_handoff
+
+            operational_handoff = _new_handoff(self, runtime_source, verification_limits)
 
         def check_setup_boundary() -> None:
             self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
@@ -911,6 +936,7 @@ class SimulationWorker:
                         role_binding=binding,
                         model_snapshot_hash=snapshot.digest(),
                         verification_limits=verification_limits,
+                        _operational_handoff=operational_handoff,
                     )
                     worker_runtime.check_active(robot.get_state())
                 policy_arguments: dict[str, Any] = {}

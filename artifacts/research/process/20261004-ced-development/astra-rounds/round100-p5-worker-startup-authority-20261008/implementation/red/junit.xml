@@ -1,0 +1,1590 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="27" skipped="0" tests="27" time="0.536" timestamp="2026-10-08T01:39:37.335366+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_windows" name="test_five_seconds_inclusive_and_plus_one_ns_rejected" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d6450&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_five_seconds_inclusive_an0')
+
+    def test_five_seconds_inclusive_and_plus_one_ns_rejected(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            token, receipt = event(owner)
+            window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+            raw.now = 5_000_000_000
+            assert owner.check(window, after=token).status == "VALID"
+            raw.now += 1
+            assert owner.check(window, after=token).status == "INVALID"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_deadline_equality_rejected" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d6d50&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_deadline_equality_rejecte0')
+
+    def test_deadline_equality_rejected(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            token, receipt = event(owner)
+            window = owner.issue("plan", receipt, budget_ns=1_000_000_000, parent_ids=())
+            raw.now = owner.export_record(window)["deadline_ns"]
+            assert owner.check(window, after=token).status == "INVALID"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:161: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_missing_pair_foreign_domain_and_copied_handle_rejected" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d7da0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_missing_pair_foreign_doma0')
+
+    def test_missing_pair_foreign_domain_and_copied_handle_rejected(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            token, receipt = event(owner)
+            forged = OperationalEventToken(owner.clock.domain, token.event_identity, token.kind)
+            window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+            assert owner.check(window, after=forged).status == "UNKNOWN"
+            foreign = _open_clock_for_test(CpuCounter())
+            other = foreign.begin_event("capture")
+            foreign.mark_event(other)
+            foreign_receipt = foreign.end_event(other)
+            with pytest.raises(OperationalTimeError):
+                owner.issue("capture", foreign_receipt, budget_ns=1, parent_ids=())
+            with pytest.raises(OperationalTimeError):
+                copy.copy(owner)
+            with pytest.raises(OperationalTimeError):
+                copy.copy(receipt)
+            foreign.close()
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:183: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_valid_overlap_accepted_future_and_out_of_order_rejected" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d8710&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_valid_overlap_accepted_fu0')
+
+    def test_valid_overlap_accepted_future_and_out_of_order_rejected(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            token, receipt = event(owner)
+            window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+            # Equal raw bounds still have a real event-before-current logical sequence.
+            assert owner.check(window, after=token).status == "VALID"
+            pending = owner.clock.begin_event("unfinished")
+            assert owner.check(window, after=pending).status == "UNKNOWN"
+            raw.now = -1
+            assert owner.check(window, after=token).status == "UNKNOWN"
+            raw.now = 0
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_reply_reobserve_and_new_event_do_not_refresh_origin" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5da150&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_reply_reobserve_and_new_e0')
+
+    def test_reply_reobserve_and_new_event_do_not_refresh_origin(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            origin = owner.task_origin
+            first = owner.export_record(owner.task_window)
+            raw.now = 2_000_000_000
+            _, receipt = event(owner, "plan")
+            child = owner.issue("plan", receipt, budget_ns=5_000_000_000,
+                                parent_ids=(owner.task_window,))
+            assert owner.task_origin is origin
+            assert owner.export_record(child)["deadline_ns"] &lt;= first["deadline_ns"]
+            assert owner.export_record(owner.task_window) == first
+            with pytest.raises(OperationalTimeError):
+                owner.issue("plan", receipt, budget_ns=5_000_000_001, parent_ids=())
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:217: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_cached_frame_preserves_original_acquisition_window" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5db2f0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_cached_frame_preserves_or0')
+
+    def test_cached_frame_preserves_original_acquisition_window(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            observation = captured(runtime)
+            first = module._reference_for_observation(observation, "condition")
+            raw.now = 4_000_000_000
+            cached = observation.model_copy(deep=True)
+            assert module._reference_for_observation(cached, "condition") == first
+            raw.now = 5_000_000_001
+            assert module._check_observation(cached, "condition") is False
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:230: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_external_utc_deadline_cannot_be_relabelled_operational" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d72c0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_external_utc_deadline_can0')
+
+    def test_external_utc_deadline_cannot_be_relabelled_operational(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, "condition")
+            assert reference["lease_deadline_domain"] == "UTC_LEGACY_VETO"
+            assert "lease_deadline_ns" not in reference
+            fake = {**reference, "schema_version": "external.utc.v1"}
+            assert module._check_reference(fake).status == "UNKNOWN"
+            from cloud_edge_robot_arm.edge.evidence.conditions import (
+                ConditionSpec,
+                OnlineEvidenceSnapshot,
+                evaluate_conditions,
+            )
+    
+            verdict = evaluate_conditions(
+                [ConditionSpec("robot_stopped")],
+                OnlineEvidenceSnapshot(observation, RobotState(connected=True)),
+                now=observation.captured_at + timedelta(seconds=6),
+            )[0]
+            assert verdict.status == "UNKNOWN"  # Unlabelled legacy UTC remains strict.
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:254: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_utc_jump_is_diagnostic_only_for_supported_local_domain" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5db050&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_utc_jump_is_diagnostic_on0')
+
+    def test_utc_jump_is_diagnostic_only_for_supported_local_domain(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, "condition")
+            from cloud_edge_robot_arm.edge.evidence.conditions import (
+                ConditionSpec,
+                OnlineEvidenceSnapshot,
+                evaluate_conditions,
+            )
+    
+            evidence = OnlineEvidenceSnapshot(
+                observation, RobotState(connected=True), operational_reference=reference
+            )
+            for delta in (-1000, 1000):
+                verdict = evaluate_conditions(
+                    [ConditionSpec("robot_stopped")], evidence,
+                    now=observation.captured_at + timedelta(seconds=delta),
+                )[0]
+                assert verdict.status == "PASS"
+            raw.now = 5_000_000_001
+            assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:279: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_source_and_budget_changes_invalidate_window" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d8d40&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_source_and_budget_changes0')
+
+    def test_source_and_budget_changes_invalidate_window(monkeypatch, tmp_path):
+        def run(module, runtime, raw, worker, repo, job):
+            owner = runtime._operational_owner
+            token, receipt = event(owner)
+            window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+            with sqlite3.connect(repo.database_path) as connection:
+                connection.execute("UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
+                                   (job.timeout_seconds + 1, job.job_id))
+            assert owner.check(window, after=token).status == "UNKNOWN"
+            with sqlite3.connect(repo.database_path) as connection:
+                connection.execute("UPDATE simulation_jobs SET timeout_seconds=? WHERE job_id=?",
+                                   (job.timeout_seconds, job.job_id))
+            path = runtime.source.source_root / "device.py"
+            original = path.read_bytes()
+            path.write_bytes(original + b"# drift\n")
+            assert owner.check(window, after=token).status == "UNKNOWN"
+            path.write_bytes(original)
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:300: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_public_worker_or_source_without_startup_capability_cannot_issue" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5f9ee0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_public_worker_or_source_w0')
+
+    def test_public_worker_or_source_without_startup_capability_cannot_issue(monkeypatch, tmp_path):
+        def run(module, runtime, raw, worker, repo, job):
+            with pytest.raises(OperationalTimeError):
+                module.OperationalWindowOwner.from_worker(worker, job_id=job.job_id)
+            public = runtime.source
+            with pytest.raises(OperationalTimeError):
+                module.OperationalWindowOwner.from_worker(public, job_id=job.job_id)
+            from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+    
+            replay = VisualWorkerRuntime(
+                public, episode_id=runtime.episode_id,
+                instruction=runtime.bootstrap.definition.user_instruction,
+                role_binding=runtime.role_binding,
+                model_snapshot_hash=runtime.bootstrap.definition.model_snapshot_hash,
+                verification_limits=runtime.bootstrap.definition.verification_limits,
+            )
+            assert replay._operational_owner is None
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:321: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_ended_prefix_owner_or_lease_cannot_authorize_new_attempt" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5f8830&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_ended_prefix_owner_or_lea0')
+
+    def test_ended_prefix_owner_or_lease_cannot_authorize_new_attempt(monkeypatch, tmp_path):
+&gt;       module = api()
+                 ^^^^^
+
+tests/test_operational_windows.py:325: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_closed_owner_or_changed_live_lease_attempt_fencing_rejected" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5f98e0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_closed_owner_or_changed_l0')
+
+    def test_closed_owner_or_changed_live_lease_attempt_fencing_rejected(monkeypatch, tmp_path):
+        def run(module, runtime, raw, worker, repo, job):
+            owner = runtime._operational_owner
+            token, receipt = event(owner)
+            window = owner.issue("capture", receipt, budget_ns=5_000_000_000, parent_ids=())
+            with sqlite3.connect(repo.database_path) as connection:
+                connection.execute("UPDATE simulation_jobs SET attempt=attempt+1 WHERE job_id=?",
+                                   (job.job_id,))
+            assert owner.check(window, after=token).status == "UNKNOWN"
+            with sqlite3.connect(repo.database_path) as connection:
+                connection.execute("UPDATE simulation_jobs SET attempt=attempt-1 WHERE job_id=?",
+                                   (job.job_id,))
+            return owner, window, token
+    
+&gt;       (owner, window, token), _, _ = exercise(monkeypatch, tmp_path, run)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_windows.py:347: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_startup_origin_precedes_reset_and_settle" time="0.000"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5dbd10&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_startup_origin_precedes_r0')
+
+    def test_startup_origin_precedes_reset_and_settle(monkeypatch, tmp_path):
+&gt;       module = api()
+                 ^^^^^
+
+tests/test_operational_windows.py:352: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[normal]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d7380&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_startup_failure_and_clean0')
+termination = 'normal'
+
+    @pytest.mark.parametrize("termination", ["normal", "exception", "cancellation", "lease_loss"])
+    def test_startup_failure_and_cleanup_revoke_once(monkeypatch, tmp_path, termination):
+        def run(module, runtime, raw, worker, repo, job):
+            owner = runtime._operational_owner
+            if termination == "exception":
+                # _execute handles this, but cleanup must remain observable afterward.
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(RuntimeError("CPU failure"))
+            elif termination == "cancellation":
+                from cloud_edge_robot_arm.simulation_runtime.worker import CancelledByOperator
+    
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(CancelledByOperator("CPU cancelled"))
+            elif termination == "lease_loss":
+                repo.release_lease(runtime.source.lease_id)
+                assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+            return owner
+    
+&gt;       owner, data, raw = exercise(monkeypatch, tmp_path, run)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_windows.py:392: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[exception]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5f8380&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_startup_failure_and_clean1')
+termination = 'exception'
+
+    @pytest.mark.parametrize("termination", ["normal", "exception", "cancellation", "lease_loss"])
+    def test_startup_failure_and_cleanup_revoke_once(monkeypatch, tmp_path, termination):
+        def run(module, runtime, raw, worker, repo, job):
+            owner = runtime._operational_owner
+            if termination == "exception":
+                # _execute handles this, but cleanup must remain observable afterward.
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(RuntimeError("CPU failure"))
+            elif termination == "cancellation":
+                from cloud_edge_robot_arm.simulation_runtime.worker import CancelledByOperator
+    
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(CancelledByOperator("CPU cancelled"))
+            elif termination == "lease_loss":
+                repo.release_lease(runtime.source.lease_id)
+                assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+            return owner
+    
+&gt;       owner, data, raw = exercise(monkeypatch, tmp_path, run)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_windows.py:392: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[cancellation]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5fb890&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_startup_failure_and_clean2')
+termination = 'cancellation'
+
+    @pytest.mark.parametrize("termination", ["normal", "exception", "cancellation", "lease_loss"])
+    def test_startup_failure_and_cleanup_revoke_once(monkeypatch, tmp_path, termination):
+        def run(module, runtime, raw, worker, repo, job):
+            owner = runtime._operational_owner
+            if termination == "exception":
+                # _execute handles this, but cleanup must remain observable afterward.
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(RuntimeError("CPU failure"))
+            elif termination == "cancellation":
+                from cloud_edge_robot_arm.simulation_runtime.worker import CancelledByOperator
+    
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(CancelledByOperator("CPU cancelled"))
+            elif termination == "lease_loss":
+                repo.release_lease(runtime.source.lease_id)
+                assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+            return owner
+    
+&gt;       owner, data, raw = exercise(monkeypatch, tmp_path, run)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_windows.py:392: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_startup_failure_and_cleanup_revoke_once[lease_loss]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d443cb0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_startup_failure_and_clean3')
+termination = 'lease_loss'
+
+    @pytest.mark.parametrize("termination", ["normal", "exception", "cancellation", "lease_loss"])
+    def test_startup_failure_and_cleanup_revoke_once(monkeypatch, tmp_path, termination):
+        def run(module, runtime, raw, worker, repo, job):
+            owner = runtime._operational_owner
+            if termination == "exception":
+                # _execute handles this, but cleanup must remain observable afterward.
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(RuntimeError("CPU failure"))
+            elif termination == "cancellation":
+                from cloud_edge_robot_arm.simulation_runtime.worker import CancelledByOperator
+    
+                worker._raise_if_cancelled_or_timed_out = lambda *a: (_ for _ in ()).throw(CancelledByOperator("CPU cancelled"))
+            elif termination == "lease_loss":
+                repo.release_lease(runtime.source.lease_id)
+                assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+            return owner
+    
+&gt;       owner, data, raw = exercise(monkeypatch, tmp_path, run)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_windows.py:392: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[bootstrap]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d441850&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_all_p5_categories_use_sam0')
+category = 'bootstrap'
+
+    @pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                                  operational_reference=reference)
+                assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.supervision import (
+                    SupervisionContext,
+                    SupervisionDecision,
+                    decide_supervision,
+                )
+    
+                context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+                                             state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+                                             task_instruction=runtime.bootstrap.definition.user_instruction,
+                                             observation_id=observation.observation_id,
+                                             captured_at=observation.captured_at, proprioception={})
+                reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+                                            state_version=1, next_step_id="p5-step",
+                                            observation_id=observation.observation_id,
+                                            recommendation="CONTINUE", reason="CPU")
+                assert decide_supervision(reply, context, context, maximum_age_s=5,
+                                          operational_reference=reference) == "CONTINUE"
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+                                               runtime.original.requirements[step.step_id], publication.owner_revision,
+                                               publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+                                               observation.observation_id, observation.checksum_sha256,
+                                               observation.calibration_version, contract.plan_version, contract.command_seq,
+                                               "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+                                               step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+                                               now, now + timedelta(seconds=3))
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from tests.test_marker_association import inputs
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+                               observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(context, observation_id=fresh.observation_id,
+                                  observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+                                  operational_reference=module._reference_for_observation(fresh, "marker"))
+                assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+            raw.now = 5_000_000_001
+            assert module._check_reference(reference).status == "INVALID"
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:475: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[capture]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5faa20&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_all_p5_categories_use_sam1')
+category = 'capture'
+
+    @pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                                  operational_reference=reference)
+                assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.supervision import (
+                    SupervisionContext,
+                    SupervisionDecision,
+                    decide_supervision,
+                )
+    
+                context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+                                             state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+                                             task_instruction=runtime.bootstrap.definition.user_instruction,
+                                             observation_id=observation.observation_id,
+                                             captured_at=observation.captured_at, proprioception={})
+                reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+                                            state_version=1, next_step_id="p5-step",
+                                            observation_id=observation.observation_id,
+                                            recommendation="CONTINUE", reason="CPU")
+                assert decide_supervision(reply, context, context, maximum_age_s=5,
+                                          operational_reference=reference) == "CONTINUE"
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+                                               runtime.original.requirements[step.step_id], publication.owner_revision,
+                                               publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+                                               observation.observation_id, observation.checksum_sha256,
+                                               observation.calibration_version, contract.plan_version, contract.command_seq,
+                                               "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+                                               step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+                                               now, now + timedelta(seconds=3))
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from tests.test_marker_association import inputs
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+                               observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(context, observation_id=fresh.observation_id,
+                                  observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+                                  operational_reference=module._reference_for_observation(fresh, "marker"))
+                assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+            raw.now = 5_000_000_001
+            assert module._check_reference(reference).status == "INVALID"
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:475: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[plan]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5d80b0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_all_p5_categories_use_sam2')
+category = 'plan'
+
+    @pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                                  operational_reference=reference)
+                assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.supervision import (
+                    SupervisionContext,
+                    SupervisionDecision,
+                    decide_supervision,
+                )
+    
+                context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+                                             state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+                                             task_instruction=runtime.bootstrap.definition.user_instruction,
+                                             observation_id=observation.observation_id,
+                                             captured_at=observation.captured_at, proprioception={})
+                reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+                                            state_version=1, next_step_id="p5-step",
+                                            observation_id=observation.observation_id,
+                                            recommendation="CONTINUE", reason="CPU")
+                assert decide_supervision(reply, context, context, maximum_age_s=5,
+                                          operational_reference=reference) == "CONTINUE"
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+                                               runtime.original.requirements[step.step_id], publication.owner_revision,
+                                               publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+                                               observation.observation_id, observation.checksum_sha256,
+                                               observation.calibration_version, contract.plan_version, contract.command_seq,
+                                               "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+                                               step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+                                               now, now + timedelta(seconds=3))
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from tests.test_marker_association import inputs
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+                               observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(context, observation_id=fresh.observation_id,
+                                  observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+                                  operational_reference=module._reference_for_observation(fresh, "marker"))
+                assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+            raw.now = 5_000_000_001
+            assert module._check_reference(reference).status == "INVALID"
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:475: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[grounding]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d4425a0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_all_p5_categories_use_sam3')
+category = 'grounding'
+
+    @pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                                  operational_reference=reference)
+                assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.supervision import (
+                    SupervisionContext,
+                    SupervisionDecision,
+                    decide_supervision,
+                )
+    
+                context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+                                             state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+                                             task_instruction=runtime.bootstrap.definition.user_instruction,
+                                             observation_id=observation.observation_id,
+                                             captured_at=observation.captured_at, proprioception={})
+                reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+                                            state_version=1, next_step_id="p5-step",
+                                            observation_id=observation.observation_id,
+                                            recommendation="CONTINUE", reason="CPU")
+                assert decide_supervision(reply, context, context, maximum_age_s=5,
+                                          operational_reference=reference) == "CONTINUE"
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+                                               runtime.original.requirements[step.step_id], publication.owner_revision,
+                                               publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+                                               observation.observation_id, observation.checksum_sha256,
+                                               observation.calibration_version, contract.plan_version, contract.command_seq,
+                                               "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+                                               step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+                                               now, now + timedelta(seconds=3))
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from tests.test_marker_association import inputs
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+                               observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(context, observation_id=fresh.observation_id,
+                                  observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+                                  operational_reference=module._reference_for_observation(fresh, "marker"))
+                assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+            raw.now = 5_000_000_001
+            assert module._check_reference(reference).status == "INVALID"
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:475: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[supervision]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d441c70&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_all_p5_categories_use_sam4')
+category = 'supervision'
+
+    @pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                                  operational_reference=reference)
+                assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.supervision import (
+                    SupervisionContext,
+                    SupervisionDecision,
+                    decide_supervision,
+                )
+    
+                context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+                                             state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+                                             task_instruction=runtime.bootstrap.definition.user_instruction,
+                                             observation_id=observation.observation_id,
+                                             captured_at=observation.captured_at, proprioception={})
+                reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+                                            state_version=1, next_step_id="p5-step",
+                                            observation_id=observation.observation_id,
+                                            recommendation="CONTINUE", reason="CPU")
+                assert decide_supervision(reply, context, context, maximum_age_s=5,
+                                          operational_reference=reference) == "CONTINUE"
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+                                               runtime.original.requirements[step.step_id], publication.owner_revision,
+                                               publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+                                               observation.observation_id, observation.checksum_sha256,
+                                               observation.calibration_version, contract.plan_version, contract.command_seq,
+                                               "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+                                               step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+                                               now, now + timedelta(seconds=3))
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from tests.test_marker_association import inputs
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+                               observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(context, observation_id=fresh.observation_id,
+                                  observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+                                  operational_reference=module._reference_for_observation(fresh, "marker"))
+                assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+            raw.now = 5_000_000_001
+            assert module._check_reference(reference).status == "INVALID"
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:475: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[marker]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d443ef0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_all_p5_categories_use_sam5')
+category = 'marker'
+
+    @pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                                  operational_reference=reference)
+                assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.supervision import (
+                    SupervisionContext,
+                    SupervisionDecision,
+                    decide_supervision,
+                )
+    
+                context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+                                             state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+                                             task_instruction=runtime.bootstrap.definition.user_instruction,
+                                             observation_id=observation.observation_id,
+                                             captured_at=observation.captured_at, proprioception={})
+                reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+                                            state_version=1, next_step_id="p5-step",
+                                            observation_id=observation.observation_id,
+                                            recommendation="CONTINUE", reason="CPU")
+                assert decide_supervision(reply, context, context, maximum_age_s=5,
+                                          operational_reference=reference) == "CONTINUE"
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+                                               runtime.original.requirements[step.step_id], publication.owner_revision,
+                                               publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+                                               observation.observation_id, observation.checksum_sha256,
+                                               observation.calibration_version, contract.plan_version, contract.command_seq,
+                                               "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+                                               step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+                                               now, now + timedelta(seconds=3))
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from tests.test_marker_association import inputs
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+                               observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(context, observation_id=fresh.observation_id,
+                                  observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+                                  operational_reference=module._reference_for_observation(fresh, "marker"))
+                assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+            raw.now = 5_000_000_001
+            assert module._check_reference(reference).status == "INVALID"
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:475: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_all_p5_categories_use_same_original_owner[condition]" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d3b8e90&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_all_p5_categories_use_sam6')
+category = 'condition'
+
+    @pytest.mark.parametrize("category", ["bootstrap", "capture", "plan", "grounding", "supervision", "marker", "condition"])
+    def test_all_p5_categories_use_same_original_owner(monkeypatch, tmp_path, category):
+        def run(module, runtime, raw, *args):
+            owner = runtime._operational_owner
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, category)
+            assert reference["task_origin_event_id"] == owner.task_origin_token.event_identity
+            assert module._check_reference(reference).status == "VALID"
+            if category in {"bootstrap", "capture", "plan"}:
+                usable_plan(runtime, observation)
+                assert runtime.bootstrap.planning_source_usable
+            elif category == "condition":
+                from cloud_edge_robot_arm.edge.evidence.conditions import (
+                    ConditionSpec,
+                    OnlineEvidenceSnapshot,
+                    evaluate_conditions,
+                )
+    
+                evidence = OnlineEvidenceSnapshot(observation, RobotState(connected=True),
+                                                  operational_reference=reference)
+                assert evaluate_conditions([ConditionSpec("robot_stopped")], evidence)[0].status == "PASS"
+            elif category == "supervision":
+                from cloud_edge_robot_arm.vision.supervision import (
+                    SupervisionContext,
+                    SupervisionDecision,
+                    decide_supervision,
+                )
+    
+                context = SupervisionContext(episode_id=runtime.episode_id, plan_version=1,
+                                             state_version=1, next_step_id="p5-step", next_skill="MOVE_TO",
+                                             task_instruction=runtime.bootstrap.definition.user_instruction,
+                                             observation_id=observation.observation_id,
+                                             captured_at=observation.captured_at, proprioception={})
+                reply = SupervisionDecision(episode_id=runtime.episode_id, plan_version=1,
+                                            state_version=1, next_step_id="p5-step",
+                                            observation_id=observation.observation_id,
+                                            recommendation="CONTINUE", reason="CPU")
+                assert decide_supervision(reply, context, context, maximum_age_s=5,
+                                          operational_reference=reference) == "CONTINUE"
+            elif category == "grounding":
+                usable_plan(runtime, observation)
+                contract, publication = runtime.adopt_plan(RobotState(connected=True))
+                from cloud_edge_robot_arm.vision.owner_registration import StepGroundingBinding
+    
+                step = contract.steps[0].model_copy(update={"preconditions": [], "success_conditions": []})
+                now = datetime.now(UTC)
+                binding = StepGroundingBinding(runtime.original.digest(), runtime.original.identity,
+                                               runtime.original.requirements[step.step_id], publication.owner_revision,
+                                               publication.state_generation + 1, publication.checkpoint.checkpoint_hash,
+                                               observation.observation_id, observation.checksum_sha256,
+                                               observation.calibration_version, contract.plan_version, contract.command_seq,
+                                               "6" * 64, "7" * 64, None, runtime.source.source_hashes,
+                                               step.model_dump_json(), runtime.original.requirements[step.step_id].expected_duration_s,
+                                               now, now + timedelta(seconds=3))
+                assert runtime.publish_grounding(binding, RobotState(connected=True)) is not None
+            else:
+                # Real marker consumer's freshness gate over an actual CPU image source.
+                from tests.test_marker_association import inputs
+                from cloud_edge_robot_arm.vision.marker_association import associate_marker_target
+                from cloud_edge_robot_arm.vision.observations import RGBDObservation
+    
+                marker, original, registration, context = inputs()
+                payload = original.model_dump(mode="json")
+                payload.update(episode_id=runtime.episode_id, captured_at=datetime.now(UTC).isoformat(),
+                               observation_id="cpu-marker", frame_id="cpu-marker", checksum_sha256="")
+                fresh = RGBDObservation.model_validate(payload)
+                token, receipt = event(owner)
+                module._register_observation(owner, receipt, fresh)
+                context = replace(context, observation_id=fresh.observation_id,
+                                  observation_sha256=fresh.checksum_sha256, episode_id=runtime.episode_id,
+                                  operational_reference=module._reference_for_observation(fresh, "marker"))
+                assert associate_marker_target(fresh, registration, context).status == "OBSERVED_CANDIDATE"
+            raw.now = 5_000_000_001
+            assert module._check_reference(reference).status == "INVALID"
+            rebound = {**reference, "job_id": "foreign-job"}
+            assert module._check_reference(rebound).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:475: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_public_replay_descriptor_never_live_authority" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d442750&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_public_replay_descriptor_0')
+
+    def test_public_replay_descriptor_never_live_authority(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            observation = captured(runtime)
+            usable_plan(runtime, observation)
+            from cloud_edge_robot_arm.repositories.event_autonomy.visual_bootstrap import (
+                VisualBootstrapRecord,
+                VisualBootstrapTransitionInput,
+                derive_bootstrap,
+            )
+    
+            original = runtime.bootstrap
+            detached = VisualBootstrapRecord.from_json(original.to_json())
+            assert detached.to_json() == original.to_json()
+            history = original.to_payload()["history"]
+            request = VisualBootstrapTransitionInput.from_payload(history[-1]["request"])
+            assert request.to_payload()["operational_windows"]
+            # Historical duplicate remains descriptive and grants no new live effect.
+            result = derive_bootstrap(detached, request, now=datetime.now(UTC))
+            assert result.write_disposition == "HISTORICAL_DUPLICATE"
+            payload = request.to_payload()
+            payload["event_key"] = "public-forged-new-transition"
+            copied = VisualBootstrapTransitionInput.from_payload(payload)
+            with pytest.raises(OperationalTimeError):
+                derive_bootstrap(detached, copied, now=datetime.now(UTC))
+            return request.to_payload()["operational_windows"][0]
+    
+&gt;       reference, _, _ = exercise(monkeypatch, tmp_path, run)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_windows.py:504: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_utc_lease_guard_remains_independent" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d5dbcb0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_utc_lease_guard_remains_i0')
+
+    def test_utc_lease_guard_remains_independent(monkeypatch, tmp_path):
+        def run(module, runtime, raw, worker, repo, job):
+            owner = runtime._operational_owner
+            assert owner.check(owner.task_window, after=owner.task_origin_token).status == "VALID"
+            with sqlite3.connect(repo.database_path) as connection:
+                connection.execute("UPDATE simulation_jobs SET lease_expires_at=? WHERE job_id=?",
+                                   ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), job.job_id))
+            assert owner.check(owner.task_window, after=owner.task_origin_token).status == "UNKNOWN"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:517: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase><testcase classname="tests.test_operational_windows" name="test_foreign_thread_has_no_owner_context" time="0.001"><failure message="ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x70b35d3baba0&gt;
+tmp_path = PosixPath('/tmp/p5-r100-red-ow673y2o/test_foreign_thread_has_no_own0')
+
+    def test_foreign_thread_has_no_owner_context(monkeypatch, tmp_path):
+        def run(module, runtime, raw, *args):
+            observation = captured(runtime)
+            reference = module._reference_for_observation(observation, "condition")
+            results = []
+            context = copy_context()
+            thread = threading.Thread(target=lambda: results.append(context.run(module._check_reference, reference)))
+            thread.start()
+            thread.join()
+            assert results[0].status == "UNKNOWN"
+            assert module._check_reference(reference).status == "VALID"
+    
+&gt;       exercise(monkeypatch, tmp_path, run)
+
+tests/test_operational_windows.py:532: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_operational_windows.py:52: in exercise
+    module = api()
+             ^^^^^
+tests/test_operational_windows.py:42: in api
+    return importlib.import_module("cloud_edge_robot_arm.vision.operational_windows")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen importlib._bootstrap&gt;:1387: in _gcd_import
+    ???
+&lt;frozen importlib._bootstrap&gt;:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'cloud_edge_robot_arm.vision.operational_windows'
+import_ = &lt;function _gcd_import at 0x70b3601200e0&gt;
+
+&gt;   ???
+E   ModuleNotFoundError: No module named 'cloud_edge_robot_arm.vision.operational_windows'
+
+&lt;frozen importlib._bootstrap&gt;:1324: ModuleNotFoundError</failure></testcase></testsuite></testsuites>
