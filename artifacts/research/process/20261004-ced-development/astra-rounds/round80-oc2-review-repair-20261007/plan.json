@@ -1,0 +1,529 @@
+{
+  "schema": "astra.recovery-plan.v1",
+  "round": "round80-oc2-review-repair-20261007",
+  "created_at_utc": "2026-10-07T13:36:40.157710+00:00",
+  "status": "PLAN_READY_PENDING_R79_ACTIVATION_NO_EXECUTION_AUTHORITY",
+  "planner": {
+    "requested_model": "gpt-6-astra",
+    "agent": "/root/astra_oc2_residual",
+    "runtime_model_independently_verified": false
+  },
+  "executor": "ROOT-designated gpt-6.1-sol after R79 terminal handoff",
+  "problem": "Two frozen independent OC2 review findings: startup secondary report can mask primary; returned-frame/source relation omitted by reader.",
+  "review_evidence": {
+    "paths": [
+      "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/oc2-independent-review/preliminary-review.md",
+      "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/oc2-independent-review/preliminary-review.json"
+    ],
+    "findings": [
+      {
+        "id": "OC2-PR-01",
+        "priority": "P1",
+        "title": "Startup failure reporting can replace the primary exception",
+        "source": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "source_pin": {
+          "sha256": "8ae58cf74fc7278462ac2b0d5a64b87b60b35e53d8879e6c48e97c9e01c76cd3",
+          "bytes": 60216
+        },
+        "lines": [
+          570,
+          577
+        ],
+        "related": [
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+            "lines": [
+              1316,
+              1334
+            ]
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+            "lines": [
+              634,
+              636
+            ]
+          }
+        ],
+        "requirement": [
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.md",
+            "lines": [
+              92,
+              93
+            ],
+            "text": "recorder前startup失败也写原件；write失败不发布；finally导出不能掩盖原异常或丢prefix。"
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round67-oc2-green-partials/plan.md",
+            "lines": [
+              25,
+              28
+            ],
+            "text": "Primary recorded first; each secondary write/cleanup error separately persists with relation to primary; re-raise original primary."
+          }
+        ],
+        "static_counterexample": "A preregistration guard raises ValueError; the except block appends it, but _write_exclusive_v1(startup-failures.json) then raises OSError. The unprotected write exits before bare raise. The outer runner receives OSError and preserve() records OSError as PRIMARY. Original ValueError only survives in the older role-less preregistration row. The unchanged worker RuntimeError/ImportError/OSError catch can report BLOCKED_BY_ENV instead of the original guard ValueError/FAILED.",
+        "counterexample_executed": false,
+        "impact": "Wrong primary identity and terminal classification when startup evidence cannot be persisted; later reset-secondary coverage does not establish startup persistence safety.",
+        "coverage_gap": "Existing preregistration-write case permits startup-failures.json persistence. New secondary freeze/export cases begin after RESET and do not exercise this second failure."
+      },
+      {
+        "id": "OC2-PR-02",
+        "priority": "P2",
+        "title": "Historical current verification omits returned frame to source acquisition relation",
+        "source": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "source_pin": {
+          "sha256": "8ae58cf74fc7278462ac2b0d5a64b87b60b35e53d8879e6c48e97c9e01c76cd3",
+          "bytes": 60216
+        },
+        "lines": [
+          1056,
+          1070
+        ],
+        "related": [
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+            "source_pin": {
+              "sha256": "06373a9c702420ab38c5afa20f888efb35cd6ea109cf094c662fa04511e60b3c",
+              "bytes": 14778
+            },
+            "lines": [
+              187,
+              207
+            ]
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-after/src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+            "source_pin": {
+              "sha256": "918e029a6a1f0d2a7a455820c721118abdb50b7c5eda6e8ee15f54bed543e67c",
+              "bytes": 11537
+            },
+            "lines": [
+              301,
+              335
+            ]
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-after/tests/test_operational_capture_v1.py",
+            "lines": [
+              403,
+              448
+            ]
+          }
+        ],
+        "requirement": [
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.md",
+            "lines": [
+              91,
+              101
+            ],
+            "text": "cached identity缺失拒绝；原JSON/frame SHA+bytes重算完整event/frame joins，不信receipt true/PASS。"
+          }
+        ],
+        "writer_semantics": "Writer finds the actual returned observation in self._frames and sets returned_acquisition_id=frame.acquisition_id; source_acquisition_id=frame.source_acquisition_id or frame.acquisition_id. A derived frame can have distinct returned/source IDs. Required relation: returned frame exists in saved allocation/frame originals and its original source relation equals current.source_acquisition_id, with corresponding event/interval. Equality of the two IDs is not assumed.",
+        "static_counterexample": "In existing valid originals, change only operational-originals.current.returned_acquisition_id to a non-existent acquisition string; recompute that file sha256 and bytes in receipt.original_files as the existing tamper test does. All event/frame/source originals, source_acquisition_id, token, sequence, D/S and age remain unchanged. Schema only requires the returned key; historical reader never accesses its value. Existing conditions therefore still reach original_integrity=VERIFIED and source_prefix_complete=True despite missing returned-frame identity.",
+        "counterexample_executed": false,
+        "impact": "Historical source-integrity claim omits a causal relationship explicitly recorded by the writer. Does not claim live/native authority is minted.",
+        "coverage_gap": "Existing allocation/pair/episode/reset/schema tamper cases never change returned_acquisition_id."
+      }
+    ],
+    "counterexamples_executed": false,
+    "status": "PRELIMINARY_REQUEST_CHANGES_NOT_FINAL"
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "bytes": 1774,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/oc2-independent-review/preliminary-review.md",
+      "sha256": "8b04e3e0a2294992cb401ec320009ab20f779390a094da2c90308efc00c92d27",
+      "bytes": 6830,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/oc2-independent-review/preliminary-review.json",
+      "sha256": "aade5721d12a8f5811f4a9bd3a19376f9c12c550d7991acc402a30d9bb599b2b",
+      "bytes": 35320,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round79-oc2-backend-config-type-20261007/plan.md",
+      "sha256": "288e8ee01dba97af76e39339c033e386db7e9f1884cb662e3535e6ab6fa70eb9",
+      "bytes": 23966,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round79-oc2-backend-config-type-20261007/plan.json",
+      "sha256": "bc57e73b493c75f287bd4d048c42ff02dd8419b93b115cf7d3657bb807d52143",
+      "bytes": 44687,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round79-oc2-backend-config-type-20261007/root-authorization.json",
+      "sha256": "401cbd7b80ffc95e5ab5c499cc7d10e13d699f0caae2b4970d2a41ccaa0ac32e",
+      "bytes": 22279,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/failure-receipt.json",
+      "sha256": "ae12bbe535439ac2512ccd6cf9327df236231bcda6abfb56390a7a0eeb1f73bf",
+      "bytes": 4639,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/source-freeze.json",
+      "sha256": "183ffed66b2834d5d708cf41ed99b38f2a99de00d92e82405a50dbb8ffee3002",
+      "bytes": 175,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.md",
+      "sha256": "7cabb71aec1c4d485d6505a060ed227b5a810ae71d325e6b4fbc66da41d160b9",
+      "bytes": 22261,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round67-oc2-green-partials/plan.md",
+      "sha256": "62bc42d4e638fb3e0f7d423f3d6752c0e8818c2ed1adfd926e8cf71f549f2f47",
+      "bytes": 39566,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-after/scripts/run_operational_prefix_v1.py",
+      "sha256": "fe8e8c9e021ec437b601895de724f1d10f17eb221fea6b8302c304a65fbcffa9",
+      "bytes": 1885,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-after/tests/test_operational_capture_v1.py",
+      "sha256": "ebe63baa223a7f2dc1f99fc28603ceb3ae9505516085c605ef0dbb2a39fa6aaf",
+      "bytes": 18729,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/tests/test_operational_prefix_cli_v1.py",
+      "sha256": "f3cc2a0d2de8fb18dbcfa3c9b9969d92f657fd03b448b7cda7c58d5926480cfc",
+      "bytes": 6546,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-after/tests/test_operational_prefix_v1.py",
+      "sha256": "1ccb56de190f5cea0280882690bead41ed15aaff0fdfa2b74b32ca9c5cd1b426",
+      "bytes": 11934,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round75-oc2-residual-type-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+      "sha256": "8ae58cf74fc7278462ac2b0d5a64b87b60b35e53d8879e6c48e97c9e01c76cd3",
+      "bytes": 60216,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+      "sha256": "06373a9c702420ab38c5afa20f888efb35cd6ea109cf094c662fa04511e60b3c",
+      "bytes": 14778,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-after/src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+      "sha256": "918e029a6a1f0d2a7a455820c721118abdb50b7c5eda6e8ee15f54bed543e67c",
+      "bytes": 11537,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/source-after/src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "sha256": "31cea6501ee9286ee933335f013422314985726036c8029844929cc96be2fdb4",
+      "bytes": 80239,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-after/configs/research/operational_prefix_v1.json",
+      "sha256": "c1d51bb28376f9a2c7e636efe16a0675d426951b8ed8849ead78d342f4b3ada1",
+      "bytes": 394,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py",
+      "sha256": "4eabd3bf9cdf15b3942c4a740781a95c22ea684f410853c853d0336952d7a303",
+      "bytes": 44175,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation/config.py",
+      "sha256": "ece5dba5a710f63ba46bc99260ae768cec07c2773e7e0687bd2f55a4758f1d7b",
+      "bytes": 2078,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c",
+      "bytes": 2458,
+      "role": "immutable planning basis; active R79 prefix/test not read or pinned here"
+    }
+  ],
+  "activation": {
+    "required": true,
+    "status": "PENDING_R79_ACTUAL_FREEZE_AND_RECEIPTS",
+    "no_future_sha_invented": true,
+    "may_start_R80_now": false,
+    "output": "artifacts/research/process/20261004-ced-development/astra-rounds/round80-oc2-review-repair-20261007/activation.json",
+    "must_be_exclusive": true,
+    "required_R79_results": [
+      "step-report.md/json and failure/terminal receipt or equivalent final status",
+      "source-freeze.json plus source-after for prefix and tests/test_operational_capture_v1.py",
+      "source-before/diff/restricted scope proof proving only the exact R79 config guard + appended two-parameter test changed since R75/old test",
+      "config_RED raw command/stdout/stderr/JUnit: missing FAIL, changed PASS, zero error/skip",
+      "ruff_check and ruff_format_check raw results exit0",
+      "mypy four-source raw result exit0",
+      "targeted_CPU raw command/stdout/stderr/JUnit:8 pass, zero failure/error/skip",
+      "R03 raw result/JUnit:pass with observed case count, zero failure/error/skip",
+      "R79 output/test run count ledger and before/after bounded inputs"
+    ],
+    "steps": [
+      "Wait for ROOT R79 terminal notification. If R79 fails unexpectedly, do not activate R80; next Astra handling of R79 takes priority and requires this plan applicability reconsideration.",
+      "Read only completed R79 frozen source and command artifacts. Verify actual SHA/bytes, freeze linkage to source-after, R79 controlled AST changes, declared exactly-once runs and full actual acceptance; do not infer from filenames/status prose alone.",
+      "Immediately before R80 first edit, compare current prefix/capture test bytes to actual R79 source-after and record their actual SHA in activation.json. Verify unaffected schema/capture/worker/CLI/source helper/test baseline pins against immutable reviewed snapshots. Do not pin active RW1 or ROOT progress.",
+      "Pin every actual R79 result used, both R80 plan files and all active source/test inputs in activation.json; then ROOT writes separate exclusive root-authorization.json referencing plan+activation hashes. These explicit actual bytes complete the implementation input set; no placeholders or hashes copied from old source as if future source.",
+      "Only after ROOT review and authorization may Sol execute the R80 RED/repair sequence. Activation is metadata only and grants zero product/actual run before the authorized sequence."
+    ]
+  },
+  "scope": {
+    "modify": [
+      "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+      "tests/test_operational_capture_v1.py"
+    ],
+    "schema_modified": false,
+    "allowed_prefix_sections": [
+      "_LiveApplicationV1 private pending-primary field",
+      "_prepare_source_v1 exception reporting only",
+      "run_operational_prefix_v1.preserve initial primary selection only",
+      "new _current_source_event_v1 pure helper",
+      "verify_operational_prefix_originals_v1 current source-event lookup only"
+    ],
+    "test_scope": "append named counterexample/positive-control functions; no old fixture/helper/assertion edits",
+    "protected": "R79 config guard/test additions, schema, recorder, worker, CLI, all old raw/logs/frozen originals; independent RW1 not pinned"
+  },
+  "repair_contracts": {
+    "OC2-PR-01": {
+      "root_cause": "_prepare_source_v1 appends an unclassified preregistration failure then directly writes startup-failures.json inside except. A second write exception escapes before bare raise; runner only sees/relabels it PRIMARY.",
+      "changes": [
+        "Add one private registry field on _LiveApplicationV1, preregistration_primary: tuple[BaseException, int] | None = None, for exact exception object and already allocated failure_id; this is internal one-shot handoff, not public authority.",
+        "In _prepare_source_v1 except, replace the legacy role-less append with _failure_row_v1(record, \"preregistration\", error, primary_id=None) before any report write. Store (error, row[\"failure_id\"]) in that field.",
+        "Write startup-failures.json once via existing _failure_write_v1 with phase=\"startup_failure_persistence\" and same primary_id. That helper marks durable evidence incomplete and records OSError as linked SECONDARY without throwing it over the primary.",
+        "On failed startup report write, try existing _persist_failure_stage_v1(record, record.output, primary_id=id) once as a new distinct append-only sidecar, not a retry/overwrite. Wrap this fallback so an unexpected fallback exception is recorded as SECONDARY with durable flag false and original error is still re-raised. Bare raise in the original except must execute; no new raised wrapper exception.",
+        "At first runner preserve(), consume and clear preregistration_primary if present. Reuse its original exception/traceback/id rather than adding a duplicate PRIMARY; if the currently caught error is a different object, retain it as linked SECONDARY. When no pending preregistration primary exists, keep the existing _failure_row allocation path. Subsequent cleanup remains the existing secondary path.",
+        "Preserve exclusive file semantics, source_called/once guards, failure_id uniqueness and all original error text/types/terminal classification. Do not retry startup report or modify old artifacts. Direct Task1 _prepare callers still receive the original exception and can inspect persisted sidecar or in-memory incomplete evidence."
+      ],
+      "tests": {
+        "node": "tests/test_operational_capture_v1.py::test_preregistration_primary_survives_startup_report_failure_cpu",
+        "parameters": [
+          "direct",
+          "worker"
+        ],
+        "injection": "Create app using existing application/cpu_components. Raise one captured ValueError(\"CPU preregistration primary\") from the existing _new_prefix_backend_v1 raw CPU construction seam inside _prepare; wrap _write_exclusive_v1 to raise OSError(\"CPU startup report secondary\") only for startup-failures.json and delegate all other writes. Do not patch validators/preserve/runner/reader/verdicts.",
+        "direct": "Activate using existing tests.test_operational_prefix_v1.activate; call _prepare_source_v1; require caught exception is the captured original object. Inspect one PRIMARY ValueError and linked SECONDARY OSError plus new stage sidecar/incomplete flag; startup writer called once; catalog unavailable and once-only guard stays. Direct activation is not worker dispatch, so do not require direct job terminal FAILED.",
+        "worker": "app.execute_once through real CPU worker: partial receipt primary remains ValueError, worker FAILED (not BLOCKED_BY_ENV), exactly one attempt, exactly one PRIMARY with all secondaries referencing id, runner-failure durable bytes preserve same primary, startup report write once, no initialize/observer/RESET/capture/planner/model and no catalog.",
+        "RED": "Both cases must FAIL on activated R79 because original reporting OSError masks ValueError; these are not pre-existing passing controls."
+      }
+    },
+    "OC2-PR-02": {
+      "root_cause": "reader never accesses current.returned_acquisition_id; checking only source event/D/S/age leaves recorded returned-frame identity and source relation unaudited.",
+      "changes": [
+        "Add a narrow pure helper _current_source_event_v1(current: dict[str, Any], frames: list[dict[str, Any]], captures: list[dict[str, Any]]) -> dict[str, Any] near reader helpers. Any is only the existing heterogeneous JSON value contract; no cast or suppression.",
+        "Require current returned/source IDs to be nonempty str. Resolve exactly one saved returned frame by acquisition_id; compute its original_source = frame[\"source_acquisition_id\"] or frame[\"acquisition_id\"]. Require original_source equals current.source_acquisition_id; do not compare returned ID directly with source ID.",
+        "Resolve exactly one source frame and exactly one CAPTURE event for original_source. Require the source frame and returned frame interval_id equal operation-<source_event.operation_id>. Derived frames copy the original interval in VisualRawRecorderV3._record_transformed_observation, so distinct returned/source IDs can pass this relation.",
+        "Return the selected existing source event. In verify_operational_prefix_originals_v1 replace only the current source next(...) lookup with this helper call after existing full frame/manifest checks. Keep all following token/domain/sequence/episode/S/bracket/age logic, previous full denominator checks, persisted-frame comparisons, and unavailable live authority unchanged.",
+        "No schema change required: referential integrity belongs in reader where frames/events exist. Do not loosen allocation counts or enable new transformed-frame production/acceptance in the broader OC2 recipe. The helper permits a valid distinct-ID relationship; this alone is not a claim that a synthetic derived slab passes all existing full-reader recipe constraints."
+      ],
+      "tests": {
+        "counterexample_node": "tests/test_operational_capture_v1.py::test_reader_rejects_broken_returned_acquisition_join_cpu",
+        "parameters": [
+          "missing_returned",
+          "wrong_source_relation"
+        ],
+        "fixture": "Each case creates its own new CPU valid originals using unchanged cpu_components/app.execute_once, then edits only this test-owned operational-originals.current.returned_acquisition_id and recomputes only that file receipt hash/bytes exactly as existing tamper tests do. No historical raw or old manifests are edited.",
+        "missing_returned": "Set returned ID to absent nonempty string; keep source_id/token/age/all frames unchanged.",
+        "wrong_source_relation": "Select an existing frame with an acquisition ID different from current.source_acquisition_id whose (source_acquisition_id or acquisition_id) is also different; set only returned ID to it. Do not assume all differing IDs are invalid.",
+        "assertions": "Reader must reject original_integrity/source_prefix_complete while live_authority remains UNAVAILABLE; install existing no-live-D/backend sentinels after original generation. Both previously pass incorrectly, so both RED failures are expected.",
+        "positive_control_node": "tests/test_operational_capture_v1.py::test_current_source_event_join_accepts_direct_and_derived_ids",
+        "positive_parameters": [
+          "direct",
+          "derived"
+        ],
+        "control_execution": "Post-fix GREEN only; helper does not exist in pre-fix source, so do not manufacture a RED from missing helper.",
+        "control_data": "Pure small JSON records: source frame acquisition source-1, source_acquisition_id None, interval operation-7; CAPTURE source-1 operation_id7. direct returned source-1; derived adds returned-1 with source_acquisition_id source-1 and same interval operation-7. Assert helper returns original capture event for both. This is relation-unit evidence, not a real source/derived transformation run."
+      }
+    }
+  },
+  "steps": [
+    "S1 Complete activation exactly as specified; do not execute tests or edits while R79 pending. ROOT assigns GPT-6.1-sol sequentially on the same two OC2 files after previous ownership handoff.",
+    "S2 Freeze actual activated source-before and append only the four counterexample test cases. No product change yet. Run review_RED once, expected four failures and no errors/skips; preserve complete originals. A different cause/shape is a new Astra stop, not a reason to adjust tests until red.",
+    "S3 Implement PR-01 exact primary object/id handoff and protected report writes; implement PR-02 narrow pure relation helper and one reader call substitution. Append direct/derived pure helper controls for post-fix verification. Existing tests/assertions/fixtures and R79 config guard remain untouched.",
+    "S4 Review every hunk and produce coordinate-specific scope proof; explicitly record behavior changes (primary preservation and rejection of broken returned joins). Do not claim whole-AST/runtime equivalence. Reverting only registered AST fields/except/preserve/helper/call/new test nodes must recover activated modules; no global stripping or old-assert removal.",
+    "S5 Run specified Ruff check/format on two changed files and original four-source mypy once each; failure preserves raw output and halts. Then run review_GREEN once:4 new counterexamples+2 helper controls+7 affected existing cases=13, all pass, no error/skip. No R03, R79 targeted8, full63 or broad prior suite repeat.",
+    "S6 Freeze new sources and bounded evidence; retain full new CPU success/failure/partial denominator and local DB boundaries without claiming full remote raw package. Write step-report.md/json, original review counterexamples as static provenance plus new real RED/ GREEN evidence, count ledger and remaining limits. Return to different-actor independent reviewer; author cannot self-accept or authorize actual/Git."
+  ],
+  "verification": {
+    "review_RED": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp=/tmp/bigsmall-oc2-round80-review_red",
+        "tests/test_operational_capture_v1.py::test_preregistration_primary_survives_startup_report_failure_cpu",
+        "tests/test_operational_capture_v1.py::test_reader_rejects_broken_returned_acquisition_join_cpu",
+        "--junitxml=artifacts/research/process/20261004-ced-development/astra-rounds/round80-oc2-review-repair-20261007/implementation/review_RED.junit.xml"
+      ],
+      "max_runs": 1,
+      "expected_cases": 4,
+      "expected_failed": 4,
+      "expected_passed": 0,
+      "expected_errors": 0,
+      "expected_skipped": 0,
+      "gate": "activation complete; four counterexample tests appended, product remains exact activated R79 bytes",
+      "expected_failures": "startup direct/worker are replaced by OSError; reader missing_returned/wrong_source_relation still incorrectly verify. Static-review counterexamples become observed RED only after this actual run."
+    },
+    "ruff_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "tests/test_operational_capture_v1.py"
+      ],
+      "max_runs": 1,
+      "expected_exit_code": 0
+    },
+    "ruff_format_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "tests/test_operational_capture_v1.py"
+      ],
+      "max_runs": 1,
+      "expected_exit_code": 0
+    },
+    "mypy": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "mypy",
+        "--cache-dir=/tmp/bigsmall-oc2-round80-mypy",
+        "--follow-imports=silent",
+        "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "scripts/run_operational_prefix_v1.py"
+      ],
+      "max_runs": 1,
+      "expected_exit_code": 0
+    },
+    "review_GREEN": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp=/tmp/bigsmall-oc2-round80-review_green",
+        "tests/test_operational_capture_v1.py::test_preregistration_primary_survives_startup_report_failure_cpu",
+        "tests/test_operational_capture_v1.py::test_reader_rejects_broken_returned_acquisition_join_cpu",
+        "tests/test_operational_capture_v1.py::test_current_source_event_join_accepts_direct_and_derived_ids",
+        "tests/test_operational_prefix_v1.py::test_preregistration_write_failure_preserves_original_and_no_retry",
+        "tests/test_operational_prefix_v1.py::test_changed_policy_rejects_before_preregistration",
+        "tests/test_operational_capture_v1.py::test_reset_primary_survives_legacy_freeze_failure",
+        "tests/test_operational_capture_v1.py::test_reset_primary_survives_failure_export_failure",
+        "tests/test_operational_capture_v1.py::test_reader_recomputes_and_never_mints_authority[flag]",
+        "tests/test_operational_capture_v1.py::test_reader_recomputes_and_never_mints_authority[allocation]",
+        "tests/test_operational_capture_v1.py::test_reader_recomputes_and_never_mints_authority[pair]",
+        "--junitxml=artifacts/research/process/20261004-ced-development/astra-rounds/round80-oc2-review-repair-20261007/implementation/review_GREEN.junit.xml"
+      ],
+      "max_runs": 1,
+      "expected_cases": 13,
+      "expected_failed": 0,
+      "expected_errors": 0,
+      "expected_skipped": 0,
+      "composition": "4 new counterexamples + 2 direct/derived relation controls + 7 affected existing cases",
+      "gate": "all three post-change static checks pass"
+    },
+    "completed_R79_targeted8": {
+      "additional_runs": 0,
+      "reuse": "actual R79 receipt only after activation verifies it"
+    },
+    "completed_R79_R03": {
+      "additional_runs": 0,
+      "reuse": "actual successful R79 receipt only; no blanket rerun"
+    },
+    "full_GREEN63": {
+      "additional_runs": 0,
+      "reuse": "historical frozen bytes only"
+    },
+    "env": {
+      "PYTHONPATH": "src:.",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "MYPYPATH": "src"
+    }
+  },
+  "execution_preconditions": [
+    "R79 activation complete with actual source/receipt SHA; source quiet only for bounded two-file ownership, no whole-repository quiet requirement.",
+    "Existing .venv/bin/python and PYTHONDONTWRITEBYTECODE=1; never pass sandbox_permissions; no package install/network.",
+    "All new outputs/cache/basetemps/JUnit exclusive and absent including dangling symlinks; collision stops without cleaning.",
+    "Original review receipt retained as static finding, not mislabeled an observed RED. New tests create their own originals and never rewrite historical artifacts."
+  ],
+  "actual_running_preconditions": {
+    "authorized_now": false,
+    "actual_calls": 0,
+    "future": [
+      "Author software evidence, different-actor independent acceptance for both findings and full incremental scope",
+      "Existing Gate C/D and separate ROOT actual authorization",
+      "Frozen real recipe/source/asset/lease/owner/OC1/observer/operation/raw-denominator prerequisites; no automated retry or source rewriting"
+    ]
+  },
+  "acceptance": {
+    "software": "At most author verified after actual R79 activation, preserved expected RED4, static pass, GREEN13 with complete receipts/failures and bounded scope proof. Independent final review still required.",
+    "actual": "0, unauthorized",
+    "formal": "NOT_ACCEPTED; native/consumer unavailable, calibration0, H_D/geometry/motion UNKNOWN, OC3 unchanged",
+    "history": "Old63 and completedR79/R03 remain at their own actual source hashes; do not claim reruns or source-wide equivalence."
+  },
+  "stop_conditions": [
+    "Any R79 unexpected result/drift or extra change prevents activation and requires Astra applicability review.",
+    "Any unexpected RED cause, static/GREEN failure, output collision, new root cause or scope expansion: retain original evidence and next actual Astra plan; no ad-hoc repair/retry.",
+    "Do not broaden source/derived-frame acceptance or use equal returned/source IDs as shortcut."
+  ],
+  "planning_incident": {
+    "operation": "read-only numbered source display",
+    "tool_chunk": "1deaf7",
+    "exit_code": 1,
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 6, in <module>\n  File \"<stdin>\", line 6, in <genexpr>\nIndexError: list index out of range\n",
+    "cause": "display requested test source line288 beyond280-line frozen file",
+    "recovery": "bounded display to min(hi,len(lines)); read-only, no product/test invocation or mutation",
+    "scope": "planner display error only, distinct from two product findings"
+  },
+  "planning_execution": {
+    "product_changes": 0,
+    "tests": 0,
+    "ruff": 0,
+    "mypy": 0,
+    "actual": 0,
+    "model": 0,
+    "network": 0,
+    "Git": 0,
+    "subagents": 0,
+    "R79_future_source_hashes_generated": 0
+  },
+  "plan_md_sha256": "cb89b8b576193791a07a379c704f40f534bf57145b5fd0765f9a660c8a1235b5"
+}

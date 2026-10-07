@@ -1,0 +1,188 @@
+--- round67-before/src/cloud_edge_robot_arm/research/operational_capture_v1.py
++++ current/src/cloud_edge_robot_arm/research/operational_capture_v1.py
+@@ -5,9 +5,10 @@
+ import base64
+ import hashlib
+ import json
++from collections.abc import Mapping
+ from dataclasses import asdict
+ from pathlib import Path
+-from typing import Any
++from typing import Any, cast
+ 
+ from cloud_edge_robot_arm.research.native_reset_capture_v2 import (
+     VisualResetClockRecorderV2,
+@@ -15,21 +16,24 @@
+ )
+ from cloud_edge_robot_arm.research.operational_prefix_schema_v1 import canonical_bytes_v1
+ from cloud_edge_robot_arm.simulation.mujoco.backend import BackendOperationBoundary
++from cloud_edge_robot_arm.vision.raw_recorder_v3 import _plain
+ 
+ _ISSUER = object()
+ 
+ 
++def _detach_original(value: Any) -> Any:
++    value = _plain(value)
++    if isinstance(value, bytes):
++        return {"original_bytes_base64": base64.b64encode(value).decode("ascii")}
++    if isinstance(value, Mapping):
++        return {key: _detach_original(item) for key, item in value.items()}
++    if isinstance(value, (tuple, list)):
++        return [_detach_original(item) for item in value]
++    return value
++
++
+ def _json_boundary(event: BackendOperationBoundary) -> dict[str, Any]:
+-    def safe(value: Any) -> Any:
+-        if isinstance(value, bytes):
+-            return {"original_bytes_base64": base64.b64encode(value).decode("ascii")}
+-        if isinstance(value, dict):
+-            return {key: safe(item) for key, item in value.items()}
+-        if isinstance(value, list):
+-            return [safe(item) for item in value]
+-        return value
+-
+-    return safe(_boundary_payload(event))
++    return cast(dict[str, Any], _detach_original(_boundary_payload(event)))
+ 
+ 
+ class OperationalPrefixRecorderV1(VisualResetClockRecorderV2):
+@@ -59,6 +63,10 @@
+         self._d_current: dict[str, Any] | None = None
+         self._operational_frozen: dict[str, Any] | None = None
+         self._operational_export: dict[str, Any] | None = None
++        self._legacy_freeze_attempted = False
++        self._operational_freeze_attempted = False
++        self._operational_export_attempted = False
++        self._operational_export_error: BaseException | None = None
+ 
+     @classmethod
+     def from_application(
+@@ -200,14 +208,10 @@
+         }
+         return dict(self._d_current)
+ 
+-    def freeze_operational_prefix(self) -> dict[str, Any]:
+-        self._require_open()
+-        if self._operational_frozen is not None:
+-            raise RuntimeError("operational originals already frozen")
+-        if self._frozen_prefix is None:
+-            self.freeze_unbound_prefix()
+-        self._operational_frozen = json.loads(
+-            canonical_bytes_v1(
++    def _detached_operational_ledger(self) -> dict[str, Any]:
++        return cast(
++            dict[str, Any],
++            _detach_original(
+                 {
+                     "schema_version": "simulation.operational-prefix.originals.v1",
+                     "source_session_id": self._session_id,
+@@ -220,29 +224,90 @@
+                     "backend_observer_failures": self.backend.operation_observer_failures,
+                     "super_audit_failures": self._audit_failures,
+                 }
+-            )
++            ),
+         )
++
++    def detached_partial_attempts(self) -> dict[str, Any]:
++        """Actual complete attempt data independent of legacy freeze/export success."""
++        return cast(
++            dict[str, Any],
++            _detach_original(
++                {
++                    "schema_version": "simulation.operational-prefix.partial-attempts.v1",
++                    "source_session_id": self._session_id,
++                    "domain_sha256": self._domain_sha,
++                    "operational_ledger": self._detached_operational_ledger(),
++                    "backend_operation_ledger": self.backend.operation_ledger,
++                    "pending_operation_ids": [
++                        key for key, (row, _) in self._d_pending.items() if row["end"] is None
++                    ],
++                    "incomplete_operation_ids": [
++                        row["operation_id"] for row in self._d_events if row["bracket"] is None
++                    ],
++                    "legacy_operations": self._operations,
++                    "legacy_intervals": self._intervals,
++                    "legacy_clock_pairs": self._pair_originals,
++                    "legacy_reset_journal": self._reset_journal,
++                    "legacy_reset_metadata": self._reset_metadata,
++                    "legacy_reset_result": self._reset_result,
++                    "legacy_reset_count": self._reset_count,
++                    "legacy_physics": self._physics,
++                    "legacy_commands": self._commands,
++                    "legacy_frames": self._frames,
++                    "legacy_frame_aux": self._frame_aux,
++                    "legacy_actions": self._actions,
++                    "legacy_purpose_allocations": self._purpose_allocations,
++                    "last_captured_frame": self.last_captured_frame,
++                    "explicit_acquisitions": self._explicit_acquisitions,
++                    "observed_episode_id": self.backend._episode_id,
++                    "observed_total_physics_steps": self.backend.total_physics_steps,
++                    "source_hashes": dict(self.source_hashes),
++                }
++            ),
++        )
++
++    def freeze_operational_prefix(self) -> dict[str, Any]:
++        self._require_open()
++        if self._operational_freeze_attempted:
++            raise RuntimeError("operational originals freeze already attempted")
++        self._operational_freeze_attempted = True
++        # Detach the complete new ledger first: an inherited failure cannot erase it.
++        self._operational_frozen = json.loads(
++            canonical_bytes_v1(self._detached_operational_ledger())
++        )
++        if self._frozen_prefix is None:
++            self._legacy_freeze_attempted = True
++            self.freeze_unbound_prefix()
+         return json.loads(canonical_bytes_v1(self._operational_frozen))
+ 
+     def export_operational_prefix(self) -> dict[str, Any]:
+         self._require_open()
++        if self._operational_export_error is not None:
++            raise self._operational_export_error
++        if self._operational_export is not None:
++            return json.loads(canonical_bytes_v1(self._operational_export))
++        if self._operational_export_attempted:
++            raise RuntimeError("operational export already attempted without completion")
+         if self._operational_frozen is None:
+             raise RuntimeError("freeze complete source denominator before export")
+-        if self._operational_export is not None:
++        self._operational_export_attempted = True
++        from cloud_edge_robot_arm.research.operational_prefix_v1 import _pin, _write_exclusive_v1
++
++        try:
++            _write_exclusive_v1(
++                self.directory / "operational-originals.json",
++                canonical_bytes_v1(self._operational_frozen),
++            )
++            legacy = self.export_unbound_prefix()
++            if legacy["export_failures"]:
++                raise RuntimeError("legacy frame/export failure retained")
++            inventory = {
++                str(p.relative_to(self.directory)): _pin(p)
++                for p in self.directory.rglob("*")
++                if p.is_file()
++            }
++            self._operational_export = {"original_files": inventory, "legacy_export": legacy}
+             return json.loads(canonical_bytes_v1(self._operational_export))
+-        from cloud_edge_robot_arm.research.operational_prefix_v1 import _pin, _write_exclusive_v1
+-
+-        legacy = self.export_unbound_prefix()
+-        _write_exclusive_v1(
+-            self.directory / "operational-originals.json",
+-            canonical_bytes_v1(self._operational_frozen),
+-        )
+-        inventory = {
+-            str(p.relative_to(self.directory)): _pin(p)
+-            for p in self.directory.rglob("*")
+-            if p.is_file()
+-        }
+-        self._operational_export = {"original_files": inventory, "legacy_export": legacy}
+-        if legacy["export_failures"]:
+-            raise RuntimeError("legacy frame/export failure retained")
+-        return json.loads(canonical_bytes_v1(self._operational_export))
++        except BaseException as error:
++            self._operational_export_error = error
++            raise

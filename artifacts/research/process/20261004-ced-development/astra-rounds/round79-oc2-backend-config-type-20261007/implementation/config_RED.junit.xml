@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="13.420" timestamp="2026-10-07T21:34:08.288164+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_capture_v1" name="test_recorder_rejects_missing_or_changed_backend_config_cpu[missing]" time="6.518"><failure message="assert {'error': &quot;'N...tributeError'} == {'error': 'or... 'ValueError'}&#10;  &#10;  Differing items:&#10;  {'error': &quot;'NoneType' object has no attribute 'model_dump'&quot;} != {'error': 'original backend simulator configuration changed'}&#10;  {'error_type': 'AttributeError'} != {'error_type': 'ValueError'}&#10;  Use -v to get more diff">tmp_path = PosixPath('/tmp/bigsmall-oc2-round79-config-red/test_recorder_rejects_missing_0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7de8b676cd10&gt;
+config_state = 'missing'
+
+    @pytest.mark.parametrize("config_state", ["missing", "changed"])
+    def test_recorder_rejects_missing_or_changed_backend_config_cpu(
+        tmp_path, monkeypatch, config_state
+    ):
+        require_task2()
+        app = application(tmp_path)
+        backend, calls = cpu_components(monkeypatch, app)
+        original_initialize = backend.initialize
+    
+        def initialize(config):
+            original_initialize(config)
+            backend._config = (
+                None if config_state == "missing" else config.model_copy(update={"seed": 1})
+            )
+    
+        monkeypatch.setattr(backend, "initialize", initialize)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is False
+&gt;       assert receipt["primary_error"] == {
+            "error_type": "ValueError",
+            "error": "original backend simulator configuration changed",
+        }
+E       assert {'error': "'N...tributeError'} == {'error': 'or... 'ValueError'}
+E         
+E         Differing items:
+E         {'error': "'NoneType' object has no attribute 'model_dump'"} != {'error': 'original backend simulator configuration changed'}
+E         {'error_type': 'AttributeError'} != {'error_type': 'ValueError'}
+E         Use -v to get more diff
+
+tests/test_operational_capture_v1.py:470: AssertionError</failure></testcase><testcase classname="tests.test_operational_capture_v1" name="test_recorder_rejects_missing_or_changed_backend_config_cpu[changed]" time="6.470" /></testsuite></testsuites>

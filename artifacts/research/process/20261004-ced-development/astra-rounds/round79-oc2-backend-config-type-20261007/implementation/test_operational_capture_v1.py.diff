@@ -1,0 +1,45 @@
+--- source-before/tests/test_operational_capture_v1.py
++++ tests/test_operational_capture_v1.py
+@@ -447,3 +447,42 @@
+     view = module.verify_operational_prefix_originals_v1(root, receipt)
+     assert view["source_prefix_complete"] is (tamper == "flag")
+     assert view["live_authority"] == "UNAVAILABLE"
++
++
++@pytest.mark.parametrize("config_state", ["missing", "changed"])
++def test_recorder_rejects_missing_or_changed_backend_config_cpu(
++    tmp_path, monkeypatch, config_state
++):
++    require_task2()
++    app = application(tmp_path)
++    backend, calls = cpu_components(monkeypatch, app)
++    original_initialize = backend.initialize
++
++    def initialize(config):
++        original_initialize(config)
++        backend._config = (
++            None if config_state == "missing" else config.model_copy(update={"seed": 1})
++        )
++
++    monkeypatch.setattr(backend, "initialize", initialize)
++    receipt = app.execute_once()
++    assert receipt["source_prefix_complete"] is False
++    assert receipt["primary_error"] == {
++        "error_type": "ValueError",
++        "error": "original backend simulator configuration changed",
++    }
++    primary = [row for row in receipt["failures"] if row.get("role") == "PRIMARY"]
++    assert len(primary) == 1
++    assert primary[0]["error_type"] == "ValueError"
++    assert primary[0]["error"] == receipt["primary_error"]["error"]
++    job = app.repository.list_jobs()[0]
++    assert job.status == RuntimeJobStatus.FAILED
++    assert len(app.repository.list_attempts(job.run_id)) == 1
++    assert calls == ["initialize", "shutdown"]
++    assert not (app.output / "capture-catalog.json").exists()
++    assert not (app.output / "prefix-originals/prefix-receipt.json").exists()
++    with pytest.raises(RuntimeError, match="no live operational source-only publication"):
++        app.catalog_entry()
++    saved = json.loads((app.output / "runner-failure.json").read_bytes())
++    assert saved["primary_error"] == receipt["primary_error"]
++    assert saved["source_prefix_complete"] is False

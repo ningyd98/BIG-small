@@ -1,0 +1,71 @@
+--- before/src/cloud_edge_robot_arm/research/operational_capture_v1.py
++++ after/src/cloud_edge_robot_arm/research/operational_capture_v1.py
+@@ -8,7 +8,7 @@
+ from collections.abc import Mapping
+ from dataclasses import asdict
+ from pathlib import Path
+-from typing import Any, cast
++from typing import TYPE_CHECKING, Any, cast
+ 
+ from cloud_edge_robot_arm.research.native_reset_capture_v2 import (
+     VisualResetClockRecorderV2,
+@@ -17,6 +17,9 @@
+ from cloud_edge_robot_arm.research.operational_prefix_schema_v1 import canonical_bytes_v1
+ from cloud_edge_robot_arm.simulation.mujoco.backend import BackendOperationBoundary
+ from cloud_edge_robot_arm.vision.raw_recorder_v3 import _plain
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.research.operational_prefix_v1 import OperationalPrefixApplicationV1
+ 
+ _ISSUER = object()
+ 
+@@ -42,7 +45,7 @@
+     def __init__(
+         self,
+         *args: Any,
+-        application: Any,
++        application: OperationalPrefixApplicationV1,
+         owner: Any,
+         session_id: str,
+         _token: object | None = None,
+@@ -70,7 +73,13 @@
+ 
+     @classmethod
+     def from_application(
+-        cls, application: Any, backend: Any, capture: Any, executor: Any, *, directory: Path
++        cls,
++        application: OperationalPrefixApplicationV1,
++        backend: Any,
++        capture: Any,
++        executor: Any,
++        *,
++        directory: Path,
+     ) -> OperationalPrefixRecorderV1:
+         from cloud_edge_robot_arm.research.operational_prefix_v1 import _issue_recorder_v1
+ 
+@@ -278,14 +287,14 @@
+         if self._frozen_prefix is None:
+             self._legacy_freeze_attempted = True
+             self.freeze_unbound_prefix()
+-        return json.loads(canonical_bytes_v1(self._operational_frozen))
++        return cast(dict[str, Any], json.loads(canonical_bytes_v1(self._operational_frozen)))
+ 
+     def export_operational_prefix(self) -> dict[str, Any]:
+         self._require_open()
+         if self._operational_export_error is not None:
+             raise self._operational_export_error
+         if self._operational_export is not None:
+-            return json.loads(canonical_bytes_v1(self._operational_export))
++            return cast(dict[str, Any], json.loads(canonical_bytes_v1(self._operational_export)))
+         if self._operational_export_attempted:
+             raise RuntimeError("operational export already attempted without completion")
+         if self._operational_frozen is None:
+@@ -307,7 +316,7 @@
+                 if p.is_file()
+             }
+             self._operational_export = {"original_files": inventory, "legacy_export": legacy}
+-            return json.loads(canonical_bytes_v1(self._operational_export))
++            return cast(dict[str, Any], json.loads(canonical_bytes_v1(self._operational_export)))
+         except BaseException as error:
+             self._operational_export_error = error
+             raise

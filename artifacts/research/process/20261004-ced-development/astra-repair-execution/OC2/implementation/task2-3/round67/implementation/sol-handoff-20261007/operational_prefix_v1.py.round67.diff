@@ -1,0 +1,371 @@
+--- round67-before/src/cloud_edge_robot_arm/research/operational_prefix_v1.py
++++ current/src/cloud_edge_robot_arm/research/operational_prefix_v1.py
+@@ -170,6 +170,9 @@
+     issuing: bool = False
+     catalog_json: bytes | None = None
+     partial_receipt: dict[str, Any] | None = None
++    partial_attempt_snapshot: dict[str, Any] | None = None
++    failure_sidecar_sequence: int = 0
++    durable_failure_evidence_complete: bool = True
+ 
+ 
+ _REGISTRY: dict[OperationalPrefixApplicationV1, _LiveApplicationV1] = {}
+@@ -1147,6 +1150,147 @@
+         return cast(dict[str, Any], decode_original_json_v1(raw))
+ 
+ 
++def _failure_row_v1(
++    record: _LiveApplicationV1, phase: str, error: BaseException, *, primary_id: int | None
++) -> dict[str, Any]:
++    row = {
++        "failure_id": len(record.failures) + 1,
++        "phase": phase,
++        "error_type": type(error).__name__,
++        "error": str(error),
++        "role": "PRIMARY" if primary_id is None else "SECONDARY",
++        "primary_failure_id": primary_id,
++    }
++    record.failures.append(row)
++    return row
++
++
++def _failure_write_v1(
++    record: _LiveApplicationV1, path: Path, payload: Any, *, phase: str, primary_id: int
++) -> bool:
++    try:
++        _write_exclusive_v1(path, canonical_bytes_v1(payload))
++        return True
++    except BaseException as error:
++        record.durable_failure_evidence_complete = False
++        _failure_row_v1(record, phase, error, primary_id=primary_id)
++        return False
++
++
++def _persist_failure_stage_v1(
++    record: _LiveApplicationV1, directory: Path, *, primary_id: int
++) -> None:
++    record.failure_sidecar_sequence += 1
++    number = record.failure_sidecar_sequence
++    originals: dict[str, Any] = {}
++    for name in (
++        "preregistration.json",
++        "prefix-failures.json",
++        "frozen-originals.json",
++        "operational-originals.json",
++        "prefix-receipt.json",
++    ):
++        path = directory / name
++        if path.exists():
++            try:
++                originals[name] = _pin(path)
++            except BaseException as error:
++                record.durable_failure_evidence_complete = False
++                _failure_row_v1(record, "failure_reference_pin", error, primary_id=primary_id)
++    payload = {
++        "schema_version": "simulation.operational-prefix.stage-failures.v1",
++        "primary_failure_id": primary_id,
++        "failures": record.failures,
++        "existing_original_pins": originals,
++        "durable_failure_evidence_complete": record.durable_failure_evidence_complete,
++    }
++    success = _failure_write_v1(
++        record,
++        directory / f"stage-failures-{number}.json",
++        payload,
++        phase="stage_failure_persistence",
++        primary_id=primary_id,
++    )
++    if not success:
++        # Independent append-only fallback, never a retry of the failed target.
++        _failure_write_v1(
++            record,
++            record.output / f"stage-failure-fallback-{number}.json",
++            {**payload, "failures": record.failures},
++            phase="stage_failure_fallback_persistence",
++            primary_id=primary_id,
++        )
++
++
++def _archive_primary_failure_v1(
++    record: _LiveApplicationV1,
++    recorder: Any,
++    directory: Path,
++    error: BaseException,
++    *,
++    primary_id: int,
++) -> None:
++    """Primary plus actual partial data precede any fallible inherited archival."""
++    if recorder is not None:
++        recorder.record_failure("execution_publication", error)
++    prefix_failures = directory / "prefix-failures.json"
++    if not prefix_failures.exists():
++        _failure_write_v1(
++            record,
++            prefix_failures,
++            recorder._d_failures if recorder is not None else record.failures,
++            phase="prefix_failure_persistence",
++            primary_id=primary_id,
++        )
++    _persist_failure_stage_v1(record, directory, primary_id=primary_id)
++    try:
++        if recorder is not None:
++            snapshot = recorder.detached_partial_attempts()
++        else:
++            snapshot = {
++                "schema_version": "simulation.operational-prefix.startup-partial.v1",
++                "recorder_allocated": False,
++                "source_allocated": record.source is not None,
++                "job_id": record.job_id,
++                "failures": record.failures,
++            }
++        record.partial_attempt_snapshot = snapshot
++        _failure_write_v1(
++            record,
++            directory / "partial-attempts.json",
++            snapshot,
++            phase="partial_attempt_persistence",
++            primary_id=primary_id,
++        )
++    except BaseException as secondary:
++        record.durable_failure_evidence_complete = False
++        _failure_row_v1(record, "partial_attempt_snapshot", secondary, primary_id=primary_id)
++    if recorder is not None:
++        if not recorder._operational_freeze_attempted:
++            try:
++                recorder.freeze_operational_prefix()
++            except BaseException as secondary:
++                _failure_row_v1(record, "failure_freeze", secondary, primary_id=primary_id)
++        if not recorder._operational_export_attempted and recorder._operational_frozen is not None:
++            try:
++                recorder.export_operational_prefix()
++            except BaseException as secondary:
++                _failure_row_v1(record, "failure_export", secondary, primary_id=primary_id)
++    _failure_write_v1(
++        record,
++        directory / "publication-failure.json",
++        {
++            "error_type": type(error).__name__,
++            "error": str(error),
++            "primary_failure_id": primary_id,
++            "additional_failures": record.failures,
++        },
++        phase="publication_failure_persistence",
++        primary_id=primary_id,
++    )
++    _persist_failure_stage_v1(record, directory, primary_id=primary_id)
++
++
+ def run_operational_prefix_v1(
+     application: OperationalPrefixApplicationV1,
+     worker: SimulationWorker,
+@@ -1155,105 +1299,124 @@
+     start_monotonic: float,
+ ) -> tuple[dict[str, Any], list[Any], list[Any]]:
+     from contextlib import ExitStack
++
+     from cloud_edge_robot_arm.research.operational_capture_v1 import OperationalPrefixRecorderV1
+     from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+ 
+     record = _live(application)
+     source = None
+     recorder = None
++    receipt = None
++    primary: BaseException | None = None
++    primary_traceback: Any = None
++    primary_id = 0
++    resources = ExitStack()
++
++    def preserve(error: BaseException, phase: str) -> None:
++        nonlocal primary, primary_traceback, primary_id
++        if primary is not None:
++            _failure_row_v1(record, phase, error, primary_id=primary_id)
++            return
++        primary = error
++        primary_traceback = error.__traceback__
++        primary_id = _failure_row_v1(record, phase, error, primary_id=None)["failure_id"]
++        record.catalog_json = None
++        directory = source.directory if source is not None else record.output
++        try:
++            _archive_primary_failure_v1(record, recorder, directory, error, primary_id=primary_id)
++        except BaseException as archive_error:
++            record.durable_failure_evidence_complete = False
++            _failure_row_v1(record, "failure_archival", archive_error, primary_id=primary_id)
++            _persist_failure_stage_v1(record, record.output, primary_id=primary_id)
++
+     try:
+         source = _prepare_source_v1(application, worker, job, start_monotonic=start_monotonic)
+         source.backend.initialize(source.capture._config)
+         _check_source_v1(application)
+-        with ExitStack() as resources:
+-            resources.enter_context(source.capture)
+-            record.issuing = True
++        resources.enter_context(source.capture)
++        record.issuing = True
++        try:
++            recorder = OperationalPrefixRecorderV1.from_application(
++                application,
++                source.backend,
++                source.capture,
++                source.executor,
++                directory=source.directory,
++            )
++        finally:
++            record.issuing = False
++        resources.enter_context(recorder)
++        application.check_recorder(recorder)
++        source.backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
++        application.check_recorder(recorder)
++        with recorder.purpose("SETTLE"):
++            source.backend.step(steps=120)
++        application.check_recorder(recorder)
++        recorder.capture()
++        application.check_recorder(recorder)
++        recorder.read_capture_current()
++        application.check_recorder(recorder)
++        if (
++            source.backend.operation_observer_failures
++            or recorder._d_failures
++            or recorder._audit_failures
++        ):
++            raise RuntimeError("retained backend/D/super observer failure")
++        _write_exclusive_v1(source.directory / "prefix-failures.json", canonical_bytes_v1([]))
++        recorder.freeze_operational_prefix()
++        receipt = _publish_operational_prefix_v1(application, recorder)
++    except BaseException as error:
++        preserve(error, "runner")
++    finally:
++        try:
++            resources.__exit__(
++                type(primary) if primary is not None else None, primary, primary_traceback
++            )
++        except BaseException as cleanup_error:
++            preserve(cleanup_error, "resource_cleanup")
++        if source is not None:
+             try:
+-                recorder = OperationalPrefixRecorderV1.from_application(
+-                    application,
+-                    source.backend,
+-                    source.capture,
+-                    source.executor,
+-                    directory=source.directory,
+-                )
+-            finally:
+-                record.issuing = False
+-            resources.enter_context(recorder)
+-            try:
+-                application.check_recorder(recorder)
+-                source.backend.reset(PhysicalScenarioConfig.scenario("S01_NORMAL_STATIC", seed=0))
+-                application.check_recorder(recorder)
+-                with recorder.purpose("SETTLE"):
+-                    source.backend.step(steps=120)
+-                application.check_recorder(recorder)
+-                recorder.capture()
+-                application.check_recorder(recorder)
+-                recorder.read_capture_current()
+-                application.check_recorder(recorder)
+-                if (
+-                    source.backend.operation_observer_failures
+-                    or recorder._d_failures
+-                    or recorder._audit_failures
+-                ):
+-                    raise RuntimeError("retained backend/D/super observer failure")
+-                _write_exclusive_v1(
+-                    source.directory / "prefix-failures.json", canonical_bytes_v1([])
+-                )
+-                recorder.freeze_operational_prefix()
+-                receipt = _publish_operational_prefix_v1(application, recorder)
+-            except BaseException as error:
+-                recorder.record_failure("execution_publication", error)
+-                if recorder._operational_frozen is None:
+-                    recorder.freeze_operational_prefix()
+-                if not (source.directory / "prefix-failures.json").exists():
+-                    _write_exclusive_v1(
+-                        source.directory / "prefix-failures.json",
+-                        canonical_bytes_v1(recorder._d_failures),
+-                    )
+-                try:
+-                    recorder.export_operational_prefix()
+-                except BaseException as export_error:
+-                    record.failures.append(
+-                        {
+-                            "phase": "failure_export",
+-                            "error_type": type(export_error).__name__,
+-                            "error": str(export_error),
+-                        }
+-                    )
+-                _write_exclusive_v1(
+-                    source.directory / "publication-failure.json",
+-                    canonical_bytes_v1(
+-                        {
+-                            "error_type": type(error).__name__,
+-                            "error": str(error),
+-                            "additional_failures": record.failures,
+-                        }
+-                    ),
+-                )
+-                raise
+-        return (
+-            {
+-                "evaluation_scope": "OPERATIONAL_SOURCE_PREFIX_EXCLUDED",
+-                "source_prefix_complete": True,
+-                "task_execution": "NOT_RUN",
+-                "receipt": receipt,
+-            },
+-            [],
+-            [],
+-        )
+-    except BaseException as error:
+-        record.failures.append(
+-            {"phase": "runner", "error_type": type(error).__name__, "error": str(error)}
+-        )
++                source.backend.shutdown()
++            except BaseException as cleanup_error:
++                preserve(cleanup_error, "backend_shutdown")
++    if primary is not None:
++        directory = source.directory if source is not None else record.output
++        _persist_failure_stage_v1(record, directory, primary_id=primary_id)
+         record.partial_receipt = {
+             "source_prefix_complete": False,
++            "primary_error": {"error_type": type(primary).__name__, "error": str(primary)},
+             "failures": record.failures,
++            "secondary_errors": [row for row in record.failures if row.get("role") == "SECONDARY"],
++            "durable_failure_evidence_complete": record.durable_failure_evidence_complete,
+             **LIMITS_V1,
+         }
+-        _write_exclusive_v1(
+-            record.output / "runner-failure.json", canonical_bytes_v1(record.partial_receipt)
+-        )
+-        raise
+-    finally:
+-        if source is not None:
+-            source.backend.shutdown()
++        if not record.durable_failure_evidence_complete:
++            record.partial_receipt["available_partial_attempts"] = record.partial_attempt_snapshot
++        _failure_write_v1(
++            record,
++            record.output / "runner-failure.json",
++            record.partial_receipt,
++            phase="runner_failure_persistence",
++            primary_id=primary_id,
++        )
++        # A reporting failure stays secondary; private memory retains the original.
++        record.partial_receipt["secondary_errors"] = [
++            row for row in record.failures if row.get("role") == "SECONDARY"
++        ]
++        record.partial_receipt["durable_failure_evidence_complete"] = (
++            record.durable_failure_evidence_complete
++        )
++        _persist_failure_stage_v1(record, record.output, primary_id=primary_id)
++        raise primary.with_traceback(primary_traceback)
++    if receipt is None:
++        raise RuntimeError("operational prefix ended without source receipt")
++    return (
++        {
++            "evaluation_scope": "OPERATIONAL_SOURCE_PREFIX_EXCLUDED",
++            "source_prefix_complete": True,
++            "task_execution": "NOT_RUN",
++            "receipt": receipt,
++        },
++        [],
++        [],
++    )

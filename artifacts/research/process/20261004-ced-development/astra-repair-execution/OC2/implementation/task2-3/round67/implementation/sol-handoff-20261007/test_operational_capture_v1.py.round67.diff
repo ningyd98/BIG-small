@@ -1,0 +1,205 @@
+--- round67-before/tests/test_operational_capture_v1.py
++++ current/tests/test_operational_capture_v1.py
+@@ -202,31 +202,187 @@
+     assert slab["allocated_acquisition_ids"] == ["acquisition-1", "acquisition-2", "acquisition-3"]
+ 
+ 
++FAILURE_EXPECTATIONS = {
++    "reset": (RuntimeJobStatus.BLOCKED_BY_ENV, "RuntimeError", "CPU reset failure"),
++    "capture": (RuntimeJobStatus.BLOCKED_BY_ENV, "RuntimeError", "CPU explicit camera failure"),
++    "cancel": (
++        RuntimeJobStatus.CANCELLED,
++        "ValueError",
++        "worker job identity/status/lease source invalid",
++    ),
++    "policy": (
++        RuntimeJobStatus.FAILED,
++        "ValueError",
++        "frozen policy/source/asset inventory changed",
++    ),
++    "capture_swap": (
++        RuntimeJobStatus.FAILED,
++        "ValueError",
++        "original source/backend/capture/executor/OC1 handles changed",
++    ),
++    "export": (
++        RuntimeJobStatus.BLOCKED_BY_ENV,
++        "RuntimeError",
++        "legacy frame/export failure retained",
++    ),
++    "catalog": (RuntimeJobStatus.BLOCKED_BY_ENV, "OSError", "CPU catalog failure"),
++}
++
++
++def assert_primary_failed_prefix(app, receipt, expected, calls):
++    status, kind, message = expected
++    assert receipt["source_prefix_complete"] is False
++    assert app.repository.list_jobs()[0].status == status
++    assert receipt["primary_error"] == {"error_type": kind, "error": message}
++    primary = [row for row in receipt["failures"] if row.get("role") == "PRIMARY"]
++    assert len(primary) == 1 and primary[0]["error_type"] == kind and primary[0]["error"] == message
++    assert all(
++        row["primary_failure_id"] == primary[0]["failure_id"] for row in receipt["secondary_errors"]
++    )
++    with pytest.raises(RuntimeError, match="no live operational source-only publication"):
++        app.catalog_entry()
++    assert calls.count("RESET") == calls.count("initialize") == calls.count("observer") == 1
++    assert len(app.repository.list_attempts(app.repository.list_jobs()[0].run_id)) == 1
++    root = app.output / "prefix-originals"
++    partial = json.loads((root / "partial-attempts.json").read_bytes())
++    stage_files = sorted(root.glob("stage-failures-*.json"))
++    assert stage_files
++    stage = json.loads(stage_files[-1].read_bytes())
++    assert stage["primary_failure_id"] == primary[0]["failure_id"]
++    assert stage["failures"][0]["error"] == message
++    saved = json.loads((app.output / "runner-failure.json").read_bytes())
++    assert saved["primary_error"] == receipt["primary_error"]
++    before = {str(path): path.read_bytes() for path in root.rglob("*") if path.is_file()}
++    with pytest.raises(RuntimeError, match="twice"):
++        app.execute_once()
++    assert {str(path): path.read_bytes() for path in root.rglob("*") if path.is_file()} == before
++    return partial
++
++
+ @pytest.mark.parametrize(
+     "failure", ["reset", "capture", "cancel", "policy", "capture_swap", "export", "catalog"]
+ )
+ def test_partial_prefix_keeps_all_failures(tmp_path, monkeypatch, failure):
+     require_task2()
+     app = application(tmp_path)
+-    cpu_components(monkeypatch, app, failure)
+-    receipt = app.execute_once()
+-    assert receipt["source_prefix_complete"] is False
+-    assert app.repository.list_jobs()[0].status in {
+-        RuntimeJobStatus.FAILED,
+-        RuntimeJobStatus.CANCELLED,
+-    }
+-    with pytest.raises(RuntimeError, match="no live operational source-only publication"):
+-        app.catalog_entry()
++    _, calls = cpu_components(monkeypatch, app, failure)
++    receipt = app.execute_once()
++    partial = assert_primary_failed_prefix(app, receipt, FAILURE_EXPECTATIONS[failure], calls)
+     root = app.output / "prefix-originals"
+-    assert (root / "prefix-failures.json").is_file()
+     slab = json.loads((root / "operational-originals.json").read_bytes())
+-    assert slab["events"]
+-    assert slab["failures"] or (root / "publication-failure.json").is_file()
++    ledger = partial["operational_ledger"]
++    assert len(ledger["events"]) == (1 if failure == "reset" else 244)
++    assert len(partial["backend_operation_ledger"]) == (2 if failure == "reset" else 488)
++    assert [row["operation_id"] for row in ledger["events"]] == list(
++        range(1, len(ledger["events"]) + 1)
++    )
++    expected_ids = [] if failure == "reset" else ["acquisition-1", "acquisition-2", "acquisition-3"]
++    assert ledger["allocated_acquisition_ids"] == expected_ids
++    assert len(partial["legacy_frames"]) == len(expected_ids)
++    assert ledger["allocated_action_ids"] == []
++    assert ledger["current"] is None or failure in {"export", "catalog"}
++    assert any(row["error"] == FAILURE_EXPECTATIONS[failure][2] for row in ledger["failures"])
++    if failure in {"reset", "capture"}:
++        failed = slab["events"][-1]
++        assert failed["kind"] == ("RESET" if failure == "reset" else "CAPTURE")
++        assert (
++            failed["bracket"] is None and failed["mark_seq"] is None and failed["end_seq"] is None
++        )
++        assert failed["end"]["error"] == FAILURE_EXPECTATIONS[failure][2]
++        assert partial["incomplete_operation_ids"] == [failed["operation_id"]]
++        assert (
++            slab["backend_observer_failures"]
++            == partial["operational_ledger"]["backend_observer_failures"]
++        )
++        original = json.loads((root / "prefix-failures.json").read_bytes())
++        assert any(row["error"] == FAILURE_EXPECTATIONS[failure][2] for row in original)
+     if failure == "capture":
+-        failed = slab["events"][-1]
+-        assert failed["kind"] == "CAPTURE" and failed["bracket"] is None
+-        assert failed["mark_seq"] is None and failed["end_seq"] is None
+         assert slab["allocated_acquisition_ids"][-1] == "acquisition-3"
++        assert partial["legacy_frames"][-1]["observation_payload"] is None
++    if failure in {"export", "catalog"}:
++        assert (root / "prefix-failures.json").read_bytes() == b"[]"
++        assert slab["failures"] == []
++        stage = json.loads((root / "stage-failures-1.json").read_bytes())
++        for name, pin in stage["existing_original_pins"].items():
++            original = (root / name).read_bytes()
++            assert (
++                len(original) == pin["bytes"]
++                and hashlib.sha256(original).hexdigest() == pin["sha256"]
++            )
++    if failure == "export":
++        exported = json.loads((root / "unbound-export.json").read_bytes())
++        assert exported["export_failures"] == ["OSError: CPU export failure"]
++        recorder = module._live(app).recorder
++        assert recorder._operational_export is None
++        assert isinstance(recorder._operational_export_error, RuntimeError)
++    if failure == "catalog":
++        assert (root / "prefix-receipt.json").is_file()
++        assert not (app.output / "capture-catalog.json").exists()
++
++
++def test_reset_primary_survives_legacy_freeze_failure(tmp_path, monkeypatch):
++    from cloud_edge_robot_arm.research.operational_capture_v1 import OperationalPrefixRecorderV1
++
++    app = application(tmp_path)
++    _, calls = cpu_components(monkeypatch, app, "reset")
++    freeze_calls = []
++
++    def freeze(self):
++        freeze_calls.append("legacy_freeze")
++        raise OSError("CPU legacy freeze secondary")
++
++    monkeypatch.setattr(OperationalPrefixRecorderV1, "freeze_unbound_prefix", freeze)
++    receipt = app.execute_once()
++    partial = assert_primary_failed_prefix(app, receipt, FAILURE_EXPECTATIONS["reset"], calls)
++    assert freeze_calls == ["legacy_freeze"]
++    assert partial["operational_ledger"]["events"][0]["end"]["error"] == "CPU reset failure"
++    assert partial["operational_ledger"]["events"][0]["bracket"] is None
++    assert any(
++        row["phase"] == "failure_freeze"
++        and row["error_type"] == "OSError"
++        and row["error"] == "CPU legacy freeze secondary"
++        for row in receipt["secondary_errors"]
++    )
++    assert module._live(app).recorder._operational_freeze_attempted is True
++
++
++def test_reset_primary_survives_failure_export_failure(tmp_path, monkeypatch):
++    from cloud_edge_robot_arm.research.operational_capture_v1 import OperationalPrefixRecorderV1
++
++    app = application(tmp_path)
++    _, calls = cpu_components(monkeypatch, app, "reset")
++    export_calls = []
++    original = OperationalPrefixRecorderV1.export_operational_prefix
++
++    def legacy_export(self):
++        export_calls.append("legacy_export")
++        raise OSError("CPU failure export secondary")
++
++    def reject_cached_failure(self):
++        try:
++            return original(self)
++        except OSError as primary_export:
++            with pytest.raises(OSError, match="CPU failure export secondary") as repeated:
++                original(self)
++            assert repeated.value is primary_export
++            raise
++
++    monkeypatch.setattr(OperationalPrefixRecorderV1, "export_unbound_prefix", legacy_export)
++    monkeypatch.setattr(
++        OperationalPrefixRecorderV1, "export_operational_prefix", reject_cached_failure
++    )
++    receipt = app.execute_once()
++    partial = assert_primary_failed_prefix(app, receipt, FAILURE_EXPECTATIONS["reset"], calls)
++    assert export_calls == ["legacy_export"]
++    assert partial["operational_ledger"]["events"][0]["end"]["error"] == "CPU reset failure"
++    assert partial["operational_ledger"]["allocated_acquisition_ids"] == []
++    assert any(
++        row["phase"] == "failure_export"
++        and row["error_type"] == "OSError"
++        and row["error"] == "CPU failure export secondary"
++        for row in receipt["secondary_errors"]
++    )
++    assert module._live(app).recorder._operational_export is None
+ 
+ 
+ @pytest.mark.parametrize(
