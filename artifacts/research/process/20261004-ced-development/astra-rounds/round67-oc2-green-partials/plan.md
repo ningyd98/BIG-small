@@ -1,0 +1,226 @@
+# Astra Round67 — OC2 首轮GREEN partial归档与失败分类
+
+状态：PLAN_ONLY_FOUR_FAILED_CASES_NOT_FIXED。两任务，尚未实施；4个失败未宣告修复。
+
+## 原失败与因果
+
+原61例完整CPU GREEN：57pass/4fail，exit1；pytest401.24s，wrapper403.14930501999334s。reset/capture缺prefix-failures；export/catalog为BLOCKED_BY_ENV却被测试排除。原21fail/40deselected预期RED及全部历史字节保持。
+
+- CPU reset RuntimeError or explicit-camera RuntimeError enters runner except and recorder records original failure.
+- OperationalPrefixRecorderV1.freeze_operational_prefix places backend.operation_observer_failures directly into canonical_bytes_v1. Backend property returns tuple of recursively immutable MappingProxy mappings. New slab canonical JSON does not detach Mapping; only failing observer cases populate those rows. Existing freeze_unbound_prefix already uses _plain and handles Mapping, so modifying that old implementation is unnecessary.
+- Runner except calls freeze before writing prefix-failures and before protected export handling. The TypeError escapes, skips prefix-failures/operational-originals/publication-failure and is the sole error in runner-failure and worker result. Four failed tmp original files confirm this; no runtime stack of internal freeze was retained, so exact location is a strong static causal attribution rather than a newly executed reproduction.
+
+_save_frames OSError(CPU export failure) is caught by inherited export_unbound_prefix and retained in unbound-export.json. New export raises RuntimeError(legacy frame/export failure retained). Existing _execute_visual catches RuntimeError/ImportError/OSError and sets BLOCKED_BY_ENV; generic settlement preserves already-terminal status. This is existing legitimate classification for this fixture, not a worker mapper defect.
+
+capture-catalog exclusive writer raises OSError(CPU catalog failure); same unchanged worker catch classifies BLOCKED_BY_ENV. prefix-receipt may already exist; preserve it and failure evidence, never turn it into an accepted live catalog or retry publication.
+
+Failure freeze/export and failure-report writes can throw again; successful-path prefix-failures may already be an immutable empty list when later publication fails; completed source snapshot predates late export/catalog failures. Record append-only stage failure originals and use them together; do not overwrite the frozen slab/empty prepublication file to hide timing. A failed cached export must never later look successful simply because _operational_export exists.
+
+## 限定范围与合同
+
+仅可编辑：`src/cloud_edge_robot_arm/research/operational_capture_v1.py`, `src/cloud_edge_robot_arm/research/operational_prefix_v1.py`, `tests/test_operational_capture_v1.py`。新证据根：`artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67`。worker/schema/CLI/policy/其余tests及teacher/backend/OC1/旧R03均不得改。RW1不pin；无全仓quiet声明。
+
+1. In the new OC2 recorder layer, recursively detach known Mapping/tuple/list values to JSON-compatible plain structures while retaining every key/value, order, identity and failure row. Reuse the existing trusted _plain conversion or an equivalent owned helper where appropriate; retain explicit raw-byte encoding already in use. No default=str/repr, error dropping, empty-list fallback, sorting away denominator, or changes to old backend/recorder/OC1.
+2. Prepare a detached complete OC2 attempt snapshot independent of legacy freeze/export success: all allocated operations, pending ENDs, acquisition/action IDs, captured payload references, source/D/observer/audit failures and partial identities. Snapshot must be the actual ledger, not a synthetic successful source; failed RESET/CAPTURE never acquire fabricated MARK/END/bracket/current fields. Publish source complete only after every original requirement still passes.
+3. In runner failure handling record primary exception first and attempt to durably write its stage failure ledger and complete detached partial snapshot before calling fallible inherited freeze/export. Each secondary freeze/export/write/cleanup error is separately appended/persisted with phase/type/message and relation to primary, without replacing primary exception. If persistence itself is unavailable, keep available originals and in-memory failure receipt, attempt an independent permitted failure file, report durable evidence incomplete and fail closed; never claim guaranteed disk success.
+4. Use exclusive writes and one-shot stage flags. A partial/success source snapshot already written remains immutable; later export/publication errors go to new immutable failure sidecars referring to original hashes. Existing prefix-failures=[] on a genuine prepublication path is historical evidence, not absence of a later failure: complete failure accounting is the union of frozen source and stage failure originals. For primary reset/capture failure prefix-failures must contain the original cause before secondary operations. Do not repair old tmp outputs.
+5. Freeze/export attempts and publication are not retried. Reuse a completed frozen snapshot only as immutable evidence; a cached failed export must continue to reject, not return a success-shaped result. Preserve any partial frame/raw files and all allocation IDs even when frame writes fail. No re-render, new acquisition, regenerated event, new source allocation or retry to fill missing frames.
+6. Re-raise the original primary exception after best-effort failure archival; preserve it through cleanup and outer runner-failure write attempts. Within the allowed app runner only, ensure secondary reporting/shutdown failures are recorded without replacing a pending primary. Do not alter exception classes or worker generic mapping to obtain chosen status.
+7. Use the explicit per-case table for assertions, including exact primary cause and nested export OSError. reset/capture should change from masked TypeError/FAILED to original RuntimeError/BLOCKED_BY_ENV after repair. No broad FAILED/CANCELLED/BLOCKED tuple or blanket Exception acceptance. cancel remains CANCELLED and policy/capture_swap remain FAILED. Unexpected cause/status requires next Astra.
+8. Strengthen existing seven-case test assertions for complete failed attempt/allocation/event denominators, primary versus secondary errors, source_prefix_complete false, no live catalog, no retry and immutable already-written originals. In capture keep failed acquisition3 and null MARK/END/bracket. Add at most two precisely named CPU cases for reset primary plus injected legacy-freeze failure and reset primary plus injected failure-export failure; these verify secondary errors cannot erase primary/denominators. Record61+2=63 unique target cases if both are added; do not count repeat observations as new independent cases.
+
+## 精确终态条件
+
+| CPU case | 预期终态 | 原始错误 |
+|---|---|---|
+| reset | BLOCKED_BY_ENV | RuntimeError: CPU reset failure |
+| capture | BLOCKED_BY_ENV | RuntimeError: CPU explicit camera failure |
+| cancel | CANCELLED | ValueError: worker job identity/status/lease source invalid |
+| policy | FAILED | ValueError: frozen policy/source/asset inventory changed |
+| capture_swap | FAILED | ValueError: original source/backend/capture/executor/OC1 handles changed |
+| export | BLOCKED_BY_ENV | RuntimeError: legacy frame/export failure retained |
+| catalog | BLOCKED_BY_ENV | OSError: CPU catalog failure |
+
+reset/capture的BLOCKED_BY_ENV是恢复原RuntimeError后按既有mapper推导的期望，尚未经本轮运行；旧FAILED是二次TypeError的历史结果，不回写。export还须保留原unbound-export中的OSError原因。
+
+## Task 1 — 限定修复无损partial保存与条件精确失败断言
+
+1. ROOT reads this plan before existing OC2 implementer resumes inline; no new spawn. Recheck exact inputs/latest failed source9 and original archives; create round67 exclusively. Store plan/input pins and source-before of the three editable files. Keep original RED21, GREEN57/4, freeze manifest, CPU1322-file denominator and all existing failure outputs unchanged.
+2. Implement only repair_contract in operational_capture_v1.py, operational_prefix_v1.py and test_operational_capture_v1.py. Existing worker and schema shapes stay unchanged; use new failure sidecars when needed instead of widening source-success schema/reader acceptance. Review the local diff against actual raw causal evidence before execution.
+3. Register named test node identities and expected new63-case denominator before final GREEN (or61 if no additions are necessary and equivalent secondary-failure coverage is demonstrated in existing cases). Existing four failures are preserved RED evidence; do not replay them for a fresh failure log. No ad-hoc failing micro-probe, old actual or source rewrite.
+
+## Task 2 — 一次新完整GREEN、限定static/旧回归与冻结独审交付
+
+1. After known repair is complete run one owned full suite on fresh /tmp/bigsmall-oc2-round67-green, preserving command/env/exit/wall/stdout/stderr and machine-readable unique node identities. Count baseline61+explicit new cases, not57 passed plus reruns; historical expected RED21/40deselected and first GREEN57/4 remain separate.
+2. Run one planned Ruff check and format --check over original four code paths+three tests+existing modified worker, and one scoped mypy over original three research modules+CLI with existing project/MYPYPATH rules and silent imports as established. No broad autofix/format sweep/ignores. Any new lint/type failure is unexpected and requires another Astra before repair.
+3. Run the four original R03 CPU files once as the pending necessary worker regression, fresh /tmp/bigsmall-oc2-round67-r03. Do not rerun OC1full60, old Task1-only suite, API21 probe, defaultCLI or previous raw-reader actual. GREEN/static/regression commands each run at most once; stop on any unplanned failure.
+4. Freeze all9 current OC2/worker paths and new source-after archive; verify only three permitted files differ from this plan, all protected inputs and historical logs unchanged. New CPU outputs get a complete denominator manifest including failures/partials/DB locations and actual copies within delivery boundary; existing1322-file manifest remains historical and no manifest is presented as a full remote raw/DB package.
+5. Write round67/step-report.md/json with original failures, exact exception taxonomy, implementation diff/source pins, new command results and CPU evidence, along with remaining limitations. Return quiet sources to ROOT for independent review. Author result at most OWNED_SOFTWARE_VERIFIED_OC2_TASK23_AWAITING_INDEPENDENT_REVIEW. Full software review, GateC/D, ROOT-only actual and public readout remain separate and unperformed.
+
+## 验证与验收边界
+
+plan.json.verification列出完整argv和每命令max_runs=1。新owned完整GREEN仅一次（61＋预登记最多2例）、必要static及四文件R03窄回归各一次。任何新失败再Astra。ROOT actual未授权，独审未完成，formal_accepted=false；CPU观察不算真实采集/来源正例。
+
+Any new cause, input drift/collision, required scope expansion or unexpected validation failure: preserve complete original evidence and stop affected work for next gpt-6-astra plan; no generic exception/status broadening or retry.
+
+## 独立规划工具错误
+
+ROOT只读枚举曾误用不存在的python，shell exit127：`/bin/bash: line 1: python: command not found`。随后.venv/bin/python只读枚举成功。此项来自ROOT原消息，未提供独立进程原件；不计入4个产品测试失败，无产品修改或新增运行。
+
+## 实际输入指纹（149项）
+
+原9当前源码与失败archive匹配，原77最新freeze值匹配；old CPU1322文件全分母通过固定manifest保留，本规划只直接读取必要小原件/分母slab，不冒称重新运行或完整远端包。
+
+| Path | SHA256 | Bytes |
+|---|---|---:|
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_0/app/runner-failure.json` | `b991b259a0b4fb17f012cc652211ef5ff2d74c418f859abbc869679b7a35ba6f` | 479 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_0/app/worker-attempt/result.json` | `efd3626f5f45110e916b998f200ad6b008972c2935df42cb35d095f8ff71b3f3` | 439 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_1/app/runner-failure.json` | `b991b259a0b4fb17f012cc652211ef5ff2d74c418f859abbc869679b7a35ba6f` | 479 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_1/app/worker-attempt/result.json` | `efd3626f5f45110e916b998f200ad6b008972c2935df42cb35d095f8ff71b3f3` | 439 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_2/app/prefix-originals/operational-originals.json` | `07a91d2ec88f0c124c03af53d02fa7a66928cec814aa3407aca5e8cd2ca6b77e` | 3242630 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_2/app/prefix-originals/prefix-failures.json` | `f1a95512b7cb3d710d819e0760c4c27e4fdb521652eb22bbfbe31f04b15bfa6b` | 119 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_2/app/prefix-originals/publication-failure.json` | `251a5b8fd3ab96d1cbf7ec8b12e423f6d8f862c340c7bf4dacd59e90471bbc4b` | 110 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_2/app/prefix-originals/unbound-export.json` | `58fd47f0b42cb2327d2b08216eb1e163b549422e29fa39ca3d104021983ba415` | 3448 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_2/app/runner-failure.json` | `70ddcdd673f80accf48d10ea3d2208b5f0f7cd73fbdda01a4160027aaeb1863f` | 475 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_2/app/worker-attempt/result.json` | `72059c03d9f7a185973a2ae14768b1aa919f844c9360e1f702ec43f9854e06b0` | 438 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_3/app/prefix-originals/operational-originals.json` | `c0747f6b714e6933df155679a1e1cb969a09c5e741e89112458935ae696964ed` | 3242627 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_3/app/prefix-originals/prefix-failures.json` | `30d5c7194bd1db5413cedac987c2cef2e7b6acae58386ba7e2da81d3c55d7813` | 116 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_3/app/prefix-originals/publication-failure.json` | `1f17783f7d93c020fb88d6730aed65152530740c26404e79cf80054759b5bb11` | 107 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_3/app/prefix-originals/unbound-export.json` | `45897af6d6bbd9848cdbad19d47ef2ab18948df3f94a163a3393bafc97059fb8` | 3448 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_3/app/runner-failure.json` | `05e2bdc0621d8e61c2124208e8a3fcd48b24875b8e44e3f16cec09f3df462d09` | 472 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_3/app/worker-attempt/result.json` | `5c4810df28558aa4ed69a25601fa1b4dc1137008249c472f6e6d1be27839bef1` | 432 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_4/app/prefix-originals/operational-originals.json` | `fe88acbd9767aaa36e33d0114ec157c0cdc729d8d162f8df3a39083377d2bcbc` | 3242643 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_4/app/prefix-originals/prefix-failures.json` | `3bc8f569ca22689b4343397f51ace7312f262ffce4b809aa27ec2c3dd959a25c` | 132 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_4/app/prefix-originals/publication-failure.json` | `3b77565ae3ed40024dd6fbdf5a6085ae0f3b5c71b2e469fa5e32d1c38878292e` | 123 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_4/app/prefix-originals/unbound-export.json` | `3feac17c775fae2d2fede12ddfc8d48370fc1ca7b17b24b9e89bca847e99d9cc` | 3448 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_4/app/runner-failure.json` | `b990200ad1d1d818ef433aae4c43ada4983669d17d66bd49750050dfab844434` | 488 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_4/app/worker-attempt/result.json` | `38f00fcfe6595d4e0bb3a0690c12dc56ce29c40f46254b99f85fedc3c27c5808` | 448 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_5/app/prefix-originals/operational-originals.json` | `fb0776fac7c1d30c10faa6b7f5962c8569a44cbe165ee59ee2d31b4c5f2cfc8a` | 3242971 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_5/app/prefix-originals/prefix-failures.json` | `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945` | 2 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_5/app/prefix-originals/publication-failure.json` | `d90c36fa186ba129d6fda1143e12f9527aa1f5673ee1bff3c4e86e1c7a8629f4` | 101 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_5/app/prefix-originals/unbound-export.json` | `7539b819d7f9771d8ce3a3b3041abfa9f7d568fa11625e576da1c4517c2b2476` | 1774 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_5/app/runner-failure.json` | `14530b3ce25b7e609f7a90dd1e06b23b6061cb1b31a9bde8503765adb22395af` | 466 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_5/app/worker-attempt/result.json` | `9ffa219facdeec90e950519cf189be61bef1e6cb7694c3510f1ed09fc1cc024f` | 434 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_6/app/prefix-originals/operational-originals.json` | `9858428148071db5b0392fdeb92e45a2c2360a3b887f4e7076249167db53d2e3` | 3242971 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_6/app/prefix-originals/prefix-failures.json` | `4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945` | 2 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_6/app/prefix-originals/prefix-receipt.json` | `83b0f9d5916977fb1e10def2029422903d0673289109fbcc405771caffbecd31` | 5199 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_6/app/prefix-originals/publication-failure.json` | `9def899f68c6bbd2efc8b17eb8f8555b50c2d3a5cb51996b8c0da14fd3f213ac` | 79 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_6/app/prefix-originals/unbound-export.json` | `ff280d57edf2a71472befe7ec10d78341e4011144d0b255d5a2c4200a05f334e` | 3448 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_6/app/runner-failure.json` | `d16098c8a56a7f4f3f2ae1d0df0eacafe411ef64502150523b6c5b1bcae460f8` | 444 |
+| `/tmp/bigsmall-oc2-task23-green/test_partial_prefix_keeps_all_6/app/worker-attempt/result.json` | `39114cd63a9d06a01cabd45c3e5f42250fa375c647780136eba98fcf9062af58` | 412 |
+| `AGENTS.md` | `8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649` | 1774 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/implementation/report.md` | `6ba78b86a24a1805e24101b29ecb90b90383e38a7731020a846830693b9ec75b` | 3842 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/full60-command.json` | `2bcc8bf2109853caeeac2af1e724dcc9048f634c45b3d7a10e8aaf8f16b9679f` | 818 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/full60.stderr.txt` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | 0 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/full60.stdout.txt` | `b746f5b04deb9a4a5ab9ad150ef96de12b7adc51f3b8f0c709ce03184f5e8501` | 99 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/pins-before-after.json` | `37a08c9d2bd5c8491eef448a4960ad94d02b3d064a082acf6fd8ed23dfe5759c` | 18088 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/real-startup-cpu.json` | `e5d702452ce7536df88159695131fbc9622f9998025ae9f0deef3593c11bbba2` | 1721 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/receipt-copy.json` | `d503072acefba094cf3d0d7e0205c5f2ee6694c16ecc2efd036426ae610427ce` | 433 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/scoped-probe.json` | `747bab530ecd9154937ab00d5e9a391070cca361db2486433cecd9a74ce567e9` | 40448 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/source-review.json` | `8529a8825b0c6c86be75c1df52c1e658c40dc7274f49feebfa335df9323aa304` | 12583 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/independent-review-round59/source-review.md` | `3f9aa0e74684c9261b29996f9746ac18c470d7ec242063b0518581f47f732bde` | 8317 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC1/static-fix/report.md` | `172847d4d1262e9b7a0ee09bcc6857cf6c19951fb1bf72c6af0288e2391c4e86` | 2964 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/gate-B-root-acceptance.json` | `906d2456a3b8278053d93a930cf3aba818c8255245308259ef4ec03e9a08cb47` | 4134 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/capacity-recovery-round65/inline-reader-contract.json` | `45b1715ceea66675cb2b8be73e7f5fe685ae4022ef4237573083c94f3413198b` | 5538 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/capacity-recovery-round65/inline-reader-contract.md` | `37496b5473eec2b0101e2d978aebd91e17b5e193a4bfccdbb23ee5fb292dc90a` | 1604 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/capacity-recovery-round65/recovery-pins-before-after.json` | `4e2e1ad04b9e4a96bc1a20e0c62549590ba6330af7d14a6e5b811e99214235f7` | 6487 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/capacity-recovery-round65/recovery-receipt.json` | `6017fda70c8ea3178d535179fbdfec42238fbd8a61080443b9367c7981d2aa74` | 7882 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/capacity-recovery-round65/step-report.json` | `566cbbd414f4eac9cc3b7db76e0903eee5365bc0d3e967ae72cc7a2469c14d43` | 516 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/capacity-recovery-round65/step-report.md` | `46adee28250c36c1d536ce136ee0a2ae86920bd0971b5f030bcfc4856912505e` | 506 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/cpu-originals-denominator.json` | `00295a2b31c39a18b70ae33a83fe5e8c78683ab061e3c0ed802081bf67f75279` | 327688 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-evidence-index.json` | `abc1e7d5b05b5877dedc1b488d48594fc79ad237bd1d49e3c756cbbc297506db` | 4676 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-freeze-manifest.json` | `34f0e4645dbee5b8fde0d6672443fd92973a3e9dec737659794fd11d524d005c` | 42966 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/configs/research/operational_prefix_v1.json` | `c1d51bb28376f9a2c7e636efe16a0675d426951b8ed8849ead78d342f4b3ada1` | 394 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/scripts/run_operational_prefix_v1.py` | `fe8e8c9e021ec437b601895de724f1d10f17eb221fea6b8302c304a65fbcffa9` | 1885 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/src/cloud_edge_robot_arm/research/operational_capture_v1.py` | `09f4e1ba9dbf831b2f9bbcb9cdbfeaf0e5c88ef1100840e139e746dd5303cabd` | 11100 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py` | `918e029a6a1f0d2a7a455820c721118abdb50b7c5eda6e8ee15f54bed543e67c` | 11537 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/src/cloud_edge_robot_arm/research/operational_prefix_v1.py` | `f9612b25d84e435a3d798a4fdec3f8f362ff59deec1b11b1d38a81b7a362d10a` | 53802 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/src/cloud_edge_robot_arm/simulation_runtime/worker.py` | `809b7015b8f316946f521e7990fb3124a429bcfc3c406a31be23ce46d6d0ca20` | 80038 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/tests/test_operational_capture_v1.py` | `1c427a454f9bff87cc2ad23b0f141a60fd4cf7602786abac821857144a34f0dd` | 11355 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/tests/test_operational_prefix_cli_v1.py` | `7971985d7032514915509ae0d08d71889aba44721823a12bc54e00d3005cdf9b` | 6546 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-source-freeze/tests/test_operational_prefix_v1.py` | `1ccb56de190f5cea0280882690bead41ed15aaff0fdfa2b74b32ca9c5cd1b426` | 11934 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-step-report.json` | `6e432eaa5a3bdbb367b9bc0b24091fed8b46997f9df59027f14d0b0cc22e28bf` | 6349 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/failed-green-step-report.md` | `032ec680ac057a2d06a3da2d26adcb054b7ba7198c859f47c529d2ea72dcc73e` | 1531 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/source-before.json` | `10ced1de3971c3b224f473cfddbac801cb61893288a04c4473d380b977091eaa` | 33784 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/task23-green.command.json` | `a2a7a595a30aa3a4434cd89ea19012835f4c847f02723f0a5e049915e6023280` | 414 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/task23-green.stderr.txt` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | 0 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/task23-green.stdout.txt` | `95e0f06d610cbc231780f5a59b66300fe3b9f03f5fdc1ddeac1eaa9983e31c38` | 6087 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/task23-red.command.json` | `5ef95babca0a97c90c789c9ed601f3846f3271e39914ff86568e9f1f1fe2763d` | 622 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/task23-red.stderr.txt` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | 0 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/task23-red.stdout.txt` | `0a2c8a640681a799e42db205649120bb71680902d6ab83b342abe476d3c42e9e` | 21912 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/tool-failure.json` | `0670abc0cac89739b8204b7ca94b68a3fd1699c94eb2ce9a97cc5b4662da1099` | 879 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/tool-failure.md` | `b0a624bbac05d29a5ea678d8bd24212ddc5844765f2782b1ea486e5afe27763e` | 490 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/round63/final-review.json` | `57238e1891bf2c2cb34a2b9c568a6c1a96197d35b23689ad32f1eb98bc133e5c` | 21940 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/round63/final-review.md` | `90815eac2dcdc3f607c0be859dc54d98f8b10d16a53de0887be9641c452cae8e` | 6396 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/round63/step-report.json` | `89ee1d09f517cee9a83e76401b212e261740839c5180a2fa8a06aa1878e18424` | 6325 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/round63/step-report.md` | `24da198408c13592f48b63839455e68ab3a8ee00cb2da145d6f0b5a2bc36a8d5` | 1859 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/task2-interface-readiness/report.json` | `eeb1ab4cb0fb3c917b4b03a48029ec668c53d3418c10d56022062729cf795c18` | 29783 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/task2-interface-readiness/report.md` | `d928da613b0d177606fe52d3ae9e7555c9cdaf67c18be3231b6df19a75a782d5` | 5939 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/actual/execution.json` | `07d318503b7138efad5068566cb49e3b054366fe8be63fe97f26e6dfc6dc0225` | 1139 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/actual/reader-execution.json` | `fb08d04822e9db86559b5e07f46c0d9afec066b227731391b43b52de491d52ae` | 1211 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/implementation/root-post-terminal-acceptance.json` | `d1efa7a81dfda6fbee766b1fb162f4715acf39b1062b12dcf62108d87a176fb3` | 2466 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/implementation/round58-preflight/report.md` | `82069e06d3420bfc0523b5e4217a00525d303c45b80b12593bb87095141d4089` | 2092 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/prepare_full.py` | `6f8d7982a85a5e1cff488a5a2204fd0fe64a2c54725bebf22935de6f0f47f550` | 18494 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/run_full_once.py` | `accf602c9b2a751e76584c441cd7788fad4c6f21bd28441d9da66539065de8ee` | 17496 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py` | `134c00a2b2f43da4b9cd76a6b9ce56c4e55fa29dd3f881a6e59b14c6a8a03ccb` | 35603 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py` | `011f7ef1d8a5adf615ec3108debb1072465a1a798cd11b7a14bf99e910f8bc09` | 58135 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/actual-prefix/independent-actual-review.json` | `8f8ffd68b24880810322d0049bbd8beff8fb619ca905519b2684f1f65296e4c7` | 15760 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/actual-prefix/report.md` | `7b4d0bb371efeb724d74a15a9b7963265dc8f08a4d8418c8264dae828400597b` | 3497 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/actual-prefix/wire-replay.json` | `8386cd0d122eff9e493c769137aaad0daefab20a705af2c6c47f03c79976faae` | 360 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/cli-slice/report.md` | `6a5667bda4bd770b9662dcadc69ff4235974fdeb9187c93bc8f33f47d44a8e23` | 1334 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/implementation/independent-review.json` | `6d1039f2edc4eefc58bb4a999a9caf6d955667f9d5de342b42a5ed98bf21592e` | 62199 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/implementation/independent-review.md` | `258813870bdebbc21e931970a5fbf961914f2d1e4ce5a7b2ecc86d4bd88a3377` | 5592 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/prefix-1/prefix-originals/clock-pairs.json` | `65ea6e9e50fd9dba276ae2c559876a7204332309668b12498eddf423fcae85a2` | 111647 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/prefix-1/prefix-originals/exchange-attempts.json` | `f7fa71c9ae77fd61dc2ac171b43b6298464262f4ba92bb678373c73182c388e2` | 3077 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/prefix-1/prefix-originals/frozen-originals.json` | `1111c977ac3c7e067724d2100d233f8255cd7ba13b6c419490b6c795091ab209` | 2503964 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/prefix-1/prefix-originals/prefix-receipt.json` | `cd68d7e62f9459d4b3c919172565c897f0bb943c42b1940df1c31de23e5b2158` | 5060 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-execution/R03/prefix-1/prefix-originals/reset-journal.json` | `2a88eebb1a5df262d4f086d1f7ee9f9e683b31daf761a335ad12d35134750694` | 8823 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-planning/clock-dependency-review.md` | `0a957c9e8a5a4e19db2578ae0722b6342fefce29bf12879ebd4e72715b4bdf10` | 23219 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round57-operational-oc1/plan.md` | `890a8b35ec667c037f860a2321de649c429e33928b1080c39b0e38556eb568a3` | 15905 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round59-oc1-test-output/plan.md` | `d5e05114b6c4f0a1da488a31b6f1e6f24c1ace7d5d016f2c53a8e7ede699d344` | 7703 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.json` | `5a5c09f32208815e52c37e43ff63b9fde1e188df1244de4e8e4fcecfac34c402` | 22171 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.md` | `7cabb71aec1c4d485d6505a060ed227b5a810ae71d325e6b4fbc66da41d160b9` | 22261 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round61-oc2-task1-green/plan.json` | `c820df10f480e1fd447b81869a7fa0654cfe50281b6849e3fa415767e26ad134` | 51275 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round61-oc2-task1-green/plan.md` | `9f504c25a16b2c7804c78ddbce2de23dc7e3fe4de8e4cf4c4724ccdfd97f9b4f` | 11460 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round63-oc2-review-ast/plan.json` | `329456c91feb070b4689ff91f312b3222d4ea349eeb0e37a89600715811a0f0c` | 49780 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round63-oc2-review-ast/plan.md` | `4ba21cb20493ae3dad74febbc530a07a99d4e2564643bec22711fa8f4fccf549` | 39477 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round65-oc2-agent-capacity/plan.json` | `d6945e95a9f533b4c62f78bad6440087b6326822fa489f7c7020cc7647659e5d` | 13555 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round65-oc2-agent-capacity/plan.md` | `76b947ef84068dae03ef8cba1cceae1789e5ac164bcc04ac34ecc85a00a249c4` | 8766 |
+| `assets/robots/franka_panda/scene.xml` | `66a0e27047e530a141259f1d74155d404d71a4d7cae4520f7e0c87140dbe87e2` | 4980 |
+| `configs/research/native_clock_authority_v2.json` | `9102ed5cc8db26700bd7a5bf6ec61bd45dcf75ead62a35f62d44f563a17a615a` | 548 |
+| `configs/research/operational_prefix_v1.json` | `c1d51bb28376f9a2c7e636efe16a0675d426951b8ed8849ead78d342f4b3ada1` | 394 |
+| `docs/superpowers/plans/2026-10-05-operational-clock-repair-supplement.md` | `6bf5022020253b73f08d00adf2785e1ca86ff1e34ca389a55e6c716fcc147030` | 6081 |
+| `pyproject.toml` | `b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c` | 2458 |
+| `scripts/run_native_clock_prefix_v2.py` | `c9630134e1fa0039dfb040bbf92e1e0401d175efe34e0c46939ec47de22ada83` | 2151 |
+| `scripts/run_operational_prefix_v1.py` | `fe8e8c9e021ec437b601895de724f1d10f17eb221fea6b8302c304a65fbcffa9` | 1885 |
+| `src/cloud_edge_robot_arm/datasets/rgbd/teacher.py` | `a7150e980ff0bcf901128701cfce2dd7569263158d5716bd311473975179a033` | 10210 |
+| `src/cloud_edge_robot_arm/edge/runtime/skill_executor.py` | `d0ecfd4a5616b5404524554224280376e3f2dc56670417ce05e35c82aa648bc2` | 5286 |
+| `src/cloud_edge_robot_arm/research/native_clock_publication_v2.py` | `3eed8c44c4bb0657741a3f9ab113f9f035b3d73d5aa8ed8ca4c5c24fca880105` | 39190 |
+| `src/cloud_edge_robot_arm/research/native_clock_source_v2.py` | `bccb34516d395f51554f4dd94a6fab8ee5def4cadbeebad5240688a76711fa0c` | 13818 |
+| `src/cloud_edge_robot_arm/research/native_reset_capture_v2.py` | `a22ce81503a1dd7d6aa9b81a57eb61cebcbda64ec58228a5c4dbe21da1e41f5a` | 8395 |
+| `src/cloud_edge_robot_arm/research/operational_capture_v1.py` | `09f4e1ba9dbf831b2f9bbcb9cdbfeaf0e5c88ef1100840e139e746dd5303cabd` | 11100 |
+| `src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py` | `918e029a6a1f0d2a7a455820c721118abdb50b7c5eda6e8ee15f54bed543e67c` | 11537 |
+| `src/cloud_edge_robot_arm/research/operational_prefix_v1.py` | `f9612b25d84e435a3d798a4fdec3f8f362ff59deec1b11b1d38a81b7a362d10a` | 53802 |
+| `src/cloud_edge_robot_arm/research/operational_time_v1.py` | `b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b` | 20734 |
+| `src/cloud_edge_robot_arm/simulation/config.py` | `ece5dba5a710f63ba46bc99260ae768cec07c2773e7e0687bd2f55a4758f1d7b` | 2078 |
+| `src/cloud_edge_robot_arm/simulation/models.py` | `35099db3aa50672ccc915431632fad464c62f5c64a47f393a02e560e848b26dc` | 3635 |
+| `src/cloud_edge_robot_arm/simulation/mujoco/backend.py` | `b7b6026b1173448de826e53253ae74f92b6b70ea46a404e10054c5cd451a62a6` | 49867 |
+| `src/cloud_edge_robot_arm/simulation/mujoco/camera.py` | `d85aa6eda7c9f658f2e3bb550c44b3462ebd65e290d5c7d9b79fa30639136e2f` | 7566 |
+| `src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py` | `e4e33ff48dc4092de56f2ae4b7a79a37b6879a596bda22e71e8451d2d2aab9b4` | 17453 |
+| `src/cloud_edge_robot_arm/simulation_runtime/models.py` | `36a9bf16372607a4b25731090dfe7af30bc2d439f260510537bd9b29bef297cf` | 4887 |
+| `src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py` | `8497625d14b8610e5eb1717a93c1f8cfc9802b2696dc1eedad42fb9b73e6ba96` | 47252 |
+| `src/cloud_edge_robot_arm/simulation_runtime/state_machine.py` | `45710623b67839f6bbc3ec94433416a04d56bc3a0fe2c8d5e71cad95c14a5ed2` | 3293 |
+| `src/cloud_edge_robot_arm/simulation_runtime/worker.py` | `809b7015b8f316946f521e7990fb3124a429bcfc3c406a31be23ce46d6d0ca20` | 80038 |
+| `src/cloud_edge_robot_arm/vision/capture.py` | `f8121afbed70cb1ed8fa182c0b5595c54e12b88989c591878ac9987d8fe7ec7b` | 6887 |
+| `src/cloud_edge_robot_arm/vision/raw_recorder_v3.py` | `4eabd3bf9cdf15b3942c4a740781a95c22ea684f410853c853d0336952d7a303` | 44175 |
+| `src/cloud_edge_robot_arm/vision/worker_owner.py` | `ffce1cedb2cc9962ade0c5845d6ce92127372fa2248c0f4bc5f215706f5be86b` | 23511 |
+| `tests/test_native_clock_prefix_cli_v2.py` | `0df55934ca677b03a67dc186bfe14d989561f79bd27c6718ce79f8cc7effbae0` | 4985 |
+| `tests/test_native_clock_prefix_worker_v2.py` | `fbfa14e5596bdba70d5263b7f770dd689bdda342e56389da16985f417bc20b7b` | 9339 |
+| `tests/test_native_clock_publication_v2.py` | `a57b3a1a7ffb8e0c4afb28b96cf355e83c3b52e93317ae17e151667528fa147f` | 11677 |
+| `tests/test_native_reset_capture_v2.py` | `551d080e6eb33d2bcc6183e3be044224aa903c4691066946d0d52775a584f7b8` | 6239 |
+| `tests/test_operational_capture_v1.py` | `1c427a454f9bff87cc2ad23b0f141a60fd4cf7602786abac821857144a34f0dd` | 11355 |
+| `tests/test_operational_prefix_cli_v1.py` | `7971985d7032514915509ae0d08d71889aba44721823a12bc54e00d3005cdf9b` | 6546 |
+| `tests/test_operational_prefix_v1.py` | `1ccb56de190f5cea0280882690bead41ed15aaff0fdfa2b74b32ca9c5cd1b426` | 11934 |
+| `tests/test_operational_time_v1.py` | `ff226e9a616462c67d74d29931f8f9a7d21548f4f13f93ced64901b263229c0f` | 24211 |
+
+缺失文件观察见JSON observed_missing_files；这些旧路径不得填补。规划无测试、产品import、CLI、actual、网络或Git；仅新增本plan.md/json。

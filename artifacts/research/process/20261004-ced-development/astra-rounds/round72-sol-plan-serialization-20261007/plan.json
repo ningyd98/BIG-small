@@ -1,0 +1,144 @@
+{
+  "schema": "astra.recovery-plan.v1",
+  "round": "round72-sol-plan-serialization-20261007",
+  "date": "2026-10-07",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "planner": {
+    "requested_model": "gpt-6-astra",
+    "role_source": "ROOT explicit Astra delegation under AGENTS.md",
+    "runtime_model_independently_verified": false
+  },
+  "problem": "ROOT生成T12 Sol执行交接文档时JavaScript外层解析失败；恢复仅修复内容传递与文档生成前置条件。",
+  "failures": [
+    {
+      "id": "F1",
+      "evidence_source": "ROOT消息转述本轮functions.exec直接工具输出；本代理未独立取得持久日志或原始提交字节",
+      "verbatim_tool_output": "Script failed\nWall time 0.0 seconds\nOutput:\nScript error:\nSyntaxError: missing ) after argument list",
+      "raw_script_available": false,
+      "stderr_file_available": false,
+      "child_tool_invoked": false,
+      "file_write_occurred": false,
+      "product_run_occurred": false,
+      "effect_claim_provenance": "ROOT描述；本代理另独立确认拟临时脚本与目标尚不存在"
+    },
+    {
+      "id": "F2",
+      "evidence_source": "本代理只读核对时tools.exec_command实际工具输出",
+      "verbatim_shell_output": "/bin/bash: line 1: python: command not found\n",
+      "exit_code": 127,
+      "script_executed": false,
+      "file_write_occurred": false,
+      "disposition": "本轮附属前置条件失败，ROOT明确要求归入本轮；采用已存在且本代理成功只读运行的 .venv/bin/python，不安装解释器"
+    }
+  ],
+  "root_cause": {
+    "F1": "ROOT报告JavaScript String.raw反引号模板内嵌Python脚本，而Python Markdown内容含未转义反引号，导致外层JS提前终止。诊断与解析失败一致；因原提交字节未持久保存，精确字符位置未独立重现。",
+    "F2": "shell中无python命令；仓库 .venv/bin/python可用并已经成功执行只读核对。"
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "size_bytes": 1774
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/t12-convergence-repair-20261006/plan.md",
+      "sha256": "d5c3d6b1ffa6f51f3a2785af5f5ab9fedf506f81080a3bea311644fff7c70219",
+      "size_bytes": 71264
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/t12-convergence-repair-20261006/plan.json",
+      "sha256": "7abb0157cf37a6d7988cac36a86a0c49bcef8d3d175f9be7aaf3623f92be96fc",
+      "size_bytes": 61014
+    }
+  ],
+  "observations": {
+    "independently_observed_absent": [
+      "/tmp/bigsmall-build-sol-handoff-20261007.py",
+      "docs/superpowers/plans/2026-10-07-t12-sol-execution.md",
+      "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007"
+    ],
+    "branch": "research/20261004-continuation",
+    "head": "a98356c75aafe16a32fe57040ca411ae15370c2b",
+    "upstream_local_ref": "a98356c75aafe16a32fe57040ca411ae15370c2b",
+    "remote_sha_from_ROOT": "a98356c75aafe16a32fe57040ca411ae15370c2b",
+    "remote_independently_queried": false,
+    "working_tree": "既有大量修改与未跟踪文件，保持原状；完整git status输出在工具显示中截断，不能当完整清单。",
+    "original_task_ids": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5",
+      "P6",
+      "P7",
+      "P8",
+      "P9",
+      "P10",
+      "P11",
+      "P12"
+    ]
+  },
+  "allowed_writes": [
+    "本轮目录内新plan.md、plan.json与ROOT后续步骤证据",
+    "docs/superpowers/plans/2026-10-07-t12-sol-execution.md",
+    "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/内新交接JSON、有限baseline、brief及验证报告",
+    "确有需要时新建 /tmp/bigsmall-build-sol-handoff-20261007.py，仅作为文档生成器"
+  ],
+  "forbidden": [
+    "修改既有Astra原件",
+    "修改src/tests/configs或产品行为",
+    "启动测试、网络、renderer、模型或actual",
+    "读取或复制凭据、完整raw、运行数据库、权重、SDK",
+    "把清单或报告称为完整复现包",
+    "宣称产品或正式研究通过",
+    "本代理派子代理或提交/推送"
+  ],
+  "preconditions": [
+    "重新核对输入哈希及新目标存在状态",
+    "解释器固定为已确认 .venv/bin/python，不使用裸python",
+    "权限danger-full-access/approval never，不传sandbox_permissions",
+    "Sol执行器限定为用户指定GPT-6.1-sol；模型不可用如实报告，不能换模型冒称",
+    "原Astra实际运行前置条件不因本轮文档成功而满足，actual仍由ROOT独立把关"
+  ],
+  "steps": [
+    {
+      "id": "R1",
+      "action": "复核本计划三项输入SHA256、拟目标存在状态、分支及解释器；只读取选定路径。若来源漂移，先归因，不覆盖旧件。",
+      "verification": "三项输入保持本表字节；使用 .venv/bin/python。"
+    },
+    {
+      "id": "R2",
+      "action": "以结构化字符串参数传递内容；可用tools.apply_patch的普通双引号字符串（显式换行转义），或tools.exec_command普通字符串承载单引号quoted heredoc。禁止再次把带Markdown反引号的原始正文放入JavaScript反引号模板。若创建临时Python生成器，先落盘再仅做AST解析，不执行产品代码。",
+      "verification": "保存实际生成器字节与SHA256（仅确实创建后）；不存在的失败生成器不得补造原字节或stderr。"
+    },
+    {
+      "id": "R3",
+      "action": "只生成新的详细执行计划及交接目录内JSON、有限baseline、executor brief；继承原P1–P12依赖、边界、命令前置、停止条件和PROPOSED标记。用户明确指定GPT-6.1-sol，旧root-only/no-new-agent编排限制仅在被新委派指令取代的范围调整；actual仍由ROOT调度。",
+      "verification": "P1–P12覆盖无遗漏；开发验证/真实运行/正式研究验收分栏；源计划哈希和ROOT职责可追溯。"
+    },
+    {
+      "id": "R4",
+      "action": "对新增文档进行UTF-8/JSON解析、路径和任务引用核对；有限baseline仅哈希明确owned输入，不扫描完整raw、运行数据库、凭据、权重或SDK；复核原计划未改。",
+      "verification": "只验证文档有效性，不运行tests、network、renderer、models或actual；不得升级任何产品/研究状态。"
+    },
+    {
+      "id": "R5",
+      "action": "ROOT将原始工具失败、附属解释器失败、实施路径、输入/输出哈希和文档验证结果写入本轮步骤报告及交接摘要。真实生成的stdout与返回码按原样保留，不伪造历史日志。",
+      "verification": "本轮恢复完成仅表示计划交接文件可读可交付；提交/推送由ROOT按用户授权与显式路径完成，本子任务不操作Git。"
+    }
+  ],
+  "acceptance": {
+    "documentation_recovery": "新执行计划、交接JSON、有限baseline、brief可解析且与原P1–P12一致；原件哈希不变，失败来源与恢复验证可追溯。",
+    "development_validation": "本轮未运行产品验证，也不作通过判断。",
+    "actual_execution": "未执行；原计划actual前置和ROOT调度不变。",
+    "formal_research": "未验收；不晋升METHOD、FINAL、T13或统计收益。"
+  },
+  "stop_conditions": [
+    "输入不可解释漂移或旧目标冲突时暂停相关写入",
+    "新根因、范围扩大或计划外失败重新调用Astra制定下一轮，保留原输出",
+    "任何要改产品或扩大运行范围的需求超出本轮"
+  ],
+  "implementation_performed_by_planner": false,
+  "evidence_handling": "失败原文保存在本计划，标注ROOT转述与本代理观察的区别；不存在的生成器无SHA256，不补造。实施结果与阶段摘要由ROOT后续新记录补齐。"
+}

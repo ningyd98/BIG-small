@@ -1,0 +1,9 @@
+# Round73实施报告
+
+原Git检查因executor-brief末尾多一个LF失败，原输出来源及包装exit0限制见failure-receipt.json。六输入实施前SHA匹配，原brief/两JSON逐字节保存在failure/本地，公开base64封装已反解逐字节验证。
+
+按Astra计划恰删除末尾一个LF；正文满足new+LF=old，10840→10839 bytes，新SHA256为24ada018c51dd2968dcebbdfefb742ff80eb50fafec0f7597ecf49f18b2dae93。仅同步document-verification的brief行SHA/bytes和dispatch的brief_sha256，其他JSON值保持。SDD ledger原字节为新文件完整前缀，旧派单hash保留并追加新版。
+
+交付清单保持原21行并仅追加本轮明确计划/报告/失败收据/base64原件。原末尾空行raw副本不stage，不修改Git whitespace设置。P1产品工作独立继续，任务正文/权限未变。
+
+本报告在最终cached检查之前生成，不预报检查通过。该一次检查的实际argv/退出码/stdout/stderr保存在本轮cached-check-result.json（本地验证收据）；通过后ROOT方可提交。文档格式修正不表示产品、actual或正式研究通过。
