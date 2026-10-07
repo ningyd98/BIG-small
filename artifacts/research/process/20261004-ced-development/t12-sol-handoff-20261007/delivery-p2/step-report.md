@@ -1,0 +1,9 @@
+# P2 candidate preparation
+
+Prepared exact R87 scope for ROOT's final index review:82 frozen payload paths, seven R87 metadata files,18 declared preparation evidence files. Parent is `98b8282138ba61367db526d7d8f52e27085f4f9f` on `codex/research-20261007-p1-delivery`. R89 compact activation verified against the untouched local-only original; it records stored observations, without rerunning giant nested status commands.
+
+The five accepted sources plus281 recursively reviewed project/test dependencies match the activated parent or exact five overrides. Actual import proof resolves145 project/test modules inside the candidate worktree. The single authorized candidate4 invocation passed4 unique nodes,0 failure/error/skip. Every dependency pin is unchanged afterward;51 temporary original files remain local-only. Original software evidence remains93 original passes plus one R85 repair pass covering94 unique cases, without94 rerun.
+
+Initial whole cached check exit2; strict current source/new prose subset exit0. Every 17 original whitespace diagnostic is bound to its VERBATIM source, staged file and original line hash; unclassified0. Full final checks and exact index tree/blob/path bindings are local-only receipts after final stage to avoid self-reference. ROOT independently verifies and performs commit/non-force push. This preparer commits0/pushes0 and leaves main branch and nested dirty trees untouched.
+
+Only exact listed small evidence is included. R88/R89 full rounds, original10MB activation, runners, CPU originals, raw/DB/weights/SDK and unrelated primary files remain local-only. This is not a complete remote raw reproduction package. GRASP/mutable and full-future D remain NOT_SUPPORTED/UNKNOWN, native UNAVAILABLE, calibration0, actual0, formal=false; the nine dependent groups remain paused.

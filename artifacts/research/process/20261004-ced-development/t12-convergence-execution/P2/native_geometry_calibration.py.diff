@@ -1,0 +1,31 @@
+--- P2/source-before/src/cloud_edge_robot_arm/research/native_geometry_calibration.py
++++ src/cloud_edge_robot_arm/research/native_geometry_calibration.py
+@@ -737,3 +737,28 @@
+         geometry,
+         MappingProxyType(actions),
+     )
++
++
++def native_reference_support_description(skill: str) -> dict[str, str]:
++    """P2 feasibility description, never calibration registration or admission.
++
++    Existing full-horizon geometry/terminal quantities and UTC registrations stay
++    unchanged. No registered continuous mutable-reference/future-D source exists.
++    """
++    fixed = {"LIFT", "RETREAT", "MOVE_TO_REGION", "PLACE"}
++    contact = {"MOVE_ABOVE", "APPROACH", "GRASP"}
++    if skill not in fixed | contact:
++        return {
++            "reference": "NOT_SUPPORTED",
++            "reference_motion": "UNKNOWN",
++            "full_future_D": "NOT_SUPPORTED",
++            "native_qualification": "UNKNOWN",
++        }
++    return {
++        "reference": "FIXED_WORLD_TCP_GOAL" if skill in fixed else "OBJECT_CONTACT",
++        "reference_motion": "SOURCE_RECONSTRUCTED_COORDINATE_ZERO" if skill in fixed else "UNKNOWN",
++        "geometry_quantity": "ORIGINAL_JOINT_GEOMETRY_AND_TERMINAL_ERROR_M",
++        "motion_unit": "m/SimulationS-second",
++        "full_future_D": "NOT_SUPPORTED",
++        "native_qualification": "UNKNOWN",
++    }

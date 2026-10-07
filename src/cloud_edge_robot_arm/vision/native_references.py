@@ -25,7 +25,30 @@ from cloud_edge_robot_arm.vision.observations import RGBDObservation
 from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
 
 if TYPE_CHECKING:
+    from typing import TypedDict
+
     from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+
+    class _NativeActionReferenceValues(TypedDict):
+        semantics_version: Literal["native.action_reference.v1"]
+        kind: Literal["OBJECT_CONTACT", "FIXED_WORLD_TCP_GOAL"]
+        reference_id: str
+        execution_payload_digest: str
+        contract_digest: str
+        grounding_digest: str
+        online_digest: str
+        source_digest: str
+        observation_id: str
+        observation_sha256: str
+        plan_version: int
+        command_seq: int
+        context_hash: str
+        role_bundle_hash: str
+        full_horizon_s: float
+        endpoint_xyz: tuple[float, float, float] | None
+        orientation_wxyz: tuple[float, float, float, float] | None
+        fixed_goal_coordinate_invariant: bool
+
 
 _REFERENCE_SOURCES = (
     "src/cloud_edge_robot_arm/vision/native_references.py",
@@ -63,6 +86,51 @@ def _json(value: object) -> str:
 
 def _digest(value: object) -> str:
     return hashlib.sha256(_json(value).encode()).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class NativeActionTiming:
+    """Detached S/D descriptions; no window, backend or future-source authority.
+
+    The episode and window identifiers describe joins for later source readers.
+    A digest or finite future bound supplied here never authenticates those joins.
+    """
+
+    schema_version: Literal["native.action_timing.operational.v1"]
+    episode_id: str
+    capture_sim_s: float
+    current_sim_s: float
+    full_horizon_sim_s: float
+    future_wall_bound_ns: int | None
+    capture_window_id: str
+    action_window_id: str
+    mapping_source_digest: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "native.action_timing.operational.v1":
+            raise ValueError("exact native operational timing description required")
+        if any(
+            type(value) is not str or not value
+            for value in (self.episode_id, self.capture_window_id, self.action_window_id)
+        ):
+            raise ValueError("described episode/window identities required")
+        if (
+            type(self.mapping_source_digest) is not str
+            or len(self.mapping_source_digest) != 64
+            or any(c not in "0123456789abcdef" for c in self.mapping_source_digest)
+        ):
+            raise ValueError("described mapping SHA256 required")
+        if any(
+            type(value) not in (int, float) or not isfinite(value) or value < 0
+            for value in (self.capture_sim_s, self.current_sim_s, self.full_horizon_sim_s)
+        ):
+            raise ValueError("finite nonnegative SimulationS values required")
+        if self.current_sim_s < self.capture_sim_s or self.full_horizon_sim_s <= 0:
+            raise ValueError("ordered capture/current and complete positive S horizon required")
+        if self.future_wall_bound_ns is not None and (
+            type(self.future_wall_bound_ns) is not int or self.future_wall_bound_ns <= 0
+        ):
+            raise ValueError("future D description requires positive integer ns or None")
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +172,7 @@ def _current_sources(binding: RoleRuntimeBinding) -> dict[str, str]:
         binding.bundle,
         binding.edge_snapshot,
         dict(binding.device_source_hashes),
-        binding.evidence()["edge_policy"],
+        cast(Mapping[str, object], binding.evidence()["edge_policy"]),
         root=binding.root,
     )
     for inventory in (
@@ -218,7 +286,7 @@ def resolve_native_reference(
         "validated_parameters": parameters.model_dump(mode="json"),
         "motion_target": {"position": endpoint, "orientation_wxyz": orientation},
     }
-    values = dict(
+    values: _NativeActionReferenceValues = dict(
         semantics_version="native.action_reference.v1",
         kind="FIXED_WORLD_TCP_GOAL" if fixed else "OBJECT_CONTACT",
         reference_id=f"{command.task_id}:{original.step_id}:{command.plan_version}:{command.command_seq}",
@@ -270,3 +338,32 @@ def validate_native_reference(
     )
     if type(reference) is not NativeActionReference or asdict(reference) != asdict(current):
         raise ValueError("native reference differs from exact current reconstruction")
+
+
+def fixed_reference_motion_m_per_sim_s(
+    reference: NativeActionReference,
+    online: OnlineEvidenceSnapshot,
+    contract: TaskContract,
+    step: TaskStep,
+    *,
+    resolved: TaskStep,
+    grounding: Mapping[str, Any],
+    role_binding: RoleRuntimeBinding,
+    effective_duration_s: float | None = None,
+) -> float | None:
+    """Describe fixed command-coordinate motion after complete reconstruction.
+
+    Zero is never the body/TCP speed, a tracking bound or native admission.
+    Mutable contact has no future-motion provider in this contract and stays None.
+    """
+    validate_native_reference(
+        reference,
+        online,
+        contract,
+        step,
+        resolved=resolved,
+        grounding=grounding,
+        role_binding=role_binding,
+        effective_duration_s=effective_duration_s,
+    )
+    return 0.0 if reference.kind == "FIXED_WORLD_TCP_GOAL" else None

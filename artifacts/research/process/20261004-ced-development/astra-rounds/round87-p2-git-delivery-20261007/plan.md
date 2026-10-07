@@ -1,0 +1,64 @@
+# Astra Round87：P2 后续交付与四例候选验证
+
+规划 gpt-6-astra；准备者 gpt-6.1-sol；ROOT最终commit/non-force push。本轮是用户“做好 git 整理和推送”授权下的P2交付范围/候选预算补充，**没有新增产品失败**。状态 PLAN_ONLY_WAIT_OC2_DELIVERY_ACTIVATION；未来P2父提交为null，不能预先填入3dadd或猜测OC2尚未完成的commit。
+
+## 已有证据与有限输入
+
+ROOT `t12-sol-handoff-20261007/p2-root-final-review.md/json` 已给出不同作者终审PASS_SCOPED_P2_SOFTWARE，作者为/root/sol_t12_p1、审查者/root。ROOT记录全文五源diff、原定义AST、R84精确类型AST回退、R85仅局部mkdir修复、799项R84及34项R85原件核对。证据含原94例的93pass+1目录失败、R85完整受影响节点1pass，覆盖94唯一节点；并非重跑94。R84 mypy/静态和R85测试静态真实exit0。上述均是既有证据，本规划不重做原件审计、不重复软件测试。
+
+本代理实际读取终审、P2合同、R84/R85范围/预算与四个命名节点，并重新核对最终五源：
+
+| 路径 | bytes | SHA256 |
+|---|---:|---|
+| src/cloud_edge_robot_arm/vision/native_references.py | 14831 | bb15bea435b045fa931e3ae43ba92c8b843950d22fc1589325488e1b1a33a149 |
+| src/cloud_edge_robot_arm/vision/native_calibration.py | 28630 | a707ac74d5e668b57a5a7883154a2e9b83d3d1695f1fbe42f7681f5c03d35fff |
+| src/cloud_edge_robot_arm/research/native_geometry_calibration.py | 30883 | 84d287c423c8de6eaafa09987445a59d74f81307cccbd5cb6a0c023b65018843 |
+| tests/test_native_references.py | 14742 | 3d3544b134f6a04907156762e12071afa4f8b976ac2c0d95af985bb026dcb59a |
+| tests/test_native_calibration_source.py | 34656 | 5c9afd4cba51a35eb454f259c74245a535e87402d6bf6952513bfa42ba723ae6 |
+
+有限pins见input-pins.json；五源静止，未pin活动OC2 metadata、当前总表或未来父提交。candidate-input-paths.json精确列出82个既存候选路径、381749 bytes、SHA、semantic_role与纳入理由：五源，以及P2/R84/R85合同/计划、原失败/命令输出/JUnit、范围证明、步骤报告、ROOT独审与验收。该清单只证明选择和字节身份，尚不代替最终内容发布审阅；不是目录级自动纳入许可。
+
+旧transport测试引用的 `artifacts/research/process/20261004-ced-development/t7b-visible-marker-next/attempt-1/raw-physics.jsonl` 在当前交付worktree确实存在，stat大小16333165 bytes。readonly-observation.json只记录元数据，本轮未读取、hash或复制内容；新四例不运行旧transport节点，不新增raw交付，不能据此声称完整raw包。
+
+## 必须等待的激活前置
+
+ROOT须先完成当前OC2 commit/push并确认同branch本地HEAD、upstream、live远端三SHA一致且worktree clean。之后新建本轮 `root-activation.json`，绑定实际完整OC2父SHA、既有OC2推送收据路径/hash、同一worktree `/home/ningyd/.codex/worktrees/t12-p1-delivery/BIGsmall`、同branch `codex/research-20261007-p1-delivery`、R87计划/候选清单/四例合同pins和冻结五源。激活前不copy/stage/test P2；不因本轮计划写作与独立OC2进行中而要求全仓quiet。
+
+新父级上须核对4d40a65059ab75292fa1842bacf62653829808e6仍为祖先、用户34c7a5595b72a3b23f4d0ca4d31aa4154cd6f24e不是祖先。主研发branch及1007、raw/DB和两个真实嵌套physics/workspace脏状态保留；不改上游关联、不amend旧RW1/OC2提交、不merge/cherry-pick1007。
+
+## 限定准备与静态闭包
+
+1. gpt-6.1-sol复核ROOT激活、有限pins及82条候选的所有SHA/bytes。当前源码五文件按CURRENT_EXECUTABLE；新合同/报告/计划按NEW_PROSE_OR_METADATA；冻结原始stdout/stderr/XML/diff/范围证明等按VERBATIM_EVIDENCE。不导入完整raw、运行DB、CPU原件副本、helper/command/finalize runner、权重/SDK、活动总表、无关文件或其他primary源码。历史引用未列入交付时明确local-only，不以报告字段出现路径宣称该文件已远端存在。
+2. 从已激活父checkout加**恰五个**冻结P2替换文件，只读构造静态依赖闭包：递归检查项目和tests imports、包init、四例所用fixtures/动态导入literal及test_native_references.SOURCES等明确源码读取清单。候选其他依赖必须来自父checkout；禁止回退读取primary当前其他源码来填缺口。对明确常量/资产仅核四例实际依赖，不能为旧transport或未选94案例读取大raw。完整记录missing、source mismatch及路径来源；激活后才固定这个闭包，不能用尚在变动的OC2候选现在捏造最终pins。缺模块、原fixture字节不适用或范围扩大时，保留发现交Astra，不一般化放宽或顺手加代码。
+3. 闭包及内容审阅通过后逐条复制82候选中的实际相对父级变化，复核source/candidate字节与mode，生成准确changed集合；父级已相同条目可作为依赖保留但不伪算新增变更。只读审查准确候选内容及既有origin/受众，不输出秘密值。发现敏感内容立即停止对应交付，不改原件；当前用户授权覆盖同origin同受众的限定研发交付，无需因分支名称或历史审批再次确认。
+
+## 新增候选验证预算：一次四例
+
+本计划独立允许**在导出候选checkout运行一次pytest、恰4个唯一节点**，用途是验证新checkout导入/依赖闭包及四条关键语义。它不是primary修复重试，不消耗或复开R85禁止重跑94/93的预算，不把4加到已有94分母。
+
+1. tests/test_native_references.py::test_fixed_goal_zero_reference_velocity_is_not_zero_body_velocity
+2. tests/test_native_references.py::test_mutable_grasp_reference_without_future_support_remains_unknown
+3. tests/test_native_calibration_source.py::test_native_timing_never_multiplies_sim_speed_by_wall_age
+4. tests/test_native_calibration_source.py::test_full_future_wall_bound_missing_is_unknown_when_required
+
+四函数实际AST无parametrize/decorator，命名顺序与精确argv模板在candidate4-contract.json。前两例经现有sample/role binding构造导入候选旧来源链，覆盖完整重建后fixed-reference=0、body主动运动非0、伪造fixed标记拒绝和mutable None；后两例覆盖S公式.009m与D 5秒/+1ns独立、缺失/调用方finite future仍UNKNOWN。没有理由额外运行整套、旧transport或新实验。
+
+使用已可用虚拟环境Python，cwd必须是激活候选worktree；PYTHONPATH明确为候选src与候选根，PYTHONDONTWRITEBYTECODE=1，不能混入primary src。不安装/更换环境、不改pytest配置/fixture，不用editable路径让primary替代候选；准备时核对路径来源配置，若无法确认候选导入来源先停止。用pytest -q -p no:cacheprovider，四个显式nodeid，新的独占basetemp与JUnit目标，实际运行前固定argv/env、源码/闭包pins。临时路径须尚不存在，不复用可能被pytest清空的历史目录。
+
+唯一调用后立即保存真实命令开始/结束/exit、stdout/stderr、JUnit四个node身份及pass/fail/error/skip、精确source/dependency前后pins。预期4passed、0failed/errors/skips；不另跑collect-only、RED、primary94、旧93、mypy、formatter、OC1/OC2/RW1/P1套件、transport raw回归或actual。相同五源已有静态证据可按精确hash复用，不补一轮重复ruff。任何计划外测试/环境失败保留原始证据并回Astra，不重试取绿。
+
+测试产生的CPU临时原件保留local-only；只为本次有限临时目录建立明确文件分母/原字节SHA清单，四例结果和清单可纳入小证据，但不复制完整CPU目录或运行DB入Git。新的候选4通过只证明这一导出验证；原94覆盖继续按R84/R85证据解释。
+
+## Git质量、元数据闭包与最终推送
+
+沿R77/R81/R83执行，不放宽：最终staged路径与明确changed manifest一致、逐blob匹配、无额外祖先；完整 `git diff --cached --check` 真实exit/stdout/stderr保存，原件字面空白逐条绑定源和staged SHA/bytes解释，未分类诊断=0；当前源码/新文档严格子集真实exit0。禁止strip原始日志/改.gitignore或.gitattributes/config掩盖，不删除旧失败。
+
+元数据采用有限边界：82项静态载荷与R87本目录7个明确文件（plan.md、plan.json、input-pins.json、candidate-input-paths.json、readonly-observation.json、candidate4-contract.json、root-activation.json）分别登记；不存在的activation只在实际建立后pin，不能预造。新 `handoff/delivery-p2/` 仅允许明确的候选选择/changed清单、闭包、内容审阅、import收据、candidate4命令/JUnit/结果/临时原件分母、before-after pins、R81例外表及步骤报告。实现前以一个固定metadata-paths.json列全精确文件名，不以目录glob发布；确有必要的新增元数据逐项说明。原始full-check最终收据、最终tree/commit/push收据可local-only或另做有限文档提交；不能为了manifest自hash或写入最终commit SHA无穷改写/反复stage。新增收据若进入stage须受相同分类检查，最终索引变化后所引用校验必须适用。
+
+ROOT独立审阅实际candidate4、源闭包/内容/字节与质量结果，然后在同branch创建P2增量commit；完整commit父级必须等于activation的OC2 SHA。同origin非force明确refspec push，核对本地/upstream/live远端完整SHA一致；不push all/mirror/tags，不改原主branch。失败/三端未核实必须真实记录，不能用已完成OC2三SHA冒充新P2交付。若发布后再提交步骤元数据，单独明确清单、验收及三端核对。
+
+## 验收与支持边界
+
+本轮规划没有Git操作、项目执行或测试；actual=0。P2导出验收要求前置激活真实、五源不变、精确载荷及闭包通过、候选4一次真实通过、原94证据来源和历史失败保存、R81分类完整、ROOT最终commit/push三SHA核实。此后只能说限定P2软件已交付。
+
+GRASP/mutable contact、完整future D仍NOT_SUPPORTED/UNKNOWN，native UNAVAILABLE，依赖抓放的九组/大先导批量继续停止；校准组0、actual0、formal=false。未来真实运行必须另满足既有ROOT串行授权、真实来源/完整原件分母/Gate条件，本Git计划不授予真实运行资格，也不代表完整raw远端复现包。
