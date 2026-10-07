@@ -705,14 +705,6 @@ def _recovery_wall_process_identity() -> dict:
     }
 
 
-class _RecoveryWallCounterObservationError(BudgetExceeded):
-    """Private failed reader observation; this never grants a valid D value."""
-
-    def __init__(self, message: str, observation: dict) -> None:
-        super().__init__(message)
-        self.observation = observation
-
-
 def _recovery_wall_boottime_reader() -> Callable[[], int]:
     if platform.system() != "Linux" or not hasattr(time, "CLOCK_BOOTTIME"):
         raise ValueError("Linux CLOCK_BOOTTIME unsupported; no fallback")
@@ -722,15 +714,9 @@ def _recovery_wall_boottime_reader() -> Callable[[], int]:
         try:
             value = time.clock_gettime_ns(clock_id)
         except Exception as exc:
-            raise _RecoveryWallCounterObservationError(
-                "CLOCK_BOOTTIME counter read failed; no fallback",
-                {"read_error": {"type": type(exc).__name__, "message": str(exc)}},
-            ) from exc
+            raise BudgetExceeded("CLOCK_BOOTTIME counter read failed; no fallback") from exc
         if type(value) is not int or value < 0:
-            raise _RecoveryWallCounterObservationError(
-                "CLOCK_BOOTTIME counter is not nonnegative integer ns",
-                {"raw_value": _recovery_wall_evidence(value)},
-            )
+            raise BudgetExceeded("CLOCK_BOOTTIME counter is not nonnegative integer ns")
         return value
 
     return read
@@ -912,12 +898,9 @@ class _RecoveryWallOwner:
             "output": str(self._output),
         }
 
-    def _require_registered(self) -> None:
+    def _require_live(self) -> None:
         if _RECOVERY_WALL_OWNERS.get(id(self)) is not self or self._finished:
             raise ValueError("unregistered or finished live recovery wall owner")
-
-    def _require_live(self) -> None:
-        self._require_registered()
         self._lease._require_live()
         if self._lease._identity != self._identity:
             raise ValueError("owner startup identity/lifecycle changed")
@@ -928,41 +911,27 @@ class _RecoveryWallOwner:
         if _hash(allocation) != self._allocation_sha:
             raise ValueError("canonical allocation bytes changed")
 
-    def _counter(self, payload: dict | None = None, *, position: str | None = None) -> int:
+    def _counter(self) -> int:
         self._require_live()
-        observation: dict = {
-            "position": position,
-            "previous_accepted_ns": self._last_ns,
-            "validated": False,
-        }
-        if payload is not None:
-            payload.setdefault("counter_observations", []).append(observation)
         try:
             value = self._raw_read()
         except Exception as exc:
-            if isinstance(exc, _RecoveryWallCounterObservationError):
-                observation.update(exc.observation)
-            else:
-                observation["read_error"] = {"type": type(exc).__name__, "message": str(exc)}
             raise BudgetExceeded("recovery wall counter read failed") from exc
-        observation["raw_value"] = _recovery_wall_evidence(value)
         self._require_live()
         if type(value) is not int or value < 0:
             raise BudgetExceeded("recovery wall counter requires nonnegative integer ns")
         if self._last_ns is not None and value < self._last_ns:
             raise BudgetExceeded("recovery wall counter rollback/order violation")
         self._last_ns = value
-        observation["validated"] = True
         return cast(int, value)
 
     def _bind_backend(self, backend: object) -> None:
         """Private producer bind, once; BEGIN never binds from caller assertions."""
-        self._require_registered()
+        self._require_live()
+        if self._backend is not None or self._failure is not None:
+            raise ValueError("recovery wall backend already bound or owner failed")
+        self._backend = backend
         try:
-            self._require_live()
-            if self._backend is not None or self._failure is not None:
-                raise ValueError("recovery wall backend already bound or owner failed")
-            self._backend = backend
             self._last_state = self._sample_state()
             self._episode = self._last_state["episode_id"]
             _RECOVERY_WALL_BACKENDS[id(self)] = (self, backend, cast(str, self._episode))
@@ -1032,34 +1001,24 @@ class _RecoveryWallOwner:
             raise ValueError("caller sim state does not equal owned live source sim state")
 
     def _remember_failure(self, kind: str, exc: Exception, payload: dict) -> None:
-        self._require_registered()
         if self._failure is None:
             self._failure = f"{type(exc).__name__}: {exc}"
         try:
-            self._journal.append(
-                kind,
-                {
-                    "failure": str(exc),
-                    "error_type": type(exc).__name__,
-                    **_recovery_wall_evidence(payload),
-                },
-            )
+            self._journal.append(kind, {"failure": str(exc), **_recovery_wall_evidence(payload)})
         except Exception as writer_exc:
             self._failure += f"; wall journal/spool failure: {writer_exc}"
 
     def begin_fault(
         self, *, backend: object, episode_id: str, step: int, sim_time_s: float
     ) -> None:
-        self._require_registered()
+        self._require_live()
         payload: dict = {}
         try:
-            self._require_live()
             if self._fault_begin is not None or self._failure is not None:
                 raise ValueError("fault BEGIN already recorded or owner already failed")
             if backend is not self._backend:
                 raise ValueError("caller backend is not the exact privately owned backend")
-            lower = self._counter(payload, position="BEGIN_LOWER")
-            payload["lower_ns"] = lower
+            lower = self._counter()
             state = self._sample_state()
             self._assert_state(state, step=step, sim_time_s=sim_time_s)
             if episode_id != state["episode_id"]:
@@ -1067,16 +1026,14 @@ class _RecoveryWallOwner:
             rows = self._source_records()
             if self._sample_state() != state:
                 raise ValueError("source step/sim/episode changed before BEGIN")
-            payload.update(
-                {
-                    **state,
-                    "lower_ns": lower,
-                    "deadline_ns": lower + _RECOVERY_WALL_NS,
-                    "source_length": len(rows),
-                    "source_prefix": rows,
-                    "event_source": "owned_backend.fault_records",
-                }
-            )
+            payload = {
+                **state,
+                "lower_ns": lower,
+                "deadline_ns": lower + _RECOVERY_WALL_NS,
+                "source_length": len(rows),
+                "source_prefix": rows,
+                "event_source": "owned_backend.fault_records",
+            }
             # The exclusive fsynced BEGIN is durable before this method returns,
             # therefore before its caller may perform the single real injection.
             _write(self._output / "wall-start.json", {**self._startup, "fault_begin": payload})
@@ -1089,10 +1046,9 @@ class _RecoveryWallOwner:
             raise
 
     def end_fault_injection(self, *, step: int, sim_time_s: float) -> None:
-        self._require_registered()
+        self._require_live()
         payload: dict = {}
         try:
-            self._require_live()
             if self._failure is not None or self._fault_end is not None:
                 raise ValueError("fault END already recorded or owner already failed")
             if self._fault_begin is None or self._fault_prefix is None:
@@ -1121,18 +1077,16 @@ class _RecoveryWallOwner:
                 raise ValueError("original source event step/sim mismatch")
             if self._sample_state() != state:
                 raise ValueError("owned source step/sim/episode changed during END")
-            upper = self._counter(payload, position="END_UPPER")
+            upper = self._counter()
             if upper >= begin["deadline_ns"]:
                 raise BudgetExceeded("recovery wall fixed deadline reached at fault END")
-            payload.update(
-                {
-                    **state,
-                    "upper_ns": upper,
-                    "event_ordinal": size,
-                    "event": event,
-                    "event_source": "owned_backend.fault_records",
-                }
-            )
+            payload = {
+                **state,
+                "upper_ns": upper,
+                "event_ordinal": size,
+                "event": event,
+                "event_source": "owned_backend.fault_records",
+            }
             self._journal.append("FAULT_END", payload)
             self._fault_end = deepcopy(payload)
             self._last_state = state
@@ -1140,17 +1094,15 @@ class _RecoveryWallOwner:
             self._remember_failure("FAULT_END_FAILED", exc, payload)
             raise
 
-    def _current(self, kind: str, *, step: int, sim_time_s: float, terminal: bool = False) -> dict:
-        self._require_registered()
+    def _current(self, kind: str, *, step: int, sim_time_s: float) -> dict:
         payload: dict = {"kind": kind}
         try:
             self._require_live()
-            position = "TERMINAL" if terminal else "CHECK"
-            payload["lower_ns"] = self._counter(payload, position=f"{position}_LOWER")
+            payload["lower_ns"] = self._counter()
             state = self._sample_state()
             payload.update(state)
             self._assert_state(state, step=step, sim_time_s=sim_time_s)
-            payload["upper_ns"] = self._counter(payload, position=f"{position}_UPPER")
+            payload["upper_ns"] = self._counter()
             self._require_live()
             if self._fault_begin is not None:
                 payload["age_upper_ns"] = payload["upper_ns"] - self._fault_begin["lower_ns"]
@@ -1164,7 +1116,7 @@ class _RecoveryWallOwner:
             raise
 
     def check(self, kind: str, *, step: int, sim_time_s: float) -> None:
-        self._require_registered()
+        self._require_live()
         if self._failure is not None:
             raise BudgetExceeded("recovery wall owner already failed")
         self._current(kind, step=step, sim_time_s=sim_time_s)
@@ -1178,7 +1130,7 @@ class _RecoveryWallOwner:
         if failure is not None:
             self._remember_failure("EXECUTION_FAILED", RuntimeError(failure), {})
         try:
-            terminal = self._current("TERMINAL", step=step, sim_time_s=sim_time_s, terminal=True)
+            terminal = self._current("TERMINAL", step=step, sim_time_s=sim_time_s)
         except Exception:
             pass  # _current retained the exact failure and partial observation.
         if self._fault_begin is None or self._fault_end is None:

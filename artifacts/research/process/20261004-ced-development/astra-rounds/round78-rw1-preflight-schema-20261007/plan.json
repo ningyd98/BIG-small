@@ -1,0 +1,143 @@
+{
+  "schema_version": "bigsmall.astra.repair-plan.v1",
+  "round": "round78-rw1-preflight-schema-20261007",
+  "generated_at_utc": "2026-10-07T13:08:31.962751+00:00",
+  "planner": {
+    "requested_model": "gpt-6-astra",
+    "agent": "/root/astra_oc2_residual",
+    "runtime_identity_independently_verified": false
+  },
+  "status": "PLAN_ONLY_ROOT_METADATA_RECOVERY",
+  "problem": "ROOT使用不存在的inputs并以空列表默认吞掉schema差异，checks为空触发断言；不是SHA不匹配。",
+  "original_failure": {
+    "status": "ORIGINAL_METADATA_FAILURE_TRANSCRIBED_NOT_REPLAYED",
+    "source": "ROOT tool original output as relayed in delegated task; planner did not independently replay or access the original process",
+    "tool_chunk": "a59993",
+    "exit_code": 1,
+    "wall_seconds": 8.304e-06,
+    "stderr_transcribed": "Traceback (most recent call last):\n  File \"<stdin>\", line 9, in <module>\nAssertionError\n",
+    "failing_expression": "assert checks and all(c['matches'] for c in checks)",
+    "incorrect_field_expression": "d.get('inputs', [])",
+    "checks_count": 0,
+    "hashes_checked": 0,
+    "root_authorization_written": false,
+    "is_hash_mismatch": false,
+    "stdout_keys_transcribed": [
+      "schema_version",
+      "round",
+      "generated_at_utc",
+      "planner",
+      "status",
+      "task_count",
+      "baseline",
+      "problem",
+      "findings",
+      "scope",
+      "contracts",
+      "tests",
+      "tasks",
+      "verification",
+      "execution_preconditions",
+      "actual_running_preconditions",
+      "acceptance",
+      "input_pins",
+      "planning_execution",
+      "plan_md_sha256"
+    ]
+  },
+  "observed_schema": {
+    "schema_version": "bigsmall.astra.repair-plan.v1",
+    "field": "input_pins",
+    "container_type": "list",
+    "count": 35,
+    "entry_keys": [
+      "bytes",
+      "matches_review",
+      "path",
+      "review_expected_sha256",
+      "sha256"
+    ],
+    "comparison_fields": [
+      "path",
+      "sha256",
+      "bytes"
+    ],
+    "provenance_only_fields": [
+      "review_expected_sha256",
+      "matches_review"
+    ],
+    "nullable_provenance": true,
+    "md_sha256_matches": true,
+    "md_sha256": "f0b24debf24b17db8f255360b14617807be22a443cc772cf7f58ffa393ef4e0e",
+    "authorization_path_absent_at_planning": true
+  },
+  "input_pins": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "bytes": 1774
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round76-rw1-lifecycle-evidence-20261007/plan.md",
+      "sha256": "f0b24debf24b17db8f255360b14617807be22a443cc772cf7f58ffa393ef4e0e",
+      "bytes": 36265
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round76-rw1-lifecycle-evidence-20261007/plan.json",
+      "sha256": "83120632a674f8aa91ccb45b5d5d3c3fbf36323b0e9516ef84f07c236db433c4",
+      "bytes": 43169
+    }
+  ],
+  "scope": {
+    "editable": "ROOT recovery orchestration script only; supplied below as source text, not executed",
+    "new_outputs": [
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round78-rw1-preflight-schema-20261007/failure-receipt.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round78-rw1-preflight-schema-20261007/implementation/input-check.json",
+      "artifacts/research/process/20261004-ced-development/astra-rounds/round76-rw1-lifecycle-evidence-20261007/root-authorization.json"
+    ],
+    "immutable": [
+      "R76 plan.md/plan.json and all 35 pinned inputs",
+      "all product/test files, original logs/receipts"
+    ],
+    "independent_work": "OC2 Sol implementation continues unaffected; no global or RW1 source freeze for this metadata recovery"
+  },
+  "tasks": [
+    "ROOT review R78 and original R76; check these three exact plan/instruction SHA. Do not claim semantic approval from hashes alone.",
+    "Save recovery_python verbatim into fresh R78 implementation script path outside the execution directory (e.g. R78/recover-root-preflight.py); execute once with PYTHONDONTWRITEBYTECODE=1 .venv/bin/python <script>. Capture original stdout/stderr/exit/wall separately. No sandbox_permissions.",
+    "Directly index input_pins; validate exact schema and 35 unique rows before reads. Use sha256/bytes as actual expectations; nullable matches_review is historical provenance, not a pass predicate. Read only these 35 explicit paths once, no glob/recursive/raw expansion.",
+    "Write input-check with exclusive creation, then authorization exclusively only if 35/35 match and MD linkage holds. Preserve failure entry without replacing original error. Original R76 product/test budgets remain unchanged; this metadata round adds zero tests/static/actual allowances.",
+    "Read back new receipt/authorization and report metadata preflight recovered only; any schema drift/missing/hash failure/collision stops affected R76 dispatch for next Astra. No retry, deleting partial output or changing pins to make checks pass."
+  ],
+  "recovery_python": "from pathlib import Path\nimport hashlib\nimport json\nimport re\nfrom datetime import datetime, timezone\n\nbase = Path(\"artifacts/research/process/20261004-ced-development/astra-rounds\")\nr76 = base / \"round76-rw1-lifecycle-evidence-20261007\"\nr78 = base / \"round78-rw1-preflight-schema-20261007\"\nplan_raw = (r76 / \"plan.json\").read_bytes()\nif hashlib.sha256(plan_raw).hexdigest() != \"83120632a674f8aa91ccb45b5d5d3c3fbf36323b0e9516ef84f07c236db433c4\":\n    raise RuntimeError(\"R76 plan.json drift: stop for Astra\")\nd = json.loads(plan_raw)\nif d[\"schema_version\"] != \"bigsmall.astra.repair-plan.v1\" or d[\"round\"] != r76.name:\n    raise RuntimeError(\"unexpected R76 schema/round: stop for Astra\")\nrows = d[\"input_pins\"]\nif type(rows) is not list or len(rows) != 35:\n    raise RuntimeError(\"R76 input_pins must be exactly 35 rows\")\nrequired = {\"path\", \"sha256\", \"bytes\", \"review_expected_sha256\", \"matches_review\"}\npaths = []\nfor row in rows:\n    if type(row) is not dict or set(row) != required:\n        raise RuntimeError(\"R76 entry schema differs\")\n    if type(row[\"path\"]) is not str or not row[\"path\"]:\n        raise RuntimeError(\"R76 path invalid\")\n    if type(row[\"sha256\"]) is not str or re.fullmatch(r\"[0-9a-f]{64}\", row[\"sha256\"]) is None:\n        raise RuntimeError(\"R76 sha256 invalid\")\n    if type(row[\"bytes\"]) is not int or row[\"bytes\"] < 0:\n        raise RuntimeError(\"R76 byte count invalid\")\n    paths.append(row[\"path\"])\nif len(set(paths)) != 35:\n    raise RuntimeError(\"duplicate R76 input paths\")\nmd_raw = (r76 / \"plan.md\").read_bytes()\nmd_sha = hashlib.sha256(md_raw).hexdigest()\nif md_sha != d[\"plan_md_sha256\"] or md_sha != \"f0b24debf24b17db8f255360b14617807be22a443cc772cf7f58ffa393ef4e0e\":\n    raise RuntimeError(\"R76 plan.md hash mismatch\")\nauth_path = r76 / \"root-authorization.json\"\nif auth_path.exists() or auth_path.is_symlink():\n    raise RuntimeError(\"authorization output collision; do not overwrite\")\nexecution = r78 / \"implementation\"\nexecution.mkdir(exist_ok=False)\nchecks = []\nfor row in rows:\n    p = Path(row[\"path\"])\n    try:\n        if p.is_symlink() or not p.is_file():\n            raise ValueError(\"pin must name an existing regular non-symlink file\")\n        raw = p.read_bytes()\n        sha = hashlib.sha256(raw).hexdigest()\n        checks.append({\"path\": row[\"path\"], \"expected_sha256\": row[\"sha256\"],\n                       \"actual_sha256\": sha, \"expected_bytes\": row[\"bytes\"],\n                       \"actual_bytes\": len(raw),\n                       \"matches\": sha == row[\"sha256\"] and len(raw) == row[\"bytes\"]})\n    except (OSError, ValueError) as error:\n        checks.append({\"path\": row[\"path\"], \"matches\": False,\n                       \"error_type\": type(error).__name__, \"error\": str(error)})\nresult = {\"round\": r78.name, \"checked_at_utc\": datetime.now(timezone.utc).isoformat(),\n          \"input_count\": len(checks), \"checks\": checks,\n          \"all_match\": len(checks) == 35 and all(c[\"matches\"] for c in checks),\n          \"plan_md_sha256\": md_sha, \"plan_json_sha256\": hashlib.sha256(plan_raw).hexdigest(),\n          \"product_tests\": 0, \"actual\": 0}\nwith (execution / \"input-check.json\").open(\"x\", encoding=\"utf-8\") as handle:\n    handle.write(json.dumps(result, ensure_ascii=False, indent=2) + \"\\n\")\nif not result[\"all_match\"]:\n    raise RuntimeError(\"R76 pin mismatch/missing input recorded; no authorization, next Astra\")\n# Metadata approval only; ROOT must have reviewed R76/R78 before this one execution.\nauthorization = {**result, \"status\": \"ROOT_REVIEWED_INPUTS_MATCH_DISPATCH_READY\",\n                 \"recovery_plan\": str(r78 / \"plan.json\"),\n                 \"implementation_plan\": str(r76 / \"plan.json\"),\n                 \"requested_implementer_model\": \"gpt-6.1-sol\",\n                 \"scope\": \"original R76 only; test allowances unchanged\",\n                 \"actual_authorized\": False, \"formal_accepted\": False}\nwith auth_path.open(\"x\", encoding=\"utf-8\") as handle:\n    handle.write(json.dumps(authorization, ensure_ascii=False, indent=2) + \"\\n\")\nprint(json.dumps({\"inputs\": 35, \"all_match\": True, \"authorization\": str(auth_path)}))\n",
+  "verification": {
+    "corrected_metadata_pass_max_runs": 1,
+    "product_tests": 0,
+    "ruff": 0,
+    "mypy": 0,
+    "actual": 0,
+    "network": 0,
+    "git": 0,
+    "planning_35_pin_pass_runs": 0
+  },
+  "execution_preconditions": [
+    "ROOT has read actual R76/R78 plans and actual Astra dispatch exists.",
+    "R76 JSON and linked MD SHA match recorded exact inputs.",
+    "R78 implementation and R76 root-authorization output absent; exclusive creation required.",
+    "Existing .venv/bin/python, no installs, no model/provider call."
+  ],
+  "actual_running_preconditions": {
+    "authorized": false,
+    "preserve": "All original R76 actual preconditions and separate ROOT authorization remain; metadata correction establishes none."
+  },
+  "acceptance": "METADATA_PREFLIGHT_RECOVERED_ONLY on one corrected 35/35 pass plus exclusive authorization. Does not repair RW1 IR01/IR02, prove tests, or grant actual/formal acceptance.",
+  "planning_execution": {
+    "product_changes": 0,
+    "tests": 0,
+    "metadata_recovery_executed": false,
+    "original_failure_replayed": false,
+    "network": 0,
+    "git": 0
+  },
+  "failure_receipt_sha256": "10214e94d83557bc7bf0d866b57b13590553ee3f9d774f1e40b6b65079de27da",
+  "plan_md_sha256": "1bf5abb157068cf4bf4c58d2b221cedaaf35859e944fc091606f370cb180803f"
+}

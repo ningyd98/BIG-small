@@ -1,0 +1,1316 @@
+{
+  "schema": "bigsmall.rw1-independent-review.v1",
+  "reviewer": "/root/sol_rw1_review",
+  "implementation_author": "/root/sol_t12_p1",
+  "different_author": true,
+  "reviewed_at_utc": "2026-10-07T12:44:04.399473+00:00",
+  "spec_compliance_verdict": "REQUEST_CHANGES_RW1_SOFTWARE",
+  "code_quality_verdict": "REQUEST_CHANGES_RW1_SOFTWARE",
+  "P1b_format_and_evidence_verdict": "PASS_SCOPED_FORMAT_AND_PROVENANCE",
+  "overall_acceptance": "RW1_SOFTWARE_NOT_ACCEPTED_PENDING_ASTRA",
+  "review_method": [
+    "read complete current RW1 producer/test increment against original frozen baseline",
+    "read original plans57/66/68/71 and current P1b",
+    "stdlib byte/hash/whole AST/comment/parameter/JUnit/JSONL audit only"
+  ],
+  "review_actions": {
+    "product_imports": 0,
+    "pytest": 0,
+    "ruff": 0,
+    "mypy": 0,
+    "actual": 0,
+    "network": 0,
+    "subagents": 0,
+    "product_or_original_evidence_edits": 0
+  },
+  "findings": [
+    {
+      "id": "RW1-IR-01",
+      "priority": "HIGH",
+      "title": "Lifecycle rejection bypasses the sticky failure latch",
+      "file": "src/cloud_edge_robot_arm/research/protocol_generation.py",
+      "lines": [
+        1014,
+        1049,
+        1119,
+        1003,
+        1124,
+        1155
+      ],
+      "related_test_file": "tests/test_protocol_generation_sources.py",
+      "related_test_lines": [
+        1089,
+        1092,
+        1095
+      ],
+      "requirement": "round66 provenance contract item 6: identity/event/read/injection/end validation failure must mark failure, preserve evidence and prohibit successful END/retry.",
+      "observation": "begin_fault/end_fault_injection/check call _require_live before their try/_current failure recording. A _plan_binding or allocation-byte drift refusal therefore neither sets _failure nor appends its failure observation.",
+      "static_counterexample": "Start from healthy begun/ended owner below fixed deadline; change plan[attempt] from 1 to 2; check rejects at 1119->907 before _remember_failure; restore attempt to 1; finish without caller failure invokes _current successfully and reaches wall_pass=True with the already valid BEGIN/END. The analogous restored allocation-byte/process-identity observation follows the same path. This is a source-control-flow proof; no execution or new pytest run was performed.",
+      "impact": "An observed ownership/provenance discontinuity can be erased by restoring values, allowing software wall success. Current lifecycle cases inject caller failure at test line1095 and do not check the failure latch after restoration.",
+      "action": "Report to ROOT; obtain next gpt-6-astra plan before product/test repair."
+    },
+    {
+      "id": "RW1-IR-02",
+      "priority": "MEDIUM",
+      "title": "Invalid raw D observations are lost before journal recording",
+      "file": "src/cloud_edge_robot_arm/research/protocol_generation.py",
+      "lines": [
+        917,
+        921,
+        923,
+        1101,
+        1105,
+        1115
+      ],
+      "requirement": "round66 contract item6 preserves all original partial observations; raw D failure evidence must retain observed values and bracket attribution without converting them into valid counters.",
+      "observation": "_counter reads a raw value then raises on invalid type/negative/rollback; _current only assigns lower_ns/upper_ns if _counter returns. The failure payload therefore lacks the actual rejected value and bracket side.",
+      "existing_evidence": [
+        {
+          "path": "/tmp/bigsmall-r07-round68-rw1-green/test_recovery_wall_integer_dea10/attempt/raw-wall-checks.jsonl",
+          "sha256": "c82c8b36a43b8077940046e10588890dc5fe644ab4ec61a4553196431899ab83",
+          "bytes": 3020,
+          "failure_records": [
+            {
+              "kind": "CHECK_FAILED",
+              "payload": {
+                "failure": "recovery wall counter requires nonnegative integer ns",
+                "kind": "CURRENT"
+              },
+              "record_seq": 4
+            }
+          ]
+        },
+        {
+          "path": "/tmp/bigsmall-r07-round68-rw1-green/test_recovery_wall_integer_dea11/attempt/raw-wall-checks.jsonl",
+          "sha256": "c3dc4734905adf0a6f097aa6a8f392b8ac434722e9a2c3b362c8da33b830d60b",
+          "bytes": 3006,
+          "failure_records": [
+            {
+              "kind": "CHECK_FAILED",
+              "payload": {
+                "failure": "recovery wall counter rollback/order violation",
+                "kind": "CURRENT"
+              },
+              "record_seq": 4
+            }
+          ]
+        },
+        {
+          "path": "/tmp/bigsmall-r07-round68-rw1-green/test_recovery_wall_integer_dea12/attempt/raw-wall-checks.jsonl",
+          "sha256": "67249a371c247bd3d2bc5800a69f4fbee118a7836924abd81b075920d3bcd6df",
+          "bytes": 3235,
+          "failure_records": [
+            {
+              "kind": "CHECK_FAILED",
+              "payload": {
+                "episode_id": "cpu-episode-1",
+                "episode_source": "owned_live_backend._episode_id",
+                "failure": "recovery wall counter rollback/order violation",
+                "kind": "CURRENT",
+                "lower_ns": 120,
+                "sim_time_s": 1.0,
+                "sim_time_source": "owned_live_backend.get_sim_time()",
+                "step": 3,
+                "step_source": "owned_live_backend.total_physics_steps"
+              },
+              "record_seq": 4
+            }
+          ]
+        },
+        {
+          "path": "/tmp/bigsmall-r07-round68-rw1-green/test_recovery_wall_integer_dea8/attempt/raw-wall-checks.jsonl",
+          "sha256": "9161302c2977666badc01c11375bf008328cdc36afb5d15d45731d3fe62fc067",
+          "bytes": 3247,
+          "failure_records": [
+            {
+              "kind": "CHECK_FAILED",
+              "payload": {
+                "episode_id": "cpu-episode-1",
+                "episode_source": "owned_live_backend._episode_id",
+                "failure": "recovery wall counter requires nonnegative integer ns",
+                "kind": "CURRENT",
+                "lower_ns": 120,
+                "sim_time_s": 1.0,
+                "sim_time_source": "owned_live_backend.get_sim_time()",
+                "step": 3,
+                "step_source": "owned_live_backend.total_physics_steps"
+              },
+              "record_seq": 4
+            }
+          ]
+        },
+        {
+          "path": "/tmp/bigsmall-r07-round68-rw1-green/test_recovery_wall_integer_dea9/attempt/raw-wall-checks.jsonl",
+          "sha256": "a8a2764a0774e5bcbbd48197692218131e58e44ec0fcdea707ad678531aa5532",
+          "bytes": 3018,
+          "failure_records": [
+            {
+              "kind": "CHECK_FAILED",
+              "payload": {
+                "failure": "recovery wall counter requires nonnegative integer ns",
+                "kind": "CURRENT"
+              },
+              "record_seq": 4
+            }
+          ]
+        }
+      ],
+      "impact": "Existing saved negative/bool/missing upper/rollback CPU failures retain a generic error but cannot independently distinguish original raw -1, True, None or the rejected rollback value. The helper _recovery_wall_evidence cannot preserve a value absent from its input. Deadline refusal itself remains fail-closed.",
+      "action": "Report to ROOT for Astra planning; do not rewrite historical raw."
+    }
+  ],
+  "source_checks": {
+    "src/cloud_edge_robot_arm/research/protocol_generation.py": {
+      "source_before": {
+        "sha256": "07e12a8921cc41b2f0229235614f8a16ec3b4520bd266b0bc46bc198ecc09bd7",
+        "bytes": 65393
+      },
+      "source_after": {
+        "sha256": "cb63e18ef0d259077914ea0cc3beec414fb19c8cf1243ddd05e7588fb46775e2",
+        "bytes": 65394
+      },
+      "current": {
+        "sha256": "cb63e18ef0d259077914ea0cc3beec414fb19c8cf1243ddd05e7588fb46775e2",
+        "bytes": 65394
+      },
+      "current_equals_source_after": true,
+      "full_AST_equal": true,
+      "AST_sha256": "ac09145c9017207104ca0bf0d31d80232efd1d946a3b3e31f5a5f50332477bba",
+      "comments_equal": true,
+      "all_parameters_decorators_assertions_literals_type_comments_equal": true,
+      "normalization": "NONE"
+    },
+    "tests/test_protocol_generation_sources.py": {
+      "source_before": {
+        "sha256": "a3ec1598ff056c371eafbc2071da66c3920e9fcb6deeaaddac9ace58ec02224b",
+        "bytes": 50220
+      },
+      "source_after": {
+        "sha256": "9e2ed58417e4497adf43e37128cf5e278a9a24e95d7d07fc5ed4ba2f1f4b9037",
+        "bytes": 50244
+      },
+      "current": {
+        "sha256": "9e2ed58417e4497adf43e37128cf5e278a9a24e95d7d07fc5ed4ba2f1f4b9037",
+        "bytes": 50244
+      },
+      "current_equals_source_after": true,
+      "full_AST_equal": true,
+      "AST_sha256": "5b3f4b5b24d9c51e9c888358d2e30e9bf0e256428e2dd3dbcbfc171c62fd7872",
+      "comments_equal": true,
+      "all_parameters_decorators_assertions_literals_type_comments_equal": true,
+      "normalization": "NONE"
+    }
+  },
+  "whole_increment": {
+    "original_producer_sha256": "7038a6d2ff76ae14e83dc5f91028b912c2fd6e25fe1de78f14e6a21e00025d3f",
+    "original_test_sha256": "7aef1f510b81f03f42aebf874ab26fe1befc1caf625fa2ce3bd5d032dc36a112",
+    "existing_functions_changed": [
+      "renderer_exclusive"
+    ],
+    "new_producer_symbols": [
+      "private recovery-wall constants/registries",
+      "_recovery_wall_process_identity",
+      "_recovery_wall_boottime_reader",
+      "_RecoveryWallRendererLease",
+      "_recovery_wall_lease",
+      "_recovery_wall_evidence",
+      "_RecoveryWallOwner",
+      "_open_recovery_wall_owner",
+      "_open_recovery_wall_owner_for_test"
+    ],
+    "existing_tests_changed": [],
+    "reviewed_all_added_tests": true
+  },
+  "input_verification": {
+    "AGENTS.md": {
+      "observed": {
+        "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+        "bytes": 1774
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/failure-receipt.json": {
+      "observed": {
+        "sha256": "260900da9f05402502cd1ab6d50fd836ecc77c33b1c831add253439aa632c976",
+        "bytes": 14684
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/green.command-result.json": {
+      "observed": {
+        "sha256": "f3af9855e2f02bf3373cd61858c8ff35cf39821050a4f160b6a0393ad52cd2c0",
+        "bytes": 18380
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/green.junit.xml": {
+      "observed": {
+        "sha256": "198938f85ce6e60826c173eccab3db79198e6bfb2f2b734dbdd9ddb782673aeb",
+        "bytes": 19705
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/green.stderr.txt": {
+      "observed": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/green.stdout.txt": {
+      "observed": {
+        "sha256": "732da9505c2b459936b435d3496c7e214f7412a24fd24db9a37878f08de2a01c",
+        "bytes": 8348
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/input-pins-after.json": {
+      "observed": {
+        "sha256": "f20d8747c5bde0b0dcf4a07356f0948339da70c22fc71b40be4745dcefe60261",
+        "bytes": 16872
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.command-result.json": {
+      "observed": {
+        "sha256": "af8788c1108ef38f670e8e29488582bcde4ace018320e4122f82098573b71d81",
+        "bytes": 888
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.command-start.json": {
+      "observed": {
+        "sha256": "a7dea4972a74a2045ea85c5a334b86e55903dbbdddabbf018299905c2e7911f9",
+        "bytes": 784
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.junit.xml": {
+      "observed": {
+        "sha256": "aad48e84d1becf29786958d71cef2d9ccba8aa8a7387fda5f0bbbd225ac1d355",
+        "bytes": 12006
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.stderr.txt": {
+      "observed": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.stdout.txt": {
+      "observed": {
+        "sha256": "20014f83be5f00e082d2bde6524f8d55125c919e858996af64d008bb5ffbadcb",
+        "bytes": 402
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/input-pins-before.json": {
+      "observed": {
+        "sha256": "89c3a2fb78543f0fd2a7aa1da1872a36c2d539a1fd0051512010031550780824",
+        "bytes": 19639
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/mypy.command-result.json": {
+      "observed": {
+        "sha256": "646a9e98d1cbb52ed04216d22753769f96e0bca51875fe3c0e53882185c79ee9",
+        "bytes": 533
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/mypy.stderr.txt": {
+      "observed": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/mypy.stdout.txt": {
+      "observed": {
+        "sha256": "bdbe2f06ea7266524139adf5e97f20c2834e875a541276b7c38090af317ddeaf",
+        "bytes": 128
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/node-id-tool-failure.json": {
+      "observed": {
+        "sha256": "5c403b33258293846dc1d5338218706eee45a3fda91606520e9f322e19c1aed6",
+        "bytes": 1723
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/ruff-check.command-result.json": {
+      "observed": {
+        "sha256": "a8108dfee2fc5397e36f6bab094338a90f9e960a57ea71e41f9bd4b4d735a8e1",
+        "bytes": 516
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/ruff-check.stderr.txt": {
+      "observed": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/ruff-check.stdout.txt": {
+      "observed": {
+        "sha256": "b1fc83e94d46dddd6eb703305803452b736828aeb0a2cfc3f37d06b624594477",
+        "bytes": 526
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/ruff-format.command-result.json": {
+      "observed": {
+        "sha256": "75bf548d7233ce2a13a8fd2a3a8d3697b6045ffdf24c1e9a2ef3c4e046a5aaca",
+        "bytes": 532
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/ruff-format.stderr.txt": {
+      "observed": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/ruff-format.stdout.txt": {
+      "observed": {
+        "sha256": "7dbe375e289649c848e24170f7635511895579143ce4bfad371e7d984df74a57",
+        "bytes": 160
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/static-failure-receipt.json": {
+      "observed": {
+        "sha256": "89489565a051dc641aa5069fcacf88be44e8615f1acb5a82230b4e48108eed5b",
+        "bytes": 6562
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/static-failure-source-freeze/src/cloud_edge_robot_arm/research/protocol_generation.py": {
+      "observed": {
+        "sha256": "07e12a8921cc41b2f0229235614f8a16ec3b4520bd266b0bc46bc198ecc09bd7",
+        "bytes": 65393
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/static-failure-source-freeze/tests/test_protocol_generation_sources.py": {
+      "observed": {
+        "sha256": "a3ec1598ff056c371eafbc2071da66c3920e9fcb6deeaaddac9ace58ec02224b",
+        "bytes": 50220
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/step-report.md": {
+      "observed": {
+        "sha256": "c7422a483feec42e160df195b1960a495bff479678244eb7aac089435f9b0de2",
+        "bytes": 778
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/test-identities-before-green.json": {
+      "observed": {
+        "sha256": "9f014ab3e2ec8cfc74e0cd55ddbadb260e4debf8d6e7275408dd887fe6f06cdb",
+        "bytes": 9092
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/test-source.diff": {
+      "observed": {
+        "sha256": "101960426004ad7c832428953c4cb7ff08d22fa500310c72029db5a65999f014",
+        "bytes": 2695
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/root-round68-authorization.json": {
+      "observed": {
+        "sha256": "05a189584f7db79c05b6d1550ad8dc89713d34f70c7ed6ca14bee9a63bb8a8fc",
+        "bytes": 754
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/root-round68-dispatch-failure.json": {
+      "observed": {
+        "sha256": "300471f3c9607f15d64f19f16539108eab7742c5a516506fc6c298d957ca9d4b",
+        "bytes": 959
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/root-task1-authorization.json": {
+      "observed": {
+        "sha256": "a0bec6df57fe610b5bc9f6fe70a6eb94661a75209588c7efaf522f3d5ce41dcc",
+        "bytes": 4437
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/round70-dispatch-recovery/role-transfer.json": {
+      "observed": {
+        "sha256": "bd83cd3e6f6dc68cff29c9794b5134e5fa00381d2ccbd1a05926a0da58d59abf",
+        "bytes": 1568
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/round70-dispatch-recovery/step-report.json": {
+      "observed": {
+        "sha256": "bd83cd3e6f6dc68cff29c9794b5134e5fa00381d2ccbd1a05926a0da58d59abf",
+        "bytes": 1568
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/round70-dispatch-recovery/step-report.md": {
+      "observed": {
+        "sha256": "7bf050ffacc187170506ac7922f530c138c9dfb2378dad1cb32ac66094eb3d99",
+        "bytes": 439
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/round70-dispatch-recovery/transfer-receipt.json": {
+      "observed": {
+        "sha256": "bd83cd3e6f6dc68cff29c9794b5134e5fa00381d2ccbd1a05926a0da58d59abf",
+        "bytes": 1568
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round57-recovery-wall/plan.json": {
+      "observed": {
+        "sha256": "5b5f47a9f455e3731e58e14092252cadda4f97369aee2a167ccc3d354a9a8450",
+        "bytes": 9308
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round57-recovery-wall/plan.md": {
+      "observed": {
+        "sha256": "5dd08d0e57660c49044b321820d5ee83d52e6f1c026c494bbaae85eb31fe93db",
+        "bytes": 18804
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round66-rw1-event-episode/plan.json": {
+      "observed": {
+        "sha256": "d7358d578873bf0d0210e9e1066623e657998378ccbaf25c9ad33143e9b05f24",
+        "bytes": 26897
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round66-rw1-event-episode/plan.md": {
+      "observed": {
+        "sha256": "1fea4d3a21c2e57afd97d40106adb232caf517467e9d1fc9dbb3423c2e19afb9",
+        "bytes": 20432
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round68-rw1-fixture-alias/plan.json": {
+      "observed": {
+        "sha256": "21cb2128d9a5e8ad7cfd1055381207e15527547f09eccf0a2fa701eed073a92e",
+        "bytes": 31995
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round68-rw1-fixture-alias/plan.md": {
+      "observed": {
+        "sha256": "3526fd23bc1aaad099e2589bac5650d0109eb853ccb80c985585397dcd3fee1a",
+        "bytes": 22369
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round70-rw1-dispatch-capacity/plan.json": {
+      "observed": {
+        "sha256": "00e57e580b7d04e2febfbcce340f348cc7fc2544986f97a8ef50cec414338294",
+        "bytes": 9827
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round70-rw1-dispatch-capacity/plan.md": {
+      "observed": {
+        "sha256": "f13cf84b50febe01a1110c3a9cb0fe5383c7196402b16f80b41d64ccbd353a2a",
+        "bytes": 5629
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "pyproject.toml": {
+      "observed": {
+        "sha256": "b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c",
+        "bytes": 2458
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": true
+    },
+    "src/cloud_edge_robot_arm/research/protocol_generation.py": {
+      "observed": {
+        "sha256": "cb63e18ef0d259077914ea0cc3beec414fb19c8cf1243ddd05e7588fb46775e2",
+        "bytes": 65394
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": null
+    },
+    "tests/test_protocol_generation_sources.py": {
+      "observed": {
+        "sha256": "9e2ed58417e4497adf43e37128cf5e278a9a24e95d7d07fc5ed4ba2f1f4b9037",
+        "bytes": 50244
+      },
+      "matches_saved_actual": true,
+      "matches_protected_expected": null
+    }
+  },
+  "input_verification_summary": {
+    "saved_rows": 47,
+    "matching_current_actual_rows": 47,
+    "protected_rows": 45,
+    "protected_expected_matches": 45,
+    "two_format_deltas_only": true
+  },
+  "junit": {
+    "original_RED82": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/red.junit.xml",
+      "sha256": "a389bbe131cd2f29ecbd03678a04558caed1e13c6e36729f59ad21fae0b442e0",
+      "bytes": 374068,
+      "nodes": [
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[below]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[equal]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[above]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[stopped_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[jump]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[utc_jump]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[advance_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[repeat_begin]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[missing_pair]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[negative]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[bool]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[rollback]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[pair_reverse]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[cross_domain]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[missing_end]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[writer_error]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[foreign_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[object_flags]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[copied_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[copied_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[deepcopied_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[pickled_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[forged_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[pid]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[process_start_ticks]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[boot_id]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[time_namespace]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[time_namespace_offsets]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[app_nonce]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[allocation_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[attempt_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[protocol_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[backend_foreign]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[backend_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[released_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[unsupported_boottime]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[raw_read_failure]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[production_rejects_cpu_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[healthy]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[later_advance]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[foreign_backend]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[missing_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[episode_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[episode_reset]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[no_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[stale_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[replayed_payload]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[duplicate]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[extra_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[wrong_event_kind]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[prefix_changed]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[prefix_truncated]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[reset_records]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_missing_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_missing_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_wrong_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_wrong_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_bool_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_negative_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_string_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_bool_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_nan_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_inf_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_negative_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_string_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_bool_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_negative_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_bool_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_nan_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_step_advanced]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_s_advanced]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_bad_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_bad_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[source_not_list]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[source_not_dict]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_crafted_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[repeat_begin]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[repeat_end]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[failure_after_begin]"
+      ],
+      "total": 82,
+      "unique": 82,
+      "failures": 82,
+      "errors": 0,
+      "skips": 0
+    },
+    "historical_GREEN81_1": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/green.junit.xml",
+      "sha256": "198938f85ce6e60826c173eccab3db79198e6bfb2f2b734dbdd9ddb782673aeb",
+      "bytes": 19705,
+      "nodes": [
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[below]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[equal]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[above]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[stopped_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[jump]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[utc_jump]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[advance_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[repeat_begin]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[missing_pair]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[negative]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[bool]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[rollback]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[pair_reverse]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[cross_domain]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[missing_end]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[writer_error]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[foreign_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[object_flags]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[copied_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[copied_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[deepcopied_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[pickled_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[forged_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[pid]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[process_start_ticks]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[boot_id]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[time_namespace]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[time_namespace_offsets]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[app_nonce]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[allocation_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[attempt_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[protocol_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[backend_foreign]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[backend_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[released_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[unsupported_boottime]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[raw_read_failure]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[production_rejects_cpu_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[healthy]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[later_advance]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[foreign_backend]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[missing_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[episode_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[episode_reset]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[no_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[stale_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[replayed_payload]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[duplicate]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[extra_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[wrong_event_kind]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[prefix_changed]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[prefix_truncated]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[reset_records]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_missing_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_missing_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_wrong_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_wrong_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_bool_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_negative_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_string_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_bool_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_nan_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_inf_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_negative_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_string_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_bool_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_negative_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_bool_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_nan_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_step_advanced]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_s_advanced]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_bad_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_bad_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[source_not_list]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[source_not_dict]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_crafted_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[repeat_begin]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[repeat_end]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[failure_after_begin]"
+      ],
+      "total": 82,
+      "unique": 82,
+      "failures": 1,
+      "errors": 0,
+      "skips": 0
+    },
+    "original_GREEN82": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.junit.xml",
+      "sha256": "aad48e84d1becf29786958d71cef2d9ccba8aa8a7387fda5f0bbbd225ac1d355",
+      "bytes": 12006,
+      "nodes": [
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[below]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[equal]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[above]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[stopped_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[jump]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[utc_jump]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[advance_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[repeat_begin]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[missing_pair]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[negative]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[bool]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[rollback]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[pair_reverse]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[cross_domain]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[missing_end]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_integer_deadline_boundaries[writer_error]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[foreign_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[object_flags]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[copied_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[copied_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[deepcopied_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[pickled_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[forged_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[pid]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[process_start_ticks]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[boot_id]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[time_namespace]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[time_namespace_offsets]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[app_nonce]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[allocation_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[attempt_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[protocol_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[backend_foreign]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[backend_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[released_owner]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[unsupported_boottime]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[raw_read_failure]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_owner_lifecycle_fail_closed[production_rejects_cpu_lease]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[healthy]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[later_advance]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[foreign_backend]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[missing_episode]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[episode_drift]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[episode_reset]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[no_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[stale_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[replayed_payload]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[duplicate]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[extra_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[wrong_event_kind]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[prefix_changed]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[prefix_truncated]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[reset_records]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_missing_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_missing_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_wrong_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_wrong_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_bool_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_negative_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_string_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_bool_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_nan_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_inf_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_negative_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[event_string_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_bool_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_negative_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_bool_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[begin_nan_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_step_advanced]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_s_advanced]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_bad_step]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[end_bad_s]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[source_not_list]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[source_not_dict]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[caller_crafted_event]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[repeat_begin]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[repeat_end]",
+        "tests.test_protocol_generation_sources::test_recovery_wall_event_episode_provenance[failure_after_begin]"
+      ],
+      "total": 82,
+      "unique": 82,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "new_regression19": {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/regression.junit.xml",
+      "sha256": "251087675944bea0dbb5a919741be64eedfa4e7fb7498460ea83ba42fdb29b06",
+      "bytes": 3205,
+      "nodes": [
+        "tests.test_protocol_generation_sources::test_budget_uses_fault_start_and_preserves_boundary_before_raise",
+        "tests.test_protocol_generation_sources::test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[exception]",
+        "tests.test_protocol_generation_sources::test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[no_fault]",
+        "tests.test_protocol_generation_sources::test_execute_preserves_allocation_and_partial_sources_without_hidden_retry[budget]",
+        "tests.test_protocol_generation_sources::test_wrong_review_pin_cannot_dispatch_and_existing_output_is_preserved",
+        "tests.test_protocol_generation_sources::test_wall_deadline_installs_stop_and_restores_previous_alarm",
+        "tests.test_protocol_generation_sources::test_actual_path_wires_existing_detached_hooks_without_real_backend",
+        "tests.test_protocol_generation_sources::test_actual_reset_elapsed_uses_fault_start_deadline_only[under60]",
+        "tests.test_protocol_generation_sources::test_actual_reset_elapsed_uses_fault_start_deadline_only[over60]",
+        "tests.test_protocol_generation_sources::test_successor_preserves_all_rows_payloads_and_consumed_namespace",
+        "tests.test_protocol_generation_sources::test_successor_copy_cannot_reset_shared_allocation_namespace",
+        "tests.test_protocol_generation_sources::test_successor_rejects_missing_or_drifted_originals_before_backend[missing_predecessor]",
+        "tests.test_protocol_generation_sources::test_successor_rejects_missing_or_drifted_originals_before_backend[payload]",
+        "tests.test_protocol_generation_sources::test_successor_rejects_missing_or_drifted_originals_before_backend[source_archive]",
+        "tests.test_protocol_generation_sources::test_successor_rejects_missing_or_drifted_originals_before_backend[actual_pin]",
+        "tests.test_protocol_generation_sources::test_successor_requires_reviewed_predecessor_hash_before_freeze",
+        "tests.test_protocol_generation_sources::test_successor_accounts_new_cpu_failure_in_shared_200_denominator",
+        "tests.test_protocol_generation_sources::test_successor_pins_immutable_first_actual_without_relabeling",
+        "tests.test_protocol_generation_sources::test_successor_cli_freezes_overlay_and_default_preflight_is_cpu_only"
+      ],
+      "total": 19,
+      "unique": 19,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    }
+  },
+  "parameters_match_original82_in_order": true,
+  "original82_vs_new19_overlap": 0,
+  "saved_command_receipts": {
+    "format_write": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "src/cloud_edge_robot_arm/research/protocol_generation.py",
+        "tests/test_protocol_generation_sources.py"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.",
+        "MYPYPATH": "src"
+      },
+      "author": "/root/sol_t12_p1",
+      "runs": 1,
+      "started_at_utc": "2026-10-07T08:32:29.022321+00:00",
+      "exit_code": 0,
+      "ended_at_utc": "2026-10-07T08:32:29.043964+00:00",
+      "wall_s": 0.021536696993280202
+    },
+    "ruff_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "src/cloud_edge_robot_arm/research/protocol_generation.py",
+        "tests/test_protocol_generation_sources.py"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.",
+        "MYPYPATH": "src"
+      },
+      "author": "/root/sol_t12_p1",
+      "runs": 1,
+      "started_at_utc": "2026-10-07T08:32:41.373672+00:00",
+      "exit_code": 0,
+      "ended_at_utc": "2026-10-07T08:32:41.393945+00:00",
+      "wall_s": 0.020165965019259602
+    },
+    "ruff_format_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "src/cloud_edge_robot_arm/research/protocol_generation.py",
+        "tests/test_protocol_generation_sources.py"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.",
+        "MYPYPATH": "src"
+      },
+      "author": "/root/sol_t12_p1",
+      "runs": 1,
+      "started_at_utc": "2026-10-07T08:32:46.959226+00:00",
+      "exit_code": 0,
+      "ended_at_utc": "2026-10-07T08:32:46.975720+00:00",
+      "wall_s": 0.016383813985157758
+    },
+    "pending_regression": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "tests/test_protocol_generation_sources.py",
+        "-k",
+        "successor or actual_reset_elapsed or budget_uses_fault_start or execute_preserves_allocation or wrong_review_pin or actual_path_wires or wall_deadline",
+        "--basetemp=/tmp/bigsmall-r07-round71-regression",
+        "--junitxml=artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/regression.junit.xml"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": "src:.",
+        "MYPYPATH": "src"
+      },
+      "author": "/root/sol_t12_p1",
+      "runs": 1,
+      "started_at_utc": "2026-10-07T08:32:51.057062+00:00",
+      "exit_code": 0,
+      "ended_at_utc": "2026-10-07T08:33:36.521034+00:00",
+      "wall_s": 45.46386783197522
+    },
+    "original_mypy": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "mypy",
+        "--cache-dir=/tmp/bigsmall-r07-round68-mypy",
+        "--follow-imports=silent",
+        "src/cloud_edge_robot_arm/research/protocol_generation.py"
+      ],
+      "cwd": "/home/ningyd/文档/ChatGPT/BIGsmall",
+      "env": {
+        "PYTHONPATH": "src:.",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "MYPYPATH": "src"
+      },
+      "runs": 1,
+      "started_at_utc": "2026-10-05T20:43:29.040535+00:00",
+      "exit_code": 0,
+      "wall_s": 3.9194918870343827,
+      "ended_at_utc": "2026-10-05T20:43:32.960018+00:00"
+    }
+  },
+  "regression_cpu_manifest": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/cpu-originals-denominator.json",
+    "file_count": 418,
+    "checked_count": 418,
+    "missing_or_drifted": [],
+    "scope": "existing local CPU originals only; no complete remote reproduction claim"
+  },
+  "historical_failure": {
+    "original_81pass_1fixturefail_retained": true,
+    "original_empty_journal_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "old_failed_terminal_exists": false
+  },
+  "observed_hashes": {
+    "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/rw1-independent-review/review-brief.md": {
+      "sha256": "17c599ea6172d6680c0a9e69d83f7fa87434f2b96c556283ef16ee51b6839ef8",
+      "bytes": 1881
+    },
+    "artifacts/research/process/20261004-ced-development/t12-sol-handoff-20261007/rw1-independent-review/review-package.txt": {
+      "sha256": "50a4c5fcf8edace5527cd702a157a0714e7f0be1322d6b903871e11e2716c923",
+      "bytes": 52155
+    },
+    "AGENTS.md": {
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "bytes": 1774
+    },
+    "pyproject.toml": {
+      "sha256": "b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c",
+      "bytes": 2458
+    },
+    "docs/superpowers/plans/2026-10-07-t12-sol-execution.md": {
+      "sha256": "5a1358f0397edbc54c301edb63e934b1d2ba15ee79d64c9ae36248749b6af0f8",
+      "bytes": 77523
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round70-rw1-dispatch-capacity/plan.md": {
+      "sha256": "f13cf84b50febe01a1110c3a9cb0fe5383c7196402b16f80b41d64ccbd353a2a",
+      "bytes": 5629
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round70-rw1-dispatch-capacity/plan.json": {
+      "sha256": "00e57e580b7d04e2febfbcce340f348cc7fc2544986f97a8ef50cec414338294",
+      "bytes": 9827
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round68-rw1-fixture-alias/plan.md": {
+      "sha256": "3526fd23bc1aaad099e2589bac5650d0109eb853ccb80c985585397dcd3fee1a",
+      "bytes": 22369
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round68-rw1-fixture-alias/plan.json": {
+      "sha256": "21cb2128d9a5e8ad7cfd1055381207e15527547f09eccf0a2fa701eed073a92e",
+      "bytes": 31995
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round71-rw1-static-format/plan.md": {
+      "sha256": "102e53c0414ff9d683814e9c0277171d8998a7da8e005f128a7277a19e33fd67",
+      "bytes": 26477
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round71-rw1-static-format/plan.json": {
+      "sha256": "81fd29fe21b481cf202602e45b18f4c872ac8e04d8e43cf835d6d4a588ae0761",
+      "bytes": 29317
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round66-rw1-event-episode/plan.md": {
+      "sha256": "1fea4d3a21c2e57afd97d40106adb232caf517467e9d1fc9dbb3423c2e19afb9",
+      "bytes": 20432
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round66-rw1-event-episode/plan.json": {
+      "sha256": "d7358d578873bf0d0210e9e1066623e657998378ccbaf25c9ad33143e9b05f24",
+      "bytes": 26897
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round57-recovery-wall/plan.md": {
+      "sha256": "5dd08d0e57660c49044b321820d5ee83d52e6f1c026c494bbaae85eb31fe93db",
+      "bytes": 18804
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round57-recovery-wall/plan.json": {
+      "sha256": "5b5f47a9f455e3731e58e14092252cadda4f97369aee2a167ccc3d354a9a8450",
+      "bytes": 9308
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/pending_regression.command-result.json": {
+      "sha256": "7b3cd9de03a036bb5488e65acf66dd1278ae0df5b4af5e27ab7f67d022a5371d",
+      "bytes": 927
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/input-check.json": {
+      "sha256": "95a268e99db38ae7edebb8fb48288f2d3be9f0c8ac77abe29e02137c44e8b5c5",
+      "bytes": 19729
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_check.command-start.json": {
+      "sha256": "5fd68b3977a0aeae50adadecc22e59fd8c992c67405264eaa29ccb76c1d29441",
+      "bytes": 447
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/test-outcomes.json": {
+      "sha256": "bd95415e3d27ddd020a8a278c6594e4f480597b07824e9a16674ce5e02b853cd",
+      "bytes": 2686
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/source-freeze.json": {
+      "sha256": "041a306f5be6c8117c733a2162c5f48b9d158143d131a13ea01bd1b4c03677c0",
+      "bytes": 328
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/format_write.command-start.json": {
+      "sha256": "c321c077abce5c25dbe7dfe2815a8edab27021f7960240b89be0d1d4a3ffc0b4",
+      "bytes": 448
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/step-report.json": {
+      "sha256": "26a0291dea1043d178b6c896f70e8161ab81f2c0a500c7b0cb46b588f47c159c",
+      "bytes": 8762
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_check.command-result.json": {
+      "sha256": "b11020db9f98c36cd1035418cdca4e4075c6e627cc35325dbbcabd5fa3ced415",
+      "bytes": 553
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_format_check.command-result.json": {
+      "sha256": "e09510e7e34d7e8b41635c76acf10d237faa7e4576100a473109effd96274930",
+      "bytes": 569
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_format_check.command-start.json": {
+      "sha256": "3e64b9db17a50b24901808db1666e77808b0aee5d3dd66bcb0ece86190da3172",
+      "bytes": 463
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/cpu-originals-denominator.json": {
+      "sha256": "efa322a389dbf244fa05aefcceeac2d7db41b823ddc62455694de287d0884d5a",
+      "bytes": 102771
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/format_write.command-result.json": {
+      "sha256": "7c3cd02fb39235ebd2fd23d43cb6b46fbad6c11ec8f15087b1a5bb1510a2f857",
+      "bytes": 554
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ast-equivalence.json": {
+      "sha256": "078ba063e7a8bbc2e32bc9f9a8b7fe985c6fee2257915aa5395474368fd18053",
+      "bytes": 14214
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/pending_regression.command-start.json": {
+      "sha256": "738fb264e130c5791ea258b2f3c7eb3f12d60d7a801fbb2997fc0159818262ef",
+      "bytes": 824
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/input-check-after.json": {
+      "sha256": "099f97791b29418859d33079836754cbf0d85d80122195f3be98ba740847ff9c",
+      "bytes": 23019
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/author-transfer.json": {
+      "sha256": "69e8384eb885189ceb946f1dc78a99b109c51f4f5c73118788dfa87a6e465fe8",
+      "bytes": 351
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/pending_regression.stdout.txt": {
+      "sha256": "aaf0c69230dfc23c37ed01810df8d218f049e8989bf9fc58ef650ab49303a71f",
+      "bytes": 343
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_format_check.stdout.txt": {
+      "sha256": "3bc53bf3e981a98a34a852e175bf9b77af841edea74fca595d9aedcbaf9a4938",
+      "bytes": 26
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_check.stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/pending_regression.stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/format_write.stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_check.stdout.txt": {
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "bytes": 19
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/delivery-paths.txt": {
+      "sha256": "0d43f018ddb2a9f0f5428d4da0806dde7c9ff6e24b2ecff835bd98615c27a047",
+      "bytes": 5784
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/format_write.stdout.txt": {
+      "sha256": "96a977f329ec3c59092d40e041a019b49dcf03ca04055e177aa0ccb8c27234df",
+      "bytes": 20
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/ruff_format_check.stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/step-report.md": {
+      "sha256": "b5915fcb32949c846cc375ea83f9f23252f0e7632010724e1e212be7126daea2",
+      "bytes": 1738
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static/regression.junit.xml": {
+      "sha256": "251087675944bea0dbb5a919741be64eedfa4e7fb7498460ea83ba42fdb29b06",
+      "bytes": 3205
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.command-start.json": {
+      "sha256": "a7dea4972a74a2045ea85c5a334b86e55903dbbdddabbf018299905c2e7911f9",
+      "bytes": 784
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.command-result.json": {
+      "sha256": "af8788c1108ef38f670e8e29488582bcde4ace018320e4122f82098573b71d81",
+      "bytes": 888
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.stdout.txt": {
+      "sha256": "20014f83be5f00e082d2bde6524f8d55125c919e858996af64d008bb5ffbadcb",
+      "bytes": 402
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/green.junit.xml": {
+      "sha256": "aad48e84d1becf29786958d71cef2d9ccba8aa8a7387fda5f0bbbd225ac1d355",
+      "bytes": 12006
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/mypy.command-result.json": {
+      "sha256": "646a9e98d1cbb52ed04216d22753769f96e0bca51875fe3c0e53882185c79ee9",
+      "bytes": 533
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/mypy.stdout.txt": {
+      "sha256": "bdbe2f06ea7266524139adf5e97f20c2834e875a541276b7c38090af317ddeaf",
+      "bytes": 128
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/mypy.stderr.txt": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/test-identities-before-green.json": {
+      "sha256": "9f014ab3e2ec8cfc74e0cd55ddbadb260e4debf8d6e7275408dd887fe6f06cdb",
+      "bytes": 9092
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/test-source.diff": {
+      "sha256": "101960426004ad7c832428953c4cb7ff08d22fa500310c72029db5a65999f014",
+      "bytes": 2695
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/red.junit.xml": {
+      "sha256": "a389bbe131cd2f29ecbd03678a04558caed1e13c6e36729f59ad21fae0b442e0",
+      "bytes": 374068
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/green.junit.xml": {
+      "sha256": "198938f85ce6e60826c173eccab3db79198e6bfb2f2b734dbdd9ddb782673aeb",
+      "bytes": 19705
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round66/failure-receipt.json": {
+      "sha256": "260900da9f05402502cd1ab6d50fd836ecc77c33b1c831add253439aa632c976",
+      "bytes": 14684
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/platform-evidence/report.json": {
+      "sha256": "1f7dd09001b4b288a81ccdf44adb2682ffeecd8276c82ea59dc525c5888cf7f6",
+      "bytes": 3945
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/interface-observation/receipt.json": {
+      "sha256": "b8d2e3f0867952d5c5445c5b5a4f7e063a363684de9153942daad51ece922021",
+      "bytes": 3402
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/interface-observation/target-motion-started.original.txt": {
+      "sha256": "da0d593728ed036e90291b6b4c507d1176631263fe7cf1c4ed9972c0b46250a8",
+      "bytes": 1440
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/before/protocol_generation.py": {
+      "sha256": "7038a6d2ff76ae14e83dc5f91028b912c2fd6e25fe1de78f14e6a21e00025d3f",
+      "bytes": 39221
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/recovery-wall/implementation/task1/before/test_protocol_generation_sources.py": {
+      "sha256": "7aef1f510b81f03f42aebf874ab26fe1befc1caf625fa2ce3bd5d032dc36a112",
+      "bytes": 29845
+    }
+  },
+  "verified_boundaries": [
+    "fixed integer b-minus+60000000000 deadline; equality rejected",
+    "separate live backend episode and original event step/S without adding episode_id",
+    "source prefix/ordinal/exact-one appended event validation",
+    "production rejects CPU lease; copied/forged owner refused",
+    "round68 detached prefix repair and exact source refusal preserved",
+    "P1b two-file formatting preserves entire AST/comments/parameter and assertion values",
+    "original operation/S/byte/disk budgets retained; RW2/3 wiring remains absent"
+  ],
+  "limitations": [
+    "No independent runtime replay; new findings are static control-flow and existing raw evidence observations.",
+    "No teacher/action/physics guard wiring, alarm tightening, independent wall reader or v3 migration acceptance; those remain RW2/3.",
+    "No real fault/backend/renderer/camera/provider operation, suspend/restart/host-pause/UTC/SI/native/G4/T12 acceptance.",
+    "Platform local semantic/capability receipt hash is checked; it is historical evidence, not current actual permission.",
+    "Active OC2 four paths and ROOT stage summaries were excluded; no whole-repository quiet claim.",
+    "Author software receipts cannot establish full RW1 acceptance until these findings are addressed under Astra."
+  ],
+  "formal_accepted": false,
+  "g4_measured": false
+}
