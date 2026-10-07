@@ -192,6 +192,7 @@ def resolve_cloud_role(
         generation_parameters={
             "temperature": profile.temperature,
             "num_predict": profile.max_tokens,
+            "think": False,
         },
         timeout_s=profile.timeout_seconds,
         coordinate_system=coordinate_system,
