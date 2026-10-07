@@ -1,5 +1,7 @@
 # Current Authoritative Status
 
+2026-10-07 执行进度：GPT-6.1-sol 实施的 P1（RW1、OC2）与 P2 限定软件已独立审查并推送至 codex/research-20261007-p1-delivery，代码提交依次为 3daddcc96c1d23e928fb4c9a3d868750b6cc37ec、98b8282138ba61367db526d7d8f52e27085f4f9f、851b80c88c242007a740dae778671bdf98ab330c；各次本地/上游/实时远端 SHA 一致。导出候选分别 66、46、4 项通过。P2 原 93 项通过加 R85 修复 1 项覆盖 94 个唯一节点，未重跑全量。GRASP/mutable contact 与完整 future D 缺来源，依赖批量停止；P3 仅备派单、P4 真实 prefix 未启动。用户 1007、嵌套工作区修改和完整实验原件保留，完整 raw/DB 远端复现包未交付。真实恢复/G4/native/正式研究未验收。详见[Git 交付记录](research/t12-p1-p2-git-delivery-20261007.md)。下文较早条目保留其历史验收时点。
+
 ## 2026-10-04 云、边、端持续研发
 
 当前按[ced.research.v2总计划](superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md)持续实施，边缘模型型号后置。已独立审查的软件范围包括角色/wire绑定、原生三值条件、T10提交与硬停止、共同基线/模式CAS、规则成本边界、视觉修复候选、stage/activation/start接口、持久恢复及完成/预算消费者、运行组合、Max角色局部修复、T8先导/完整资源冻结补修、INITIAL来源审计、完整分配/统计/复现及只读研究页。实际风险来源、owner登记和方法接入继续实施，不登记整体完成。
