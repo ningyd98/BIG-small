@@ -1,0 +1,145 @@
+F............FFF                                                         [100%]
+=================================== FAILURES ===================================
+__________ test_cached_capture_preserves_empty_instance_sidecars_cpu ___________
+
+tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_cached_capture_preserves_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7aa26cabaea0>
+
+    def test_cached_capture_preserves_empty_instance_sidecars_cpu(tmp_path, monkeypatch):
+        app = application(tmp_path)
+        backend, calls = cpu_components(monkeypatch, app, production_cached=True)
+        receipt = app.execute_once()
+>       assert receipt["source_prefix_complete"] is True
+E       assert False is True
+
+tests/test_operational_capture_v1.py:645: AssertionError
+_ test_reader_rejects_instance_source_metadata_mismatch_cpu[availability_false] _
+
+tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_reader_rejects_instance_s0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7aa236c6d700>
+tamper = 'availability_false'
+
+    @pytest.mark.parametrize("tamper", ["availability_false", "count_bool", "source_ids_changed"])
+    def test_reader_rejects_instance_source_metadata_mismatch_cpu(tmp_path, monkeypatch, tamper):
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        if tamper == "source_ids_changed":
+            slab = json.loads((root / "operational-originals.json").read_bytes())
+            capture = next(row for row in slab["events"] if row["kind"] == "CAPTURE")
+            capture["end"]["result"]["instance_ids"] = []
+            _r93_repin_json(root, receipt, "operational-originals.json", slab)
+        else:
+            name = "frames/acquisition-1/source-frame.json"
+            metadata = json.loads((root / name).read_bytes())
+            metadata["instances_available" if tamper == "availability_false" else "instance_id_count"] = (
+                False if tamper == "availability_false" else True
+            )
+            _r93_repin_json(root, receipt, name, metadata)
+            digest = receipt["original_files"][name]["sha256"]
+            frozen = json.loads((root / "frozen-originals.json").read_bytes())
+            persisted = json.loads((root / "persisted-frames.json").read_bytes())
+            frozen["frames"][0]["file_hashes"][name] = digest
+            persisted[0]["file_hashes"][name] = digest
+            _r93_repin_json(root, receipt, "frozen-originals.json", frozen)
+            _r93_repin_json(root, receipt, "unbound-frames.json", frozen["frames"])
+            _r93_repin_json(root, receipt, "persisted-frames.json", persisted)
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+>       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:752: AssertionError
+____ test_reader_rejects_instance_source_metadata_mismatch_cpu[count_bool] _____
+
+tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_reader_rejects_instance_s1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7aa23572a6c0>
+tamper = 'count_bool'
+
+    @pytest.mark.parametrize("tamper", ["availability_false", "count_bool", "source_ids_changed"])
+    def test_reader_rejects_instance_source_metadata_mismatch_cpu(tmp_path, monkeypatch, tamper):
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        if tamper == "source_ids_changed":
+            slab = json.loads((root / "operational-originals.json").read_bytes())
+            capture = next(row for row in slab["events"] if row["kind"] == "CAPTURE")
+            capture["end"]["result"]["instance_ids"] = []
+            _r93_repin_json(root, receipt, "operational-originals.json", slab)
+        else:
+            name = "frames/acquisition-1/source-frame.json"
+            metadata = json.loads((root / name).read_bytes())
+            metadata["instances_available" if tamper == "availability_false" else "instance_id_count"] = (
+                False if tamper == "availability_false" else True
+            )
+            _r93_repin_json(root, receipt, name, metadata)
+            digest = receipt["original_files"][name]["sha256"]
+            frozen = json.loads((root / "frozen-originals.json").read_bytes())
+            persisted = json.loads((root / "persisted-frames.json").read_bytes())
+            frozen["frames"][0]["file_hashes"][name] = digest
+            persisted[0]["file_hashes"][name] = digest
+            _r93_repin_json(root, receipt, "frozen-originals.json", frozen)
+            _r93_repin_json(root, receipt, "unbound-frames.json", frozen["frames"])
+            _r93_repin_json(root, receipt, "persisted-frames.json", persisted)
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+>       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:752: AssertionError
+_ test_reader_rejects_instance_source_metadata_mismatch_cpu[source_ids_changed] _
+
+tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_reader_rejects_instance_s2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7aa2346ebe90>
+tamper = 'source_ids_changed'
+
+    @pytest.mark.parametrize("tamper", ["availability_false", "count_bool", "source_ids_changed"])
+    def test_reader_rejects_instance_source_metadata_mismatch_cpu(tmp_path, monkeypatch, tamper):
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        if tamper == "source_ids_changed":
+            slab = json.loads((root / "operational-originals.json").read_bytes())
+            capture = next(row for row in slab["events"] if row["kind"] == "CAPTURE")
+            capture["end"]["result"]["instance_ids"] = []
+            _r93_repin_json(root, receipt, "operational-originals.json", slab)
+        else:
+            name = "frames/acquisition-1/source-frame.json"
+            metadata = json.loads((root / name).read_bytes())
+            metadata["instances_available" if tamper == "availability_false" else "instance_id_count"] = (
+                False if tamper == "availability_false" else True
+            )
+            _r93_repin_json(root, receipt, name, metadata)
+            digest = receipt["original_files"][name]["sha256"]
+            frozen = json.loads((root / "frozen-originals.json").read_bytes())
+            persisted = json.loads((root / "persisted-frames.json").read_bytes())
+            frozen["frames"][0]["file_hashes"][name] = digest
+            persisted[0]["file_hashes"][name] = digest
+            _r93_repin_json(root, receipt, "frozen-originals.json", frozen)
+            _r93_repin_json(root, receipt, "unbound-frames.json", frozen["frames"])
+            _r93_repin_json(root, receipt, "persisted-frames.json", persisted)
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+>       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:752: AssertionError
+- generated xml file: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round93-p4-empty-instance-inventory-20261007/implementation/RED.junit.xml -
+=========================== short test summary info ============================
+FAILED tests/test_operational_capture_v1.py::test_cached_capture_preserves_empty_instance_sidecars_cpu
+FAILED tests/test_operational_capture_v1.py::test_reader_rejects_instance_source_metadata_mismatch_cpu[availability_false]
+FAILED tests/test_operational_capture_v1.py::test_reader_rejects_instance_source_metadata_mismatch_cpu[count_bool]
+FAILED tests/test_operational_capture_v1.py::test_reader_rejects_instance_source_metadata_mismatch_cpu[source_ids_changed]
+4 failed, 12 passed in 209.74s (0:03:29)

@@ -728,6 +728,41 @@ def _current_source_event_v1(
     return source_event
 
 
+def _validate_instance_original_v1(
+    aux: Any, source_result: Any, metadata: Any, *, width: int, height: int
+) -> None:
+    if type(aux) is not dict or type(source_result) is not dict or type(metadata) is not dict:
+        raise ValueError("instance original objects required")
+    ids = aux.get("instance_ids")
+    if type(ids) is not list or any(
+        type(value) is not int or not -(2**31) <= value < 2**31 for value in ids
+    ):
+        raise ValueError("instance signed32 original integer IDs required")
+    pixels = width * height
+    if len(ids) not in {0, pixels}:
+        raise ValueError("instance original pixel count differs")
+    _same_v1(source_result.get("instance_ids"), ids, "instance source/auxiliary IDs differ")
+    count = metadata.get("instance_id_count")
+    if type(count) is not int or count != len(ids):
+        raise ValueError("instance metadata count differs")
+    available = metadata.get("instances_available")
+    if type(available) is not bool or available is not (len(ids) == pixels):
+        raise ValueError("instance metadata availability differs")
+    labels = aux.get("instance_labels")
+    source_labels = source_result.get("instance_labels")
+    metadata_labels = metadata.get("instance_labels")
+    if any(type(value) is not dict for value in (labels, source_labels, metadata_labels)):
+        raise ValueError("instance original labels objects required")
+    _same_v1(source_labels, labels, "instance source/auxiliary labels differ")
+    _same_v1(metadata_labels, labels, "instance metadata labels differ")
+    if not ids and labels:
+        raise ValueError("instance empty IDs require empty labels")
+    passes = metadata.get("pass_state_hashes")
+    if type(passes) is not list or len(passes) != (3 if ids else 2):
+        raise ValueError("instance metadata pass count differs")
+    _same_v1(passes, source_result.get("pass_state_hashes"), "instance metadata passes differ")
+
+
 def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) -> dict[str, Any]:
     """Historical original joins only: never read now, DBlive or execute an app."""
     result: dict[str, Any] = {
@@ -751,7 +786,7 @@ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) 
         if entry.get("schema_version") != "simulation.operational-prefix.receipt.v1":
             raise ValueError("operational source receipt schema required")
         manifest = entry["original_files"]
-        validate_inventory_v1(manifest)
+        validate_inventory_v1(manifest, allow_empty_instances=True)
         for name, expected in manifest.items():
             _same_v1(
                 _pin(_historical_path_v1(root, name)),
@@ -1073,6 +1108,14 @@ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) 
                 if obs.get("valid_mask_base64") is None
                 else base64.b64decode(obs["valid_mask_base64"])
             )
+            metadata = _read_original_v1(root, prefix + "source-frame.json")
+            _validate_instance_original_v1(
+                frozen["frame_aux"][frame["acquisition_id"]],
+                source["end"]["result"],
+                metadata,
+                width=obs["width"],
+                height=obs["height"],
+            )
             blobs = {
                 "rgb.png": base64.b64decode(obs["rgb_png_base64"]),
                 "depth.f32": base64.b64decode(obs["depth_float32_base64"]),
@@ -1085,7 +1128,6 @@ def verify_operational_prefix_originals_v1(root: Path, catalog: dict[str, Any]) 
             for name, raw in blobs.items():
                 if _historical_path_v1(root, prefix + name).read_bytes() != raw:
                     raise ValueError("persisted frame bytes differ from original source")
-            metadata = _read_original_v1(root, prefix + "source-frame.json")
             _same_v1(metadata["observation"], obs, "frame metadata original differs")
             for name in [*blobs, "source-frame.json"]:
                 required_files.add(prefix + name)

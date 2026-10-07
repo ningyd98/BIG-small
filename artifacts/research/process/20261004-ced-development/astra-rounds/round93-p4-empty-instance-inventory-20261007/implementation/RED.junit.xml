@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="16" time="209.743" timestamp="2026-10-08T00:14:56.413654+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_capture_v1" name="test_cached_capture_preserves_empty_instance_sidecars_cpu" time="19.905"><failure message="assert False is True">tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_cached_capture_preserves_0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7aa26cabaea0&gt;
+
+    def test_cached_capture_preserves_empty_instance_sidecars_cpu(tmp_path, monkeypatch):
+        app = application(tmp_path)
+        backend, calls = cpu_components(monkeypatch, app, production_cached=True)
+        receipt = app.execute_once()
+&gt;       assert receipt["source_prefix_complete"] is True
+E       assert False is True
+
+tests/test_operational_capture_v1.py:645: AssertionError</failure></testcase><testcase classname="tests.test_operational_capture_v1" name="test_source_inventory_rejects_empty_and_noninteger_bytes_cpu[zero]" time="0.000" /><testcase classname="tests.test_operational_capture_v1" name="test_source_inventory_rejects_empty_and_noninteger_bytes_cpu[false]" time="0.000" /><testcase classname="tests.test_operational_capture_v1" name="test_source_inventory_rejects_empty_and_noninteger_bytes_cpu[true]" time="0.000" /><testcase classname="tests.test_operational_capture_v1" name="test_source_inventory_rejects_empty_and_noninteger_bytes_cpu[negative]" time="0.000" /><testcase classname="tests.test_operational_capture_v1" name="test_source_inventory_rejects_empty_and_noninteger_bytes_cpu[string]" time="0.000" /><testcase classname="tests.test_operational_capture_v1" name="test_source_inventory_rejects_empty_and_noninteger_bytes_cpu[float]" time="0.000" /><testcase classname="tests.test_operational_capture_v1" name="test_artifact_inventory_preserves_negative_and_geometry_guards_cpu[bytes_bool]" time="20.658" /><testcase classname="tests.test_operational_capture_v1" name="test_artifact_inventory_preserves_negative_and_geometry_guards_cpu[bytes_string]" time="20.609" /><testcase classname="tests.test_operational_capture_v1" name="test_artifact_inventory_preserves_negative_and_geometry_guards_cpu[bytes_negative]" time="20.846" /><testcase classname="tests.test_operational_capture_v1" name="test_artifact_inventory_preserves_negative_and_geometry_guards_cpu[empty_rgb]" time="21.101" /><testcase classname="tests.test_operational_capture_v1" name="test_artifact_inventory_preserves_negative_and_geometry_guards_cpu[empty_depth]" time="20.769" /><testcase classname="tests.test_operational_capture_v1" name="test_artifact_inventory_preserves_negative_and_geometry_guards_cpu[empty_mask]" time="21.161" /><testcase classname="tests.test_operational_capture_v1" name="test_reader_rejects_instance_source_metadata_mismatch_cpu[availability_false]" time="21.201"><failure message="AssertionError: assert 'VERIFIED' == 'INVALID'&#10;  &#10;  - INVALID&#10;  + VERIFIED">tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_reader_rejects_instance_s0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7aa236c6d700&gt;
+tamper = 'availability_false'
+
+    @pytest.mark.parametrize("tamper", ["availability_false", "count_bool", "source_ids_changed"])
+    def test_reader_rejects_instance_source_metadata_mismatch_cpu(tmp_path, monkeypatch, tamper):
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        if tamper == "source_ids_changed":
+            slab = json.loads((root / "operational-originals.json").read_bytes())
+            capture = next(row for row in slab["events"] if row["kind"] == "CAPTURE")
+            capture["end"]["result"]["instance_ids"] = []
+            _r93_repin_json(root, receipt, "operational-originals.json", slab)
+        else:
+            name = "frames/acquisition-1/source-frame.json"
+            metadata = json.loads((root / name).read_bytes())
+            metadata["instances_available" if tamper == "availability_false" else "instance_id_count"] = (
+                False if tamper == "availability_false" else True
+            )
+            _r93_repin_json(root, receipt, name, metadata)
+            digest = receipt["original_files"][name]["sha256"]
+            frozen = json.loads((root / "frozen-originals.json").read_bytes())
+            persisted = json.loads((root / "persisted-frames.json").read_bytes())
+            frozen["frames"][0]["file_hashes"][name] = digest
+            persisted[0]["file_hashes"][name] = digest
+            _r93_repin_json(root, receipt, "frozen-originals.json", frozen)
+            _r93_repin_json(root, receipt, "unbound-frames.json", frozen["frames"])
+            _r93_repin_json(root, receipt, "persisted-frames.json", persisted)
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+&gt;       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:752: AssertionError</failure></testcase><testcase classname="tests.test_operational_capture_v1" name="test_reader_rejects_instance_source_metadata_mismatch_cpu[count_bool]" time="21.348"><failure message="AssertionError: assert 'VERIFIED' == 'INVALID'&#10;  &#10;  - INVALID&#10;  + VERIFIED">tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_reader_rejects_instance_s1')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7aa23572a6c0&gt;
+tamper = 'count_bool'
+
+    @pytest.mark.parametrize("tamper", ["availability_false", "count_bool", "source_ids_changed"])
+    def test_reader_rejects_instance_source_metadata_mismatch_cpu(tmp_path, monkeypatch, tamper):
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        if tamper == "source_ids_changed":
+            slab = json.loads((root / "operational-originals.json").read_bytes())
+            capture = next(row for row in slab["events"] if row["kind"] == "CAPTURE")
+            capture["end"]["result"]["instance_ids"] = []
+            _r93_repin_json(root, receipt, "operational-originals.json", slab)
+        else:
+            name = "frames/acquisition-1/source-frame.json"
+            metadata = json.loads((root / name).read_bytes())
+            metadata["instances_available" if tamper == "availability_false" else "instance_id_count"] = (
+                False if tamper == "availability_false" else True
+            )
+            _r93_repin_json(root, receipt, name, metadata)
+            digest = receipt["original_files"][name]["sha256"]
+            frozen = json.loads((root / "frozen-originals.json").read_bytes())
+            persisted = json.loads((root / "persisted-frames.json").read_bytes())
+            frozen["frames"][0]["file_hashes"][name] = digest
+            persisted[0]["file_hashes"][name] = digest
+            _r93_repin_json(root, receipt, "frozen-originals.json", frozen)
+            _r93_repin_json(root, receipt, "unbound-frames.json", frozen["frames"])
+            _r93_repin_json(root, receipt, "persisted-frames.json", persisted)
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+&gt;       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:752: AssertionError</failure></testcase><testcase classname="tests.test_operational_capture_v1" name="test_reader_rejects_instance_source_metadata_mismatch_cpu[source_ids_changed]" time="21.637"><failure message="AssertionError: assert 'VERIFIED' == 'INVALID'&#10;  &#10;  - INVALID&#10;  + VERIFIED">tmp_path = PosixPath('/tmp/bigsmall-t12-p4-r93-red/test_reader_rejects_instance_s2')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7aa2346ebe90&gt;
+tamper = 'source_ids_changed'
+
+    @pytest.mark.parametrize("tamper", ["availability_false", "count_bool", "source_ids_changed"])
+    def test_reader_rejects_instance_source_metadata_mismatch_cpu(tmp_path, monkeypatch, tamper):
+        app = application(tmp_path)
+        cpu_components(monkeypatch, app)
+        receipt = app.execute_once()
+        assert receipt["source_prefix_complete"] is True
+        root = app.output / "prefix-originals"
+        if tamper == "source_ids_changed":
+            slab = json.loads((root / "operational-originals.json").read_bytes())
+            capture = next(row for row in slab["events"] if row["kind"] == "CAPTURE")
+            capture["end"]["result"]["instance_ids"] = []
+            _r93_repin_json(root, receipt, "operational-originals.json", slab)
+        else:
+            name = "frames/acquisition-1/source-frame.json"
+            metadata = json.loads((root / name).read_bytes())
+            metadata["instances_available" if tamper == "availability_false" else "instance_id_count"] = (
+                False if tamper == "availability_false" else True
+            )
+            _r93_repin_json(root, receipt, name, metadata)
+            digest = receipt["original_files"][name]["sha256"]
+            frozen = json.loads((root / "frozen-originals.json").read_bytes())
+            persisted = json.loads((root / "persisted-frames.json").read_bytes())
+            frozen["frames"][0]["file_hashes"][name] = digest
+            persisted[0]["file_hashes"][name] = digest
+            _r93_repin_json(root, receipt, "frozen-originals.json", frozen)
+            _r93_repin_json(root, receipt, "unbound-frames.json", frozen["frames"])
+            _r93_repin_json(root, receipt, "persisted-frames.json", persisted)
+        view = module.verify_operational_prefix_originals_v1(root, receipt)
+&gt;       assert view["original_integrity"] == "INVALID"
+E       AssertionError: assert 'VERIFIED' == 'INVALID'
+E         
+E         - INVALID
+E         + VERIFIED
+
+tests/test_operational_capture_v1.py:752: AssertionError</failure></testcase></testsuite></testsuites>
