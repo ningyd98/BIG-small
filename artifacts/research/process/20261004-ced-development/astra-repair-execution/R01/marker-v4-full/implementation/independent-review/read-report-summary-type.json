@@ -1,0 +1,8 @@
+{
+  "id": "read-report-summary-type",
+  "exit_code": 1,
+  "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 9, in <module>\nAttributeError: 'str' object has no attribute 'get'\n",
+  "phase": "read_only_metadata",
+  "product_code_entered": false,
+  "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:. .venv/bin/python - <<'PY'\nfrom pathlib import Path\nimport json,hashlib\nA=Path('artifacts/research/process/20261004-ced-development');F=A/'astra-repair-execution/R01/marker-v4-full'\nfor p in [A/'astra-rounds/round57-marker-full/plan.json',A/'astra-rounds/round58-marker-preflight/plan.json',F/'implementation/round58-preflight/report.json',F/'implementation/root-fresh-process-closure/execution.json']:\n d=json.loads(p.read_text());print('FILE',str(p),'SHA',hashlib.sha256(p.read_bytes()).hexdigest());print('TOP_KEYS',sorted(d))\n for k,v in d.items():\n  if k in ('input_pins','tasks','commands','checks','validations','original_input_pins_preserved','authorized_changed_input_pins','source_after','owned_source_hashes','status','decision','actual_runs','model_constructions','real_detector_calls','real_protocol_freezes','exit_code','stdout_sha256','stderr_sha256'):\n   if k=='input_pins':print(k,{'count':len(v),'paths':list(v)})\n   elif k in ('commands','checks','validations','tasks'):print(k, [{'name':x,'exit_code':y.get('exit_code'),'test_count':y.get('test_count'),'selected_tests':y.get('selected_tests'),'log_sha256':y.get('log_sha256')} for x,y in v.items()] if isinstance(v,dict) else v)\n   else: print(k,v)\nPY"
+}

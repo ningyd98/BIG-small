@@ -1,0 +1,3 @@
+# Round67 preflight tool failure
+
+PAUSED_NEW_PREFLIGHT_TOOL_FAILURE_ASTRA_REQUIRED. Original preflight exit1: observed_missing_files consists of dict rows; the execution script erroneously used Path(row), triggering TypeError before missing-file observations and before creating round67/preflight.json. Pin comparison completed with 151 inputs and bad=[]. No source/test edits, product run, static check, regression, actual, network or Git occurred. ROOT notified; no corrected loop or repeated preflight executed. This directory was created solely to preserve the failure evidence. Next Astra plan is not yet generated.

@@ -1,0 +1,88 @@
+"""Read frozen source metadata and import origins only; never execute runtime."""
+import hashlib
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+
+root = Path.cwd().resolve()
+full = root / "artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full"
+protocol = full / "full-protocol"
+entry_name, expected_header_sha = sys.argv[1:]
+assert entry_name in {"run_full_once.py", "verify_full.py"}
+assert not (protocol / "attempt-1").exists()
+assert not (full / "offline").exists()
+
+def sha(path):
+    h = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+assert sha(protocol / "header.json") == expected_header_sha
+sources = json.loads((protocol / "execution-source-hashes.json").read_text())
+archives = json.loads((protocol / "execution-archive-index.json").read_text())
+header = json.loads((protocol / "header.json").read_text())
+assert set(sources) == set(archives) and len(sources) == 48
+expected_plan = root / "artifacts/research/process/20261004-ced-development/astra-rounds/round60-marker-freeze-count/plan.json"
+assert sha(expected_plan) == "941b322b69dd5c4006e858601165b5c1aa1818d921bf467c07b8a7ca4f3bcb17"
+assert sources == json.loads(expected_plan.read_text())["expected_sources"]
+protected = {root / name for name in sources}
+protected.update(root / row["archive"] for row in archives.values())
+protected.update(protocol / name for name in ("header.json", "execution-source-hashes.json", "execution-archive-index.json", "input-inventory.json"))
+protected.update(Path(row["path"]) for row in header["environment"]["files"].values())
+before = {str(path.resolve()): sha(path) for path in protected}
+violations, calls = [], []
+
+def audit(event, args):
+    if event == "open":
+        raw, mode, flags = args
+        if isinstance(raw, (str, bytes, os.PathLike)):
+            path = Path(os.fsdecode(raw)).resolve()
+            writing = (isinstance(mode, str) and any(mark in mode for mark in "wax+")) or (isinstance(flags, int) and bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC)))
+            if writing:
+                violations.append({"event": event, "path": str(path), "kind": "write"})
+                raise RuntimeError("source-only closure cannot write")
+            if path.suffix == ".gz":
+                violations.append({"event": event, "path": str(path), "kind": "compressed_raw_read"})
+                raise RuntimeError("source-only closure cannot read compressed raw")
+
+def profile(frame, event, arg):
+    if event != "call":
+        return
+    module = frame.f_globals.get("__name__", "")
+    name = frame.f_code.co_name
+    owner = type(frame.f_locals.get("self")).__name__
+    if ((module.startswith("cloud_edge_robot_arm") and name in {"initialize", "render", "detect_pose_marker", "__enter__"} and (name != "__enter__" or owner == "MuJoCoCaptureSession")) or (name == "__init__" and owner in {"MuJoCoPhysicsBackend", "MuJoCoSkillRobot", "MuJoCoRGBDCamera", "MuJoCoCaptureSession"}) or (name == "runtime_preflight" and "continuous" in str(frame.f_code.co_filename)) or name in {"execute_once", "verify_and_decode", "freeze_full"}):
+        calls.append({"module": module, "name": name, "owner": owner})
+        raise RuntimeError("runtime, model, camera, decoder, execution or freeze entered")
+
+sys.addaudithook(audit)
+sys.setprofile(profile)
+entry = full / entry_name
+spec = importlib.util.spec_from_file_location("independent_full_entry", entry)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert Path(module.__file__).resolve() == Path(module.__spec__.origin).resolve() == entry
+assert Path(module.P.__file__).resolve() == Path(module.P.__spec__.origin).resolve() == full / "prepare_full.py"
+contract = module.P.source_preflight(None, header, protocol)
+origins = {}
+for name, expected in sources.items():
+    assert sha(root / name) == sha(root / archives[name]["archive"]) == expected
+    if name.startswith("src/"):
+        key = name[4:-3].replace("/", ".")
+        if key.endswith(".__init__"):
+            key = key[:-9]
+        public = sys.modules[key]
+        file = Path(public.__file__).resolve()
+        origin = Path(public.__spec__.origin).resolve()
+        assert file == origin == (root / name).resolve()
+        origins[key] = {"file": str(file), "origin": str(origin), "sha256": expected}
+after = {str(path.resolve()): sha(path) for path in protected}
+assert before == after and not calls and not violations
+assert len(origins) == 34
+assert not (protocol / "attempt-1").exists() and not (full / "offline").exists()
+sys.setprofile(None)
+print(json.dumps({"status": "PASS_FROZEN_ENTRY_SOURCE_ONLY_CLOSURE", "entry": entry_name, "entry_origin": str(entry), "header_sha256": expected_header_sha, "source_count": len(sources), "public_origin_count": len(origins), "origins": origins, "guard_contract_digest": contract.digest, "protected_before": before, "protected_after": after, "actual_attempts": 0, "production_freezes": 0, "runtime_model_camera_decoder_calls": calls, "compressed_raw_reads": 0, "writes": violations}, indent=2, sort_keys=True))

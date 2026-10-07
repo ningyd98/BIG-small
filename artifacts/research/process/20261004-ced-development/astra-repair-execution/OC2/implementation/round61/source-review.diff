@@ -1,0 +1,910 @@
+--- before/src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py
++++ after/src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py
+@@ -79,19 +79,40 @@
+         raise ValueError("complete source inventory required")
+     for path, pin in value.items():
+         _text(path)
+-        if path.startswith("/") or "\\" in path or any(p in {"", ".", ".."} for p in path.split("/")):
++        if (
++            path.startswith("/")
++            or "\\" in path
++            or any(p in {"", ".", ".."} for p in path.split("/"))
++        ):
+             raise ValueError("repository relative original source path required")
+         row = _shape(pin, {"sha256", "bytes"})
+         digest = row["sha256"]
+-        if type(digest) is not str or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
++        if (
++            type(digest) is not str
++            or len(digest) != 64
++            or any(c not in "0123456789abcdef" for c in digest)
++        ):
+             raise ValueError("lowercase original SHA256 required")
+         _integer(row["bytes"], minimum=1)
+ 
+ 
+ def validate_preregistration_v1(value: Any) -> dict[str, Any]:
+-    data = _shape(value, {"schema_version", "application_id", "source_session_id", "policy",
+-                          "config_sha256", "source_inventory", "recipe", "worker_source",
+-                          "clock_domain", "group_inventory", "limits"})
++    data = _shape(
++        value,
++        {
++            "schema_version",
++            "application_id",
++            "source_session_id",
++            "policy",
++            "config_sha256",
++            "source_inventory",
++            "recipe",
++            "worker_source",
++            "clock_domain",
++            "group_inventory",
++            "limits",
++        },
++    )
+     if data["schema_version"] != "simulation.operational-prefix.preregistration.v1":
+         raise ValueError("operational preregistration schema required")
+     _text(data["application_id"])
+@@ -99,10 +120,26 @@
+     validate_policy_v1(data["policy"])
+     validate_inventory_v1(data["source_inventory"])
+     config_sha = data["config_sha256"]
+-    if type(config_sha) is not str or len(config_sha) != 64 or any(c not in "0123456789abcdef" for c in config_sha):
++    if (
++        type(config_sha) is not str
++        or len(config_sha) != 64
++        or any(c not in "0123456789abcdef" for c in config_sha)
++    ):
+         raise ValueError("original policy SHA256 required")
+-    recipe = _shape(data["recipe"], {"recipe_id", "reset_count", "settle_steps", "explicit_capture_count",
+-                                     "scenario", "seed", "scene", "camera", "simulator_config"})
++    recipe = _shape(
++        data["recipe"],
++        {
++            "recipe_id",
++            "reset_count",
++            "settle_steps",
++            "explicit_capture_count",
++            "scenario",
++            "seed",
++            "scene",
++            "camera",
++            "simulator_config",
++        },
++    )
+     for name in ("recipe_id", "settle_steps", "explicit_capture_count", "scenario", "seed"):
+         if type(recipe[name]) is not type(POLICY_V1[name]) or recipe[name] != POLICY_V1[name]:
+             raise ValueError("original recipe differs from policy")
+@@ -117,17 +154,43 @@
+         raise ValueError("fixed original RGB-D camera policy required")
+     if type(recipe["simulator_config"]) is not dict:
+         raise ValueError("complete simulator policy required")
+-    worker = _shape(data["worker_source"], {"job_id", "run_id", "attempt", "lease_id", "worker_id",
+-                                            "lease", "task_origin", "lease_clock_migration"})
++    worker = _shape(
++        data["worker_source"],
++        {
++            "job_id",
++            "run_id",
++            "attempt",
++            "lease_id",
++            "worker_id",
++            "lease",
++            "task_origin",
++            "lease_clock_migration",
++        },
++    )
+     for key in ("job_id", "run_id", "lease_id", "worker_id"):
+         _text(worker[key])
+     if type(worker["attempt"]) is not int or worker["attempt"] != 1:
+         raise ValueError("sole original attempt required")
+-    lease = _shape(worker["lease"], {"scope", "job_id", "run_id", "worker_id", "lease_id", "attempt",
+-                                    "acquired_at", "observed_at", "expires_at", "job_state_hash",
+-                                    "lease_state_hash", "attempt_state_hash"})
++    lease = _shape(
++        worker["lease"],
++        {
++            "scope",
++            "job_id",
++            "run_id",
++            "worker_id",
++            "lease_id",
++            "attempt",
++            "acquired_at",
++            "observed_at",
++            "expires_at",
++            "job_state_hash",
++            "lease_state_hash",
++            "attempt_state_hash",
++        },
++    )
+     if lease["scope"] != "WORKER_LEASE_SOURCE_ONLY" or any(
+-        lease[key] != worker[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")
++        lease[key] != worker[key]
++        for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")
+     ):
+         raise ValueError("original job/lease/attempt join required")
+     if worker["lease_clock_migration"] != "NOT_DONE_OC3":
+@@ -135,12 +198,21 @@
+     domain = data["clock_domain"]
+     if type(domain) is not dict or domain.get("schema") != "simulation.operational-time.v1":
+         raise ValueError("original OC1 domain description required")
+-    if any(domain.get(key) != "UNAVAILABLE" for key in ("worker_authority", "lease_authority", "native_authority")):
++    if any(
++        domain.get(key) != "UNAVAILABLE"
++        for key in ("worker_authority", "lease_authority", "native_authority")
++    ):
+         raise ValueError("OC1 descriptor cannot authorize a worker/lease/native source")
+-    groups = _shape(data["group_inventory"], {"source_session_ids", "source_session_count",
+-                                            "independence", "support_group_count"})
+-    if groups != {"source_session_ids": [data["source_session_id"]], "source_session_count": 1,
+-                  "independence": "UNESTABLISHED", "support_group_count": 0}:
++    groups = _shape(
++        data["group_inventory"],
++        {"source_session_ids", "source_session_count", "independence", "support_group_count"},
++    )
++    if groups != {
++        "source_session_ids": [data["source_session_id"]],
++        "source_session_count": 1,
++        "independence": "UNESTABLISHED",
++        "support_group_count": 0,
++    }:
+         raise ValueError("one source session is not an independent support/calibration group")
+     if data["limits"] != LIMITS_V1:
+         raise ValueError("original source-only acceptance boundaries required")
+--- before/src/cloud_edge_robot_arm/research/operational_prefix_v1.py
++++ after/src/cloud_edge_robot_arm/research/operational_prefix_v1.py
+@@ -28,33 +28,37 @@
+ 
+ if TYPE_CHECKING:
+     from cloud_edge_robot_arm.research.operational_time_v1 import OperationalClockOwner
+-    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
++    from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
++        SQLiteSimulationJobRepository,
++    )
+     from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+ 
+ _ROOT = Path(__file__).resolve().parents[3]
+ _TOKEN = object()
+-_SOURCE_ROOTS = frozenset({
+-    "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+-    "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+-    "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+-    "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+-    "src/cloud_edge_robot_arm/research/native_reset_capture_v2.py",
+-    "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py",
+-    "src/cloud_edge_robot_arm/vision/worker_owner.py",
+-    "src/cloud_edge_robot_arm/vision/capture.py",
+-    "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+-    "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+-    "src/cloud_edge_robot_arm/simulation_runtime/models.py",
+-    "src/cloud_edge_robot_arm/simulation_runtime/state_machine.py",
+-    "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
+-    "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
+-    "src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py",
+-    "src/cloud_edge_robot_arm/edge/runtime/skill_executor.py",
+-    "src/cloud_edge_robot_arm/simulation/config.py",
+-    "src/cloud_edge_robot_arm/simulation/models.py",
+-    "scripts/run_operational_prefix_v1.py",
+-    "assets/robots/franka_panda/scene.xml",
+-})
++_SOURCE_ROOTS = frozenset(
++    {
++        "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
++        "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
++        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
++        "src/cloud_edge_robot_arm/research/operational_time_v1.py",
++        "src/cloud_edge_robot_arm/research/native_reset_capture_v2.py",
++        "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py",
++        "src/cloud_edge_robot_arm/vision/worker_owner.py",
++        "src/cloud_edge_robot_arm/vision/capture.py",
++        "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
++        "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
++        "src/cloud_edge_robot_arm/simulation_runtime/models.py",
++        "src/cloud_edge_robot_arm/simulation_runtime/state_machine.py",
++        "src/cloud_edge_robot_arm/simulation/mujoco/backend.py",
++        "src/cloud_edge_robot_arm/simulation/mujoco/camera.py",
++        "src/cloud_edge_robot_arm/simulation/mujoco/skill_robot.py",
++        "src/cloud_edge_robot_arm/edge/runtime/skill_executor.py",
++        "src/cloud_edge_robot_arm/simulation/config.py",
++        "src/cloud_edge_robot_arm/simulation/models.py",
++        "scripts/run_operational_prefix_v1.py",
++        "assets/robots/franka_panda/scene.xml",
++    }
++)
+ 
+ 
+ def _regular(path: Path) -> Path:
+@@ -95,7 +99,11 @@
+         if path.suffix != ".py":
+             continue
+         module = name.removeprefix("src/").removesuffix(".py").replace("/", ".")
+-        package = module.removesuffix(".__init__") if module.endswith(".__init__") else module.rsplit(".", 1)[0]
++        package = (
++            module.removesuffix(".__init__")
++            if module.endswith(".__init__")
++            else module.rsplit(".", 1)[0]
++        )
+         for node in ast.walk(ast.parse(path.read_bytes(), filename=name)):
+             if isinstance(node, ast.Import):
+                 for alias in node.names:
+@@ -104,7 +112,7 @@
+                 base = node.module or ""
+                 if node.level:
+                     pieces = package.split(".")
+-                    prefix = ".".join(pieces[:len(pieces) - node.level + 1])
++                    prefix = ".".join(pieces[: len(pieces) - node.level + 1])
+                     base = ".".join(p for p in (prefix, base) if p)
+                 pending.update(_module_paths(base))
+                 for alias in node.names:
+@@ -166,19 +174,38 @@
+     if type(application) is not OperationalPrefixApplicationV1 or application not in _REGISTRY:
+         raise RuntimeError("exact startup-owned private application required")
+     record = _REGISTRY[application]
+-    if (os.getpid() != record.pid or application.repository is not record.repository
+-        or application.worker is not record.worker or record.worker.repository is not record.repository
+-        or application.output != record.output or application.config_path != record.config_path):
++    if (
++        os.getpid() != record.pid
++        or application.repository is not record.repository
++        or application.worker is not record.worker
++        or record.worker.repository is not record.repository
++        or application.output != record.output
++        or application.config_path != record.config_path
++    ):
+         raise ValueError("actual private application/repository/worker identity changed")
+     return record
+ 
+ 
+ def _assignment_basis(job: Any) -> dict[str, Any]:
+-    return {name: getattr(job, name) for name in (
+-        "job_id", "run_id", "backend", "scenario_id", "control_mode", "seed", "draft",
+-        "timeout_seconds", "max_attempts", "manifest_id", "reproducibility_hash", "artifact_root",
+-        "source_commit", "source_tree_hash",
+-    )}
++    return {
++        name: getattr(job, name)
++        for name in (
++            "job_id",
++            "run_id",
++            "backend",
++            "scenario_id",
++            "control_mode",
++            "seed",
++            "draft",
++            "timeout_seconds",
++            "max_attempts",
++            "manifest_id",
++            "reproducibility_hash",
++            "artifact_root",
++            "source_commit",
++            "source_tree_hash",
++        )
++    }
+ 
+ 
+ def _check_inputs(application: OperationalPrefixApplicationV1) -> dict[str, Any]:
+@@ -222,17 +249,31 @@
+         destination.mkdir(parents=True, exist_ok=False)
+         if any(p.is_symlink() for p in (destination, *destination.parents)):
+             raise ValueError("fresh output acquired a lexical symlink")
+-        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
++        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
++            SQLiteSimulationJobRepository,
++        )
+         from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+ 
+         app = cls(_token=_TOKEN)
+         app.output = destination
+         app.config_path = Path(inputs["config_path"])
+         app.repository = SQLiteSimulationJobRepository(destination / "runtime.db")
+-        app.worker = SimulationWorker(worker_id="operational-prefix-" + uuid4().hex, backend="MUJOCO",
+-                                      repository=app.repository, artifact_root=destination, planner_factory=None)
+-        _REGISTRY[app] = _LiveApplicationV1(app.repository, app.worker, app.output, app.config_path,
+-                                          canonical_bytes_v1(inputs), uuid4().hex, os.getpid())
++        app.worker = SimulationWorker(
++            worker_id="operational-prefix-" + uuid4().hex,
++            backend="MUJOCO",
++            repository=app.repository,
++            artifact_root=destination,
++            planner_factory=None,
++        )
++        _REGISTRY[app] = _LiveApplicationV1(
++            app.repository,
++            app.worker,
++            app.output,
++            app.config_path,
++            canonical_bytes_v1(inputs),
++            uuid4().hex,
++            os.getpid(),
++        )
+         # Shared worker branch is deliberately not installed during Task1.
+         return app
+ 
+@@ -249,25 +290,45 @@
+         record.prepared = True
+         inputs = _check_inputs(self)
+         assignment: dict[str, object] = {
+-            "input_mode": "RGBD", "execution_scope": "VISION_CLOSED_LOOP", "backend": "MUJOCO",
+-            "scenarios": ["S01_NORMAL_STATIC"], "control_modes": ["PCSC"], "seeds": [0],
++            "input_mode": "RGBD",
++            "execution_scope": "VISION_CLOSED_LOOP",
++            "backend": "MUJOCO",
++            "scenarios": ["S01_NORMAL_STATIC"],
++            "control_modes": ["PCSC"],
++            "seeds": [0],
+             "user_instruction": "excluded operational RESET120 capture prefix; no actions",
+         }
+         job = record.repository.create_job(
+-            run_id="operational-prefix-" + uuid4().hex, batch_id="", backend="MUJOCO",
+-            scenario_id="S01_NORMAL_STATIC", control_mode="PCSC", seed=0,
++            run_id="operational-prefix-" + uuid4().hex,
++            batch_id="",
++            backend="MUJOCO",
++            scenario_id="S01_NORMAL_STATIC",
++            control_mode="PCSC",
++            seed=0,
+             manifest_id="simulation.operational-prefix.v1",
+             reproducibility_hash=hashlib.sha256(canonical_bytes_v1(assignment)).hexdigest(),
+-            draft=assignment, timeout_seconds=60, max_attempts=1, artifact_root="worker-attempt",
++            draft=assignment,
++            timeout_seconds=60,
++            max_attempts=1,
++            artifact_root="worker-attempt",
+             source_commit="SOURCE_ONLY_CURRENT_BYTES",
+-            source_tree_hash=hashlib.sha256(canonical_bytes_v1(inputs["source_inventory"])).hexdigest(),
+-            provenance={"scope": "EXCLUDED_SOURCE_ONLY_PREFIX", "config_sha256": inputs["config_sha256"]},
++            source_tree_hash=hashlib.sha256(
++                canonical_bytes_v1(inputs["source_inventory"])
++            ).hexdigest(),
++            provenance={
++                "scope": "EXCLUDED_SOURCE_ONLY_PREFIX",
++                "config_sha256": inputs["config_sha256"],
++            },
+         )
+         record.job_id = job.job_id
+         record.assignment_json = canonical_bytes_v1(_assignment_basis(job))
+         queued = record.repository.update_status_cas(
+-            job.job_id, expected=RuntimeJobStatus.CREATED, next_status=RuntimeJobStatus.QUEUED,
+-            reason_code="operational_prefix_startup", worker_id="", lease_id="",
++            job.job_id,
++            expected=RuntimeJobStatus.CREATED,
++            next_status=RuntimeJobStatus.QUEUED,
++            reason_code="operational_prefix_startup",
++            worker_id="",
++            lease_id="",
+         )
+         if queued is None:
+             raise RuntimeError("sole operational assignment queue transition failed")
+@@ -282,8 +343,11 @@
+ 
+     def check_worker(self, worker: SimulationWorker, job: Any, *, start_monotonic: float) -> None:
+         record = _live(self)
+-        if (worker is not record.worker or job.job_id != record.job_id
+-            or worker.active_job_id != record.job_id):
++        if (
++            worker is not record.worker
++            or job.job_id != record.job_id
++            or worker.active_job_id != record.job_id
++        ):
+             raise ValueError("current exact configured worker/assignment required")
+         origin = worker._active_task_origin
+         if origin is None or origin[:2] != (job.job_id, start_monotonic):
+@@ -309,22 +373,47 @@
+         job = record.repository.get_job(record.job_id)
+         if canonical_bytes_v1(_assignment_basis(job)) != record.assignment_json:
+             raise ValueError("original operational assignment changed")
+-        if (record.worker._active_task_origin != record.origin or record.worker.active_job_id != job.job_id
+-            or job.max_attempts != 1 or job.seed != 0 or job.backend != "MUJOCO"
+-            or job.scenario_id != "S01_NORMAL_STATIC"):
++        if (
++            record.worker._active_task_origin != record.origin
++            or record.worker.active_job_id != job.job_id
++            or job.max_attempts != 1
++            or job.seed != 0
++            or job.backend != "MUJOCO"
++            or job.scenario_id != "S01_NORMAL_STATIC"
++        ):
+             raise ValueError("original live worker task/assignment changed")
+         # Never accept a caller's now; retain the existing real UTC lease guard.
+-        lease = read_visual_worker_lease(record.repository, job_id=job.job_id, run_id=job.run_id,
+-                                         worker_id=record.worker.worker_id, lease_id=job.lease_id)
+-        fencing = (job.job_id, job.run_id, lease.worker_id, lease.lease_id, lease.attempt, lease.acquired_at)
++        lease = read_visual_worker_lease(
++            record.repository,
++            job_id=job.job_id,
++            run_id=job.run_id,
++            worker_id=record.worker.worker_id,
++            lease_id=job.lease_id,
++        )
++        fencing = (
++            job.job_id,
++            job.run_id,
++            lease.worker_id,
++            lease.lease_id,
++            lease.attempt,
++            lease.acquired_at,
++        )
+         if lease.attempt != 1 or record.fencing is not None and record.fencing != fencing:
+             raise ValueError("original sole lease/attempt/fencing changed")
+         record.fencing = fencing
+         origin = record.origin
+-        return {"job_id": job.job_id, "run_id": job.run_id, "attempt": lease.attempt,
+-                "lease_id": lease.lease_id, "worker_id": lease.worker_id, "lease": lease.to_payload(),
+-                "task_origin": [origin[0], origin[1], origin[2].isoformat()],
+-                "lease_clock_migration": "NOT_DONE_OC3"}
++        if origin is None:
++            raise RuntimeError("actual RUNNING assignment/lease/origin not established")
++        return {
++            "job_id": job.job_id,
++            "run_id": job.run_id,
++            "attempt": lease.attempt,
++            "lease_id": lease.lease_id,
++            "worker_id": lease.worker_id,
++            "lease": lease.to_payload(),
++            "task_origin": [origin[0], origin[1], origin[2].isoformat()],
++            "lease_clock_migration": "NOT_DONE_OC3",
++        }
+ 
+     def check_recorder(self, recorder: Any) -> dict[str, Any]:
+         _live(self)
+@@ -360,8 +449,13 @@
+         raise ValueError("persisted original read-back differs")
+ 
+ 
+-def _prepare_source_v1(application: OperationalPrefixApplicationV1, worker: SimulationWorker,
+-                       job: Any, *, start_monotonic: float) -> _ApplicationSourceV1:
++def _prepare_source_v1(
++    application: OperationalPrefixApplicationV1,
++    worker: SimulationWorker,
++    job: Any,
++    *,
++    start_monotonic: float,
++) -> _ApplicationSourceV1:
+     """Private future-runner preregistration, exercised only by Task1 CPU fixture.
+ 
+     It constructs borrowed real interface handles and an OC1 owner, but never
+@@ -385,25 +479,39 @@
+         backend = _new_prefix_backend_v1()
+         capture = MuJoCoCaptureSession(config, backend=backend)
+         executor = SkillExecutor(robot=MuJoCoSkillRobot(backend), registry=SkillRegistry.default())
+-        context = _ApplicationSourceV1(backend, capture, executor, owner,
+-                                       record.output / "prefix-originals", uuid4().hex)
++        context = _ApplicationSourceV1(
++            backend, capture, executor, owner, record.output / "prefix-originals", uuid4().hex
++        )
+         record.source = context
+         record.exact_handles = (backend, capture, executor, owner, threading.get_ident())
+         state = application.check_active()
+         scene = "assets/robots/franka_panda/scene.xml"
+         prereg = {
+             "schema_version": "simulation.operational-prefix.preregistration.v1",
+-            "application_id": record.application_id, "source_session_id": context.source_session_id,
+-            "policy": inputs["config"], "config_sha256": inputs["config_sha256"],
++            "application_id": record.application_id,
++            "source_session_id": context.source_session_id,
++            "policy": inputs["config"],
++            "config_sha256": inputs["config_sha256"],
+             "source_inventory": inputs["source_inventory"],
+-            "recipe": {"recipe_id": "oc2-reset120-capture-v1", "reset_count": 1, "settle_steps": 120,
+-                       "explicit_capture_count": 1, "scenario": "S01_NORMAL_STATIC", "seed": 0,
+-                       "scene": {"path": scene, **inputs["source_inventory"][scene]},
+-                       "camera": {"width": 320, "height": 240, "render_rgb": True, "render_depth": True},
+-                       "simulator_config": config.model_dump(mode="json")},
+-            "worker_source": state, "clock_domain": asdict(owner.domain),
+-            "group_inventory": {"source_session_ids": [context.source_session_id], "source_session_count": 1,
+-                                "independence": "UNESTABLISHED", "support_group_count": 0},
++            "recipe": {
++                "recipe_id": "oc2-reset120-capture-v1",
++                "reset_count": 1,
++                "settle_steps": 120,
++                "explicit_capture_count": 1,
++                "scenario": "S01_NORMAL_STATIC",
++                "seed": 0,
++                "scene": {"path": scene, **inputs["source_inventory"][scene]},
++                "camera": {"width": 320, "height": 240, "render_rgb": True, "render_depth": True},
++                "simulator_config": config.model_dump(mode="json"),
++            },
++            "worker_source": state,
++            "clock_domain": asdict(owner.domain),
++            "group_inventory": {
++                "source_session_ids": [context.source_session_id],
++                "source_session_count": 1,
++                "independence": "UNESTABLISHED",
++                "support_group_count": 0,
++            },
+             "limits": LIMITS_V1,
+         }
+         raw = canonical_bytes_v1(prereg)
+@@ -415,8 +523,12 @@
+         _check_source_v1(application)
+         return context
+     except BaseException as error:
+-        record.failures.append({"phase": "preregistration", "error_type": type(error).__name__, "error": str(error)})
+-        _write_exclusive_v1(record.output / "startup-failures.json", canonical_bytes_v1(record.failures))
++        record.failures.append(
++            {"phase": "preregistration", "error_type": type(error).__name__, "error": str(error)}
++        )
++        _write_exclusive_v1(
++            record.output / "startup-failures.json", canonical_bytes_v1(record.failures)
++        )
+         raise
+ 
+ 
+@@ -427,13 +539,23 @@
+     if source is None or record.exact_handles is None or record.preregistration_bytes is None:
+         raise RuntimeError("persisted private original source preregistration required")
+     backend, capture, executor, owner, thread = record.exact_handles
+-    if (source.backend is not backend or source.capture is not capture or source.executor is not executor
+-        or source.owner is not owner or thread != threading.get_ident()
+-        or capture._backend is not backend or capture._owns_backend
+-        or executor._robot._backend is not backend or owner.domain.owner_thread_id != thread
+-        or source.directory != record.output / "prefix-originals"):
++    if (
++        source.backend is not backend
++        or source.capture is not capture
++        or source.executor is not executor
++        or source.owner is not owner
++        or thread != threading.get_ident()
++        or capture._backend is not backend
++        or capture._owns_backend
++        or executor._robot._backend is not backend
++        or owner.domain.owner_thread_id != thread
++        or source.directory != record.output / "prefix-originals"
++    ):
+         raise ValueError("original source/backend/capture/executor/OC1 handles changed")
+     raw = _regular(source.directory / "preregistration.json").read_bytes()
+-    if raw != record.preregistration_bytes or hashlib.sha256(raw).hexdigest() != source.preregistration_sha256:
++    if (
++        raw != record.preregistration_bytes
++        or hashlib.sha256(raw).hexdigest() != source.preregistration_sha256
++    ):
+         raise ValueError("persisted original preregistration changed")
+     return source
+--- before/scripts/run_operational_prefix_v1.py
++++ after/scripts/run_operational_prefix_v1.py
+@@ -16,26 +16,38 @@
+ 
+ def main(argv: Sequence[str] | None = None) -> int:
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("--config", type=Path, default=Path("configs/research/operational_prefix_v1.json"))
++    parser.add_argument(
++        "--config", type=Path, default=Path("configs/research/operational_prefix_v1.json")
++    )
+     parser.add_argument("--output", type=Path, required=True)
+     parser.add_argument("--execute-once", action="store_true")
+     args = parser.parse_args(argv)
+     scope = "EXCLUDED_SOURCE_ONLY_PREFIX" if args.execute_once else "INPUTS_ONLY"
+     try:
+         if args.execute_once:
+-            application = OperationalPrefixApplicationV1.from_startup(args.config, output=args.output)
++            application = OperationalPrefixApplicationV1.from_startup(
++                args.config, output=args.output
++            )
+             receipt = application.execute_once()
+             result = {"scope": scope, "receipt": receipt}
+             code = 0 if receipt.get("source_prefix_complete") is True else 1
+         else:
+-            result = {"scope": scope, "actual_execution": "NOT_RUN",
+-                      "inputs": validate_operational_prefix_inputs_v1(args.config)}
++            result = {
++                "scope": scope,
++                "actual_execution": "NOT_RUN",
++                "inputs": validate_operational_prefix_inputs_v1(args.config),
++            }
+             code = 0
+         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+         return code
+     except (OSError, ValueError, RuntimeError, TypeError) as error:
+-        print(json.dumps({"scope": scope, "error_type": type(error).__name__, "error": str(error)},
+-                         ensure_ascii=False), file=sys.stderr)
++        print(
++            json.dumps(
++                {"scope": scope, "error_type": type(error).__name__, "error": str(error)},
++                ensure_ascii=False,
++            ),
++            file=sys.stderr,
++        )
+         return 1
+ 
+ 
+--- before/tests/test_operational_prefix_v1.py
++++ after/tests/test_operational_prefix_v1.py
+@@ -35,14 +35,24 @@
+     """Real repository transitions, with a CPU-only worker origin fixture."""
+     job = app.prepare_once()
+     repo = app.repository
+-    lease = repo.acquire_lease(worker_id=app.worker.worker_id, backend="MUJOCO", lease_ttl_seconds=60)
++    lease = repo.acquire_lease(
++        worker_id=app.worker.worker_id, backend="MUJOCO", lease_ttl_seconds=60
++    )
+     assert lease is not None
+     repo.start_attempt(job.job_id, worker_id=lease.worker_id)
+-    for old, new in ((RuntimeJobStatus.LEASED, RuntimeJobStatus.STARTING),
+-                     (RuntimeJobStatus.STARTING, RuntimeJobStatus.RUNNING)):
+-        assert repo.update_status_cas(job.job_id, expected=old, next_status=new,
+-                                     reason_code="OC2_TASK1_CPU", worker_id=lease.worker_id,
+-                                     lease_id=lease.lease_id, expected_lease_id=lease.lease_id)
++    for old, new in (
++        (RuntimeJobStatus.LEASED, RuntimeJobStatus.STARTING),
++        (RuntimeJobStatus.STARTING, RuntimeJobStatus.RUNNING),
++    ):
++        assert repo.update_status_cas(
++            job.job_id,
++            expected=old,
++            next_status=new,
++            reason_code="OC2_TASK1_CPU",
++            worker_id=lease.worker_id,
++            lease_id=lease.lease_id,
++            expected_lease_id=lease.lease_id,
++        )
+     start = time.monotonic()
+     app.worker.active_job_id = job.job_id
+     app.worker._active_task_origin = (job.job_id, start, datetime.now(UTC))
+@@ -78,24 +88,41 @@
+ @pytest.mark.parametrize("operation", [copy.copy, copy.deepcopy, pickle.dumps])
+ def test_live_application_cannot_copy_or_serialize(tmp_path, operation):
+     app = application(tmp_path)
+-    with pytest.raises((RuntimeError, TypeError)):
++    job, lease, start = activate(app)
++    app.check_worker(app.worker, job, start_monotonic=start)
++    healthy = app.check_active()
++    assert healthy["job_id"] == job.job_id and healthy["lease_id"] == lease.lease_id
++    assert healthy["attempt"] == 1
++    reason = {
++        copy.copy: "live operational application cannot be copied",
++        copy.deepcopy: "live operational application cannot be deep-copied",
++        pickle.dumps: "live operational application cannot be serialized",
++    }[operation]
++    with pytest.raises(RuntimeError, match=reason):
+         operation(app)
+     forged = object.__new__(type(app))
+     for name in ("repository", "worker", "output", "config_path"):
+         setattr(forged, name, getattr(app, name))
+-    with pytest.raises(RuntimeError):
++    with pytest.raises(RuntimeError, match="exact startup-owned private application required"):
+         forged.check_active()
+ 
+ 
+-@pytest.mark.parametrize("replacement", ["worker", "repository", "origin", "assignment",
+-                                          "cancel", "released", "duplicate_attempt"])
++@pytest.mark.parametrize(
++    "replacement",
++    ["worker", "repository", "origin", "assignment", "cancel", "released", "duplicate_attempt"],
++)
+ def test_worker_authority_is_not_counter_descriptor(tmp_path, replacement):
+     app = application(tmp_path)
+     job, lease, start = activate(app)
++    app.check_worker(app.worker, job, start_monotonic=start)
++    healthy = app.check_active()
++    assert healthy["job_id"] == job.job_id and healthy["lease_id"] == lease.lease_id
++    assert healthy["worker_id"] == app.worker.worker_id and healthy["attempt"] == 1
+     from cloud_edge_robot_arm.research.operational_time_v1 import open_operational_clock
++
+     owner = open_operational_clock()
+     assert owner.domain.worker_authority == owner.domain.lease_authority == "UNAVAILABLE"
+-    with pytest.raises((TypeError, ValueError)):
++    with pytest.raises(ValueError, match="current exact configured worker/assignment required"):
+         app.check_worker(asdict(owner.domain), job, start_monotonic=start)
+     if replacement == "worker":
+         app.worker = copy.copy(app.worker)
+@@ -105,24 +132,43 @@
+         app.worker._active_task_origin = (job.job_id, start + 1, datetime.now(UTC))
+     elif replacement == "assignment":
+         with app.repository._connect() as conn:
+-            conn.execute("UPDATE simulation_jobs SET max_attempts = 2 WHERE job_id = ?", (job.job_id,))
++            conn.execute(
++                "UPDATE simulation_jobs SET max_attempts = 2 WHERE job_id = ?", (job.job_id,)
++            )
+     elif replacement == "cancel":
+         app.repository.request_cancel(job.job_id)
+     elif replacement == "released":
+         app.repository.release_lease(lease.lease_id)
+     else:
+         app.repository.start_attempt(job.job_id, worker_id=app.worker.worker_id)
+-    with pytest.raises((RuntimeError, ValueError, TypeError)):
++    reasons = {
++        "worker": "actual private application/repository/worker identity changed",
++        "repository": "actual private application/repository/worker identity changed",
++        "origin": "original live worker task/assignment changed",
++        "assignment": "original operational assignment changed",
++        "cancel": "worker job identity/status/lease source invalid",
++        "released": "unique live job lease required",
++        "duplicate_attempt": "unique open job attempt required",
++    }
++    with pytest.raises(ValueError, match=reasons[replacement]):
+         app.check_active()
+-    with pytest.raises(RuntimeError):
+-        app.catalog_entry()
++    if replacement in {"worker", "repository"}:
++        with pytest.raises(ValueError, match=reasons[replacement]):
++            app.catalog_entry()
++    else:
++        # This stub refusal records zero publication, not source rejection.
++        with pytest.raises(
++            RuntimeError, match="no live operational source-only publication in Task1"
++        ):
++            app.catalog_entry()
+ 
+ 
+ def test_not_running_or_missing_attempt_cannot_establish_source(tmp_path):
+     app = application(tmp_path)
+     job = app.prepare_once()
+-    lease = app.repository.acquire_lease(worker_id=app.worker.worker_id, backend="MUJOCO",
+-                                        lease_ttl_seconds=60)
++    lease = app.repository.acquire_lease(
++        worker_id=app.worker.worker_id, backend="MUJOCO", lease_ttl_seconds=60
++    )
+     start = time.monotonic()
+     app.worker.active_job_id = job.job_id
+     app.worker._active_task_origin = (job.job_id, start, datetime.now(UTC))
+@@ -131,13 +177,25 @@
+     assert lease is not None and app.repository.list_attempts(job.run_id) == []
+ 
+ 
+-@pytest.mark.parametrize("extra", ["backend", "clock_owner", "repository", "pid",
+-                                   "preregistered", "group_inventory", "worker_authority"])
++@pytest.mark.parametrize(
++    "extra",
++    [
++        "backend",
++        "clock_owner",
++        "repository",
++        "pid",
++        "preregistered",
++        "group_inventory",
++        "worker_authority",
++    ],
++)
+ def test_startup_factory_rejects_caller_authority_kwargs(tmp_path, extra):
+     with pytest.raises(TypeError):
+         api().OperationalPrefixApplicationV1.from_startup(
+-            ROOT / "configs/research/operational_prefix_v1.json", output=tmp_path / "app",
+-            **{extra: True})
++            ROOT / "configs/research/operational_prefix_v1.json",
++            output=tmp_path / "app",
++            **{extra: True},
++        )
+     assert not (tmp_path / "app").exists()
+ 
+ 
+@@ -151,7 +209,8 @@
+     for output in (existing, linked, linked / "fresh"):
+         with pytest.raises(ValueError):
+             api().OperationalPrefixApplicationV1.from_startup(
+-                ROOT / "configs/research/operational_prefix_v1.json", output=output)
++                ROOT / "configs/research/operational_prefix_v1.json", output=output
++            )
+     assert original.read_bytes() == b"original" and not (existing / "fresh").exists()
+ 
+ 
+@@ -178,7 +237,9 @@
+     assert prereg["group_inventory"]["independence"] == "UNESTABLISHED"
+     assert prereg["clock_domain"]["worker_authority"] == "UNAVAILABLE"
+     assert prereg["limits"]["formal_accepted"] is False
+-    assert module._check_source_v1(app).preregistration_sha256 == hashlib.sha256(original).hexdigest()
++    assert (
++        module._check_source_v1(app).preregistration_sha256 == hashlib.sha256(original).hexdigest()
++    )
+     assert not context.capture._open
+     assert not hasattr(backend, "operation_ledger")
+     with pytest.raises(RuntimeError):
+--- before/tests/test_operational_prefix_cli_v1.py
++++ after/tests/test_operational_prefix_cli_v1.py
+@@ -24,8 +24,10 @@
+ 
+ def test_default_cli_is_inputs_only_without_effects(tmp_path, capsys, monkeypatch):
+     module = cli()
++
+     def forbidden(*args, **kwargs):
+         pytest.fail("default main constructed an application")
++
+     monkeypatch.setattr(module.OperationalPrefixApplicationV1, "from_startup", forbidden)
+     output = tmp_path / "fresh"
+     assert module.main(["--output", str(output)]) == 0
+@@ -34,20 +36,22 @@
+     assert result["inputs"]["config"]["ordinary_max_age_ns"] == 5_000_000_000
+     assert not output.exists()
+     inventory = result["inputs"]["source_inventory"]
+-    for source in ("scripts/run_operational_prefix_v1.py",
+-                   "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+-                   "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+-                   "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+-                   "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+-                   "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+-                   "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+-                   "assets/robots/franka_panda/scene.xml"):
++    for source in (
++        "scripts/run_operational_prefix_v1.py",
++        "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
++        "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
++        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
++        "src/cloud_edge_robot_arm/research/operational_time_v1.py",
++        "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
++        "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
++        "assets/robots/franka_panda/scene.xml",
++    ):
+         assert inventory[source]["bytes"] > 0 and len(inventory[source]["sha256"]) == 64
+ 
+ 
+ def test_real_default_import_has_no_runtime_or_network_effects(tmp_path):
+     assert (ROOT / "scripts/run_operational_prefix_v1.py").is_file(), "Task1 CLI is missing"
+-    program = '''import importlib.abc, importlib.util, sys
++    program = """import importlib.abc, importlib.util, sys
+ from pathlib import Path
+ class DenyRuntime(importlib.abc.MetaPathFinder):
+     def find_spec(self, fullname, path=None, target=None):
+@@ -67,27 +71,45 @@
+ module = importlib.util.module_from_spec(spec)
+ spec.loader.exec_module(module)
+ raise SystemExit(module.main(["--output", sys.argv[2]]))
+-'''
++"""
+     output = tmp_path / "never-created"
+-    completed = subprocess.run([sys.executable, "-c", program,
+-                                str(ROOT / "scripts/run_operational_prefix_v1.py"), str(output)],
+-                               cwd=ROOT, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+-                                              "PYTHONPATH": "src:."}, capture_output=True,
+-                               text=True, timeout=20, check=False)
++    completed = subprocess.run(
++        [
++            sys.executable,
++            "-c",
++            program,
++            str(ROOT / "scripts/run_operational_prefix_v1.py"),
++            str(output),
++        ],
++        cwd=ROOT,
++        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "src:."},
++        capture_output=True,
++        text=True,
++        timeout=20,
++        check=False,
++    )
+     assert completed.returncode == 0, completed.stderr
+     assert json.loads(completed.stdout)["actual_execution"] == "NOT_RUN"
+     assert completed.stderr == "" and not output.exists()
+ 
+ 
+-@pytest.mark.parametrize("change", [("settle_steps", True), ("settle_steps", 120.0),
+-                                    ("settle_steps", 119), ("ordinary_max_age_ns", True),
+-                                    ("ordinary_max_age_ns", 5_000_000_000.0),
+-                                    ("ordinary_max_age_ns", 0), ("max_attempts", 2),
+-                                    ("worker_authority", True), ("preregistered", True),
+-                                    ("endpoint", "local"), ("group_inventory", {})])
+-def test_malformed_or_caller_authority_policy_rejects_without_output(
+-    tmp_path, change, capsys
+-):
++@pytest.mark.parametrize(
++    "change",
++    [
++        ("settle_steps", True),
++        ("settle_steps", 120.0),
++        ("settle_steps", 119),
++        ("ordinary_max_age_ns", True),
++        ("ordinary_max_age_ns", 5_000_000_000.0),
++        ("ordinary_max_age_ns", 0),
++        ("max_attempts", 2),
++        ("worker_authority", True),
++        ("preregistered", True),
++        ("endpoint", "local"),
++        ("group_inventory", {}),
++    ],
++)
++def test_malformed_or_caller_authority_policy_rejects_without_output(tmp_path, change, capsys):
+     module = cli()
+     policy = json.loads((ROOT / "configs/research/operational_prefix_v1.json").read_bytes())
+     policy[change[0]] = change[1]
+@@ -108,9 +130,9 @@
+         config.symlink_to(ROOT / "configs/research/operational_prefix_v1.json")
+     elif kind == "duplicate":
+         source = (ROOT / "configs/research/operational_prefix_v1.json").read_text()
+-        config.write_text(source.replace('{', '{"seed":0,', 1))
++        config.write_text(source.replace("{", '{"seed":0,', 1))
+     elif kind == "malformed":
+-        config.write_text('{')
++        config.write_text("{")
+     output = tmp_path / "fresh"
+     assert module.main(["--config", str(config), "--output", str(output)]) == 1
+     assert json.loads(capsys.readouterr().err)["scope"] == "INPUTS_ONLY"

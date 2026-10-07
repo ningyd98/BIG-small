@@ -1,0 +1,9 @@
+# RW1 P1b independent review
+
+Read AGENTS.md and the current execution plan P1b. Requirements are the original round57-recovery-wall, round66-rw1-event-episode, round68-rw1-fixture-alias and round71-rw1-static-format plans (under artifacts/research/process/20261004-ced-development/astra-rounds). User-authorized gpt-6.1-sol replaced old ROOT actor only; scope and evidence gates remain.
+
+Review the complete current RW1 implementation and tests plus inherited behavior diff in review-package.txt, not just formatting. Inspect the implementation report and frozen evidence at astra-repair-execution/R07/producer/recovery-wall/implementation/task1/round68/round71-static: step-report.md/json, source-before/after, ast-equivalence.json, source-freeze.json, input-check records, original82/mypy evidence pointers, pending_regression logs/JUnit and Ruff receipts. Verify two whole ASTs/comments/parameters, original82 provenance and new19 unique cases, exact source matches, original budgets/deadlines/event-owner lifecycle and evidence source separation. Prioritize correctness at the existing real action integration boundary, without expanding into RW2/3 work.
+
+Do not edit product or existing evidence, run pytest/static/actual/network or redo the author's tests. Different author read-only code/evidence audit only; stdlib hashing/AST/JUnit inspection is allowed. No subagents. No self-granted actual permission. New finding is reported to ROOT for Astra before any fix. Do not infer G4/T12/native/real runtime acceptance.
+
+Write final-review.md and final-review.json here. Return separate spec compliance and code-quality verdicts, exact findings with file/line, observed source/evidence hashes, and limitations. Distinguish scoped RW1 SOFTWARE acceptance from actual/teacher integration still not run. If not verifiable state concrete missing evidence; do not silently approve.

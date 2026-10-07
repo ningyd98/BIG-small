@@ -1,0 +1,114 @@
+....FF..................................                                 [100%]
+=================================== FAILURES ===================================
+___________ test_worker_authority_is_not_counter_descriptor[worker] ____________
+
+tmp_path = PosixPath('/tmp/bigsmall-oc2-task1-green-1/test_worker_authority_is_not_c0')
+replacement = 'worker'
+
+    @pytest.mark.parametrize("replacement", ["worker", "repository", "origin", "assignment",
+                                              "cancel", "released", "duplicate_attempt"])
+    def test_worker_authority_is_not_counter_descriptor(tmp_path, replacement):
+        app = application(tmp_path)
+        job, lease, start = activate(app)
+        from cloud_edge_robot_arm.research.operational_time_v1 import open_operational_clock
+        owner = open_operational_clock()
+        assert owner.domain.worker_authority == owner.domain.lease_authority == "UNAVAILABLE"
+        with pytest.raises((TypeError, ValueError)):
+            app.check_worker(asdict(owner.domain), job, start_monotonic=start)
+        if replacement == "worker":
+            app.worker = copy.copy(app.worker)
+        elif replacement == "repository":
+            app.repository = SQLiteSimulationJobRepository(app.repository.database_path)
+        elif replacement == "origin":
+            app.worker._active_task_origin = (job.job_id, start + 1, datetime.now(UTC))
+        elif replacement == "assignment":
+            with app.repository._connect() as conn:
+                conn.execute("UPDATE simulation_jobs SET max_attempts = 2 WHERE job_id = ?", (job.job_id,))
+        elif replacement == "cancel":
+            app.repository.request_cancel(job.job_id)
+        elif replacement == "released":
+            app.repository.release_lease(lease.lease_id)
+        else:
+            app.repository.start_attempt(job.job_id, worker_id=app.worker.worker_id)
+        with pytest.raises((RuntimeError, ValueError, TypeError)):
+            app.check_active()
+        with pytest.raises(RuntimeError):
+>           app.catalog_entry()
+
+tests/test_operational_prefix_v1.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/operational_prefix_v1.py:334: in catalog_entry
+    _live(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+application = <cloud_edge_robot_arm.research.operational_prefix_v1.OperationalPrefixApplicationV1 object at 0x79dbe05e6040>
+
+    def _live(application: Any) -> _LiveApplicationV1:
+        if type(application) is not OperationalPrefixApplicationV1 or application not in _REGISTRY:
+            raise RuntimeError("exact startup-owned private application required")
+        record = _REGISTRY[application]
+        if (os.getpid() != record.pid or application.repository is not record.repository
+            or application.worker is not record.worker or record.worker.repository is not record.repository
+            or application.output != record.output or application.config_path != record.config_path):
+>           raise ValueError("actual private application/repository/worker identity changed")
+E           ValueError: actual private application/repository/worker identity changed
+
+src/cloud_edge_robot_arm/research/operational_prefix_v1.py:172: ValueError
+_________ test_worker_authority_is_not_counter_descriptor[repository] __________
+
+tmp_path = PosixPath('/tmp/bigsmall-oc2-task1-green-1/test_worker_authority_is_not_c1')
+replacement = 'repository'
+
+    @pytest.mark.parametrize("replacement", ["worker", "repository", "origin", "assignment",
+                                              "cancel", "released", "duplicate_attempt"])
+    def test_worker_authority_is_not_counter_descriptor(tmp_path, replacement):
+        app = application(tmp_path)
+        job, lease, start = activate(app)
+        from cloud_edge_robot_arm.research.operational_time_v1 import open_operational_clock
+        owner = open_operational_clock()
+        assert owner.domain.worker_authority == owner.domain.lease_authority == "UNAVAILABLE"
+        with pytest.raises((TypeError, ValueError)):
+            app.check_worker(asdict(owner.domain), job, start_monotonic=start)
+        if replacement == "worker":
+            app.worker = copy.copy(app.worker)
+        elif replacement == "repository":
+            app.repository = SQLiteSimulationJobRepository(app.repository.database_path)
+        elif replacement == "origin":
+            app.worker._active_task_origin = (job.job_id, start + 1, datetime.now(UTC))
+        elif replacement == "assignment":
+            with app.repository._connect() as conn:
+                conn.execute("UPDATE simulation_jobs SET max_attempts = 2 WHERE job_id = ?", (job.job_id,))
+        elif replacement == "cancel":
+            app.repository.request_cancel(job.job_id)
+        elif replacement == "released":
+            app.repository.release_lease(lease.lease_id)
+        else:
+            app.repository.start_attempt(job.job_id, worker_id=app.worker.worker_id)
+        with pytest.raises((RuntimeError, ValueError, TypeError)):
+            app.check_active()
+        with pytest.raises(RuntimeError):
+>           app.catalog_entry()
+
+tests/test_operational_prefix_v1.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/cloud_edge_robot_arm/research/operational_prefix_v1.py:334: in catalog_entry
+    _live(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+application = <cloud_edge_robot_arm.research.operational_prefix_v1.OperationalPrefixApplicationV1 object at 0x79dc081d9300>
+
+    def _live(application: Any) -> _LiveApplicationV1:
+        if type(application) is not OperationalPrefixApplicationV1 or application not in _REGISTRY:
+            raise RuntimeError("exact startup-owned private application required")
+        record = _REGISTRY[application]
+        if (os.getpid() != record.pid or application.repository is not record.repository
+            or application.worker is not record.worker or record.worker.repository is not record.repository
+            or application.output != record.output or application.config_path != record.config_path):
+>           raise ValueError("actual private application/repository/worker identity changed")
+E           ValueError: actual private application/repository/worker identity changed
+
+src/cloud_edge_robot_arm/research/operational_prefix_v1.py:172: ValueError
+=========================== short test summary info ============================
+FAILED tests/test_operational_prefix_v1.py::test_worker_authority_is_not_counter_descriptor[worker]
+FAILED tests/test_operational_prefix_v1.py::test_worker_authority_is_not_counter_descriptor[repository]
+2 failed, 38 passed in 42.38s

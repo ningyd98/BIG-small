@@ -1,0 +1,344 @@
+E501 Line too long (107 > 100)
+  --> scripts/run_operational_prefix_v1.py:19:101
+   |
+17 | def main(argv: Sequence[str] | None = None) -> int:
+18 |     parser = argparse.ArgumentParser(description=__doc__)
+19 |     parser.add_argument("--config", type=Path, default=Path("configs/research/operational_prefix_v1.json"))
+   |                                                                                                     ^^^^^^^
+20 |     parser.add_argument("--output", type=Path, required=True)
+21 |     parser.add_argument("--execute-once", action="store_true")
+   |
+
+E501 Line too long (102 > 100)
+  --> scripts/run_operational_prefix_v1.py:26:101
+   |
+24 |     try:
+25 |         if args.execute_once:
+26 |             application = OperationalPrefixApplicationV1.from_startup(args.config, output=args.output)
+   |                                                                                                     ^^
+27 |             receipt = application.execute_once()
+28 |             result = {"scope": scope, "receipt": receipt}
+   |
+
+E501 Line too long (102 > 100)
+  --> src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py:82:101
+   |
+80 |     for path, pin in value.items():
+81 |         _text(path)
+82 |         if path.startswith("/") or "\\" in path or any(p in {"", ".", ".."} for p in path.split("/")):
+   |                                                                                                     ^^
+83 |             raise ValueError("repository relative original source path required")
+84 |         row = _shape(pin, {"sha256", "bytes"})
+   |
+
+E501 Line too long (108 > 100)
+  --> src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py:86:101
+   |
+84 |         row = _shape(pin, {"sha256", "bytes"})
+85 |         digest = row["sha256"]
+86 |         if type(digest) is not str or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+   |                                                                                                     ^^^^^^^^
+87 |             raise ValueError("lowercase original SHA256 required")
+88 |         _integer(row["bytes"], minimum=1)
+   |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py:102:101
+    |
+100 |     validate_inventory_v1(data["source_inventory"])
+101 |     config_sha = data["config_sha256"]
+102 |     if type(config_sha) is not str or len(config_sha) != 64 or any(c not in "0123456789abcdef" for c in config_sha):
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+103 |         raise ValueError("original policy SHA256 required")
+104 |     recipe = _shape(data["recipe"], {"recipe_id", "reset_count", "settle_steps", "explicit_capture_count",
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py:104:101
+    |
+102 |     if type(config_sha) is not str or len(config_sha) != 64 or any(c not in "0123456789abcdef" for c in config_sha):
+103 |         raise ValueError("original policy SHA256 required")
+104 |     recipe = _shape(data["recipe"], {"recipe_id", "reset_count", "settle_steps", "explicit_capture_count",
+    |                                                                                                     ^^^^^^
+105 |                                      "scenario", "seed", "scene", "camera", "simulator_config"})
+106 |     for name in ("recipe_id", "settle_steps", "explicit_capture_count", "scenario", "seed"):
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py:126:101
+    |
+124 |     if type(worker["attempt"]) is not int or worker["attempt"] != 1:
+125 |         raise ValueError("sole original attempt required")
+126 |     lease = _shape(worker["lease"], {"scope", "job_id", "run_id", "worker_id", "lease_id", "attempt",
+    |                                                                                                     ^
+127 |                                     "acquired_at", "observed_at", "expires_at", "job_state_hash",
+128 |                                     "lease_state_hash", "attempt_state_hash"})
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py:130:101
+    |
+128 |                                     "lease_state_hash", "attempt_state_hash"})
+129 |     if lease["scope"] != "WORKER_LEASE_SOURCE_ONLY" or any(
+130 |         lease[key] != worker[key] for key in ("job_id", "run_id", "worker_id", "lease_id", "attempt")
+    |                                                                                                     ^
+131 |     ):
+132 |         raise ValueError("original job/lease/attempt join required")
+    |
+
+E501 Line too long (116 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py:138:101
+    |
+136 |     if type(domain) is not dict or domain.get("schema") != "simulation.operational-time.v1":
+137 |         raise ValueError("original OC1 domain description required")
+138 |     if any(domain.get(key) != "UNAVAILABLE" for key in ("worker_authority", "lease_authority", "native_authority")):
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+139 |         raise ValueError("OC1 descriptor cannot authorize a worker/lease/native source")
+140 |     groups = _shape(data["group_inventory"], {"source_session_ids", "source_session_count",
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:30:5
+   |
+29 |   if TYPE_CHECKING:
+30 | /     from cloud_edge_robot_arm.research.operational_time_v1 import OperationalClockOwner
+31 | |     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+32 | |     from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+   | |_______________________________________________________________________________^
+33 |
+34 |   _ROOT = Path(__file__).resolve().parents[3]
+   |
+help: Organize imports
+
+E501 Line too long (103 > 100)
+  --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:31:101
+   |
+29 | if TYPE_CHECKING:
+30 |     from cloud_edge_robot_arm.research.operational_time_v1 import OperationalClockOwner
+31 |     from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+   |                                                                                                     ^^^
+32 |     from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+   |
+
+E501 Line too long (112 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:98:101
+    |
+ 96 |             continue
+ 97 |         module = name.removeprefix("src/").removesuffix(".py").replace("/", ".")
+ 98 |         package = module.removesuffix(".__init__") if module.endswith(".__init__") else module.rsplit(".", 1)[0]
+    |                                                                                                     ^^^^^^^^^^^^
+ 99 |         for node in ast.walk(ast.parse(path.read_bytes(), filename=name)):
+100 |             if isinstance(node, ast.Import):
+    |
+
+E501 Line too long (103 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:170:101
+    |
+168 |     record = _REGISTRY[application]
+169 |     if (os.getpid() != record.pid or application.repository is not record.repository
+170 |         or application.worker is not record.worker or record.worker.repository is not record.repository
+    |                                                                                                     ^^^
+171 |         or application.output != record.output or application.config_path != record.config_path):
+172 |         raise ValueError("actual private application/repository/worker identity changed")
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:225:9
+    |
+223 |           if any(p.is_symlink() for p in (destination, *destination.parents)):
+224 |               raise ValueError("fresh output acquired a lexical symlink")
+225 | /         from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+226 | |         from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    | |___________________________________________________________________________________^
+227 |
+228 |           app = cls(_token=_TOKEN)
+    |
+help: Organize imports
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:225:101
+    |
+223 |         if any(p.is_symlink() for p in (destination, *destination.parents)):
+224 |             raise ValueError("fresh output acquired a lexical symlink")
+225 |         from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+    |                                                                                                     ^^^^^^^
+226 |         from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:232:101
+    |
+230 |         app.config_path = Path(inputs["config_path"])
+231 |         app.repository = SQLiteSimulationJobRepository(destination / "runtime.db")
+232 |         app.worker = SimulationWorker(worker_id="operational-prefix-" + uuid4().hex, backend="MUJOCO",
+    |                                                                                                     ^^
+233 |                                       repository=app.repository, artifact_root=destination, planner_factory=None)
+234 |         _REGISTRY[app] = _LiveApplicationV1(app.repository, app.worker, app.output, app.config_path,
+    |
+
+E501 Line too long (113 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:233:101
+    |
+231 |         app.repository = SQLiteSimulationJobRepository(destination / "runtime.db")
+232 |         app.worker = SimulationWorker(worker_id="operational-prefix-" + uuid4().hex, backend="MUJOCO",
+233 |                                       repository=app.repository, artifact_root=destination, planner_factory=None)
+    |                                                                                                     ^^^^^^^^^^^^^
+234 |         _REGISTRY[app] = _LiveApplicationV1(app.repository, app.worker, app.output, app.config_path,
+235 |                                           canonical_bytes_v1(inputs), uuid4().hex, os.getpid())
+    |
+
+E501 Line too long (106 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:264:101
+    |
+262 |             source_commit="SOURCE_ONLY_CURRENT_BYTES",
+263 |             source_tree_hash=hashlib.sha256(canonical_bytes_v1(inputs["source_inventory"])).hexdigest(),
+264 |             provenance={"scope": "EXCLUDED_SOURCE_ONLY_PREFIX", "config_sha256": inputs["config_sha256"]},
+    |                                                                                                     ^^^^^^
+265 |         )
+266 |         record.job_id = job.job_id
+    |
+
+E501 Line too long (107 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:312:101
+    |
+310 |         if canonical_bytes_v1(_assignment_basis(job)) != record.assignment_json:
+311 |             raise ValueError("original operational assignment changed")
+312 |         if (record.worker._active_task_origin != record.origin or record.worker.active_job_id != job.job_id
+    |                                                                                                     ^^^^^^^
+313 |             or job.max_attempts != 1 or job.seed != 0 or job.backend != "MUJOCO"
+314 |             or job.scenario_id != "S01_NORMAL_STATIC"):
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:319:101
+    |
+317 |         lease = read_visual_worker_lease(record.repository, job_id=job.job_id, run_id=job.run_id,
+318 |                                          worker_id=record.worker.worker_id, lease_id=job.lease_id)
+319 |         fencing = (job.job_id, job.run_id, lease.worker_id, lease.lease_id, lease.attempt, lease.acquired_at)
+    |                                                                                                     ^^^^^^^^^
+320 |         if lease.attempt != 1 or record.fencing is not None and record.fencing != fencing:
+321 |             raise ValueError("original sole lease/attempt/fencing changed")
+    |
+
+E501 Line too long (102 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:325:101
+    |
+323 |         origin = record.origin
+324 |         return {"job_id": job.job_id, "run_id": job.run_id, "attempt": lease.attempt,
+325 |                 "lease_id": lease.lease_id, "worker_id": lease.worker_id, "lease": lease.to_payload(),
+    |                                                                                                     ^^
+326 |                 "task_origin": [origin[0], origin[1], origin[2].isoformat()],
+327 |                 "lease_clock_migration": "NOT_DONE_OC3"}
+    |
+
+E501 Line too long (101 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:399:101
+    |
+397 |             "policy": inputs["config"], "config_sha256": inputs["config_sha256"],
+398 |             "source_inventory": inputs["source_inventory"],
+399 |             "recipe": {"recipe_id": "oc2-reset120-capture-v1", "reset_count": 1, "settle_steps": 120,
+    |                                                                                                     ^
+400 |                        "explicit_capture_count": 1, "scenario": "S01_NORMAL_STATIC", "seed": 0,
+401 |                        "scene": {"path": scene, **inputs["source_inventory"][scene]},
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:402:101
+    |
+400 |                        "explicit_capture_count": 1, "scenario": "S01_NORMAL_STATIC", "seed": 0,
+401 |                        "scene": {"path": scene, **inputs["source_inventory"][scene]},
+402 |                        "camera": {"width": 320, "height": 240, "render_rgb": True, "render_depth": True},
+    |                                                                                                     ^^^^^
+403 |                        "simulator_config": config.model_dump(mode="json")},
+404 |             "worker_source": state, "clock_domain": asdict(owner.domain),
+    |
+
+E501 Line too long (109 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:405:101
+    |
+403 |                        "simulator_config": config.model_dump(mode="json")},
+404 |             "worker_source": state, "clock_domain": asdict(owner.domain),
+405 |             "group_inventory": {"source_session_ids": [context.source_session_id], "source_session_count": 1,
+    |                                                                                                     ^^^^^^^^^
+406 |                                 "independence": "UNESTABLISHED", "support_group_count": 0},
+407 |             "limits": LIMITS_V1,
+    |
+
+E501 Line too long (117 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:418:101
+    |
+416 |         return context
+417 |     except BaseException as error:
+418 |         record.failures.append({"phase": "preregistration", "error_type": type(error).__name__, "error": str(error)})
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+419 |         _write_exclusive_v1(record.output / "startup-failures.json", canonical_bytes_v1(record.failures))
+420 |         raise
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:419:101
+    |
+417 |     except BaseException as error:
+418 |         record.failures.append({"phase": "preregistration", "error_type": type(error).__name__, "error": str(error)})
+419 |         _write_exclusive_v1(record.output / "startup-failures.json", canonical_bytes_v1(record.failures))
+    |                                                                                                     ^^^^^
+420 |         raise
+    |
+
+E501 Line too long (105 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:430:101
+    |
+428 |         raise RuntimeError("persisted private original source preregistration required")
+429 |     backend, capture, executor, owner, thread = record.exact_handles
+430 |     if (source.backend is not backend or source.capture is not capture or source.executor is not executor
+    |                                                                                                     ^^^^^
+431 |         or source.owner is not owner or thread != threading.get_ident()
+432 |         or capture._backend is not backend or capture._owns_backend
+    |
+
+E501 Line too long (111 > 100)
+   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:437:101
+    |
+435 |         raise ValueError("original source/backend/capture/executor/OC1 handles changed")
+436 |     raw = _regular(source.directory / "preregistration.json").read_bytes()
+437 |     if raw != record.preregistration_bytes or hashlib.sha256(raw).hexdigest() != source.preregistration_sha256:
+    |                                                                                                     ^^^^^^^^^^^
+438 |         raise ValueError("persisted original preregistration changed")
+439 |     return source
+    |
+
+E501 Line too long (102 > 100)
+  --> tests/test_operational_prefix_v1.py:38:101
+   |
+36 |     job = app.prepare_once()
+37 |     repo = app.repository
+38 |     lease = repo.acquire_lease(worker_id=app.worker.worker_id, backend="MUJOCO", lease_ttl_seconds=60)
+   |                                                                                                     ^^
+39 |     assert lease is not None
+40 |     repo.start_attempt(job.job_id, worker_id=lease.worker_id)
+   |
+
+E501 Line too long (103 > 100)
+   --> tests/test_operational_prefix_v1.py:108:101
+    |
+106 |     elif replacement == "assignment":
+107 |         with app.repository._connect() as conn:
+108 |             conn.execute("UPDATE simulation_jobs SET max_attempts = 2 WHERE job_id = ?", (job.job_id,))
+    |                                                                                                     ^^^
+109 |     elif replacement == "cancel":
+110 |         app.repository.request_cancel(job.job_id)
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_operational_prefix_v1.py:181:101
+    |
+179 |     assert prereg["clock_domain"]["worker_authority"] == "UNAVAILABLE"
+180 |     assert prereg["limits"]["formal_accepted"] is False
+181 |     assert module._check_source_v1(app).preregistration_sha256 == hashlib.sha256(original).hexdigest()
+    |                                                                                                     ^^
+182 |     assert not context.capture._open
+183 |     assert not hasattr(backend, "operation_ledger")
+    |
+
+Found 31 errors.
+[*] 2 fixable with the `--fix` option.

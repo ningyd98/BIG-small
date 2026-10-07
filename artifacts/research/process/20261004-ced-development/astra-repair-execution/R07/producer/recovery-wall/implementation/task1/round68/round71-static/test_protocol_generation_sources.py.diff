@@ -1,0 +1,22 @@
+--- before/tests/test_protocol_generation_sources.py
++++ after/tests/test_protocol_generation_sources.py
+@@ -774,6 +774,8 @@
+     assert plan["fault"]["parameters"]["direction_y"] == -1.0
+     assert not (output / "allocations").exists()
+     assert len(list((predecessor / "allocations").glob("*.json"))) == 1
++
++
+ @pytest.fixture
+ def recovery_wall_cpu_only(monkeypatch):
+     """Fail if these CPU cases reach a native effect or a real clock probe."""
+@@ -1285,7 +1287,9 @@
+     assert json.dumps(prefix, allow_nan=False).encode() == prefix_snapshot
+     if case == "source_not_dict":
+         assert result["fault_end"] is None
+-        assert result["failure"].startswith("ValueError: owned fault source read/type/payload invalid")
++        assert result["failure"].startswith(
++            "ValueError: owned fault source read/type/payload invalid"
++        )
+     if case in {"healthy", "later_advance"}:
+         end = result["fault_end"]
+         assert end["event_ordinal"] == 1

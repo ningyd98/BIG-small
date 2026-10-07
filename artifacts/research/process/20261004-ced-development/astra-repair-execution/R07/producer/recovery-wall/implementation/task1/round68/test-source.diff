@@ -1,0 +1,54 @@
+--- round66-frozen-test
++++ tests/test_protocol_generation_sources.py
+@@ -876,7 +876,7 @@
+         return value
+ 
+     backend = RecoveryWallCPUBackend()
+-    backend.events = prefix or []
++    backend.events = json.loads(json.dumps(prefix if prefix is not None else [], allow_nan=False))
+     owner = module._open_recovery_wall_owner_for_test(
+         plan,
+         output,
+@@ -1147,6 +1147,7 @@
+     prefix = [{"event": "CPU_PREFIX", "physics_step": 2, "sim_time_s": 0.5}]
+     if case in {"stale_event", "replayed_payload"}:
+         prefix = [RecoveryWallCPUBackend().event()]
++    prefix_snapshot = json.dumps(prefix, allow_nan=False).encode()
+     owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, prefix=prefix)
+     begin_refusals = {
+         "foreign_backend": "backend",
+@@ -1261,20 +1262,30 @@
+             backend.total_physics_steps = 4
+             backend.sim_time_s = 1.005
+     else:
+-        with pytest.raises(
+-            (ValueError, RuntimeError), match="episode|source|prefix|event|step|sim|already|failed"
+-        ):
++        error_type = ValueError if case == "source_not_dict" else (ValueError, RuntimeError)
++        error_message = (
++            "^owned fault source read/type/payload invalid$"
++            if case == "source_not_dict"
++            else "episode|source|prefix|event|step|sim|already|failed"
++        )
++        with pytest.raises(error_type, match=error_message):
+             recovery_wall_end(owner, backend)
+         # Failed END cannot be converted into a later successful END.
+-        backend.events = [dict(row) for row in prefix] + [backend.event()]
++        assert json.dumps(prefix, allow_nan=False).encode() == prefix_snapshot
+         backend._episode_id = "cpu-episode-1"
+         backend.total_physics_steps = 3
+         backend.sim_time_s = 1.0
++        backend.events = json.loads(prefix_snapshot) + [backend.event()]
+         with pytest.raises((ValueError, RuntimeError), match="failed|already"):
+             recovery_wall_end(owner, backend)
+     result = recovery_wall_finish(owner, backend)
+     assert result["wall_pass"] is (case in {"healthy", "later_advance"})
+     assert (output / "wall-start.json").read_bytes() == begin
++    assert result["deadline_ns"] == json.loads(begin)["fault_begin"]["deadline_ns"]
++    assert json.dumps(prefix, allow_nan=False).encode() == prefix_snapshot
++    if case == "source_not_dict":
++        assert result["fault_end"] is None
++        assert result["failure"].startswith("ValueError: owned fault source read/type/payload invalid")
+     if case in {"healthy", "later_advance"}:
+         end = result["fault_end"]
+         assert end["event_ordinal"] == 1

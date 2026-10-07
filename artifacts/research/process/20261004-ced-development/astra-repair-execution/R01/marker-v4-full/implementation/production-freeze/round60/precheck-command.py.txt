@@ -1,0 +1,16 @@
+import hashlib,importlib.util,json,sys
+from pathlib import Path
+root=Path.cwd(); A=root/'artifacts/research/process/20261004-ced-development'; F=A/'astra-repair-execution/R01/marker-v4-full'; plan=json.loads((A/'astra-rounds/round60-marker-freeze-count/plan.json').read_text())
+spec=importlib.util.spec_from_file_location('root_round60_prepare',F/'prepare_full.py'); P=importlib.util.module_from_spec(spec);spec.loader.exec_module(P)
+header=P.make_full_header();P.validate_full_header(header); inputs=P.input_inventory();assert inputs==plan['expected_full_inputs']
+sources,index=P.necessary_sources();assert sources==plan['expected_reusable_sources']
+owned={str((F/n).relative_to(root)):P.hash_file(F/n) for n in P.OWNED};assert owned==plan['expected_owned_sources']
+assert not (sources.keys() & owned.keys());complete={**sources,**owned};assert complete==plan['expected_sources']
+P.check_origins(sources);assert P.same(header['environment'],plan['expected_environment']);resources=P.require_resources(F)
+assert not (F/'full-protocol').exists()
+origins={}
+for n in sources:
+ if n.startswith('src/'):
+  key=n[4:-3].replace('/','.');key=key[:-9] if key.endswith('.__init__') else key
+  mod=sys.modules[key];origin=Path(mod.__spec__.origin).resolve();assert origin==Path(mod.__file__).resolve()==(root/n).resolve();origins[key]=str(origin)
+print(json.dumps({'status':'PRODUCTION_FREEZE_PRECHECK_PASS','reusable_count':len(sources),'owned_count':len(owned),'complete_count':len(complete),'complete_sources':complete,'runtime_origin_count':len(origins),'runtime_origins':origins,'environment':header['environment'],'resource_measurement':resources,'model_constructions':0,'render_calls':0,'decoder_calls':0,'actual_attempts':0,'production_freezes':0},indent=2,sort_keys=True))

@@ -1,0 +1,561 @@
+{
+  "activity": {
+    "Git_operations": 0,
+    "backend_initialization": 0,
+    "camera": 0,
+    "cli_runs": 0,
+    "network": 0,
+    "physics": 0,
+    "probes": 0,
+    "product_imports": 0,
+    "product_inventory_calls": 0,
+    "raw_or_DB_reads": 0,
+    "renderer": 0,
+    "report_files": 2,
+    "source_writes": 0,
+    "tests": 0
+  },
+  "authored_as_astra_plan": false,
+  "current_matches_saved_round61": {
+    "AGENTS.md": true,
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.json": true,
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.md": true,
+    "configs/research/operational_prefix_v1.json": true,
+    "scripts/run_operational_prefix_v1.py": true,
+    "src/cloud_edge_robot_arm/datasets/rgbd/teacher.py": true,
+    "src/cloud_edge_robot_arm/research/native_clock_publication_v2.py": true,
+    "src/cloud_edge_robot_arm/research/native_reset_capture_v2.py": true,
+    "src/cloud_edge_robot_arm/research/operational_capture_v1.py": true,
+    "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": true,
+    "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": true,
+    "src/cloud_edge_robot_arm/research/operational_time_v1.py": true,
+    "src/cloud_edge_robot_arm/simulation/mujoco/backend.py": true,
+    "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py": true,
+    "src/cloud_edge_robot_arm/simulation_runtime/worker.py": true,
+    "src/cloud_edge_robot_arm/vision/capture.py": true,
+    "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py": true,
+    "src/cloud_edge_robot_arm/vision/worker_owner.py": true
+  },
+  "exact_interfaces": [
+    {
+      "contract": "_prepare_source_v1(app, exact worker, original job, start_monotonic=original) issues one source session, owner, backend, borrowed capture and sole executor; creates/read-backs preregistration before any initialize/RESET/step/CAPTURE; _check_source_v1 rechecks source/session prereg and exact handles.",
+      "source": "research/operational_prefix_v1.py:452"
+    },
+    {
+      "contract": "check_active uses real repository job and unique RUNNING attempt/lease/fencing, calls read_visual_worker_lease without caller now. Do not compare changing observed_at/expiry/state hashes to frozen equality: identity/fencing is frozen; fresh lease observations remain live.",
+      "source": "research/operational_prefix_v1.py:366; vision/worker_owner.py:131"
+    },
+    {
+      "contract": "Subclass requires concrete MuJoCoPhysicsBackend/MuJoCoCaptureSession/SkillExecutor-compatible fixtures with same backend; sole recorder.__enter__ registers exactly one observer after backend.initialize. Enter borrowed capture once; it neither initializes nor resets/shuts backend.",
+      "source": "vision/raw_recorder_v3.py:110,187; simulation/mujoco/backend.py:245"
+    },
+    {
+      "contract": "BackendOperationBoundary exact fields operation_id/kind/phase/episode_id/physics_step/sim_time_s/parameters/result/error_type/error. Per-ID map supports nested operations. Ledger rows omit sim_time_s/result; D ledger must preserve full detached event snapshots.",
+      "source": "simulation/mujoco/backend.py:136,306,358"
+    },
+    {
+      "contract": "owner.begin_event(kind)->exact token; mark_event(token)->None, once; end_event(token)->exact OperationalBracket only after MARK; read_current(after=original capture token)->current bracket; age_bounds(event bracket,current bracket)/within_age(... max_age_ns=5000000000). Token/receipt identity and same domain object required; descriptor equality is diagnostic.",
+      "source": "research/operational_time_v1.py:312"
+    },
+    {
+      "contract": "Operational _on_boundary first allocates D attempt then tees super. Preserve legacy _clock_pair tuple (seq,MONOTONIC before,UTC,MONOTONIC after) and separate RESET journal; never relabel these as D. New D tee consumes event snapshot only; legacy super behavior remains unchanged.",
+      "source": "research/native_reset_capture_v2.py:77,85"
+    },
+    {
+      "contract": "RESET BEGIN can have null/old episode; RESET END has new episode. Preserve original S_BEGIN/S_END; RESET cached CAPTURE nests under RESET with a separate operation/token. step(120) produces CONTROL+PHYSICS per step and one actual cached-render CAPTURE afterwards; one explicit recorder.capture adds a fresh actual CAPTURE. Normal recipe has three captures, but runtime allocations govern failures/full denominator.",
+      "source": "simulation/mujoco/backend.py:518,554,739,1083"
+    },
+    {
+      "contract": "Actual CAPTURE allocation/acquisition identity comes from inherited _allocated_frames/_operations; link D token/bracket to that acquisition, including failed allocation with no completed frame. Pure cache read/derived input retains original source_acquisition_id and source bracket; cannot refresh image age from read timestamp.",
+      "source": "vision/raw_recorder_v3.py:491,565,609"
+    },
+    {
+      "contract": "Backend swallows BaseException from observers and retains operation_observer_failures. Successful function return is insufficient: runner checks backend failure ledger, D partials, super _audit_failures, missing/duplicate/foreign boundaries. Error END, missing END or result reconstruction failure produce archived incomplete rows; do not synthesize MARK/END.",
+      "source": "simulation/mujoco/backend.py:343; research/native_reset_capture_v2.py:122"
+    },
+    {
+      "contract": "Publication uses original repository.publication_guard; recheck live source/handles/config/asset/lease/fencing and original-reader verdict inside guard; persist new receipt/catalog exclusively before exposing private live catalog. Failed write/export yields no live catalog, preserves original failure; late finally/export errors cannot replace original exception.",
+      "source": "research/native_clock_publication_v2.py:737; simulation_runtime/sqlite_repository.py:53"
+    },
+    {
+      "contract": "Inherited legacy exporter/_save_frames/flush are writable and may run again on __exit__; new layer must account for repeated saves, preserve exact frozen legacy payload and original frame bytes, export failure ledger and acquisition allocation census. Avoid treating legacy export's INCOMPLETE default as new source verdict.",
+      "source": "research/native_reset_capture_v2.py:154; vision/raw_recorder_v3.py:840,929,937"
+    },
+    {
+      "contract": "R03 public reader hardcodes explicit_acquisitions==0, so its verdict cannot be reused for OC2 explicit1. Worker generic terminal selection currently understands only NATIVE_RESET_PREFIX_EXCLUDED and VISION_CLOSED_LOOP special cases; do not expand _execute beyond allowed early branch. New incomplete source needs existing failure path or another within-scope resolution; any need to change terminal mapper requires Astra.",
+      "source": "research/native_clock_publication_v2.py:647; simulation_runtime/worker.py:213"
+    }
+  ],
+  "gate_authority": "ROOT alone releases marker and OC2 Task1 final-review gates; this report grants no implementation/actual authorization.",
+  "limitations": "Static interface readiness only. No tests/actual/source verdict claimed, no full remote reproduction claim, and no gate release inferred.",
+  "new_product_failure": false,
+  "pending_interfaces_expected_under_round60": [
+    "OperationalPrefixRecorderV1.from_application/freeze_operational_prefix/export_operational_prefix",
+    "run_operational_prefix_v1",
+    "OperationalPrefixApplicationV1.execute_once/check_recorder/catalog_entry implementations",
+    "verify_operational_prefix_originals_v1",
+    "small worker _operational_prefix_application early branch"
+  ],
+  "reader_required_joins": [
+    "strict original JSON schema/duplicate-key/types; exact inventory SHA256 plus byte lengths; no absolute/escape/symlink paths",
+    "preregistration/application/source_session/config/recipe/source inventory/scene/camera/clock domain/job/lease/attempt original identities",
+    "prereg persisted before first operation; RESET1 with original BEGIN old-or-null episode and successful END new episode",
+    "SETTLE purpose interval step0->120; physics steps1..120/control/previous/post state/episode joins and total120",
+    "all backend operation allocations and BEGIN/END pairs match D ledger; full boundary snapshots/results/errors/observer ledger",
+    "all actual acquisition allocations, inherited frame identities, persisted frame SHA/bytes, source_acquisition/cache links and original D source bracket",
+    "BEGIN/MARK/END/current causal order, same recorded owner/session/domain, S checkpoints and integer intervals",
+    "age=[max(0,n_lower-c_upper),n_upper-c_lower]; upper<=5000000000; TTL result separate from source completeness",
+    "all startup/operation/observer/frame persistence/export/publication failures and late/missing allocations counted",
+    "historical-only receipt: never read now D, open app/repo/backend, recreate live token or treat DB snapshot as current lease; preserve limits/native/UTC/consumer/formal exclusions"
+  ],
+  "recovery_parallelization": {
+    "OC2_maps_checked": [
+      {
+        "bytes": 22171,
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.json",
+        "producer_reference_present": false,
+        "sha256": "5a5c09f32208815e52c37e43ff63b9fde1e188df1244de4e8e4fcecfac34c402",
+        "source_map_count": 59,
+        "teacher_reference_present": true
+      },
+      {
+        "bytes": 51275,
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round61-oc2-task1-green/plan.json",
+        "producer_reference_present": false,
+        "sha256": "c820df10f480e1fd447b81869a7fa0654cfe50281b6849e3fa415767e26ad134",
+        "source_map_count": 94,
+        "teacher_reference_present": true
+      },
+      {
+        "bytes": 25041,
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/preflight-input-pins.json",
+        "producer_reference_present": false,
+        "sha256": "97628ce51a33fc746ea8f587d8e3ccf05bb13ee49e808d0bdc14d9605002c57b",
+        "source_map_count": 59,
+        "teacher_reference_present": true
+      },
+      {
+        "bytes": 42985,
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/round61/source-freeze.json",
+        "producer_reference_present": false,
+        "sha256": "8678827b69dfb27feebb950a2f78793273b0aa17502d544f25d044dfe679c96b",
+        "source_map_count": 94,
+        "teacher_reference_present": true
+      },
+      {
+        "bytes": 62185,
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/input-pins-before.json",
+        "producer_reference_present": false,
+        "sha256": "6cf85bfdccc6d759395fa07105683da080f26dc6033769495a168bfa2acbc629",
+        "source_map_count": 142,
+        "teacher_reference_present": true
+      },
+      {
+        "bytes": 60429,
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/input-pins-after.json",
+        "producer_reference_present": false,
+        "sha256": "fcd3b136e1c34d9d3efcefbfae8bd8b3cd716a99446b846007b84c66b5ea66c2",
+        "source_map_count": 142,
+        "teacher_reference_present": true
+      }
+    ],
+    "OC2_protected_producer": false,
+    "R07_existing_SOURCE_PATHS_count": 20,
+    "R07_hashing": "_source_pins hashes explicit SOURCE_PATHS plus robot XML glob; it is not a transitive-import inventory. Saved source/archive maps do not contain worker or new operational files.",
+    "R07_independent_static_transitive_count": 186,
+    "R07_plan14_and_existing_freeze_maps": [
+      {
+        "bytes": 22171,
+        "input_pins_count": 59,
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.json",
+        "root_keys": [
+          "schema_version",
+          "round",
+          "planner",
+          "generated_at_utc",
+          "status",
+          "task_count",
+          "problem",
+          "hypotheses",
+          "raw_failure_evidence",
+          "input_pins",
+          "expected_OC1_pins",
+          "new_paths_absent_at_plan",
+          "OC1_observation",
+          "gates",
+          "scope",
+          "tasks",
+          "contracts",
+          "acceptance",
+          "execution_at_planning",
+          "new_issue_rule",
+          "self_review",
+          "plan_md_sha256"
+        ],
+        "sha256": "5a5c09f32208815e52c37e43ff63b9fde1e188df1244de4e8e4fcecfac34c402",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/operational_capture_v1.py": true,
+          "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": true,
+          "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": true,
+          "src/cloud_edge_robot_arm/research/operational_time_v1.py": true,
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": false,
+          "src/cloud_edge_robot_arm/simulation_runtime/worker.py": true
+        }
+      },
+      {
+        "bytes": 9308,
+        "input_pins_count": 14,
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round57-recovery-wall/plan.json",
+        "root_keys": [
+          "schema_version",
+          "status",
+          "scope",
+          "call_basis",
+          "input_pins",
+          "protocol_identity",
+          "problem",
+          "planned_files",
+          "contracts",
+          "new_attempt_artifacts",
+          "implementation_output_root",
+          "tasks",
+          "future_actual_gate",
+          "formal_dependencies",
+          "prohibited",
+          "actual_calls",
+          "checks_performed",
+          "formal_accepted",
+          "g4_measured",
+          "plan_md_sha256"
+        ],
+        "sha256": "5b5f47a9f455e3731e58e14092252cadda4f97369aee2a167ccc3d354a9a8450",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/operational_capture_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_time_v1.py": false,
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": true,
+          "src/cloud_edge_robot_arm/simulation_runtime/worker.py": false
+        }
+      },
+      {
+        "bytes": 3833,
+        "input_pins_count": 0,
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/source-hashes.json",
+        "root_keys": [
+          "owned",
+          "prior_four_unchanged",
+          "execution_sources"
+        ],
+        "sha256": "5ffd5f030b6b1f9c937c16dc0ee59d57ad423fe64ca6995a14b2586087e39f9b",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/operational_capture_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_time_v1.py": false,
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": true,
+          "src/cloud_edge_robot_arm/simulation_runtime/worker.py": false
+        }
+      },
+      {
+        "bytes": 11556,
+        "input_pins_count": 0,
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/duration-fix/successor/source-hashes.json",
+        "root_keys": [
+          "owned",
+          "prior_four_unchanged",
+          "execution_source_pins",
+          "archive_pins",
+          "predecessor_evidence_pins"
+        ],
+        "sha256": "6e72cf3c2215478595b7f373a03bcafffeb5e2a62d4a7b3db0882c528830b3a9",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/operational_capture_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_time_v1.py": false,
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": true,
+          "src/cloud_edge_robot_arm/simulation_runtime/worker.py": false
+        }
+      },
+      {
+        "bytes": 12117,
+        "input_pins_count": 0,
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/R07/producer/duration-fix/successor/protocol/generation.json",
+        "root_keys": [
+          "allocation_directory",
+          "config",
+          "environment",
+          "history_complete",
+          "implicit_retries",
+          "payload_hashes",
+          "predecessor_archive_sha256",
+          "predecessor_directory",
+          "predecessor_evidence_hashes",
+          "predecessor_evidence_roots",
+          "predecessor_manifest_sha256",
+          "predecessor_protocol_hash",
+          "protocol_directory",
+          "provider_calls",
+          "schema_version",
+          "seed",
+          "settle_steps",
+          "source_archive_hashes",
+          "source_hashes"
+        ],
+        "sha256": "9a4f804aef2b9ff77b16dfe1114649ae0d8693aaa848f850680d97e6527e888c",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/operational_capture_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": false,
+          "src/cloud_edge_robot_arm/research/operational_time_v1.py": false,
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": true,
+          "src/cloud_edge_robot_arm/simulation_runtime/worker.py": false
+        }
+      }
+    ],
+    "R07_worker_operational_targets": {
+      "src/cloud_edge_robot_arm/research/operational_capture_v1.py": {
+        "import_path": null,
+        "in_explicit_SOURCE_PATHS": false,
+        "in_static_transitive_closure": false
+      },
+      "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": {
+        "import_path": null,
+        "in_explicit_SOURCE_PATHS": false,
+        "in_static_transitive_closure": false
+      },
+      "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": {
+        "import_path": null,
+        "in_explicit_SOURCE_PATHS": false,
+        "in_static_transitive_closure": false
+      },
+      "src/cloud_edge_robot_arm/research/operational_time_v1.py": {
+        "import_path": null,
+        "in_explicit_SOURCE_PATHS": false,
+        "in_static_transitive_closure": false
+      },
+      "src/cloud_edge_robot_arm/simulation_runtime/worker.py": {
+        "import_path": null,
+        "in_explicit_SOURCE_PATHS": false,
+        "in_static_transitive_closure": false
+      }
+    },
+    "RW1": "Only private producer owner in research/protocol_generation.py plus owned bounded tests; no teacher/OC1/shared raw-or-origin source-contract changes.",
+    "RW1_acceptance_ceiling": "Owner integer math/lifecycle SOFTWARE only before teacher/wallguard integration; no recovery-0002, no v3 freeze/prepare, no actual authorization.",
+    "RW1_owned_paths": [
+      "src/cloud_edge_robot_arm/research/protocol_generation.py",
+      "tests/test_protocol_generation_sources.py"
+    ],
+    "RW1_two_path_protection_checks": [
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.json",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": false,
+          "tests/test_protocol_generation_sources.py": false
+        }
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round61-oc2-task1-green/plan.json",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": false,
+          "tests/test_protocol_generation_sources.py": false
+        }
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/preflight-input-pins.json",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": false,
+          "tests/test_protocol_generation_sources.py": false
+        }
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/round61/source-freeze.json",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": false,
+          "tests/test_protocol_generation_sources.py": false
+        }
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/input-pins-before.json",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": false,
+          "tests/test_protocol_generation_sources.py": false
+        }
+      },
+      {
+        "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/input-pins-after.json",
+        "targets_present": {
+          "src/cloud_edge_robot_arm/research/protocol_generation.py": false,
+          "tests/test_protocol_generation_sources.py": false
+        }
+      }
+    ],
+    "RW2": "Do not parallelize teacher changes with OC2 source freezing/testing/actual: teacher is explicit OC2 plan/input protection pin.",
+    "constructor_boundary": "RW1 does not change shared raw/origin/source-contract constructors and no reviewed OC2 import path reaches producer. Adding a new dependency to OC1/OC2/shared contract or broadening RW1 changes this conclusion and needs Astra/root review.",
+    "freeze_order": "RW1 software can overlap OC2 Task2/3 software after ROOT gates release; defer RW2 and RW3 final source freeze/actual until coordinated quiet windows. Renderer actuals remain globally serial.",
+    "status": "STATIC_SOURCE_SEPARATION_ONLY_REQUIRES_ROOT_RELEASE"
+  },
+  "reviewed_input_pins": {
+    "AGENTS.md": {
+      "bytes": 1774,
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649"
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/round61/source-freeze.json": {
+      "bytes": 42985,
+      "sha256": "8678827b69dfb27feebb950a2f78793273b0aa17502d544f25d044dfe679c96b"
+    },
+    "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/independent-review-task1/peer-preflight-review.json": {
+      "bytes": 3191,
+      "sha256": "18869fa38c056ec84f6bea5d4ec9989eaeb22c40554e68846d55ee118e45919b"
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round57-recovery-wall/plan.json": {
+      "bytes": 9308,
+      "sha256": "5b5f47a9f455e3731e58e14092252cadda4f97369aee2a167ccc3d354a9a8450"
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round57-recovery-wall/plan.md": {
+      "bytes": 18804,
+      "sha256": "5dd08d0e57660c49044b321820d5ee83d52e6f1c026c494bbaae85eb31fe93db"
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.json": {
+      "bytes": 22171,
+      "sha256": "5a5c09f32208815e52c37e43ff63b9fde1e188df1244de4e8e4fcecfac34c402"
+    },
+    "artifacts/research/process/20261004-ced-development/astra-rounds/round60-operational-oc2/plan.md": {
+      "bytes": 22261,
+      "sha256": "7cabb71aec1c4d485d6505a060ed227b5a810ae71d325e6b4fbc66da41d160b9"
+    },
+    "configs/research/operational_prefix_v1.json": {
+      "bytes": 394,
+      "sha256": "c1d51bb28376f9a2c7e636efe16a0675d426951b8ed8849ead78d342f4b3ada1"
+    },
+    "scripts/run_operational_prefix_v1.py": {
+      "bytes": 1885,
+      "sha256": "fe8e8c9e021ec437b601895de724f1d10f17eb221fea6b8302c304a65fbcffa9"
+    },
+    "src/cloud_edge_robot_arm/datasets/rgbd/teacher.py": {
+      "bytes": 10210,
+      "sha256": "a7150e980ff0bcf901128701cfce2dd7569263158d5716bd311473975179a033"
+    },
+    "src/cloud_edge_robot_arm/research/native_clock_publication_v2.py": {
+      "bytes": 39190,
+      "sha256": "3eed8c44c4bb0657741a3f9ab113f9f035b3d73d5aa8ed8ca4c5c24fca880105"
+    },
+    "src/cloud_edge_robot_arm/research/native_reset_capture_v2.py": {
+      "bytes": 8395,
+      "sha256": "a22ce81503a1dd7d6aa9b81a57eb61cebcbda64ec58228a5c4dbe21da1e41f5a"
+    },
+    "src/cloud_edge_robot_arm/research/operational_capture_v1.py": {
+      "bytes": 231,
+      "sha256": "f3196dbf95bea00eb3bafcad610f9ff4ca0219b18050f1b8174263e9c8f0faf5"
+    },
+    "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py": {
+      "bytes": 7794,
+      "sha256": "ab356a546a54bf9578086ec403ea56a2360ed64a38113d6a09ab6caff4abad05"
+    },
+    "src/cloud_edge_robot_arm/research/operational_prefix_v1.py": {
+      "bytes": 22590,
+      "sha256": "add6f80e0f489d6d9c96ad522aab82b30bde6ac0900b472605aeb4820397de11"
+    },
+    "src/cloud_edge_robot_arm/research/operational_time_v1.py": {
+      "bytes": 20734,
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b"
+    },
+    "src/cloud_edge_robot_arm/research/protocol_generation.py": {
+      "bytes": 39221,
+      "sha256": "7038a6d2ff76ae14e83dc5f91028b912c2fd6e25fe1de78f14e6a21e00025d3f"
+    },
+    "src/cloud_edge_robot_arm/simulation/mujoco/backend.py": {
+      "bytes": 49867,
+      "sha256": "b7b6026b1173448de826e53253ae74f92b6b70ea46a404e10054c5cd451a62a6"
+    },
+    "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py": {
+      "bytes": 47252,
+      "sha256": "8497625d14b8610e5eb1717a93c1f8cfc9802b2696dc1eedad42fb9b73e6ba96"
+    },
+    "src/cloud_edge_robot_arm/simulation_runtime/worker.py": {
+      "bytes": 79217,
+      "sha256": "e1facb79224d58e92b3e48a00806c32468a45174742b280575304a3d8036b008"
+    },
+    "src/cloud_edge_robot_arm/vision/capture.py": {
+      "bytes": 6887,
+      "sha256": "f8121afbed70cb1ed8fa182c0b5595c54e12b88989c591878ac9987d8fe7ec7b"
+    },
+    "src/cloud_edge_robot_arm/vision/raw_recorder_v3.py": {
+      "bytes": 44175,
+      "sha256": "4eabd3bf9cdf15b3942c4a740781a95c22ea684f410853c853d0336952d7a303"
+    },
+    "src/cloud_edge_robot_arm/vision/worker_owner.py": {
+      "bytes": 23511,
+      "sha256": "ffce1cedb2cc9962ade0c5845d6ce92127372fa2248c0f4bc5f215706f5be86b"
+    },
+    "tests/test_protocol_generation_sources.py": {
+      "bytes": 29845,
+      "sha256": "7aef1f510b81f03f42aebf874ab26fe1befc1caf625fa2ce3bd5d032dc36a112"
+    }
+  },
+  "runner_order": [
+    "check_worker and persisted preregistration",
+    "initialize same backend",
+    "enter same borrowed capture",
+    "issue exactly one new application recorder",
+    "enter sole observer",
+    "check exact/live handles; RESET once; check",
+    "purpose SETTLE; backend.step(steps=120); check",
+    "inherited recorder.capture() exactly once; check",
+    "current D from original acquisition token plus detached S checkpoint; preserve age result",
+    "freeze all attempt/operation/frame/pair/error denominators",
+    "export and guarded reader revalidation/publication",
+    "close recorder/capture/owner/backend preserving primary failure and historical originals"
+  ],
+  "schema_version": "oc2.task2.interface-readiness.static.v1",
+  "scope": "STATIC_READ_ONLY_INTERFACE_AND_DEPENDENCY_REVIEW",
+  "source_window_order": [
+    "Current: static read/report only until ROOT receives marker postreview and OC2 Task1 final scoped verdict and explicitly releases gates.",
+    "After ROOT release: OC2 owned schema/capture/app/tests plus permitted small worker branch; RW1 producer-only software may proceed in parallel under its separate plan.",
+    "OC2 Task2/3 bounded software then quiet source archive and independent review; stop writes to its protected source bytes.",
+    "ROOT alone OC2 default preflight and unique actual; then frozen originals plus independent reader terminal.",
+    "Coordinate RW2 teacher and RW3 source freeze after OC2 frozen-source/actual/readout dependency window closes; no raw/DB/history mutations."
+  ],
+  "status": "PLAN_CONTRACTS_IDENTIFIED_ROOT_GATES_NOT_RELEASED",
+  "task1_static_closure": {
+    "closure_paths_sha256": "652b792c49bac2a484049c2a764cc69e067058a4f288d1e3f3b63305b49c6f9d",
+    "closure_pins_sha256": "c6429e5bfa201791532d26b65adc371ea3012d8479f291341d567bec15bc5f7c",
+    "count": 225,
+    "method": "stdlib-only independent indexed AST BFS; no product imports or product inventory calls",
+    "notes": "Actual producer/recovery/teacher paths exist outside this closure; absent requested aliases are path-name differences. Teacher remains an explicit OC2 plan protection pin despite not being a closure dependency.",
+    "saved_metadata_count": 225,
+    "target_results": {
+      "src/cloud_edge_robot_arm/datasets/rgbd/teacher.py": {
+        "exists": true,
+        "import_path": null,
+        "included": false,
+        "pin": null
+      },
+      "src/cloud_edge_robot_arm/recovery/protocol_generation.py": {
+        "exists": false,
+        "import_path": null,
+        "included": false,
+        "pin": null
+      },
+      "src/cloud_edge_robot_arm/research/protocol_generation.py": {
+        "exists": true,
+        "import_path": null,
+        "included": false,
+        "pin": null
+      },
+      "src/cloud_edge_robot_arm/simulation_runtime/recovery.py": {
+        "exists": true,
+        "import_path": null,
+        "included": false,
+        "pin": null
+      },
+      "src/cloud_edge_robot_arm/vision/teacher.py": {
+        "exists": false,
+        "import_path": null,
+        "included": false,
+        "pin": null
+      }
+    }
+  }
+}

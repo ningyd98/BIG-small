@@ -47,6 +47,7 @@ from cloud_edge_robot_arm.simulation_workbench.models import (
 
 if TYPE_CHECKING:
     from cloud_edge_robot_arm.repositories.event_autonomy import EventAutonomyRepository
+    from cloud_edge_robot_arm.research.operational_prefix_v1 import OperationalPrefixApplicationV1
     from cloud_edge_robot_arm.vision.runtime_binding import RoleRuntimeBinding
 
 
@@ -85,6 +86,9 @@ class SimulationWorker:
     每次只领取一个 job，执行期间写 heartbeat/attempt/event/metric/artifact。
     取消和超时采用协作式检查，保证已有部分证据不会因为终止而被删除。
     """
+
+    if TYPE_CHECKING:
+        _operational_prefix_application: OperationalPrefixApplicationV1 | None
 
     def __init__(
         self,
@@ -676,6 +680,20 @@ class SimulationWorker:
     def _run_visual_closed_loop(
         self, job: SimulationJobRecord, draft: ExperimentDraft, *, start_monotonic: float
     ) -> tuple[dict[str, Any], list[TimelineEvent], list[SimulationMetric]]:
+        operational_application = getattr(self, "_operational_prefix_application", None)
+        if operational_application is not None:
+            from cloud_edge_robot_arm.research.operational_prefix_v1 import (
+                OperationalPrefixApplicationV1,
+                run_operational_prefix_v1,
+            )
+
+            if getattr(self, "_native_clock_prefix_application", None) is not None:
+                raise ValueError("two source-only prefix applications cannot share one worker")
+            if type(operational_application) is not OperationalPrefixApplicationV1:
+                raise TypeError("exact configured operational prefix application required")
+            return run_operational_prefix_v1(
+                operational_application, self, job, start_monotonic=start_monotonic
+            )
         prefix_application = getattr(self, "_native_clock_prefix_application", None)
         if prefix_application is not None:
             from cloud_edge_robot_arm.research.native_clock_publication_v2 import (

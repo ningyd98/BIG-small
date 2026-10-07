@@ -1,0 +1,145 @@
+# T12 根因复核与后续候选计划
+
+**状态：CANDIDATE_FOLLOWUP_PLAN_NOT_IMPLEMENTED。本轮只有只读分析与这两份新计划；不是新的实际运行授权。**
+
+核心判断：T12迟迟未闭合来自“基础能力尚未形成可准入的真实证据 + 真实准入实现仍缺 + 动作误差/时域合同的可达性问题”，并被小问题反复进入完整流程放大。不能把全部延误归于模型、时钟、测试或用户流程，也不能说只剩实验。
+
+规划身份来自ROOT对gpt-6-astra的显式派单；本代理没有独立运行时模型证明，因此不额外伪造模型认证。
+
+## 证据与根因
+
+### RCA-1 · FACT_AND_INFERENCE
+
+T12的规则/候选/仓储/worker/监督/pilot软件已有交付，但主线标签混合了软件集成、上游资格与研究门，不能从T12/18推断完成12项或只差一个模块。
+
+证据：`docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md:369-383`；`artifacts/research/process/20261004-ced-development/t12-next-runtime-integration/report.md:7-12`；`artifacts/research/process/20261004-ced-development/report-step61.md:29`。
+
+### RCA-2 · FACT
+
+当前真实准入仍有硬软件缺口：native两个界保持None；实际运行组合器无admission verifier，必STOP，提交仍UNKNOWN。上游证据齐备也不能靠现有守卫自动进入方法。
+
+证据：`src/cloud_edge_robot_arm/vision/action_evidence.py:42`；`src/cloud_edge_robot_arm/edge/evidence/validator.py:123-127`；`src/cloud_edge_robot_arm/auto_mode/runtime_composition.py:3`；`src/cloud_edge_robot_arm/auto_mode/runtime_composition.py:352-353`；`src/cloud_edge_robot_arm/auto_mode/runtime_composition.py:513`。
+
+### RCA-3 · CONDITIONAL_MATHEMATICAL_FACT
+
+若motion界解释为主动搬运中物体总运动，原e+v*(age+horizon)<=10mm对已记录LIFT87.8mm和MOVE345.2mm在理想age/e为0时也不可达。设计已提出动作参考语义，不能继续仅加观测或授时解决。不是所有新版动作参考合同必然不可达。
+
+证据：`artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/design.md:7-35`。
+
+### RCA-4 · FACT_AND_INFERENCE
+
+基础T7b证书若等待INITIAL后T9会循环；独立UTC被当成全部单机仿真唯一前置是可解除工程耦合，但operational域不消除完整future horizon、源、suspend、消费者闭包与运动界证明。
+
+证据：`docs/superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md:87`；`artifacts/research/process/20261004-ced-development/astra-repair-planning/clock-dependency-review.md:32-34`；`artifacts/research/process/20261004-ced-development/astra-repair-planning/clock-dependency-review.md:60-72`；`docs/superpowers/plans/2026-10-05-operational-clock-repair-supplement.md:9-21`。
+
+### RCA-5 · FACT
+
+真实端侧进展大但非证书：4807全部OBSERVED且采样间隔合格；独立组仍0、连续运动/future/source/native未获验收。Max现检查范围无enabled兼容profile，旧35calls不能关闭新角色门；B0历史5/120、静态4/40远未达原门。
+
+证据：`artifacts/research/process/20261004-ced-development/report-step60.md:5-9`；`artifacts/research/process/20261004-ced-development/report-step60.md:29`；`docs/research/process/continuation_20261004.md:24`；`docs/superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md:22`。
+
+### RCA-6 · FACT_AND_INFERENCE
+
+流程有放大成本：末尾LF、容量、metadata schema、fixture别名、103字符格式问题均触发限定轮次；两次独审比较器也误报。实际OC2 partial序列化属于产品缺陷，不可统称文书问题。流程耗时比例无完整账本不能量化，用户要求Astra先计划应继续遵守。
+
+证据：`artifacts/research/process/20261004-ced-development/report-step60.md:13-23`；`artifacts/research/process/20261004-ced-development/report-step61.md:7-15`；`artifacts/research/process/20261004-ced-development/astra-rounds/round67-oc2-green-partials/plan.md:7-17`；`artifacts/research/process/20261004-ced-development/astra-rounds/round69-oc2-preflight-metadata/plan.md:7-9`；`artifacts/research/process/20261004-ced-development/astra-rounds/round71-rw1-static-format/plan.md:5`。
+
+## 最短有意义路径与验收边界
+
+先证明关键合同确实可满足，再取一条真实来源正分支，接动作特定端侧资格；Max独立补齐。完整T12a实际验收继续依赖既定真实风险/成本和共同运行基线。200故障与FINAL不是T12自身的软件工作，但当前INITIAL绑定机会/故障，因此正式协议路径上的间接依赖不能省略。不得为了给T12打勾临时发明绕过INITIAL的实际准入开关。
+
+### C1 先确认原门的可达性与每项缺口责任
+
+后续先做只读接口表和动作逐项证明义务：参考量、误差量、S/D单位、完整horizon、生产者、消费者、有限正例与拒绝反例。逐项标已有/缺失/不可支持。不改10mm/5s/预算，不重新写控制器。先判GRASP动态参考与未来H_D支持是否存在；没有则明确阻塞，不先投入九组或批量全帧。将T12软件集成、实际方法验收、正式G2研究分开报告，但不擅改既有DONE门。
+
+限定范围：`docs/superpowers/plans/2026-10-05-operational-clock-repair-supplement.md`；`artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/design.md`；`src/cloud_edge_robot_arm/vision/action_evidence.py`；`src/cloud_edge_robot_arm/auto_mode/runtime_composition.py`。
+
+验证：用现有位移原件引用重建数学下界，核对实际source接口；不重解码4807、不跑模型或新物理。每一个允许运行的候选动作至少有无oracle的正分支支持路径。
+
+### C2 关闭已知小范围故障，先获得一个真实source正分支
+
+严格复用已经制定的round67/69/71，不创建重复大修。只在原局部范围和验证预算内闭合产品partial归档、合法终态与格式；复用既有已过证据。OC2完整软件门及独审过后，按既有计划由root执行一次新prefix并公共reader验证。RW1/RW2共享teacher只在真实受影响pin安静时接入，不要求全仓静止。
+
+限定范围：`现有round67/69 OC2限定三源码路径`；`现有round71 RW1格式限定范围`；`既有OC2来源入口与reader`。
+
+验证：CPU失败、产品失败与工具失败分列；actual前确认源/lease/事件/时域/预算/资源和精确哈希。prefix只能获得source级通过，不称native或T12实际通过。
+
+### C3 在保留相机/标记/控制器下补完整动作与三消费者的端侧资格
+
+依据C1经确认的版本化动作参考实现最小正负链；通过离线教师/开发资格入口生产校准支持，不能要求先native准入再生成native前置导致自锁，也不能将教师执行冒称native获准。至少九独立支持组是原统计门，九组不保证必有有限界。只对C1证明可支持的动作/域运行，完整分母与失败保留。0.005是采样门，OBSERVED不是连续物理速度证明。未来时间及动作误差无支持继续UNKNOWN。
+
+限定范围：`vision/native_references.py`；`vision/native_calibration.py`；`research/native_geometry_calibration.py`；`vision/action_evidence.py`；`OC3既有时间窗口闭包中确实受影响的文件`。
+
+验证：三native消费者同一来源和时间域；动态参考/固定目标/错域/旧来源/过期/缺组/完整horizon不足反例；独立重算后限定actual，绝不通过单纯写入finite界或来源hash授权。
+
+### C4 独立补Max配置与最短T12a实际决策链
+
+Max仅使用用户选定方案，在兼容enabled profile/secret/application source就绪后执行原真实角色probe，不索要聊天明文secret。T7b与Max资格通过后，沿既定B0→基础先导→INITIAL→T9/T10/T11获取真实风险/成本，随后补真实admission verifier并接现有提交路由，候选先筛再决策，LOCAL_RECOVER仍屏蔽至T13合格。同场景B0/B1/B2/T12a的时间线、实际请求/字节/拒绝才是原T12实际验收证据。
+
+限定范围：`既有T3b角色probe配置和入口`；`既有T8a/B0与T8b/INITIAL流程`；`vision/risk相关现有入口`；`auto_mode/runtime_composition.py及其实际消费者`。
+
+验证：先source/calibration/selection/INITIAL缺失、错版本、晚返回与提交间过期拒绝，再用真正受支持的原件通过正分支；不以software_only=true作为实际运行，也不删固定STOP而无验证器。
+
+### C5 保持研究后续和工程流程边界
+
+200故障/固定机会、METHOD、功效120、FINAL与正式G2是更大的研究链，不能称它们都是T12模块新增代码；但当前INITIAL合同已绑定完整机会/故障原件，若沿该正式协议执行，仍必须满足，不能隐去间接前置。有限开发正分支可先交付限定source/native软件或诊断里程碑，不能改名为原T12或正式验收。新问题按AGENTS先Astra，同根因合并；可在计划中预先明列常规格式整理与可用编排fallback，避免已知同根因重复交接。不取消独审或保留原失败的义务。
+
+限定范围：`既有R7-R10计划`；`后续局部步骤报告与阶段汇总`。
+
+验证：每步只声明已获得层级；复用与本次新验证明确区分，不累计重叠测试，完整raw和远端清单分开。计划与实际来源变更仅重验受影响链。
+
+## 实施及实际运行前置条件
+
+- 实施前复核本计划及实际所需输入SHA；活动源码漂移不自动判坏，须由责任方登记新的适用基线，禁止据旧pin实施。
+- 每项具体实施先继承有效Astra计划；本候选计划不覆盖round67/69/71原范围或真实运行门。
+- 实际运行必须已有独审通过的来源/动作合同、静止的限定source清单、真实role/profile配置（需要云时）、原预算和原renderer/GPU互斥队列、完整失败归档及资源储备。
+- 源positive、native消费者、T12a方法、正式研究四层证据分别验收；用户相机/标记/控制器、云方案和后置边缘选型不变。
+
+## 本轮不能确认
+
+- 没有完整会话时长账本，不能推算各根因耗时占比或完成日期。
+- 没有新执行试验，不能保证operational域、动作参考或九组通过后B0质量达标。
+- 仅核查当前定位配置，不能断言其他环境没有Max凭据。
+- 最新源快照之外活动实施进度不纳入验收；后续须复核。
+
+## 输入文件 SHA256
+
+以下为本次读取快照。SHA只证明字节一致，不证明真实来源或研究资格。实施前只核对实际依赖，不要求全仓静止。
+
+| 路径 | SHA256 | 字节 |
+|---|---|---:|
+| `AGENTS.md` | `8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649` | 1774 |
+| `docs/superpowers/plans/2026-10-03-rgbd-evidence-research-roadmap.md` | `99438f6a8c056634c7aa4fa1a2316257bce9bb89156d40e8ef9c5f0747990014` | 109314 |
+| `docs/superpowers/plans/2026-10-04-cloud-edge-device-research-roadmap.md` | `f42eac090def66ea17c76a6edb9f4c0cdc1cc6b9a881b2269bc7e84b3ff94392` | 30800 |
+| `docs/superpowers/plans/2026-10-05-astra-repair-plan.md` | `7e7514b37b7351208176c1d660771facd7dadf668eb3a5cb9de0b3c43aa50579` | 38831 |
+| `docs/superpowers/plans/2026-10-05-operational-clock-repair-supplement.md` | `6bf5022020253b73f08d00adf2785e1ca86ff1e34ca389a55e6c716fcc147030` | 6081 |
+| `docs/research/process/continuation_20261004.md` | `6d1695833b5f5c03ff355a740bcf6d1beb5e3d9d94e3584c7357280cacea411e` | 114354 |
+| `src/cloud_edge_robot_arm/vision/action_evidence.py` | `a122df9e5e4edba513a96abeed46b3b1d9f3dff13a51df5d56cfd63388591edc` | 2520 |
+| `src/cloud_edge_robot_arm/edge/evidence/validator.py` | `cb71ee7c8e05bdb751b34ce6be17c0c7fa29d7cd20fa557b240592d426552674` | 7989 |
+| `src/cloud_edge_robot_arm/auto_mode/runtime_composition.py` | `05ac89da5c71cf2cc9874976cf9fa4abdedf3609ca92baa5269746f8b5e6cfb6` | 22302 |
+| `src/cloud_edge_robot_arm/research/native_geometry_calibration.py` | `7d555c23c5d2ffcdc1a9ba5aacd4601c71e1f6691b69da56893fad6b45dc822d` | 29791 |
+| `artifacts/research/process/20261004-ced-development/t12-worker-live-integration/report.md` | `1f0bb9c1e8b03588cd5194715d3cc1dc356722889c0f0ce2936202314312d0bb` | 4128 |
+| `artifacts/research/process/20261004-ced-development/t12-next-runtime-integration/report.md` | `832d7659b4480c0fcfb46aaeaf1464a6591d0d09bfd987e8639d3750536843bf` | 5500 |
+| `artifacts/research/process/20261004-ced-development/t12-runtime-composition/report.md` | `597e898ad180197e07dfb76022b28a4030fc5642879d26c90874b2a374e2f067` | 4406 |
+| `artifacts/research/process/20261004-ced-development/t7b-native-calibration-source/design.md` | `343b9bf7626acf55b0982965856c7dcbf3b9c5ade37a7050dd0c7d86782363e9` | 16236 |
+| `artifacts/research/process/20261004-ced-development/astra-repair-planning/clock-dependency-review.md` | `0a957c9e8a5a4e19db2578ae0722b6342fefce29bf12879ebd4e72715b4bdf10` | 23219 |
+| `artifacts/research/process/20261004-ced-development/report-step53.md` | `08e606c2d79054feba6a95630ca1309bbed3f5ff974086f524c6f8358eb7add6` | 4764 |
+| `artifacts/research/process/20261004-ced-development/report-step54.md` | `965a5fc4cf6dd3cac6ab04cda02880925cd445f21c0a7d8894298135ba940e3c` | 3738 |
+| `artifacts/research/process/20261004-ced-development/report-step55.md` | `65c6cce37a95b55af0e9854b754ea90b681a5c8744e9b091e0b3a693f085d297` | 5533 |
+| `artifacts/research/process/20261004-ced-development/report-step56.md` | `0d4d494d31729e4d34caf10d2dbce080c7d0052cdcf5fe5e65632cd5e7b0c9db` | 7712 |
+| `artifacts/research/process/20261004-ced-development/report-step57.md` | `afe5f7d22bd658ebfd7f5cb3b014bf2d915d06eb14843291f0b4fa5896650768` | 3913 |
+| `artifacts/research/process/20261004-ced-development/report-step58.md` | `ddffd84e0d9fd8d45507985094f7d76a7b5ad048c19602639833e1372d4781b9` | 4754 |
+| `artifacts/research/process/20261004-ced-development/report-step59.md` | `0b9dbbe8c7492e33b7d65ceabe10c6eb91357a66214ca3540db903778d3feb67` | 4369 |
+| `artifacts/research/process/20261004-ced-development/report-step60.md` | `a7aa8d06c618d5332bd004e7a50b079eb3f547053818c222ee8baeeee211e644` | 6532 |
+| `artifacts/research/process/20261004-ced-development/report-step61.md` | `ab29b522e547ce8a98913eb7aa0dd237c49991e8e938e5a9bf81f5a8f56be68b` | 5329 |
+| `artifacts/research/process/20261004-ced-development/report-step62.md` | `5f8b4a61793bb44a5142eef8246380d31e8cdb17826e5c33bc440a57af5639ba` | 4318 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round64-stage60-doc-eof/plan.md` | `50ca54654e23c8e606f6459c733f5769ab9cd8afb990f0e84e33466fa62c9a33` | 8489 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round65-oc2-agent-capacity/plan.md` | `76b947ef84068dae03ef8cba1cceae1789e5ac164bcc04ac34ecc85a00a249c4` | 8766 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round66-rw1-event-episode/plan.md` | `1fea4d3a21c2e57afd97d40106adb232caf517467e9d1fc9dbb3423c2e19afb9` | 20432 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round67-oc2-green-partials/plan.md` | `62bc42d4e638fb3e0f7d423f3d6752c0e8818c2ed1adfd926e8cf71f549f2f47` | 39566 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round68-rw1-fixture-alias/plan.md` | `3526fd23bc1aaad099e2589bac5650d0109eb853ccb80c985585397dcd3fee1a` | 22369 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round69-oc2-preflight-metadata/plan.md` | `32b03a09b4ecd3b4ddbd860c5671ff98b42f1dd5c2c6c65e42637ccc9ce805de` | 8476 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round70-rw1-dispatch-capacity/plan.md` | `f13cf84b50febe01a1110c3a9cb0fe5383c7196402b16f80b41d64ccbd353a2a` | 5629 |
+| `artifacts/research/process/20261004-ced-development/astra-rounds/round71-rw1-static-format/plan.md` | `102e53c0414ff9d683814e9c0277171d8998a7da8e005f128a7277a19e33fd67` | 26477 |
+
+本轮未运行测试、仿真、采集、模型、原件重解码或Git操作，未修改全局状态及历史材料。只读工具最初python命令不存在（exit127），随后python3成功；无系统环境修复。

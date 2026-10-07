@@ -1,0 +1,769 @@
+FFFFFFFFFFFFFFFFF                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_decode_exact_planned_rows_only_valid_raw[None-3-3] ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows0')
+fault = None, calls = 3, observed = 3
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows0')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3d17d1580>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+___________ test_decode_exact_planned_rows_only_valid_raw[first-2-2] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows1')
+fault = 'first', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows1')
+ends = {1: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': '0cfc30648ad304ce3eb4bfdf9c2c547a027c5c34cce7b9...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf390fe0>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+__________ test_decode_exact_planned_rows_only_valid_raw[middle-2-2] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows2')
+fault = 'middle', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows2')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf391760>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+___________ test_decode_exact_planned_rows_only_valid_raw[last-2-2] ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows3')
+fault = 'last', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows3')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '0cfc30648ad304ce3eb4bfdf9c2c547a027c5c34cce7b9742256b7bfcf3e7e88', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf391620>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+________ test_decode_exact_planned_rows_only_valid_raw[compressed-2-2] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows4')
+fault = 'compressed', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows4')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf391b20>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+_________ test_decode_exact_planned_rows_only_valid_raw[original-2-2] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows5')
+fault = 'original', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows5')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf392160>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+_________ test_decode_exact_planned_rows_only_valid_raw[checksum-2-2] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows6')
+fault = 'checksum', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows6')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf392660>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+__________ test_decode_exact_planned_rows_only_valid_raw[schema-2-2] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows7')
+fault = 'schema', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows7')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf392de0>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+___________ test_decode_exact_planned_rows_only_valid_raw[pass-2-2] ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows8')
+fault = 'pass', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows8')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3932e0>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+__________ test_decode_exact_planned_rows_only_valid_raw[camera-2-2] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows9')
+fault = 'camera', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows9')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3937e0>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+_________ test_decode_exact_planned_rows_only_valid_raw[duplicate-2-2] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows10')
+fault = 'duplicate', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows10')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf393ce0>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+__________ test_decode_exact_planned_rows_only_valid_raw[context-2-2] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows11')
+fault = 'context', calls = 2, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows11')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3dc220>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+__________ test_decode_exact_planned_rows_only_valid_raw[shifted-0-0] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows12')
+fault = 'shifted', calls = 0, observed = 0
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows12')
+ends = {1: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3dc860>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+___________ test_decode_exact_planned_rows_only_valid_raw[extra-3-3] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows13')
+fault = 'extra', calls = 3, observed = 3
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows13')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3dd080>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+__________ test_decode_exact_planned_rows_only_valid_raw[unknown-3-2] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows14')
+fault = 'unknown', calls = 3, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows14')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3dd620>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+_________ test_decode_exact_planned_rows_only_valid_raw[exception-3-2] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows15')
+fault = 'exception', calls = 3, observed = 2
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows15')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3ddb20>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': True}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+__________ test_decode_exact_planned_rows_only_valid_raw[source-0-0] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows16')
+fault = 'source', calls = 0, observed = 0
+
+    @pytest.mark.parametrize("fault,calls,observed", [
+        (None, 3, 3), ("first", 2, 2), ("middle", 2, 2), ("last", 2, 2),
+        ("compressed", 2, 2), ("original", 2, 2), ("checksum", 2, 2),
+        ("schema", 2, 2), ("pass", 2, 2), ("camera", 2, 2),
+        ("duplicate", 2, 2), ("context", 2, 2), ("shifted", 0, 0), ("extra", 3, 3),
+        ("unknown", 3, 2), ("exception", 3, 2), ("source", 0, 0),
+    ])
+    def test_decode_exact_planned_rows_only_valid_raw(tmp_path, fault, calls, observed):
+        from cloud_edge_robot_arm.vision.pose_markers import PoseMarkerEstimate, PoseMarkerRegistration
+        ends = raw_fixture(tmp_path, fault)
+        counter = []
+        registration = PoseMarkerRegistration(7, 0.075, P.ASSET_SHA)
+    
+        def detector(observation, frozen_registration):
+            counter.append(observation.observation_id)
+            if fault == "exception" and observation.frame_id == "cpu-1":
+                raise RuntimeError("CPU decoder exception")
+            return PoseMarkerEstimate("UNKNOWN" if fault == "unknown" and observation.frame_id == "cpu-1" else "OBSERVED",
+                                      "CPU mock only", observation.observation_id, observation.checksum_sha256,
+                                      observation.captured_at, frozen_registration.digest())
+    
+>       rows = list(V.decode_planned_rows(tmp_path, ends, list(range(3)), registration, detector,
+                                         expected_dimensions=(2, 2), source_valid=fault != "source"))
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+directory = PosixPath('/tmp/pytest-of-ningyd/pytest-1268/test_decode_exact_planned_rows16')
+ends = {0: {'action_ordinal': None, 'before_physics_sha256': 'p', 'checksum': 'd31ce7457924f7b086e5c15a3d1cdbe1dc70fce4f35903...6': 'p', 'checksum': '1bca2938cb7c8ce8e8c96e537faa957db47aaf2c873980191d97d263cec75405', 'compressed_bytes': 428, ...}}
+steps = [0, 1, 2]
+registration = PoseMarkerRegistration(marker_id=7, marker_size_m=0.075, marked_asset_sha256='045ce032032426ec6130348ee75e5f53b7db02699fc1f39558727edd63f67e0d', dictionary='DICT_4X4_50')
+decoder = <function test_decode_exact_planned_rows_only_valid_raw.<locals>.detector at 0x7fa3cf3925c0>
+kwargs = {'expected_dimensions': (2, 2), 'source_valid': False}
+
+    def decode_planned_rows(directory, ends, steps, registration, decoder, **kwargs):
+>       raise NotImplementedError("Round57 T3 RED")
+E       NotImplementedError: Round57 T3 RED
+
+artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/verify_full.py:13: NotImplementedError
+=========================== short test summary info ============================
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[None-3-3]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[first-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[middle-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[last-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[compressed-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[original-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[checksum-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[schema-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[pass-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[camera-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[duplicate-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[context-2-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[shifted-0-0]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[extra-3-3]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[unknown-3-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[exception-3-2]
+FAILED artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full/test_cpu.py::test_decode_exact_planned_rows_only_valid_raw[source-0-0]
+17 failed, 48 deselected in 0.28s

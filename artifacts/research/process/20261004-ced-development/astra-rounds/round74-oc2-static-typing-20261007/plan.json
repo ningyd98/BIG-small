@@ -1,0 +1,407 @@
+{
+  "schema": "astra.recovery-plan.v1",
+  "round": "round74-oc2-static-typing-20261007",
+  "date": "2026-10-07",
+  "status": "PLAN_ONLY_NOT_IMPLEMENTED",
+  "planner": {
+    "requested_model": "gpt-6-astra",
+    "role_source": "ROOT explicit delegation under AGENTS.md",
+    "runtime_model_independently_verified": false
+  },
+  "executor": "original /root/sol_t12_p1, requested gpt-6.1-sol",
+  "problem": "OC2唯一完整GREEN通过后ruff导入排序失败与六项mypy类型契约失败；只修静态接口及导入，不改变来源/authority/失败分母语义。",
+  "failure_evidence": {
+    "root": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007",
+    "ruff_stdout_verbatim": "I001 [*] Import block is un-sorted or un-formatted\n   --> src/cloud_edge_robot_arm/research/operational_prefix_v1.py:616:5\n    |\n614 |       directory: Path,\n615 |   ) -> Any:\n616 | /     from cloud_edge_robot_arm.research.operational_capture_v1 import (\n617 | |         OperationalPrefixRecorderV1,\n618 | |         _ISSUER,\n619 | |     )\n    | |_____^\n620 |\n621 |       record = _live(application)\n    |\nhelp: Organize imports\n\nI001 [*] Import block is un-sorted or un-formatted\n   --> tests/test_operational_prefix_cli_v1.py:143:5\n    |\n142 |   def test_execute_once_cli_real_worker_no_retry(tmp_path, capsys, monkeypatch):\n143 | /     from tests.test_operational_capture_v1 import cpu_components, require_task2\n144 | |     from cloud_edge_robot_arm.research import operational_prefix_v1 as api\n    | |__________________________________________________________________________^\n145 |\n146 |       require_task2()\n    |\nhelp: Organize imports\n\nFound 2 errors.\n[*] 2 fixable with the `--fix` option.\n",
+    "mypy_stdout_verbatim": "src/cloud_edge_robot_arm/research/operational_prefix_v1.py:285: error: \"SimulationWorker\" has no attribute \"_operational_prefix_application\"; maybe \"_native_clock_prefix_application\"?  [attr-defined]\nsrc/cloud_edge_robot_arm/research/operational_prefix_v1.py:458: error: Returning Any from function declared to return \"dict[str, Any]\"  [no-any-return]\nsrc/cloud_edge_robot_arm/research/operational_capture_v1.py:79: error: Returning Any from function declared to return \"OperationalPrefixRecorderV1\"  [no-any-return]\nsrc/cloud_edge_robot_arm/research/operational_capture_v1.py:281: error: Returning Any from function declared to return \"dict[str, Any]\"  [no-any-return]\nsrc/cloud_edge_robot_arm/research/operational_capture_v1.py:288: error: Returning Any from function declared to return \"dict[str, Any]\"  [no-any-return]\nsrc/cloud_edge_robot_arm/research/operational_capture_v1.py:310: error: Returning Any from function declared to return \"dict[str, Any]\"  [no-any-return]\npyproject.toml: note: unused section(s): module = ['ament_index_python.*', 'rclpy.*']\nFound 6 errors in 2 files (checked 4 source files)\n",
+    "ruff_exit": 1,
+    "mypy_exit": 1,
+    "format_exit": 0,
+    "full_GREEN_exit": 0,
+    "full_GREEN_tests": 63,
+    "full_GREEN_pytest_seconds": 495.79,
+    "full_GREEN_wrapper_seconds": 498.1624464050401,
+    "independently_read": true,
+    "junit": {
+      "tests": 63,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "input_check_after_all_match": true
+  },
+  "root_causes": {
+    "I001": "源码同模块导入名及CLI测试相邻跨模块导入块顺序不符合ruff。",
+    "attr_defined": "startup动态赋值真实worker私有属性，SimulationWorker类型合同未声明。",
+    "factory_no_any_return": "_issue_recorder_v1标注Any而实际只返回私有签发OperationalPrefixRecorderV1。",
+    "check_recorder_no_any_return": "check_active实际已有dict标注；recorder._application来源Any与self身份比较造成类型污染/收窄为候选解释，须具体application类型与最终mypy确认。",
+    "json_no_any_return": "json.loads静态返回Any；三处真实生产者为字典且深拷贝语义必须保留。"
+  },
+  "inputs": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649",
+      "bytes": 1774
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round67-oc2-green-partials/plan.json",
+      "sha256": "3b9af379e4d64dded875f976b47b6e7e6476976d67977ccfdcbce5e34389aea2",
+      "bytes": 54412
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round69-oc2-preflight-metadata/plan.json",
+      "sha256": "c146aefd884504c7be0e07128406b24bd18ff308c46466f5201c6d7dcdc55fba",
+      "bytes": 17471
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+      "sha256": "05df6d7c638afcb07bf0d269a5211578bcda56a55c8ec47e0c6ac1bcbd294f72",
+      "bytes": 60061
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+      "sha256": "9ee5af2625a52c9e47d0e1d5e1865f793ba3719cd28a3eaf2a246215c7a669f1",
+      "bytes": 14476
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "sha256": "809b7015b8f316946f521e7990fb3124a429bcfc3c406a31be23ce46d6d0ca20",
+      "bytes": 80038
+    },
+    {
+      "path": "tests/test_operational_prefix_cli_v1.py",
+      "sha256": "7971985d7032514915509ae0d08d71889aba44721823a12bc54e00d3005cdf9b",
+      "bytes": 6546
+    },
+    {
+      "path": "tests/test_operational_prefix_v1.py",
+      "sha256": "1ccb56de190f5cea0280882690bead41ed15aaff0fdfa2b74b32ca9c5cd1b426",
+      "bytes": 11934
+    },
+    {
+      "path": "tests/test_operational_capture_v1.py",
+      "sha256": "ebe63baa223a7f2dc1f99fc28603ceb3ae9505516085c605ef0dbb2a39fa6aaf",
+      "bytes": 18729
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+      "sha256": "918e029a6a1f0d2a7a455820c721118abdb50b7c5eda6e8ee15f54bed543e67c",
+      "bytes": 11537
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "bytes": 20734
+    },
+    {
+      "path": "scripts/run_operational_prefix_v1.py",
+      "sha256": "fe8e8c9e021ec437b601895de724f1d10f17eb221fea6b8302c304a65fbcffa9",
+      "bytes": 1885
+    },
+    {
+      "path": "configs/research/operational_prefix_v1.json",
+      "sha256": "c1d51bb28376f9a2c7e636efe16a0675d426951b8ed8849ead78d342f4b3ada1",
+      "bytes": 394
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "b2bf5c4042d568eaf9def415ae7b2f08f0fa541a01f970b7e68e6d950035bb6c",
+      "bytes": 2458
+    },
+    {
+      "path": "tests/test_native_clock_prefix_worker_v2.py",
+      "sha256": "fbfa14e5596bdba70d5263b7f770dd689bdda342e56389da16985f417bc20b7b",
+      "bytes": 9339
+    },
+    {
+      "path": "tests/test_native_clock_publication_v2.py",
+      "sha256": "a57b3a1a7ffb8e0c4afb28b96cf355e83c3b52e93317ae17e151667528fa147f",
+      "bytes": 11677
+    },
+    {
+      "path": "tests/test_native_reset_capture_v2.py",
+      "sha256": "551d080e6eb33d2bcc6183e3be044224aa903c4691066946d0d52775a584f7b8",
+      "bytes": 6239
+    },
+    {
+      "path": "tests/test_native_clock_prefix_cli_v2.py",
+      "sha256": "0df55934ca677b03a67dc186bfe14d989561f79bd27c6718ce79f8cc7effbae0",
+      "bytes": 4985
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.command-result.json",
+      "sha256": "ccf4d0f164b3d311816c8ddba2fdde2d34e6e72ac95a1ecfdade780259856c6d",
+      "bytes": 839
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.stdout.txt",
+      "sha256": "cf3b56b858287086ee0f769fe34993b63c55be21d161341f394ddd71caec16ee",
+      "bytes": 339
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/full_GREEN.junit.xml",
+      "sha256": "8313fc28e1f4715bee46061d7b330f5fe1e1453d3c1e3e08738a915a7c539dbf",
+      "bytes": 8980
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_check.command-result.json",
+      "sha256": "187a88b0efbf83a2fbdd80b6461845f4fcbe3f4d18c3d9625f1b44e7ad63d16f",
+      "bytes": 885
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_check.stdout.txt",
+      "sha256": "99744fd905de28e27d8adb1c1eabf3f548d76e515c0eedecdb32d6e47ead0ce1",
+      "bytes": 999
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_check.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/mypy.command-result.json",
+      "sha256": "336d4a5e356cf1daa13d2fc6b9ca12ce66fbe3816969c757a6d144a140b34512",
+      "bytes": 755
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/mypy.stdout.txt",
+      "sha256": "cf51c2f99708ca4b7f8997492507161fe836c15aa949fe65e162e1290e68704a",
+      "bytes": 1113
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/mypy.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_format_check.command-result.json",
+      "sha256": "bf660d1c30e51eec3c3e13e7570c6c6518bdafb650be5b2f8901a5fe0233c060",
+      "bytes": 901
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/ruff_format_check.stdout.txt",
+      "sha256": "8e93d18ae56550d4eef2feac77e6630617c7e169246e56e39c75d58b46167985",
+      "bytes": 26
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/source-freeze.json",
+      "sha256": "6c1413fa2d3aecea183ee7135c0203d67ae67e0334dae51affa59a90df0c2454",
+      "bytes": 1449
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/input-check-after.json",
+      "sha256": "ce7c6b4efba596a48eebfdff5aca866448f22a43c4c2c44d613d1bc884245d73",
+      "bytes": 33095
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/test-outcomes.json",
+      "sha256": "b39fcf7bd4799894c42d9f7216380206838ac57ba4e5ed9abb149b227ea69a28",
+      "bytes": 7010
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/failure-taxonomy.json",
+      "sha256": "8018eaf0f0ce0631de6fd5ea4aa58a333023f433947829e15f783c9ab4675634",
+      "bytes": 6449
+    },
+    {
+      "path": "artifacts/research/process/20261004-ced-development/astra-repair-execution/OC2/implementation/task2-3/round67/implementation/sol-handoff-20261007/format-equivalence.json",
+      "sha256": "2f42147ab625cb0c1cff21f0a17db0e1e9ff0c55d5b3880ff18927e435c3984f",
+      "bytes": 879
+    }
+  ],
+  "scope": {
+    "modify": [
+      "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+      "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+      "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "tests/test_operational_prefix_cli_v1.py"
+    ],
+    "protected": [
+      "tests/test_operational_prefix_v1.py",
+      "tests/test_operational_capture_v1.py",
+      "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+      "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+      "scripts/run_operational_prefix_v1.py",
+      "configs/research/operational_prefix_v1.json",
+      "pyproject.toml",
+      "tests/test_native_clock_prefix_worker_v2.py",
+      "tests/test_native_clock_publication_v2.py",
+      "tests/test_native_reset_capture_v2.py",
+      "tests/test_native_clock_prefix_cli_v2.py"
+    ],
+    "new_artifacts": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation",
+    "minimal_protected_scope_expansions": {
+      "tests/test_operational_prefix_cli_v1.py": "仅143附近相邻import顺序/布局；所有测试语义、断言、nodeid不变",
+      "src/cloud_edge_robot_arm/simulation_runtime/worker.py": "仅TYPE_CHECKING声明/导入；不新增运行时属性赋值或分支"
+    },
+    "excluded": [
+      "RW1活动代码/进度及全仓状态固定",
+      "改旧Astra/GREEN/失败原件",
+      "新运行时守卫或权限入口",
+      "修改测试断言/跳过测试",
+      "重跑完整GREEN",
+      "actual、网络、模型、renderer",
+      "Git提交/推送由本代理执行"
+    ]
+  },
+  "steps": [
+    "S1 冻结且只核对四个允许修改文件与本计划列出的保护输入；保存source-before、原ruff/mypy/format/GREEN收据及SHA。ROOT锁定四文件单写者，不锁RW1或全仓。不重跑失败当RED，现有静态输出就是本轮原始失败。",
+    "S2 修复两处I001。operational_prefix_v1.py仅调整_issue_recorder_v1内同一模块导入名次序；CLI测试仅调整test_execute_once_cli_real_worker_no_retry内两个相邻import的次序/空行，任何断言、fixture、monkeypatch、参数、test名、body其余语句不变。此计划显式允许这一个原保护测试文件最小扩范围；源导入名集合及模块边界保持。",
+    "S3 SimulationWorker原动态_operational_prefix_application属性仅增加TYPE_CHECKING下具体OperationalPrefixApplicationV1 | None声明及对应类型专用导入；无默认赋值，无新运行时import，无新工厂/注册/分派分支。保留getattr(None)及原精确类型、双应用冲突检查，不用setattr或Any强制隐藏attr-defined。worker.py由原保护扩为仅类型声明，不准改现有功能。",
+    "S4 为_issue_recorder_v1返回值写OperationalPrefixRecorderV1，TYPE_CHECKING导入具体类；为OperationalPrefixRecorderV1.__init__的application及from_application的application参数使用具体OperationalPrefixApplicationV1，类型专用导入避免循环。check_recorder可将recorder参数由Any收紧为object以保留原type(recorder)精确运行检查；不得移除或搬动原身份/目录/资产/lease检查。check_active已有dict返回，458错误不能假称其未注解；优先以具体_application类型终止身份比较后self被Any收窄的传播，属待验证mypy假设。若仍失败，停并记录新静态结果，不额外cast self或返回值掩盖。",
+    "S5 三处json.loads返回仅允许基于内部dict→canonical_bytes→loads闭合来源的精确cast(dict[str, Any], 原表达式)。保留所有JSON往返以维持深拷贝/无别名语义；不改为返回缓存对象，不增加default={}或改变异常顺序。每处说明生产者总为对象：_detached_operational_ledger返回dict；_operational_export为明确dict字面量且调用处非None。Any仅沿用现有异构JSON值契约，不扩大为裸Any，不新增type: ignore/noqa、mypy豁免或全局抑制，不把输入不明的JSON也强转。",
+    "S6 先人工diff并生成受限AST等价证据：仅剥离本轮函数/变量类型注解、TYPE_CHECKING专用声明/导入，解包三处经登记的cast；仅在登记的两个import块规范化导入次序。其余AST应相等，测试除那两import外完全相等，worker去除新增TYPE_CHECKING块后完整AST相等。不得全局排序语句/删除assert/异常/比较来制造等价。cast在运行时为恒等调用，仍须保留全部json.loads执行；CLI跨模块import重排不是可普遍忽略副作用，必须由后续独立CLI/lazy-import用例补验证。记录每个允许AST差异坐标及原因。",
+    "S7 在改后四文件静止且保护输入匹配后，按verification各一次执行ruff_check、ruff_format_check、mypy。三者都应为exit0；新增类型声明由当前4源mypy命令的导入图校验，不因worker未列为显式目标而扩为全仓mypy。失败保留原输出、立即停止相关后续验证并下一轮Astra，不循环试错。不得自动对保护文件批量ruff --fix/format；人工完成限定布局。",
+    "S8 静态通过后一次运行6例targeted_CPU；随后运行round67剩余唯一R03_regression，保留原argv/env（仅额外指定新JUnit与输出收据允许）。预先确认basetemp未含既有原件；如果已存在不清理，停止报告并选经ROOT确认的新未用目录，不复用/删除失败原件。所有stdout/stderr/exitcode/wall/JUnit独立落盘，核对unique/failed/errors/skipped；新失败下一Astra，不重跑。",
+    "S9 保存source-after、限定diff/AST证据、输入核对及验证结果。原63例GREEN、12个失败taxonomy条目/CPU原件分母、旧格式通过均按旧SHA原样保留，不能覆盖成新SHA。步骤报告分别列旧软件证据复用与新定向验证、实际运行0、正式研究未验收。供ROOT独立审查；SDD作者不自审/提交，actual继续ROOT调度。"
+  ],
+  "verification": {
+    "ruff_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "scripts/run_operational_prefix_v1.py",
+        "tests/test_operational_prefix_v1.py",
+        "tests/test_operational_capture_v1.py",
+        "tests/test_operational_prefix_cli_v1.py",
+        "src/cloud_edge_robot_arm/simulation_runtime/worker.py"
+      ],
+      "max_runs": 1,
+      "prior_round_runs_consumed": 1,
+      "new_round_max_runs": 1,
+      "budget_reason": "源码确有本轮类型/导入修改后的单次最终静态确认，不重置round67次数",
+      "receipt_directory": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation"
+    },
+    "ruff_format_check": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "scripts/run_operational_prefix_v1.py",
+        "tests/test_operational_prefix_v1.py",
+        "tests/test_operational_capture_v1.py",
+        "tests/test_operational_prefix_cli_v1.py",
+        "src/cloud_edge_robot_arm/simulation_runtime/worker.py"
+      ],
+      "max_runs": 1,
+      "prior_round_runs_consumed": 1,
+      "new_round_max_runs": 1,
+      "budget_reason": "源码确有本轮类型/导入修改后的单次最终静态确认，不重置round67次数",
+      "receipt_directory": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation"
+    },
+    "mypy": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "mypy",
+        "--cache-dir=/tmp/bigsmall-oc2-round74-mypy",
+        "--follow-imports=silent",
+        "src/cloud_edge_robot_arm/research/operational_prefix_schema_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_capture_v1.py",
+        "src/cloud_edge_robot_arm/research/operational_prefix_v1.py",
+        "scripts/run_operational_prefix_v1.py"
+      ],
+      "max_runs": 1,
+      "prior_round_runs_consumed": 1,
+      "new_round_max_runs": 1,
+      "budget_reason": "源码确有本轮类型/导入修改后的单次最终静态确认，不重置round67次数",
+      "receipt_directory": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation"
+    },
+    "R03_regression": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp=/tmp/bigsmall-oc2-round67-r03",
+        "tests/test_native_clock_prefix_worker_v2.py",
+        "tests/test_native_clock_publication_v2.py",
+        "tests/test_native_reset_capture_v2.py",
+        "tests/test_native_clock_prefix_cli_v2.py"
+      ],
+      "max_runs": 1,
+      "prior_runs_consumed": 0,
+      "remaining_runs": 1,
+      "new_extra_runs": 0,
+      "receipt_directory": "artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation",
+      "reason": "继承round67尚未运行的唯一R03回归；worker声明虽不改运行，但原保护验证仍欠交付。"
+    },
+    "targeted_CPU": {
+      "argv": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp=/tmp/bigsmall-oc2-round74-targeted",
+        "tests/test_operational_prefix_v1.py::test_startup_exact_registry_and_once_only",
+        "tests/test_operational_prefix_cli_v1.py::test_real_default_import_has_no_runtime_or_network_effects",
+        "tests/test_operational_prefix_cli_v1.py::test_execute_once_cli_real_worker_no_retry",
+        "tests/test_operational_capture_v1.py::test_partial_prefix_keeps_all_failures[export]",
+        "tests/test_operational_capture_v1.py::test_reset_primary_survives_legacy_freeze_failure",
+        "tests/test_operational_capture_v1.py::test_reset_primary_survives_failure_export_failure",
+        "--junitxml=artifacts/research/process/20261004-ced-development/astra-rounds/round74-oc2-static-typing-20261007/implementation/targeted_CPU.junit.xml"
+      ],
+      "max_runs": 1,
+      "expected_unique_cases": 6,
+      "reason": "startup属性签发、懒导入、真实CPU worker正常签发/冻结/导出链、导出失败与两种secondary失败的受影响接口；不重复63例完整GREEN。"
+    },
+    "full_GREEN": {
+      "prior_runs_consumed": 1,
+      "new_round_max_runs": 0,
+      "reuse": "旧63例GREEN按原source-freeze保留，最终源码使用可审计运行语义等价证明与6个定向case增量连接；不得声称63例在新SHA上重跑。"
+    },
+    "env": {
+      "PYTHONPATH": "src:.",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "MYPYPATH": "src"
+    }
+  },
+  "preconditions": [
+    "ROOT复核本计划并将四文件交原Sol单写者；独立RW1继续",
+    "再次验证本计划相关输入SHA，历史收据只读；不递归pin input-check-after内部活跃RW1引用",
+    "既有63例GREEN与失败日志齐全，不重置次数",
+    "已可用.venv/bin/python，环境使用原PYTHONPATH/PYTHONDONTWRITEBYTECODE/MYPYPATH",
+    "CPU原始替换缝保持，禁止实际MuJoCo/renderer/model/request；本轮测试仍开发验证",
+    "新输出目录独占，不覆盖旧basetemp和原始实验字节"
+  ],
+  "acceptance": {
+    "software": "四文件限定diff及等价证明、三静态单次exit0、6例定向无skip/error/failure、一次剩余R03通过，原失败分母和63例GREEN完整保留。",
+    "actual": "本轮0；OC2真实前缀原前置仍未由软件验收满足。",
+    "formal_research": "NOT_ACCEPTED；不晋升T12/METHOD/FINAL/T13或收益。"
+  },
+  "stop_conditions": [
+    "出现新根因、类型仍失败、范围超过四文件或任何计划外失败，保留原件并下一轮Astra",
+    "无法证明运行逻辑未变不得复用旧GREEN作为新逻辑证据，不能自行扩测",
+    "影响共享worker的其他作者变动需ROOT协调，不能恢复旧快照覆盖他人修改"
+  ],
+  "planning_tool_incident": {
+    "operation": "只读代码行展示",
+    "raw_stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 11, in <module>\nIndexError: list index out of range\n",
+    "exit_code": 1,
+    "cause": "展示终行315超过operational_capture_v1.py实际313行",
+    "effect": "无写入/产品运行；已用min(终行,len(lines))限定只读展示，不影响产品诊断",
+    "failure_evidence_source": "本代理工具直接输出"
+  },
+  "implementation_performed": false,
+  "planner_tests": 0,
+  "planner_actual": 0
+}

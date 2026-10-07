@@ -20,7 +20,9 @@ import shutil
 import signal
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, cast
@@ -665,6 +667,571 @@ class GenerationBudget:
             raise BudgetExceeded("disk free-space reserve would be violated")
 
 
+_RECOVERY_WALL_SCOPE = "r07.recovery-wall.development.v1"
+_RECOVERY_WALL_SEMANTICS = "LINUX_BOOTTIME_INCLUDES_SUSPEND"
+_RECOVERY_WALL_NS = 60_000_000_000
+_RECOVERY_WALL_FACTORY_KEY = object()
+_RECOVERY_WALL_APP_NONCE = os.urandom(32).hex()
+_RECOVERY_WALL_STARTUP_IDENTITY: dict | None = None
+_RECOVERY_WALL_LEASES: dict[int, _RecoveryWallRendererLease] = {}
+_RECOVERY_WALL_OWNERS: dict[int, _RecoveryWallOwner] = {}
+_RECOVERY_WALL_BACKENDS: dict[int, tuple[_RecoveryWallOwner, object, str]] = {}
+_RECOVERY_WALL_PLATFORM_EVIDENCE = (
+    REPOSITORY
+    / "artifacts/research/process/20261004-ced-development/astra-repair-execution"
+    / "R07/producer/recovery-wall/implementation/task1/platform-evidence/report.json"
+)
+_RECOVERY_WALL_PLATFORM_SHA = "1f7dd09001b4b288a81ccdf44adb2682ffeecd8276c82ea59dc525c5888cf7f6"
+
+
+def _recovery_wall_process_identity() -> dict:
+    """Actual process/boot/time namespace; no caller identity or clock fallback."""
+    if platform.system() != "Linux":
+        raise ValueError("recovery wall requires Linux process identity")
+    fields = Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()
+    start = fields[19]
+    boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    namespace = os.readlink("/proc/self/ns/time")
+    offsets = Path("/proc/self/timens_offsets").read_text()
+    if not start.isdecimal() or not boot or not namespace or not offsets:
+        raise ValueError("missing recovery wall process/boot/time namespace identity")
+    return {
+        "pid": os.getpid(),
+        "process_start_ticks": start,
+        "boot_id": boot,
+        "time_namespace": namespace,
+        "time_namespace_offsets": offsets,
+        "app_nonce": _RECOVERY_WALL_APP_NONCE,
+    }
+
+
+def _recovery_wall_boottime_reader() -> Callable[[], int]:
+    if platform.system() != "Linux" or not hasattr(time, "CLOCK_BOOTTIME"):
+        raise ValueError("Linux CLOCK_BOOTTIME unsupported; no fallback")
+    clock_id = time.CLOCK_BOOTTIME
+
+    def read() -> int:
+        try:
+            value = time.clock_gettime_ns(clock_id)
+        except Exception as exc:
+            raise BudgetExceeded("CLOCK_BOOTTIME counter read failed; no fallback") from exc
+        if type(value) is not int or value < 0:
+            raise BudgetExceeded("CLOCK_BOOTTIME counter is not nonnegative integer ns")
+        return value
+
+    return read
+
+
+class _RecoveryWallRendererLease:
+    """Only a currently held producer renderer context issues a production lease."""
+
+    def __init__(
+        self, key: object, *, handle: Any, identity_read: Callable[[], dict], cpu: bool
+    ) -> None:
+        if key is not _RECOVERY_WALL_FACTORY_KEY:
+            raise ValueError("private live renderer lease factory required")
+        self._handle = handle
+        self._identity_read = identity_read
+        self._identity = deepcopy(identity_read())
+        self._cpu = cpu
+        self._nonce = os.urandom(32).hex()
+        self._file_identity = (
+            None if cpu else (os.fstat(handle.fileno()).st_dev, os.fstat(handle.fileno()).st_ino)
+        )
+        _RECOVERY_WALL_LEASES[id(self)] = self
+
+    def __copy__(self) -> Any:
+        raise TypeError("live renderer lease cannot be copied")
+
+    def __deepcopy__(self, _memo: dict) -> Any:
+        raise TypeError("live renderer lease cannot be copied")
+
+    def __reduce__(self) -> Any:
+        raise TypeError("live renderer lease cannot be pickled")
+
+    def _require_live(self, *, production: bool = False) -> None:
+        if _RECOVERY_WALL_LEASES.get(id(self)) is not self or (production and self._cpu):
+            raise ValueError("unregistered or CPU-only renderer lease")
+        if self._identity_read() != self._identity:
+            raise ValueError("renderer lease process identity/lifecycle changed")
+        if not self._cpu:
+            if self._handle.closed:
+                raise ValueError("renderer lease context is closed")
+            stat = os.fstat(self._handle.fileno())
+            if (stat.st_dev, stat.st_ino) != self._file_identity:
+                raise ValueError("renderer lease file identity changed")
+
+
+def _recovery_wall_lease(value: object, *, production: bool) -> _RecoveryWallRendererLease:
+    if type(value) is not _RecoveryWallRendererLease:
+        raise ValueError("actual registered renderer context lease required")
+    lease = cast(_RecoveryWallRendererLease, value)
+    lease._require_live(production=production)
+    return lease
+
+
+def _recovery_wall_evidence(value: Any) -> Any:
+    """Retain invalid observations as tagged representations, never valid counters."""
+    if isinstance(value, dict):
+        return {str(k): _recovery_wall_evidence(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_recovery_wall_evidence(v) for v in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return {"invalid_type": "float", "original_repr": repr(value)}
+    if value is None or type(value) in (str, int, float, bool):
+        return value
+    return {"invalid_type": type(value).__name__, "original_repr": repr(value)}
+
+
+class _RecoveryWallOwner:
+    """One live development owner; offline receipts cannot recreate its authority.
+
+    The private backend bind is a prerequisite to BEGIN. Task RW2 must obtain that
+    exact object inside the held capture/renderer context; RW1 does not wire it.
+    """
+
+    def __init__(
+        self,
+        key: object,
+        plan: dict,
+        output: Path,
+        *,
+        lease: _RecoveryWallRendererLease,
+        raw_read: Callable[[], Any],
+        platform_evidence: dict,
+    ) -> None:
+        if key is not _RECOVERY_WALL_FACTORY_KEY:
+            raise ValueError("private recovery wall owner factory required")
+        lease._require_live()
+        self._lease = lease
+        self._identity = deepcopy(lease._identity)
+        self._plan = plan
+        self._output = output.resolve()
+        _plain_path(output)
+        if not output.is_dir():
+            raise ValueError("existing allocation output required")
+        self._binding = self._plan_binding()
+        allocation = Path(self._binding["allocation_path"])
+        _plain_path(allocation)
+        self._allocation_sha = _hash(allocation)
+        row = _read(allocation)
+        if row != {
+            "assignment_id": self._binding["assignment_id"],
+            "attempt": self._binding["attempt"],
+            "state": "ALLOCATED",
+            "protocol_hash": self._binding["protocol_hash"],
+            "output": str(self._output),
+        }:
+            raise ValueError("canonical allocation does not bind this owner/attempt/output")
+        if plan.get("budgets", {}).get("rcap_s") != 60.0:
+            raise ValueError("immutable recovery wall Rcap60 required")
+        self._raw_read = raw_read
+        self._last_ns: int | None = None
+        self._backend: Any = None
+        self._episode: str | None = None
+        self._last_state: dict | None = None
+        self._fault_begin: dict | None = None
+        self._fault_end: dict | None = None
+        self._fault_prefix: list[dict] | None = None
+        self._failure: str | None = None
+        self._finished = False
+        _RECOVERY_WALL_OWNERS[id(self)] = self
+        try:
+            startup_ns = self._counter()
+            self._startup = {
+                "scope": _RECOVERY_WALL_SCOPE,
+                "clock_semantics": _RECOVERY_WALL_SEMANTICS,
+                "clock_api": "time.clock_gettime_ns(time.CLOCK_BOOTTIME)",
+                "clock_id": 7,
+                "startup_counter_ns": startup_ns,
+                "identity": deepcopy(self._identity),
+                "renderer_lease_nonce": lease._nonce,
+                "allocation": {**self._binding, "sha256": self._allocation_sha},
+                "implementation": {
+                    "os": platform.system(),
+                    "kernel_release": platform.release(),
+                    "python": platform.python_version(),
+                    "python_implementation": platform.python_implementation(),
+                },
+                "platform_evidence": platform_evidence,
+                "cpu_scripted": lease._cpu,
+                "actual_authority": not lease._cpu,
+                "formal_accepted": False,
+            }
+            self._journal = StepSpool(output / "raw-wall-checks.jsonl")
+            self._journal.append("OWNER_START", self._startup)
+        except Exception:
+            _RECOVERY_WALL_OWNERS.pop(id(self), None)
+            raise
+
+    def __copy__(self) -> Any:
+        raise TypeError("live recovery wall owner cannot be copied")
+
+    def __deepcopy__(self, _memo: dict) -> Any:
+        raise TypeError("live recovery wall owner cannot be copied")
+
+    def __reduce__(self) -> Any:
+        raise TypeError("live recovery wall owner cannot be pickled")
+
+    def _plan_binding(self) -> dict:
+        assignment = self._plan["row"]["assignment_id"]
+        attempt = self._plan["attempt"]
+        protocol_hash = self._plan["protocol_hash"]
+        if (
+            not isinstance(assignment, str)
+            or not assignment
+            or Path(assignment).name != assignment
+            or type(attempt) is not int
+            or not 1 <= attempt <= 5
+            or not isinstance(protocol_hash, str)
+            or len(protocol_hash) != 64
+            or any(c not in "0123456789abcdef" for c in protocol_hash)
+        ):
+            raise ValueError("invalid recovery wall plan allocation identity")
+        directory = Path(self._plan["allocation_directory"])
+        _plain_path(directory)
+        return {
+            "assignment_id": assignment,
+            "attempt": attempt,
+            "protocol_hash": protocol_hash,
+            "allocation_path": str((directory / f"{assignment}-attempt-{attempt}.json").resolve()),
+            "output": str(self._output),
+        }
+
+    def _require_live(self) -> None:
+        if _RECOVERY_WALL_OWNERS.get(id(self)) is not self or self._finished:
+            raise ValueError("unregistered or finished live recovery wall owner")
+        self._lease._require_live()
+        if self._lease._identity != self._identity:
+            raise ValueError("owner startup identity/lifecycle changed")
+        if self._plan_binding() != self._binding:
+            raise ValueError("recovery wall plan allocation identity changed")
+        allocation = Path(self._binding["allocation_path"])
+        _plain_path(allocation)
+        if _hash(allocation) != self._allocation_sha:
+            raise ValueError("canonical allocation bytes changed")
+
+    def _counter(self) -> int:
+        self._require_live()
+        try:
+            value = self._raw_read()
+        except Exception as exc:
+            raise BudgetExceeded("recovery wall counter read failed") from exc
+        self._require_live()
+        if type(value) is not int or value < 0:
+            raise BudgetExceeded("recovery wall counter requires nonnegative integer ns")
+        if self._last_ns is not None and value < self._last_ns:
+            raise BudgetExceeded("recovery wall counter rollback/order violation")
+        self._last_ns = value
+        return cast(int, value)
+
+    def _bind_backend(self, backend: object) -> None:
+        """Private producer bind, once; BEGIN never binds from caller assertions."""
+        self._require_live()
+        if self._backend is not None or self._failure is not None:
+            raise ValueError("recovery wall backend already bound or owner failed")
+        self._backend = backend
+        try:
+            self._last_state = self._sample_state()
+            self._episode = self._last_state["episode_id"]
+            _RECOVERY_WALL_BACKENDS[id(self)] = (self, backend, cast(str, self._episode))
+        except Exception as exc:
+            self._remember_failure("BACKEND_BIND_FAILED", exc, {})
+            raise
+
+    @staticmethod
+    def _valid_state(step: Any, sim_time_s: Any) -> None:
+        if type(step) is not int or step < 0:
+            raise ValueError("invalid source physics step")
+        if type(sim_time_s) not in (int, float) or not math.isfinite(sim_time_s) or sim_time_s < 0:
+            raise ValueError("invalid source sim state")
+
+    def _sample_state(self) -> dict:
+        self._require_live()
+        if self._backend is None:
+            raise ValueError("owned live backend must be privately bound before BEGIN")
+        binding = _RECOVERY_WALL_BACKENDS.get(id(self))
+        if binding is not None and (binding[0] is not self or binding[1] is not self._backend):
+            raise ValueError("owner backend exact identity changed")
+        episode = self._backend._episode_id
+        if (
+            not isinstance(episode, str)
+            or not episode
+            or (self._episode is not None and episode != self._episode)
+        ):
+            raise ValueError("owned backend episode missing or changed")
+        step = self._backend.total_physics_steps
+        sim_time_s = self._backend.get_sim_time()
+        self._valid_state(step, sim_time_s)
+        if self._backend._episode_id != episode:
+            raise ValueError("owned backend episode changed during source sampling")
+        if self._last_state is not None and (
+            step < self._last_state["step"]
+            or sim_time_s < self._last_state["sim_time_s"]
+            or (step == self._last_state["step"] and sim_time_s != self._last_state["sim_time_s"])
+        ):
+            raise ValueError("owned source step/sim order changed")
+        self._require_live()
+        return {
+            "episode_id": episode,
+            "step": step,
+            "sim_time_s": sim_time_s,
+            "episode_source": "owned_live_backend._episode_id",
+            "step_source": "owned_live_backend.total_physics_steps",
+            "sim_time_source": "owned_live_backend.get_sim_time()",
+        }
+
+    def _source_records(self) -> list[dict]:
+        try:
+            rows = self._backend.fault_records
+            if type(rows) is not list or any(type(row) is not dict for row in rows):
+                raise ValueError("owned fault source must be a list of original dictionaries")
+            result = deepcopy(rows)
+            canonical_json(result)
+            return cast(list[dict], result)
+        except Exception as exc:
+            raise ValueError("owned fault source read/type/payload invalid") from exc
+
+    @staticmethod
+    def _assert_state(state: dict, *, step: int, sim_time_s: float) -> None:
+        _RecoveryWallOwner._valid_state(step, sim_time_s)
+        if state["step"] != step:
+            raise ValueError("caller step does not equal owned live source step")
+        if state["sim_time_s"] != sim_time_s:
+            raise ValueError("caller sim state does not equal owned live source sim state")
+
+    def _remember_failure(self, kind: str, exc: Exception, payload: dict) -> None:
+        if self._failure is None:
+            self._failure = f"{type(exc).__name__}: {exc}"
+        try:
+            self._journal.append(kind, {"failure": str(exc), **_recovery_wall_evidence(payload)})
+        except Exception as writer_exc:
+            self._failure += f"; wall journal/spool failure: {writer_exc}"
+
+    def begin_fault(
+        self, *, backend: object, episode_id: str, step: int, sim_time_s: float
+    ) -> None:
+        self._require_live()
+        payload: dict = {}
+        try:
+            if self._fault_begin is not None or self._failure is not None:
+                raise ValueError("fault BEGIN already recorded or owner already failed")
+            if backend is not self._backend:
+                raise ValueError("caller backend is not the exact privately owned backend")
+            lower = self._counter()
+            state = self._sample_state()
+            self._assert_state(state, step=step, sim_time_s=sim_time_s)
+            if episode_id != state["episode_id"]:
+                raise ValueError("caller episode assertion does not equal live backend episode")
+            rows = self._source_records()
+            if self._sample_state() != state:
+                raise ValueError("source step/sim/episode changed before BEGIN")
+            payload = {
+                **state,
+                "lower_ns": lower,
+                "deadline_ns": lower + _RECOVERY_WALL_NS,
+                "source_length": len(rows),
+                "source_prefix": rows,
+                "event_source": "owned_backend.fault_records",
+            }
+            # The exclusive fsynced BEGIN is durable before this method returns,
+            # therefore before its caller may perform the single real injection.
+            _write(self._output / "wall-start.json", {**self._startup, "fault_begin": payload})
+            self._fault_begin = deepcopy(payload)
+            self._fault_prefix = rows
+            self._last_state = state
+            self._journal.append("FAULT_BEGIN", payload)
+        except Exception as exc:
+            self._remember_failure("FAULT_BEGIN_FAILED", exc, payload)
+            raise
+
+    def end_fault_injection(self, *, step: int, sim_time_s: float) -> None:
+        self._require_live()
+        payload: dict = {}
+        try:
+            if self._failure is not None or self._fault_end is not None:
+                raise ValueError("fault END already recorded or owner already failed")
+            if self._fault_begin is None or self._fault_prefix is None:
+                raise ValueError("fault END requires durable BEGIN")
+            state = self._sample_state()
+            self._assert_state(state, step=step, sim_time_s=sim_time_s)
+            begin = self._fault_begin
+            if any(state[key] != begin[key] for key in ("episode_id", "step", "sim_time_s")):
+                raise ValueError("synchronous fault END live source step/sim/episode changed")
+            rows = self._source_records()
+            payload = {"source_records": rows, "end_source_state": state}
+            size = begin["source_length"]
+            if canonical_json(rows[:size]) != canonical_json(self._fault_prefix):
+                raise ValueError("owned fault source prefix mutated/truncated/reset")
+            if len(rows) != size + 1:
+                raise ValueError(
+                    "owned fault source requires exactly one fresh event at BEGIN ordinal"
+                )
+            event = rows[size]
+            if event.get("event") != "TARGET_MOTION_STARTED":
+                raise ValueError("fresh source event is not TARGET_MOTION_STARTED")
+            if any(canonical_json(event) == canonical_json(old) for old in self._fault_prefix):
+                raise ValueError("replayed original source event payload")
+            self._valid_state(event.get("physics_step"), event.get("sim_time_s"))
+            if event["physics_step"] != state["step"] or event["sim_time_s"] != state["sim_time_s"]:
+                raise ValueError("original source event step/sim mismatch")
+            if self._sample_state() != state:
+                raise ValueError("owned source step/sim/episode changed during END")
+            upper = self._counter()
+            if upper >= begin["deadline_ns"]:
+                raise BudgetExceeded("recovery wall fixed deadline reached at fault END")
+            payload = {
+                **state,
+                "upper_ns": upper,
+                "event_ordinal": size,
+                "event": event,
+                "event_source": "owned_backend.fault_records",
+            }
+            self._journal.append("FAULT_END", payload)
+            self._fault_end = deepcopy(payload)
+            self._last_state = state
+        except Exception as exc:
+            self._remember_failure("FAULT_END_FAILED", exc, payload)
+            raise
+
+    def _current(self, kind: str, *, step: int, sim_time_s: float) -> dict:
+        payload: dict = {"kind": kind}
+        try:
+            self._require_live()
+            payload["lower_ns"] = self._counter()
+            state = self._sample_state()
+            payload.update(state)
+            self._assert_state(state, step=step, sim_time_s=sim_time_s)
+            payload["upper_ns"] = self._counter()
+            self._require_live()
+            if self._fault_begin is not None:
+                payload["age_upper_ns"] = payload["upper_ns"] - self._fault_begin["lower_ns"]
+                if payload["upper_ns"] >= self._fault_begin["deadline_ns"]:
+                    raise BudgetExceeded("recovery wall fixed deadline reached")
+            self._journal.append("CHECK", payload)
+            self._last_state = state
+            return payload
+        except Exception as exc:
+            self._remember_failure("CHECK_FAILED", exc, payload)
+            raise
+
+    def check(self, kind: str, *, step: int, sim_time_s: float) -> None:
+        self._require_live()
+        if self._failure is not None:
+            raise BudgetExceeded("recovery wall owner already failed")
+        self._current(kind, step=step, sim_time_s=sim_time_s)
+
+    def finish(self, *, step: int, sim_time_s: float, failure: str | None) -> dict:
+        # Identity drift must still permit a failed offline terminal to preserve
+        # the original BEGIN and journal. It never authorizes another live call.
+        if _RECOVERY_WALL_OWNERS.get(id(self)) is not self or self._finished:
+            raise ValueError("live recovery wall owner already finished or foreign")
+        terminal = None
+        if failure is not None:
+            self._remember_failure("EXECUTION_FAILED", RuntimeError(failure), {})
+        try:
+            terminal = self._current("TERMINAL", step=step, sim_time_s=sim_time_s)
+        except Exception:
+            pass  # _current retained the exact failure and partial observation.
+        if self._fault_begin is None or self._fault_end is None:
+            self._remember_failure("INCOMPLETE", ValueError("missing fault BEGIN/END pair"), {})
+        try:
+            self._journal.append("FINISH", {"failure": self._failure, "terminal": terminal})
+            self._journal.close()
+        except Exception as exc:
+            self._remember_failure("JOURNAL_FAILED", exc, {})
+            try:
+                self._journal.close()
+            except Exception:
+                pass
+        result = {
+            "schema_version": "r07.recovery-wall.terminal.v1",
+            **self._startup,
+            "status": "PASS"
+            if self._failure is None
+            else (
+                "INCOMPLETE" if self._fault_begin is None or self._fault_end is None else "FAILED"
+            ),
+            "wall_pass": self._failure is None and terminal is not None,
+            "failure": self._failure,
+            "deadline_ns": self._fault_begin["deadline_ns"] if self._fault_begin else None,
+            "fault_begin": self._fault_begin,
+            "fault_end": self._fault_end,
+            "terminal": terminal,
+            "journal_sha256": _hash(self._output / "raw-wall-checks.jsonl"),
+            "start_sha256": _hash(self._output / "wall-start.json") if self._fault_begin else None,
+            "formal_wall_accepted": False,
+            "g4_measured": False,
+        }
+        try:
+            _write(self._output / "wall-terminal.json", result)
+        finally:
+            self._finished = True
+            _RECOVERY_WALL_OWNERS.pop(id(self), None)
+            _RECOVERY_WALL_BACKENDS.pop(id(self), None)
+            if self._lease._cpu:
+                _RECOVERY_WALL_LEASES.pop(id(self._lease), None)
+        return result
+
+
+def _open_recovery_wall_owner(
+    plan: dict, output: Path, *, renderer_lease: object
+) -> _RecoveryWallOwner:
+    """Production has no caller clock/domain/seconds parameter or CPU authority."""
+    lease = _recovery_wall_lease(renderer_lease, production=True)
+    raw_read = _recovery_wall_boottime_reader()
+    evidence = _RECOVERY_WALL_PLATFORM_EVIDENCE
+    _plain_path(evidence)
+    if _hash(evidence) != _RECOVERY_WALL_PLATFORM_SHA:
+        raise ValueError("frozen local BOOTTIME platform semantics evidence missing or changed")
+    record = _read(evidence)
+    if (
+        not record["boottime_semantics_documented_locally"]
+        or not record["capability"]["supported_now"]
+    ):
+        raise ValueError("local BOOTTIME semantics/capability actual prerequisite unmet")
+    return _RecoveryWallOwner(
+        _RECOVERY_WALL_FACTORY_KEY,
+        plan,
+        output,
+        lease=lease,
+        raw_read=raw_read,
+        platform_evidence={
+            "path": str(evidence),
+            "sha256": _RECOVERY_WALL_PLATFORM_SHA,
+            "suspend_restart_hostpause_actual": "NOT_TESTED",
+        },
+    )
+
+
+def _open_recovery_wall_owner_for_test(
+    plan: dict,
+    output: Path,
+    *,
+    backend: object,
+    raw_read: Callable[[], Any],
+    identity_read: Callable[[], dict],
+) -> _RecoveryWallOwner:
+    """Private CPU seam: scripted raw reads, real validation, no production lease."""
+    lease = _RecoveryWallRendererLease(
+        _RECOVERY_WALL_FACTORY_KEY, handle=None, identity_read=identity_read, cpu=True
+    )
+    try:
+        owner = _RecoveryWallOwner(
+            _RECOVERY_WALL_FACTORY_KEY,
+            plan,
+            output,
+            lease=lease,
+            raw_read=raw_read,
+            platform_evidence={"CPU_ONLY": True, "actual_platform_probe": False},
+        )
+        owner._bind_backend(backend)
+        return owner
+    except Exception:
+        _RECOVERY_WALL_LEASES.pop(id(lease), None)
+        raise
+
+
 @contextmanager
 def renderer_exclusive(path: Path) -> Any:
     """Cross-process advisory lease for this producer's sole renderer queue.
@@ -679,9 +1246,24 @@ def renderer_exclusive(path: Path) -> Any:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise BudgetExceeded("renderer is already leased by another producer") from exc
+        lease = None
         try:
-            yield
+            global _RECOVERY_WALL_STARTUP_IDENTITY
+            identity = _recovery_wall_process_identity()
+            if _RECOVERY_WALL_STARTUP_IDENTITY is None:
+                _RECOVERY_WALL_STARTUP_IDENTITY = deepcopy(identity)
+            if identity != _RECOVERY_WALL_STARTUP_IDENTITY:
+                raise ValueError("renderer context startup process identity changed")
+            lease = _RecoveryWallRendererLease(
+                _RECOVERY_WALL_FACTORY_KEY,
+                handle=handle,
+                identity_read=_recovery_wall_process_identity,
+                cpu=False,
+            )
+            yield lease
         finally:
+            if lease is not None:
+                _RECOVERY_WALL_LEASES.pop(id(lease), None)
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 

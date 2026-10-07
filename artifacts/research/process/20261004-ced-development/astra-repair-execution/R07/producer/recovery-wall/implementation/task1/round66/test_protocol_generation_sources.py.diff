@@ -1,0 +1,521 @@
+--- before/tests/test_protocol_generation_sources.py
++++ after/tests/test_protocol_generation_sources.py
+@@ -774,3 +774,518 @@
+     assert plan["fault"]["parameters"]["direction_y"] == -1.0
+     assert not (output / "allocations").exists()
+     assert len(list((predecessor / "allocations").glob("*.json"))) == 1
++@pytest.fixture
++def recovery_wall_cpu_only(monkeypatch):
++    """Fail if these CPU cases reach a native effect or a real clock probe."""
++    import socket
++
++    from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
++    from cloud_edge_robot_arm.simulation.mujoco.camera import MuJoCoRGBDCamera
++    from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
++
++    native_attempts = []
++
++    def forbidden(*args, **kwargs):
++        native_attempts.append((args, kwargs))
++        raise AssertionError("RW1 must not initialize/inject/step/render/capture/network")
++
++    for cls, names in (
++        (MuJoCoPhysicsBackend, ("__init__", "initialize", "inject_fault", "step")),
++        (MuJoCoRGBDCamera, ("__init__", "_capture")),
++        (MuJoCoCaptureSession, ("__enter__",)),
++    ):
++        for name in names:
++            monkeypatch.setattr(cls, name, forbidden)
++    monkeypatch.setattr(socket.socket, "connect", forbidden)
++    monkeypatch.setattr(socket, "create_connection", forbidden)
++
++    def no_real_clock(_clock_id):
++        raise AssertionError("RW1 must reuse saved platform capability evidence")
++
++    monkeypatch.setattr(api().time, "clock_gettime_ns", no_real_clock)
++    yield
++    assert native_attempts == []
++
++
++class RecoveryWallCPUBackend:
++    """Owned synchronous-source fixture; it never constructs a native backend."""
++
++    def __init__(self):
++        self._episode_id = "cpu-episode-1"
++        self.total_physics_steps = 3
++        self.sim_time_s = 1.0
++        self.events = []
++
++    def get_sim_time(self):
++        return self.sim_time_s
++
++    @property
++    def fault_records(self):
++        return [dict(event) for event in self.events]
++
++    def event(self):
++        return {
++            "event": "TARGET_MOTION_STARTED",
++            "physics_step": self.total_physics_steps,
++            "sim_time_s": self.sim_time_s,
++            "speed_m_s": 0.02,
++            "direction_y": 1.0,
++            "duration_s": 1.0,
++            "mechanism": "CPU fixture only; not actual fault evidence",
++        }
++
++
++def recovery_wall_fixture(tmp_path, *, counters=None, prefix=None):
++    """Raw counters are injected; owner validation and verdict stay real."""
++    from itertools import chain, repeat
++
++    module = api()
++    output = tmp_path / "attempt"
++    output.mkdir()
++    allocations = tmp_path / "canonical" / "allocations"
++    allocations.mkdir(parents=True)
++    plan = {
++        "row": {"assignment_id": "recovery-0002"},
++        "attempt": 1,
++        "protocol_hash": "a" * 64,
++        "allocation_directory": str(allocations.resolve()),
++        "budgets": {"rcap_s": 60.0},
++    }
++    allocation = {
++        "assignment_id": "recovery-0002",
++        "attempt": 1,
++        "state": "ALLOCATED",
++        "protocol_hash": "a" * 64,
++        "output": str(output.resolve()),
++    }
++    (allocations / "recovery-0002-attempt-1.json").write_text(json.dumps(allocation))
++    identity = {
++        "pid": 12345,
++        "process_start_ticks": "987654",
++        "boot_id": "cpu-boot-1",
++        "time_namespace": "time:[cpu-1]",
++        "time_namespace_offsets": "monotonic 0 0\nboottime 0 0\n",
++        "app_nonce": "cpu-startup-1",
++    }
++    values = chain(counters or [0, 100, 110, 120, 121], repeat(200))
++
++    def read():
++        value = next(values)
++        if isinstance(value, Exception):
++            raise value
++        return value
++
++    backend = RecoveryWallCPUBackend()
++    backend.events = prefix or []
++    owner = module._open_recovery_wall_owner_for_test(
++        plan,
++        output,
++        backend=backend,
++        raw_read=read,
++        identity_read=lambda: dict(identity),
++    )
++    return owner, backend, identity, plan, output
++
++
++def recovery_wall_begin(owner, backend):
++    owner.begin_fault(
++        backend=backend,
++        episode_id=backend._episode_id,
++        step=backend.total_physics_steps,
++        sim_time_s=backend.get_sim_time(),
++    )
++
++
++def recovery_wall_end(owner, backend):
++    owner.end_fault_injection(step=backend.total_physics_steps, sim_time_s=backend.get_sim_time())
++
++
++def recovery_wall_finish(owner, backend, failure=None):
++    return owner.finish(
++        step=backend.total_physics_steps,
++        sim_time_s=backend.get_sim_time(),
++        failure=failure,
++    )
++
++
++@pytest.mark.parametrize(
++    "case",
++    [
++        "below",
++        "equal",
++        "above",
++        "stopped_s",
++        "jump",
++        "utc_jump",
++        "advance_s",
++        "repeat_begin",
++        "missing_pair",
++        "negative",
++        "bool",
++        "rollback",
++        "pair_reverse",
++        "cross_domain",
++        "missing_end",
++        "writer_error",
++    ],
++)
++def test_recovery_wall_integer_deadline_boundaries(
++    tmp_path, monkeypatch, recovery_wall_cpu_only, case
++):
++    # A shifted/refreshed deadline, float/clamped counter or S-derived age fails here.
++    counters = {
++        "below": [0, 100, 110, 60_000_000_098, 60_000_000_099],
++        "equal": [0, 100, 110, 60_000_000_099, 60_000_000_100],
++        "above": [0, 100, 110, 60_000_000_100, 60_000_000_101],
++        "stopped_s": [0, 100, 110, 60_000_000_099, 60_000_000_100],
++        "jump": [0, 100, 110, 90_000_000_100, 90_000_000_101],
++        "missing_pair": [0, 100, 110, 120, None],
++        "negative": [0, 100, 110, -1, 121],
++        "bool": [0, 100, 110, True, 121],
++        "rollback": [0, 100, 110, 109, 121],
++        "pair_reverse": [0, 100, 110, 120, 119],
++    }.get(case)
++    owner, backend, identity, _plan, output = recovery_wall_fixture(tmp_path, counters=counters)
++    recovery_wall_begin(owner, backend)
++    original_begin = (output / "wall-start.json").read_bytes()
++    assert json.loads(original_begin)["fault_begin"]["lower_ns"] == 100
++    if case == "repeat_begin":
++        with pytest.raises((ValueError, RuntimeError), match="already|repeat"):
++            recovery_wall_begin(owner, backend)
++    elif case != "missing_end":
++        backend.events.append(backend.event())
++        recovery_wall_end(owner, backend)
++    if case == "utc_jump":
++        monkeypatch.setattr(api().time, "time", lambda: -9_000_000_000.0)
++    if case == "advance_s":
++        backend.total_physics_steps = 4
++        backend.sim_time_s = 1.005
++    if case == "cross_domain":
++        identity["boot_id"] = "foreign-domain"
++    invalid = {"missing_pair", "negative", "bool", "rollback", "pair_reverse"}
++    if case in invalid | {"cross_domain"}:
++        with pytest.raises((ValueError, RuntimeError), match="counter|identity|lifecycle"):
++            owner.check("CURRENT", step=3, sim_time_s=1.0)
++    if case == "writer_error":
++        owner._journal.error = OSError("scripted writer failure")
++        with pytest.raises(RuntimeError, match="journal|spool"):
++            owner.check("CURRENT", step=3, sim_time_s=1.0)
++    result = recovery_wall_finish(owner, backend)
++    assert result["deadline_ns"] == 60_000_000_100
++    assert (output / "wall-start.json").read_bytes() == original_begin
++    should_pass = case in {"below", "utc_jump", "advance_s"}
++    assert result["wall_pass"] is should_pass
++    assert result["scope"] == "r07.recovery-wall.development.v1"
++    assert result["clock_semantics"] == "LINUX_BOOTTIME_INCLUDES_SUSPEND"
++    if case in {"equal", "above", "stopped_s", "jump"}:
++        assert "deadline" in result["failure"]
++        assert backend.get_sim_time() == 1.0
++    if not should_pass:
++        assert result["status"] in {"FAILED", "INCOMPLETE"}
++    assert (output / "wall-terminal.json").is_file()
++    assert (output / "raw-wall-checks.jsonl").is_file()
++
++
++@pytest.mark.parametrize(
++    "case",
++    [
++        "foreign_lease",
++        "object_flags",
++        "copied_lease",
++        "copied_owner",
++        "deepcopied_owner",
++        "pickled_owner",
++        "forged_owner",
++        "pid",
++        "process_start_ticks",
++        "boot_id",
++        "time_namespace",
++        "time_namespace_offsets",
++        "app_nonce",
++        "allocation_drift",
++        "attempt_drift",
++        "protocol_drift",
++        "backend_foreign",
++        "backend_episode",
++        "released_owner",
++        "unsupported_boottime",
++        "raw_read_failure",
++        "production_rejects_cpu_lease",
++    ],
++)
++def test_recovery_wall_owner_lifecycle_fail_closed(
++    tmp_path, monkeypatch, recovery_wall_cpu_only, case
++):
++    # Accepting copied/offline/caller flags or a changed process/allocation fails here.
++    import copy
++    import pickle
++    from types import SimpleNamespace
++
++    module = api()
++    if case == "unsupported_boottime":
++        monkeypatch.delattr(module.time, "CLOCK_BOOTTIME", raising=False)
++        monkeypatch.setattr(module.time, "monotonic", lambda: pytest.fail("no fallback"))
++        with pytest.raises((ValueError, RuntimeError), match="BOOTTIME|unsupported"):
++            module._recovery_wall_boottime_reader()
++        return
++    if case == "raw_read_failure":
++        monkeypatch.setattr(module.time, "monotonic", lambda: pytest.fail("no fallback"))
++        reader = module._recovery_wall_boottime_reader()
++        with pytest.raises((ValueError, RuntimeError), match="BOOTTIME|counter"):
++            reader()
++        return
++    owner, backend, identity, plan, output = recovery_wall_fixture(tmp_path)
++    recovery_wall_begin(owner, backend)
++    begin = (output / "wall-start.json").read_bytes()
++    backend.events.append(backend.event())
++    recovery_wall_end(owner, backend)
++    if case in {"foreign_lease", "object_flags", "production_rejects_cpu_lease"}:
++        lease = {
++            "foreign_lease": "pid:12345:boot:cpu-boot-1",
++            "object_flags": SimpleNamespace(live=True, pid=12345, authorized=True),
++            "production_rejects_cpu_lease": owner._lease,
++        }[case]
++        with pytest.raises((ValueError, RuntimeError), match="lease|renderer"):
++            module._open_recovery_wall_owner(plan, output, renderer_lease=lease)
++    elif case in {"copied_lease", "copied_owner", "deepcopied_owner", "pickled_owner"}:
++        target = owner._lease if case == "copied_lease" else owner
++        action = {
++            "copied_lease": copy.copy,
++            "copied_owner": copy.copy,
++            "deepcopied_owner": copy.deepcopy,
++            "pickled_owner": pickle.dumps,
++        }[case]
++        with pytest.raises((ValueError, TypeError, RuntimeError), match="copy|pickle|live"):
++            action(target)
++    elif case == "forged_owner":
++        forged = object.__new__(type(owner))
++        forged.__dict__.update(owner.__dict__)
++        with pytest.raises((ValueError, RuntimeError), match="owner|live"):
++            forged.check("CURRENT", step=3, sim_time_s=1.0)
++    elif case == "backend_foreign":
++        with pytest.raises((ValueError, RuntimeError), match="backend|already|repeat"):
++            owner.begin_fault(
++                backend=RecoveryWallCPUBackend(),
++                episode_id="cpu-episode-1",
++                step=3,
++                sim_time_s=1.0,
++            )
++    else:
++        if case in identity:
++            identity[case] = "changed" if case != "pid" else 12346
++        elif case == "allocation_drift":
++            allocation = Path(plan["allocation_directory"]) / "recovery-0002-attempt-1.json"
++            allocation.write_text(allocation.read_text() + " ")
++        elif case == "attempt_drift":
++            plan["attempt"] = 2
++        elif case == "protocol_drift":
++            plan["protocol_hash"] = "b" * 64
++        elif case == "backend_episode":
++            backend._episode_id = "cpu-episode-restarted"
++        elif case == "released_owner":
++            recovery_wall_finish(owner, backend)
++        with pytest.raises(
++            (ValueError, RuntimeError), match="identity|lifecycle|allocation|episode|owner|plan"
++        ):
++            owner.check("CURRENT", step=3, sim_time_s=1.0)
++    assert (output / "wall-start.json").read_bytes() == begin
++    if case != "released_owner":
++        recovery_wall_finish(owner, backend, failure="CPU lifecycle refusal retained")
++
++
++@pytest.mark.parametrize(
++    "case",
++    [
++        "healthy",
++        "later_advance",
++        "foreign_backend",
++        "caller_episode",
++        "caller_step",
++        "caller_s",
++        "missing_episode",
++        "episode_drift",
++        "episode_reset",
++        "no_event",
++        "stale_event",
++        "replayed_payload",
++        "duplicate",
++        "extra_event",
++        "wrong_event_kind",
++        "prefix_changed",
++        "prefix_truncated",
++        "reset_records",
++        "event_missing_step",
++        "event_missing_s",
++        "event_wrong_step",
++        "event_wrong_s",
++        "event_bool_step",
++        "event_negative_step",
++        "event_string_step",
++        "event_bool_s",
++        "event_nan_s",
++        "event_inf_s",
++        "event_negative_s",
++        "event_string_s",
++        "begin_bool_step",
++        "begin_negative_step",
++        "begin_bool_s",
++        "begin_nan_s",
++        "end_step_advanced",
++        "end_s_advanced",
++        "end_bad_step",
++        "end_bad_s",
++        "source_not_list",
++        "source_not_dict",
++        "caller_crafted_event",
++        "repeat_begin",
++        "repeat_end",
++        "failure_after_begin",
++    ],
++)
++def test_recovery_wall_event_episode_provenance(tmp_path, recovery_wall_cpu_only, case):
++    # Trusting caller copies or forgetting owned prefix/ordinal/live state fails here.
++    prefix = [{"event": "CPU_PREFIX", "physics_step": 2, "sim_time_s": 0.5}]
++    if case in {"stale_event", "replayed_payload"}:
++        prefix = [RecoveryWallCPUBackend().event()]
++    owner, backend, _identity, _plan, output = recovery_wall_fixture(tmp_path, prefix=prefix)
++    begin_refusals = {
++        "foreign_backend": "backend",
++        "caller_episode": "episode",
++        "caller_step": "step",
++        "caller_s": "sim|state",
++        "missing_episode": "episode",
++        "begin_bool_step": "step",
++        "begin_negative_step": "step",
++        "begin_bool_s": "sim|state",
++        "begin_nan_s": "sim|state",
++    }
++    if case in begin_refusals:
++        kwargs = {
++            "backend": backend,
++            "episode_id": backend._episode_id,
++            "step": 3,
++            "sim_time_s": 1.0,
++        }
++        if case == "foreign_backend":
++            kwargs["backend"] = RecoveryWallCPUBackend()
++        if case == "caller_episode":
++            kwargs["episode_id"] = "caller-only-episode"
++        if case == "caller_step":
++            kwargs["step"] = 4
++        if case == "caller_s":
++            kwargs["sim_time_s"] = 1.005
++        if case == "missing_episode":
++            backend._episode_id = None
++        if case == "begin_bool_step":
++            backend.total_physics_steps = True
++        if case == "begin_negative_step":
++            backend.total_physics_steps = -1
++        if case == "begin_bool_s":
++            backend.sim_time_s = True
++        if case == "begin_nan_s":
++            backend.sim_time_s = float("nan")
++        with pytest.raises((ValueError, RuntimeError), match=begin_refusals[case]):
++            owner.begin_fault(**kwargs)
++        assert not (output / "wall-start.json").exists()
++        assert not recovery_wall_finish(owner, backend, failure="BEGIN refused")["wall_pass"]
++        return
++    recovery_wall_begin(owner, backend)
++    begin = (output / "wall-start.json").read_bytes()
++    if case == "failure_after_begin":
++        result = recovery_wall_finish(owner, backend, failure="scripted injection failure")
++        assert not result["wall_pass"] and result["fault_end"] is None
++        assert (output / "wall-start.json").read_bytes() == begin
++        return
++    event = backend.event()
++    if case not in {"no_event", "stale_event", "caller_crafted_event"}:
++        backend.events.append(event)
++    if case == "caller_crafted_event":
++        with pytest.raises(TypeError):
++            owner.end_fault_injection(step=3, sim_time_s=1.0, event=event, success=True)
++    elif case == "episode_drift":
++        backend._episode_id = "different-episode"
++    elif case == "episode_reset":
++        backend._episode_id = None
++    elif case == "duplicate":
++        backend.events.append(dict(event))
++    elif case == "extra_event":
++        backend.events.append({"event": "CPU_EXTRA"})
++    elif case == "wrong_event_kind":
++        event["event"] = "TARGET_MOTION_FINISHED"
++    elif case == "prefix_changed":
++        backend.events[0]["sim_time_s"] = 0.25
++    elif case == "prefix_truncated":
++        backend.events.pop(0)
++    elif case == "reset_records":
++        backend.events.clear()
++    elif case == "event_missing_step":
++        del event["physics_step"]
++    elif case == "event_missing_s":
++        del event["sim_time_s"]
++    elif case.startswith("event_"):
++        field = "physics_step" if case.endswith("step") else "sim_time_s"
++        event[field] = {
++            "event_wrong_step": 4,
++            "event_wrong_s": 1.005,
++            "event_bool_step": True,
++            "event_negative_step": -1,
++            "event_string_step": "3",
++            "event_bool_s": True,
++            "event_nan_s": float("nan"),
++            "event_inf_s": float("inf"),
++            "event_negative_s": -1.0,
++            "event_string_s": "1.0",
++        }[case]
++    elif case == "end_step_advanced":
++        backend.total_physics_steps = 4
++    elif case == "end_s_advanced":
++        backend.sim_time_s = 1.005
++    elif case == "end_bad_step":
++        backend.total_physics_steps = True
++    elif case == "end_bad_s":
++        backend.sim_time_s = float("inf")
++    elif case == "source_not_list":
++        type(backend).fault_records = property(lambda _self: {})
++    elif case == "source_not_dict":
++        backend.events.append("not-a-source-dict")
++    elif case == "repeat_begin":
++        with pytest.raises((ValueError, RuntimeError), match="already|repeat"):
++            recovery_wall_begin(owner, backend)
++    good = case in {"healthy", "later_advance", "repeat_end"}
++    if good:
++        recovery_wall_end(owner, backend)
++        if case == "repeat_end":
++            with pytest.raises((ValueError, RuntimeError), match="already|repeat"):
++                recovery_wall_end(owner, backend)
++        if case == "later_advance":
++            backend.total_physics_steps = 4
++            backend.sim_time_s = 1.005
++    else:
++        with pytest.raises(
++            (ValueError, RuntimeError), match="episode|source|prefix|event|step|sim|already|failed"
++        ):
++            recovery_wall_end(owner, backend)
++        # Failed END cannot be converted into a later successful END.
++        backend.events = [dict(row) for row in prefix] + [backend.event()]
++        backend._episode_id = "cpu-episode-1"
++        backend.total_physics_steps = 3
++        backend.sim_time_s = 1.0
++        with pytest.raises((ValueError, RuntimeError), match="failed|already"):
++            recovery_wall_end(owner, backend)
++    result = recovery_wall_finish(owner, backend)
++    assert result["wall_pass"] is (case in {"healthy", "later_advance"})
++    assert (output / "wall-start.json").read_bytes() == begin
++    if case in {"healthy", "later_advance"}:
++        end = result["fault_end"]
++        assert end["event_ordinal"] == 1
++        assert end["event"] == event
++        assert "episode_id" not in end["event"]
++        assert end["episode_id"] == "cpu-episode-1"
++        assert end["episode_source"] == "owned_live_backend._episode_id"
++        assert end["event_source"] == "owned_backend.fault_records"
++        journal = [
++            json.loads(line) for line in (output / "raw-wall-checks.jsonl").read_text().splitlines()
++        ]
++        assert [row["record_seq"] for row in journal] == list(range(1, len(journal) + 1))
++    if case == "source_not_list":
++        type(backend).fault_records = property(lambda self: [dict(row) for row in self.events])

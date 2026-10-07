@@ -1,0 +1,51 @@
+--- a/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
++++ b/src/cloud_edge_robot_arm/simulation/mujoco/backend.py
+@@ -84,6 +84,11 @@
+     contact_pairs: tuple[tuple[str, str], ...]
+     self_collision_distances_m: tuple[tuple[str, str, float], ...]
+     estop_engaged: bool
++
++
++# A position setpoint at the compliant upper slide limit can overshoot
++# during arm motion. Keep 1 mm command margin; physical limits stay unchanged.
++GRIPPER_OPEN_TARGET_M = 0.039
+ 
+ 
+ class MuJoCoPhysicsBackend:
+@@ -249,7 +254,7 @@
+         for finger_name in ("finger_left_joint", "finger_right_joint"):
+             finger_id = self._model.joint(finger_name).id
+             self._data.qpos[self._model.jnt_qposadr[finger_id]] = 0.04
+-        self._data.ctrl[7:9] = 0.04
++        self._data.ctrl[7:9] = GRIPPER_OPEN_TARGET_M
+         self._set_body_mass("object", scenario.object_mass_kg)
+         self._set_geom_friction("object_geom", scenario.friction_coefficient)
+         self._mujoco.mj_forward(self._model, self._data)
+@@ -410,7 +415,7 @@
+             return
+         self._gripper_open = command.open
+         assert self._data is not None
+-        target = 0.04 if command.open else 0.0
++        target = GRIPPER_OPEN_TARGET_M if command.open else 0.0
+         if self._data.ctrl.shape[0] >= 9:
+             self._data.ctrl[7] = target
+             self._data.ctrl[8] = target
+--- a/src/cloud_edge_robot_arm/datasets/rgbd/capture.py
++++ b/src/cloud_edge_robot_arm/datasets/rgbd/capture.py
+@@ -14,6 +14,7 @@
+ 
+ from cloud_edge_robot_arm.datasets.rgbd.models import SceneSpec
+ from cloud_edge_robot_arm.datasets.rgbd.scene_sampler import COLORS
++from cloud_edge_robot_arm.simulation.mujoco.backend import GRIPPER_OPEN_TARGET_M
+ from cloud_edge_robot_arm.vision.capture import CapturedFrame, MuJoCoCaptureSession
+ from cloud_edge_robot_arm.vision.observations import RGBDObservation
+ 
+@@ -141,7 +142,7 @@
+     for finger_name in ("finger_left_joint", "finger_right_joint"):
+         finger_id = model.joint(finger_name).id
+         data.qpos[model.jnt_qposadr[finger_id]] = 0.04
+-    data.ctrl[7:9] = 0.04
++    data.ctrl[7:9] = GRIPPER_OPEN_TARGET_M
+     backend._pending_joint_targets = []
+     backend._total_physics_steps = 0
+     backend._episode_id = uuid4().hex

@@ -1,0 +1,19 @@
+        assert self._data is not None and self._model is not None and self._episode_id
+        row = self._build_actuator_observation()
+        self._in_observer_callback = True
+        try:
+            callback(row)
+        except BaseException:
+            self._actuator_observer = None
+            raise
+        finally:
+            self._in_observer_callback = False
+
+    def _build_actuator_observation(self) -> ActuatorStepObservation:
+        assert self._data is not None and self._model is not None and self._episode_id
+        return ActuatorStepObservation(
+            episode_id=self._episode_id,
+            physics_step=self._total_physics_steps + 1,
+            sim_time_s=float(self._data.time),
+            applied_joint_targets_rad=tuple(float(v) for v in self._target_positions),
+            pre_joint_positions_rad=tuple(float(v) for v in self._data.qpos[:7]),

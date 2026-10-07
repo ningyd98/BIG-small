@@ -1,0 +1,29 @@
+        elif fault.fault_type == PhysicalFaultType.FRICTION_VARIATION:
+            friction = float(fault.parameters.get("friction_coefficient", 0.2))
+            self._set_geom_friction("object_geom", friction)
+        elif fault.fault_type == PhysicalFaultType.TARGET_MOTION:
+            speed = float(fault.parameters["speed_m_s"])
+            duration = float(fault.parameters.get("duration_s", 5.0))
+            direction = float(fault.parameters.get("direction_y", 1.0))
+            if (
+                not math.isfinite(speed + duration + direction)
+                or not 0 <= speed <= 0.04
+                or (duration <= 0 or direction not in (-1.0, 1.0))
+            ):
+                raise ValueError(
+                    "target motion requires speed in [0,.04], duration>0, direction ±1"
+                )
+            self._target_motion = (speed, direction, self.get_sim_time() + duration)
+            self._fault_records.append(
+                {
+                    "event": "TARGET_MOTION_STARTED",
+                    "physics_step": self.total_physics_steps,
+                    "sim_time_s": self.get_sim_time(),
+                    "speed_m_s": speed,
+                    "direction_y": direction,
+                    "duration_s": duration,
+                    "mechanism": "external horizontal force with velocity feedback; no pose writes",
+                }
+            )
+
+    def _require_loaded(self) -> None:

@@ -1,0 +1,194 @@
+"""Astra round62: one metadata-only identity/registration supplement."""
+import ast
+import hashlib
+import json
+import math
+import os
+import sys
+from collections import Counter
+from pathlib import Path
+
+ROOT = Path.cwd().resolve()
+FULL = ROOT / "artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full"
+OLD = FULL / "implementation/post-terminal-independent-review"
+OUT = OLD / "round62"
+PLAN_DIR = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round62-marker-review-digest"
+DERIVED = FULL / "offline/offline-markers.jsonl"
+EXPECTED_PLAN_MD = "30abe4d29b8875386956e78edcd66db4e35d23937c75aafb24c8c9fe209e6559"
+EXPECTED_PLAN_JSON = "50bb5d3e18a39991bd09cfeb295367a2d73e8fef5f1055aa4f6db12da0820da8"
+findings = []
+
+def require(condition, reason):
+    if not condition:
+        raise ValueError(reason)
+
+def hash_bytes(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+def metadata_pin(path):
+    require(path != DERIVED and path.suffix != ".gz", "forbidden stream/raw protection read")
+    raw = path.read_bytes()
+    return {"bytes": len(raw), "sha256": hash_bytes(raw)}
+
+def write(name, value):
+    with (OUT / name).open("x", encoding="utf-8") as stream:
+        json.dump(value, stream, indent=2, sort_keys=True, allow_nan=False)
+        stream.write("\n")
+
+def stat_stream():
+    value = DERIVED.stat()
+    return {"bytes": value.st_size, "mtime_ns": value.st_mtime_ns, "inode": value.st_ino, "device": value.st_dev}
+
+def strict_json(raw):
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            require(key not in result, "duplicate JSON field")
+            result[key] = value
+        return result
+    def constant(value):
+        raise ValueError("nonfinite JSON constant " + value)
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
+
+def audit(event, args):
+    if event == "open":
+        raw, mode, flags = args
+        if isinstance(raw, (str, bytes, os.PathLike)):
+            path = Path(os.fsdecode(raw)).resolve()
+            writing = (isinstance(mode, str) and any(mark in mode for mark in "wax+")) or (isinstance(flags, int) and bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC)))
+            if writing:
+                require(path.is_relative_to(OUT), "write outside exclusive round62 directory")
+            else:
+                require(path.suffix != ".gz", "raw or compressed journal read forbidden")
+                if path.suffix == ".jsonl":
+                    require(path in {DERIVED, OLD / "first-derived-line-original.jsonl"}, "old or unrelated derived stream read forbidden")
+    if event == "import" and args and str(args[0]).startswith("cloud_edge_robot_arm"):
+        raise RuntimeError("project imports forbidden")
+
+sys.addaudithook(audit)
+try:
+    require(metadata_pin(PLAN_DIR / "plan.md")["sha256"] == EXPECTED_PLAN_MD, "plan.md drift")
+    require(metadata_pin(PLAN_DIR / "plan.json")["sha256"] == EXPECTED_PLAN_JSON, "plan.json drift")
+    plan = strict_json((PLAN_DIR / "plan.json").read_bytes())
+    precheck = strict_json((OUT / "precheck.json").read_bytes())
+    require(precheck["status"] == "ROUND62_PRECHECK_PASSED", "precheck not passed")
+    derived_name = str(DERIVED.relative_to(ROOT))
+    protected = {ROOT / name for name in plan["inputs"] if name != derived_name}
+    protected.update(path for path in OLD.iterdir() if path.is_file())
+    protected.update({PLAN_DIR / "plan.md", PLAN_DIR / "plan.json", OUT / "precheck.json", Path(__file__).resolve()})
+    sources = strict_json((FULL / "full-protocol/execution-source-hashes.json").read_bytes())
+    archives = strict_json((FULL / "full-protocol/execution-archive-index.json").read_bytes())
+    for name in ("prepare_full.py", "run_full_once.py", "verify_full.py", "test_cpu.py"):
+        live = FULL / name
+        key = str(live.relative_to(ROOT))
+        archive = ROOT / archives[key]["archive"]
+        require(metadata_pin(live)["sha256"] == metadata_pin(archive)["sha256"] == sources[key], "owned source/archive drift: " + name)
+        protected.update({live, archive})
+    actual_execution_path = FULL / "actual/execution.json"
+    reader_execution_path = FULL / "actual/reader-execution.json"
+    actual_execution = strict_json(actual_execution_path.read_bytes())
+    reader_execution = strict_json(reader_execution_path.read_bytes())
+    require(metadata_pin(reader_execution_path) == {key: precheck["terminal_proofs"]["reader_execution"][key] for key in ("bytes", "sha256")}, "reader terminal metadata drift")
+    require(actual_execution["exit_code"] == reader_execution["exit_code"] == 0, "actual/reader terminal not exit0")
+    require(actual_execution["actual_command_invocations"] == reader_execution["reader_command_invocations"] == 1, "actual/reader invocation not exactly1")
+    require(actual_execution["automatic_retries"] == reader_execution["automatic_retries"] == 0, "actual/reader retry exists")
+    protected.add(reader_execution_path)
+    for execution, resource_path in ((actual_execution, FULL / "actual/resource.log"), (reader_execution, FULL / "actual/reader-resource.log")):
+        require(metadata_pin(resource_path)["sha256"] == execution["resource_log_sha256"], "terminal resource log drift")
+        protected.add(resource_path)
+    before = {str(path.relative_to(ROOT)): metadata_pin(path) for path in sorted(protected)}
+    for name, expected in plan["inputs"].items():
+        if name != derived_name:
+            require(before[name]["bytes"] == expected["bytes"] and before[name]["sha256"] == expected["sha256"], "Astra input drift: " + name)
+    derived_stat_before = stat_stream()
+    write("protected-metadata-before.json", {"metadata": before, "derived_stat": derived_stat_before})
+    schema_path = ROOT / plan["root_cause"]["frozen_schema"]["archive"]
+    reader_path = ROOT / plan["root_cause"]["frozen_reader"]["archive"]
+    schema_source = schema_path.read_text()
+    schema_tree = ast.parse(schema_source, filename=str(schema_path))
+    registrations = [node for node in schema_tree.body if isinstance(node, ast.ClassDef) and node.name == "PoseMarkerRegistration"]
+    require(len(registrations) == 1, "unique frozen registration schema missing")
+    registration_class = registrations[0]
+    fields = [node for node in registration_class.body if isinstance(node, ast.AnnAssign)]
+    field_names = [node.target.id for node in fields if isinstance(node.target, ast.Name)]
+    require(field_names == plan["root_cause"]["schema_fields"] and len(fields) == 4, "frozen registration field inventory differs")
+    annotations = {node.target.id: ast.unparse(node.annotation) for node in fields}
+    require(annotations == {"marker_id": "int", "marker_size_m": "float", "marked_asset_sha256": "str", "dictionary": "Literal['DICT_4X4_50']"}, "frozen schema annotations differ")
+    defaults = {node.target.id: ast.literal_eval(node.value) for node in fields if node.value is not None}
+    require(defaults == {"dictionary": plan["root_cause"]["dictionary_default"]}, "frozen schema defaults differ")
+    require(any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "dataclass" and any(key.arg == "frozen" and isinstance(key.value, ast.Constant) and key.value.value is True for key in node.keywords) for node in registration_class.decorator_list), "registration schema not frozen dataclass")
+    post = next(node for node in registration_class.body if isinstance(node, ast.FunctionDef) and node.name == "__post_init__")
+    expected_invalid = ast.parse("type(self.marker_id) is not int or not 0 <= self.marker_id < 50 or type(self.marker_size_m) not in {int, float} or not math.isfinite(self.marker_size_m) or self.marker_size_m <= 0 or self.dictionary != 'DICT_4X4_50' or not isinstance(self.marked_asset_sha256, str) or not re.fullmatch(r'[0-9a-f]{64}', self.marked_asset_sha256)", mode="eval").body
+    require(len(post.body) == 1 and isinstance(post.body[0], ast.If) and ast.dump(post.body[0].test) == ast.dump(expected_invalid) and not post.body[0].orelse and len(post.body[0].body) == 1 and isinstance(post.body[0].body[0], ast.Raise), "frozen validity constraints differ")
+    digest_method = next(node for node in registration_class.body if isinstance(node, ast.FunctionDef) and node.name == "digest")
+    expected_digest = ast.parse("hashlib.sha256(json.dumps(asdict(self), sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()", mode="eval").body
+    require(len(digest_method.body) == 1 and isinstance(digest_method.body[0], ast.Return) and ast.dump(digest_method.body[0].value) == ast.dump(expected_digest), "frozen digest serialization differs")
+    reader_source = reader_path.read_text()
+    reader_tree = ast.parse(reader_source, filename=str(reader_path))
+    expected_constructor = ast.parse("pose_markers.PoseMarkerRegistration(**header['marker_registration'])", mode="eval").body
+    constructors = [node for node in ast.walk(reader_tree) if isinstance(node, ast.Call) and ast.dump(node) == ast.dump(expected_constructor)]
+    require(len(constructors) == 1, "frozen reader registration constructor semantics differ")
+    header = strict_json((FULL / "full-protocol/header.json").read_bytes())
+    explicit = header["marker_registration"]
+    require(type(explicit) is dict and not (set(explicit) - set(field_names)), "header registration unexpected fields")
+    canonical = {}
+    for name in field_names:
+        require(name in explicit or name in defaults, "header registration required field missing: " + name)
+        canonical[name] = explicit[name] if name in explicit else defaults[name]
+    require(type(canonical["marker_id"]) is int and 0 <= canonical["marker_id"] < 50, "marker ID native type/range invalid")
+    require(type(canonical["marker_size_m"]) in {int, float} and math.isfinite(canonical["marker_size_m"]) and canonical["marker_size_m"] > 0, "marker size native type/value invalid")
+    asset_hash = canonical["marked_asset_sha256"]
+    require(type(asset_hash) is str and len(asset_hash) == 64 and all(char in "0123456789abcdef" for char in asset_hash), "marker asset SHA invalid")
+    require(canonical["dictionary"] == defaults["dictionary"], "unsupported explicit dictionary")
+    canonical_bytes = json.dumps(canonical, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    computed_registration_hash = hash_bytes(canonical_bytes)
+    origin = {"header": str((FULL / "full-protocol/header.json").relative_to(ROOT)), "header_pin": before[str((FULL / "full-protocol/header.json").relative_to(ROOT))], "schema_archive": str(schema_path.relative_to(ROOT)), "schema_archive_pin": before[str(schema_path.relative_to(ROOT))], "schema_class_line": registration_class.lineno, "schema_fields": field_names, "schema_annotations": annotations, "schema_defaults": defaults, "post_init_ast": ast.dump(post), "digest_ast": ast.dump(digest_method), "reader_archive": str(reader_path.relative_to(ROOT)), "reader_archive_pin": before[str(reader_path.relative_to(ROOT))], "reader_constructor_line": constructors[0].lineno, "reader_constructor_ast": ast.dump(constructors[0]), "canonical_registration": canonical, "canonical_utf8": canonical_bytes.decode(), "computed_registration_hash": computed_registration_hash, "diagnostic_crosscheck_only": computed_registration_hash == plan["root_cause"]["diagnostic_expected_digest"]}
+    write("registration-origin.json", origin)
+    old_report = strict_json((OLD / "recomputed.json").read_bytes())
+    require("binding_rows" not in old_report and "rows" not in old_report and precheck["saved_field_selection"]["complete_saved_per_row_identity_registration_artifact_exists"] is False, "saved-field selection changed or ambiguous")
+    write("source-selection.json", {"decision": "ONE_ALLOWED_DERIVED_IDENTITY_REGISTRATION_ONLY_PASS", "reason": "Original recomputed artifact contains aggregate counts/findings and first-line diagnostic contains only one row; complete original per-row binding fields were not saved.", "original_recomputed_pin": before[str((OLD / "recomputed.json").relative_to(ROOT))], "existing_saved_files": precheck["saved_field_selection"]["existing_files"], "derived_stream_pin": plan["inputs"][derived_name]})
+    totals = Counter()
+    seen = set()
+    stream_hash = hashlib.sha256()
+    stream_bytes = rows = 0
+    with DERIVED.open("rb") as source, (OUT / "binding-rows.jsonl").open("x", encoding="utf-8") as target:
+        for line in source:
+            stream_hash.update(line)
+            stream_bytes += len(line)
+            require(line.endswith(b"\n"), "derived stream truncated line")
+            raw = strict_json(line)
+            marker = raw["marker"]
+            extracted = {"physics_step": raw["physics_step"], "decode_status": raw["decode_status"], "observation_id": raw["observation_id"], "checksum": raw["checksum"], "marker": {name: marker[name] for name in ("status", "observation_id", "observation_checksum_sha256", "registration_hash")}}
+            step = extracted["physics_step"]
+            exact_step = type(step) is int and step == rows and 0 <= step <= 4806 and step not in seen
+            comparisons = {"status": extracted["marker"]["status"] == extracted["decode_status"], "observation_id": extracted["marker"]["observation_id"] == extracted["observation_id"], "checksum": extracted["marker"]["observation_checksum_sha256"] == extracted["checksum"], "registration_hash": extracted["marker"]["registration_hash"] == computed_registration_hash}
+            expected = {"physics_step": rows, "status": extracted["decode_status"], "observation_id": extracted["observation_id"], "checksum": extracted["checksum"], "registration_hash": computed_registration_hash}
+            actual = {"physics_step": step, "status": extracted["marker"]["status"], "observation_id": extracted["marker"]["observation_id"], "checksum": extracted["marker"]["observation_checksum_sha256"], "registration_hash": extracted["marker"]["registration_hash"]}
+            row_findings = []
+            if not exact_step:
+                row_findings.append({"step": step, "component": "physics_step", "actual": step, "expected": rows})
+            for component, matched in comparisons.items():
+                totals[component + "_matched"] += int(matched)
+                if not matched:
+                    row_findings.append({"step": step, "component": component, "actual": actual[component], "expected": expected[component]})
+            target.write(json.dumps({"extracted_original_fields": extracted, "exact_step": exact_step, "expected": expected, "actual": actual, "comparisons": comparisons, "findings": row_findings}, sort_keys=True, allow_nan=False) + "\n")
+            target.flush()
+            findings.extend(row_findings)
+            rows += 1
+            seen.add(step)
+            require(not row_findings, "new binding finding; retained original/expected fields; stop")
+    expected_stream = plan["inputs"][derived_name]
+    observed_stream = {"bytes": stream_bytes, "sha256": stream_hash.hexdigest()}
+    require(observed_stream["bytes"] == expected_stream["bytes"] and observed_stream["sha256"] == expected_stream["sha256"], "single-pass derived stream provenance differs")
+    require(rows == 4807 and seen == set(range(4807)) and all(totals[name + "_matched"] == 4807 for name in ("status", "observation_id", "checksum", "registration_hash")), "complete4807 binding denominator differs")
+    after = {str(path.relative_to(ROOT)): metadata_pin(path) for path in sorted(protected)}
+    derived_stat_after = stat_stream()
+    write("protected-metadata-after.json", {"metadata": after, "derived_stat": derived_stat_after})
+    require(before == after and derived_stat_before == derived_stat_after, "protected metadata/source/derived stat changed")
+    require({path.name for path in OLD.iterdir() if path.is_file()} == {row["file"] for row in precheck["saved_field_selection"]["existing_files"]}, "original review file set changed")
+    result = {"status": "PASS_COMPLETE4807_IDENTITY_AND_CANONICAL_REGISTRATION_BINDINGS", "expected_registration_origin": origin, "rows_checked": rows, "exact_denominator": True, "expected_steps": "0..4806", "component_totals": dict(totals), "findings": findings, "derived_stream_read_count": 1, "derived_stream_expected": expected_stream, "derived_stream_observed_same_pass": observed_stream, "derived_stat_equal_before_after": derived_stat_before == derived_stat_after, "protected_metadata_count": len(before), "protected_metadata_equal_before_after": before == after, "input_pins": before, "actual_terminal_exit_code": actual_execution["exit_code"], "actual_invocations": actual_execution["actual_command_invocations"], "reader_terminal_exit_code": reader_execution["exit_code"], "reader_invocations": reader_execution["reader_command_invocations"], "decoder_calls": 0, "raw_reads_or_hashes": 0, "old_derived_reads": 0, "project_imports": 0, "model_camera_calls": 0, "pose_recomputations": 0, "test_or_source_closure_runs": 0, "network_operations": 0, "git_operations": 0, "source_header_changes": 0, "prior_other_checks_reused_not_rerun": True}
+    write("binding-result.json", result)
+    print(json.dumps({name: result[name] for name in ("status", "rows_checked", "component_totals", "findings", "derived_stream_observed_same_pass", "protected_metadata_count", "protected_metadata_equal_before_after", "decoder_calls", "raw_reads_or_hashes")}, indent=2))
+except BaseException as error:
+    write("unexpected-failure.json", {"status": "REQUEST_NEXT_ASTRA_PLAN", "error_type": type(error).__name__, "error": str(error), "findings": findings, "retry_count": 0, "decoder_calls": 0, "raw_reads_or_hashes": 0})
+    raise

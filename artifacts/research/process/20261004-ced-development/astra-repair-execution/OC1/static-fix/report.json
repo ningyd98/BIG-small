@@ -1,0 +1,199 @@
+{
+  "schema_version": "ced.oc1.static-fix.round58.report.v1",
+  "author_result": "PASS_SCOPED_STATIC_REPAIR",
+  "maximum_grade": "PASS_SCOPED_STATIC_REPAIR",
+  "independent_review": "ROOT_PENDING",
+  "oc1_final_pass": "PENDING_ROOT_INDEPENDENT_REVIEW",
+  "plan_md_sha256": "0062fd1d2edbd45b2770107b5d5b8579c1ad2a11a6b91328a24a7adae72d456b",
+  "plan_json_sha256": "a0be95dcfd36141408e910fed668ee9d57401087eea6779aeb0345283004dc25",
+  "required_pins_before": 21,
+  "non_owned_required_pins_after_unchanged": 19,
+  "owned_code_path_count": 2,
+  "owned_outputs": {
+    "src/cloud_edge_robot_arm/research/operational_time_v1.py": {
+      "sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+      "bytes": 20734
+    },
+    "tests/test_operational_time_v1.py": {
+      "sha256": "a339a80f8ac6a4b8eed1ac363046b148203930a4f5a2999779d58d7bdc002038",
+      "bytes": 24350
+    }
+  },
+  "fixes": [
+    "I001: reorder names within the existing target ImportFrom only",
+    "E501: adjacent path literal layout; exact Constant retained",
+    "mypy override: protocol SupportsIndex and return NoReturn, two typing imports; original raise body unchanged"
+  ],
+  "exact_ast_equivalence": {
+    "schema_version": "ced.oc1.static-fix.ast-equivalence.v1",
+    "comparisons": {
+      "src/cloud_edge_robot_arm/research/operational_time_v1.py": {
+        "before_sha256": "e7c9180d5245bc45ec17210b67ceae2db8d29bb54c019319dc5933918314185c",
+        "after_sha256": "b1fa45a96837072d7bcf8cec57d1a7ae01dceeabec0131503b6aee5ab27dd90b",
+        "normalized_ast_before_sha256": "345632c90f4c96aa75f0ba0cccd5321909bd17e3620a46fb24c82c5c5ade0516",
+        "normalized_ast_after_sha256": "345632c90f4c96aa75f0ba0cccd5321909bd17e3620a46fb24c82c5c5ade0516",
+        "normalized_ast_equal": true,
+        "exact_allowed_normalizations": [
+          "exact typing import addition of NoReturn and SupportsIndex",
+          "only _LiveHandle.__reduce_ex__.protocol annotation int->SupportsIndex",
+          "only _LiveHandle.__reduce_ex__ return annotation object->NoReturn"
+        ],
+        "all_other_annotations_import_statements_bodies_parameters_defaults_and_constants_preserved": true
+      },
+      "tests/test_operational_time_v1.py": {
+        "before_sha256": "66181f73db13ff0dd5bec00b72bf6fc42c26f1df60c86feb3c05aaa29c93b611",
+        "after_sha256": "a339a80f8ac6a4b8eed1ac363046b148203930a4f5a2999779d58d7bdc002038",
+        "normalized_ast_before_sha256": "507c780333f5bac675d06b3c0cd3f5f5b735a86a7473c11caa34abf71a787efe",
+        "normalized_ast_after_sha256": "507c780333f5bac675d06b3c0cd3f5f5b735a86a7473c11caa34abf71a787efe",
+        "normalized_ast_equal": true,
+        "exact_allowed_normalizations": [
+          "only target ImportFrom.names ordering normalized; every other AST node retained",
+          "adjacent literal concatenation yields identical path Constant"
+        ],
+        "all_other_annotations_import_statements_bodies_parameters_defaults_and_constants_preserved": true
+      }
+    },
+    "all_equal": true,
+    "normalization_is_precise_not_all_annotations_or_imports": true
+  },
+  "commands": {
+    "import-order-repair": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "--select",
+        "I",
+        "--fix",
+        "--no-cache",
+        "tests/test_operational_time_v1.py"
+      ],
+      "returncode": 0,
+      "purpose": "apply only the plan-approved same-module name reorder; guarded by exact AST comparison next"
+    },
+    "mypy": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "mypy",
+        "--cache-dir=/tmp/bigsmall-oc1-static-mypy",
+        "src/cloud_edge_robot_arm/research/operational_time_v1.py"
+      ],
+      "environment": {
+        "PYTHONPATH": "src:.",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "MYPYPATH": "src"
+      },
+      "returncode": 0
+    },
+    "ruff-check": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "--no-cache",
+        "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+        "tests/test_operational_time_v1.py"
+      ],
+      "environment": {
+        "PYTHONPATH": "src:.",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "MYPYPATH": "src"
+      },
+      "returncode": 0
+    },
+    "ruff-format-check": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "--no-cache",
+        "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+        "tests/test_operational_time_v1.py"
+      ],
+      "environment": {
+        "PYTHONPATH": "src:.",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "MYPYPATH": "src"
+      },
+      "returncode": 0
+    },
+    "scoped-format": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "--no-cache",
+        "src/cloud_edge_robot_arm/research/operational_time_v1.py",
+        "tests/test_operational_time_v1.py"
+      ],
+      "returncode": 0,
+      "purpose": "plan-authorized scoped layout only"
+    },
+    "targeted-pytest": {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--basetemp=/tmp/bigsmall-oc1-static-tests",
+        "tests/test_operational_time_v1.py::test_foreign_equal_descriptor_and_copied_handles_rejected",
+        "tests/test_operational_time_v1.py::test_deadline_requires_original_event_causal_link_and_exact_handle"
+      ],
+      "environment": {
+        "PYTHONPATH": "src:.",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "MYPYPATH": "src"
+      },
+      "returncode": 0
+    }
+  },
+  "targeted_existing_tests": {
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "runs": 1,
+    "distinct_oc1_count_not_increased": true
+  },
+  "original_oc1_evidence": {
+    "unique_suite_passed": 60,
+    "not_rerun_this_round": true,
+    "real_linux_startup_cpu_positive": "preserved unchanged from round57",
+    "original_static_failures": "preserved unchanged",
+    "implementation_file_count": 41,
+    "all_hashes_unchanged": true
+  },
+  "source_quiet_existing_files_checked": 667,
+  "existing_source_changes": {},
+  "formal_accepted": false,
+  "scope": "SOFTWARE_ONLY",
+  "actual_calls": {
+    "physics": 0,
+    "renderer": 0,
+    "camera": 0,
+    "decoder": 0,
+    "provider": 0,
+    "hardware": 0,
+    "udp": 0
+  },
+  "real_factory_counter_read_this_round": false,
+  "worker_authority": "UNAVAILABLE",
+  "lease_authority": "UNAVAILABLE",
+  "native_authority": "UNAVAILABLE",
+  "utc_accuracy": null,
+  "si_accuracy": null,
+  "accuracy_status": "UNVERIFIED",
+  "future_horizon": "UNKNOWN",
+  "real_restart_suspend_hostpause": "NOT_TESTED_OC3_GATE",
+  "git_operations": 0,
+  "old_utc_native_consumer_config_backend_teacher_r07_mutations": false,
+  "unplanned_failures": [],
+  "note": "Static correction clears only the three located findings; root owns full OC1 independent review and acceptance. No full suite, full60 or real factory rerun."
+}

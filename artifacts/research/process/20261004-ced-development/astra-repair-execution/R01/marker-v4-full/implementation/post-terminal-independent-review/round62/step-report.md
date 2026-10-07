@@ -1,0 +1,13 @@
+# Astra round62 implementation step report
+
+T1 complete: one standard-library metadata-only registration supplement exited0 and separately returned PASS_COMPLETE4807_IDENTITY_AND_CANONICAL_REGISTRATION_BINDINGS. Four component totals are each4807/4807 with exact0..4806 denominator and no findings. The same single pass verified the9853287B derived stream's pinned SHA256; no decoder/raw/old-derived/project-import/pose/test/runtime/network/Git work occurred. The frozen schema/reader AST supplied canonical defaults and serialization; no diagnostic hash was hardcoded as the expectation. All37 protected inputs and the derived stat remained unchanged.
+
+T2 complete: final-review.md/json combine that full binding result with the original immutable other-check mappings and terminal actual/reader proofs. The original4807 false findings, script, process outputs, diagnostic and FAIL_OR_UNAVAILABLE remain untouched. Other passed checks were reused rather than rerun. The earlier pending-reader snapshot was preserved and reconciled using the completed reader's terminal metadata.
+
+The combined result is only PASS_THIS_FULL_HORIZON for one saved excluded development episode:4807OBSERVED, coverage1.0, old4618OBSERVED preserved and189UNKNOWN recovered, strict recorded gap0.004166666700001542s, and four complete recorded streams equal excluding episode_id only. Actual88431 and strict reader1633 each ran once and terminated exit0. Root reader detector calls4807; independent supplement detector calls0.
+
+Formal/native support stays0, formal_accepted=false, native_admission=NOT_PROMOTED, source_authenticity=UNKNOWN, independent_calibration_group=false, nine independent groups=false, continuous_visibility=NOT_ESTABLISHED, continuous_motion=NOT_CERTIFIED, stability_status=UNKNOWN, future_stability=UNAVAILABLE, geometric/angular bounds=null and SI/certified UTC=NOT_ESTABLISHED. Old fullqpos remains unavailable; no unrecorded-state equality or remote reproduction-package claim is made.
+
+Ruling: the explicit user/Astra metadata-only scope overrides generic skill requests for worktrees, tests, Git integration or another code-review cycle. Verification is the one permitted binding pass plus preservation evidence; no product source repair was authorized or performed. Cost of this scope is reliance on already preserved raw/trace/other-check evidence, stated in the final review.
+
+New product findings and deferred product minors: none. Shared-source hold is not released by this subagent; root may release it only after accepting the final review. The four exclusive reports and complete binding/origin/preservation records are ready for root's stage-summary integration.

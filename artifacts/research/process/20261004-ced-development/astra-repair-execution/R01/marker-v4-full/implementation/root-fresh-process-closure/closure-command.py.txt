@@ -1,0 +1,43 @@
+import hashlib,importlib.util,json,os,sys,tempfile
+from pathlib import Path
+root=Path.cwd(); f=root/'artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full'
+initial={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (f/n for n in ('prepare_full.py','run_full_once.py','verify_full.py','test_cpu.py'))}
+assert not (f/'full-protocol').exists()
+workspace=Path(tempfile.mkdtemp(prefix='bigsmall-marker-closure-'))
+violations=[]; calls=[]
+def audit(event,args):
+    if event=='open':
+        raw,mode,flags=args
+        if isinstance(raw,(str,bytes,os.PathLike)):
+            path=Path(os.fsdecode(raw)).resolve()
+            writing=(isinstance(mode,str) and any(s in mode for s in 'wax+')) or (isinstance(flags,int) and bool(flags & (os.O_WRONLY|os.O_RDWR|os.O_CREAT|os.O_TRUNC)))
+            if writing and not path.is_relative_to(workspace):
+                violations.append({'event':event,'path':str(path),'kind':'write_outside_temp'}); raise RuntimeError('closure write outside fresh temp')
+            if not writing and path.suffix=='.gz':
+                violations.append({'event':event,'path':str(path),'kind':'compressed_raw_read'}); raise RuntimeError('closure compressed raw read forbidden')
+sys.addaudithook(audit)
+def profile(frame,event,arg):
+    if event!='call': return
+    module=frame.f_globals.get('__name__',''); name=frame.f_code.co_name
+    owner=type(frame.f_locals.get('self')).__name__
+    if ((module.startswith('cloud_edge_robot_arm') and name in {'initialize','render','detect_pose_marker','__enter__'} and (name!='__enter__' or owner=='MuJoCoCaptureSession')) or (name=='__init__' and owner in {'MuJoCoPhysicsBackend','MuJoCoSkillRobot','MuJoCoRGBDCamera','MuJoCoCaptureSession'}) or (name=='runtime_preflight' and 'continuous' in str(frame.f_code.co_filename))):
+        calls.append({'module':module,'name':name,'owner':owner}); raise RuntimeError('runtime/model/camera/decoder entered in source closure')
+sys.setprofile(profile)
+spec=importlib.util.spec_from_file_location('root_marker_full_entry',f/'run_full_once.py'); mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+result=mod.P.freeze_full(workspace/'frozen')
+header=json.loads((workspace/'frozen/header.json').read_text())
+contract=mod.P.source_preflight(None,header,workspace/'frozen')
+sources=json.loads((workspace/'frozen/execution-source-hashes.json').read_text())
+index=json.loads((workspace/'frozen/execution-archive-index.json').read_text())
+origins={}
+for name,sha in sources.items():
+    live=root/name; archive=root/index[name]['archive']
+    assert hashlib.sha256(live.read_bytes()).hexdigest()==hashlib.sha256(archive.read_bytes()).hexdigest()==sha
+    if name.startswith('src/'):
+        key=name[4:-3].replace('/','.'); key=key[:-9] if key.endswith('.__init__') else key
+        module=sys.modules[key]; origins[key]={'file':str(Path(module.__file__).resolve()),'origin':str(Path(module.__spec__.origin).resolve()),'sha256':sha}
+        assert origins[key]['file']==origins[key]['origin']==str(live.resolve())
+final={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (f/n for n in initial)}
+assert initial==final and not (f/'full-protocol').exists() and not violations and not calls
+sys.setprofile(None)
+print(json.dumps({'status':'PASS_FRESH_PROCESS_SOURCE_ONLY_CLOSURE','temporary_fixture':str(workspace),'entry_origin':mod.__spec__.origin,'source_count':len(sources),'runtime_origins':origins,'owned_before':initial,'owned_after':final,'guard_contract_digest':contract.digest,'freeze_result':result,'production_freezes':0,'actual_attempts':0,'runtime_model_camera_decoder_calls':calls,'compressed_raw_reads':0,'writes_outside_temporary_fixture':violations},indent=2,sort_keys=True))

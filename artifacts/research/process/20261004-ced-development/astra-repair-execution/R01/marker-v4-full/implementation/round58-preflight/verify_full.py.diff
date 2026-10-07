@@ -1,0 +1,172 @@
+--- source-before/verify_full.py
++++ verify_full.py
+@@ -207,6 +207,38 @@
+     )
+ 
+ 
++def validate_acquisition_saved(acquisition, index_end):
++    P.require(P.same(acquisition["saved"], index_end), "acquisition/index full END record differs")
++
++
++def validate_recipe_event_inventory(actions, teacher_actions):
++    expected_actions = {
++        (i, phase) for i in range(1, 10) for phase in ("ACTION_BEGIN", "ACTION_END")
++    }
++    P.require(
++        type(actions) is dict
++        and all(type(key) is tuple and len(key) == 2 and type(key[0]) is int for key in actions)
++        and set(actions) == expected_actions,
++        "exact eighteen native-int action event keys required",
++    )
++    P.require(
++        type(teacher_actions) is dict
++        and all(type(key) is int for key in teacher_actions)
++        and set(teacher_actions) == set(range(1, 10)),
++        "exact nine native-int teacher event keys required",
++    )
++    for (ordinal, _), row in actions.items():
++        P.require(
++            type(row["action_ordinal"]) is int and row["action_ordinal"] == ordinal,
++            "action ordinal/key identity differs",
++        )
++    for ordinal, row in teacher_actions.items():
++        P.require(
++            type(row["action_ordinal"]) is int and row["action_ordinal"] == ordinal,
++            "teacher ordinal/key identity differs",
++        )
++
++
+ def validate_full_trace(attempt, header, contract):
+     """Stream guard-heavy journal; retain compact joins, never a full journal list."""
+     from cloud_edge_robot_arm.simulation.mujoco.backend import PhysicsStepObservation
+@@ -433,12 +465,12 @@
+                         acq_begin is not None
+                         and ident == identity(acq_begin)
+                         and saved is not None
+-                        and P.same(row["saved"], saved)
+                         and row["action_ordinal"] == active_action
+                         and row["control_operation_id"] == acq_begin["control_operation_id"]
+                         and row["physics_operation_id"] == acq_begin["physics_operation_id"],
+                         "acquisition/index exact END join",
+                     )
++                    validate_acquisition_saved(row, saved)
+                     camera = row["camera"]
+                     validate_frame_camera(
+                         camera,
+@@ -505,8 +537,10 @@
+                 elif event == "TEACHER_ACTION":
+                     ordinal = row["action_ordinal"]
+                     P.require(
+-                        type(ordinal) is int and ordinal not in teacher_actions,
+-                        "teacher action unique",
++                        type(ordinal) is int
++                        and 1 <= ordinal <= 9
++                        and ordinal not in teacher_actions,
++                        "teacher action exact integer/unique",
+                     )
+                     teacher_actions[ordinal] = row
+                 elif event == "FINAL_GUARD":
+@@ -580,6 +614,7 @@
+     except Exception as error:
+         errors.append(dict(kind="journal_read_failure", reason=repr(error)))
+     try:
++        validate_recipe_event_inventory(actions, teacher_actions)
+         P.require(
+             not pending and acq_begin is None and active_action is None,
+             "unclosed operation/action/acquisition",
+@@ -829,6 +864,41 @@
+     )
+ 
+ 
++def adapt_old_v3_end(row, *, protocol):
++    P.require(
++        protocol == "research.custom-whole-step-guarded-rgbd.v3" and row["event"] == "END",
++        "fixed old V3 END protocol required",
++    )
++    for field in ("observation_checksum_sha256", "observation_json_sha256"):
++        value = row.get(field)
++        P.require(
++            type(value) is str and len(value) == 64 and all(c in "0123456789abcdef" for c in value),
++            "old V3 END valid long SHA field required: " + field,
++        )
++    aliases = {
++        "checksum": row["observation_checksum_sha256"],
++        "original_sha256": row["observation_json_sha256"],
++    }
++    for alias, value in aliases.items():
++        P.require(alias not in row or row[alias] == value, "old V3 END conflicting alias: " + alias)
++    return {**row, **aliases}
++
++
++def validate_old_v3_marker_binding(marker, saved, member):
++    step = marker["physics_step"]
++    relative = "whole-step/" + saved["file"]
++    P.require(
++        relative == f"whole-step/frames/{step:07d}.json.gz"
++        and member["path"] == relative
++        and saved["compressed_sha256"] == member["sha256"]
++        and saved["compressed_bytes"] == member["bytes"]
++        and marker["observation_id"] == saved["observation_id"]
++        and marker["checksum"] == saved["checksum"]
++        and identity(marker) == identity(saved),
++        "old marker source/manifest/index binding",
++    )
++
++
+ def baseline_markers():
+     manifest_path = HERE.parent / "raw-inventory.json"
+     manifest = strict_json(manifest_path.read_bytes())
+@@ -840,12 +910,13 @@
+     )
+     actual = {str(p.relative_to(OLD)) for p in OLD.rglob("*") if p.is_file()}
+     P.require(actual == set(members), "old original file set differs")
++    old_header = strict_json((OLD.parent / "header.json").read_bytes())
+     index = {}
+     for row in iter_journal(OLD / "whole-step/index.jsonl"):
+         if row["event"] == "END":
+             step = row["physics_step"]
+             P.require(type(step) is int and step not in index, "old index duplicate identity")
+-            index[step] = row
++            index[step] = adapt_old_v3_end(row, protocol=old_header["protocol"])
+     P.require(sorted(index) == list(range(4807)), "old source index incomplete")
+     markers = {}
+     path = HERE.parent / "offline/offline-markers.jsonl"
+@@ -859,16 +930,8 @@
+         )
+         saved = index[step]
+         relative = "whole-step/" + saved["file"]
+-        P.require(
+-            relative == f"whole-step/frames/{step:07d}.json.gz"
+-            and relative in members
+-            and saved["compressed_sha256"] == members[relative]["sha256"]
+-            and saved["compressed_bytes"] == members[relative]["bytes"]
+-            and row["observation_id"] == saved["observation_id"]
+-            and row["checksum"] == saved["checksum"]
+-            and identity(row) == identity(saved),
+-            "old marker source/manifest/index binding",
+-        )
++        P.require(relative in members, "old marker frame missing from manifest")
++        validate_old_v3_marker_binding(row, saved, members[relative])
+         markers[step] = row
+     P.require(
+         sorted(markers) == list(range(4807))
+@@ -1158,7 +1221,7 @@
+         r["sim_time_s"] for r in rows if r["decode_status"] == "OBSERVED" and "sim_time_s" in r
+     ]
+     observed_max_gap = max(
+-        (b - a for a, b in zip(observed_times, observed_times[1:])), default=None
++        (b - a for a, b in zip(observed_times, observed_times[1:], strict=False)), default=None
+     )
+     selection = strict_json((P.SPARSE / "selection-manifest.json").read_bytes())["selected_steps"]
+     subgroup = dict(
+@@ -1243,7 +1306,9 @@
+                 },
+                 indent=2,
+             )
+-            + "\n\nOnly this saved full horizon is assessed. Formal/native, continuous physical motion, calibration, UTC and future stability remain unpromoted.\n"
++            + "\n\nOnly this saved full horizon is assessed. Formal/native, "
++            "continuous physical motion, calibration, UTC and future stability "
++            "remain unpromoted.\n"
+         )
+     return result
+ 

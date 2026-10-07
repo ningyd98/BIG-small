@@ -1,0 +1,21 @@
+--- source-before/run_full_once.py
++++ run_full_once.py
+@@ -92,7 +92,8 @@
+         )
+         if not valid:
+             self.stopped = True
+-            # repr preserves malformed bool/NaN/Inf declaration without emitting invalid JSON numbers.
++            # Preserve malformed bool/NaN/Inf declarations as repr strings.
++            # This avoids emitting invalid JSON numbers.
+             self.emit(
+                 "REJECTED",
+                 declared_episode=repr(episode_id),
+@@ -165,7 +166,7 @@
+             }
+             self.emit("END", **row)
+             self.saved.append(physics_step)
+-            return row
++            return {"event": "END", **row}
+         except BaseException as error:
+             self.stopped = True
+             self.failures.append(physics_step)

@@ -1,0 +1,91 @@
+"""One bounded owned suite, four-source static, and two source-only closures."""
+import hashlib
+import json
+import os
+import re
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+root = Path.cwd().resolve()
+full = root / "artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full"
+out = full / "implementation/independent-review"
+protocol = full / "full-protocol"
+python = root / ".venv/bin/python"
+header_sha = "2dec1ca5ac4352a90056f8734d26e8fdef1795da212537f1897c8e1a77542100"
+owned = [full / name for name in ("prepare_full.py", "run_full_once.py", "verify_full.py", "test_cpu.py")]
+
+def digest(path):
+    h = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+def write(name, data):
+    with (out / name).open("x") as stream:
+        json.dump(data, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+assert digest(protocol / "header.json") == header_sha
+assert not (protocol / "attempt-1").exists() and not (full / "offline").exists()
+freeze_manifest_path = full / "implementation/production-freeze/round60/frozen-manifest.json"
+freeze_manifest = json.loads(freeze_manifest_path.read_text())
+sources = json.loads((protocol / "execution-source-hashes.json").read_text())
+archives = json.loads((protocol / "execution-archive-index.json").read_text())
+header = json.loads((protocol / "header.json").read_text())
+assert len(sources) == len(archives) == 48 and set(sources) == set(archives)
+assert len(freeze_manifest) == 23
+expected_source_path = root / "artifacts/research/process/20261004-ced-development/astra-rounds/round60-marker-freeze-count/plan.json"
+assert digest(expected_source_path) == "941b322b69dd5c4006e858601165b5c1aa1818d921bf467c07b8a7ca4f3bcb17"
+assert sources == json.loads(expected_source_path.read_text())["expected_sources"]
+protected = {root / name for name in freeze_manifest}
+protected.update(root / name for name in sources)
+protected.update(root / row["archive"] for row in archives.values())
+protected.update(Path(row["path"]) for row in header["environment"]["files"].values())
+protected.update(root / name for name in json.loads((protocol / "input-inventory.json").read_text()))
+protected.update({freeze_manifest_path, expected_source_path, out / "tooling-failures.json", out / "entry-closure-probe.py.txt", Path(__file__).resolve()})
+for name, pin in freeze_manifest.items():
+    assert (root / name).stat().st_size == pin["bytes"] and digest(root / name) == pin["sha256"]
+for name, pin in sources.items():
+    assert digest(root / name) == digest(root / archives[name]["archive"]) == pin
+before = {str(path.resolve()): {"bytes": path.stat().st_size, "sha256": digest(path)} for path in protected}
+write("protected-before.json", before)
+write("owned-before.json", {path.name: digest(path) for path in owned})
+fixture = Path(tempfile.mkdtemp(prefix="bigsmall-marker-independent-owned-")) / "fixtures"
+environment = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONPATH="src:.")
+compile_code = "from pathlib import Path; p=Path('artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full'); names=('prepare_full.py','run_full_once.py','verify_full.py','test_cpu.py'); [compile((p/n).read_bytes(),str(p/n),'exec') for n in names]; print('IN_MEMORY_COMPILE 4/4 PASS')"
+commands = [
+    ("owned-suite", [str(python), "-m", "pytest", "-q", "-p", "no:cacheprovider", "--basetemp", str(fixture), str(full / "test_cpu.py")]),
+    ("ruff-check", [str(python), "-m", "ruff", "check", *map(str, owned)]),
+    ("format-check", [str(python), "-m", "ruff", "format", "--check", *map(str, owned)]),
+    ("compile", [str(python), "-c", compile_code]),
+    ("runner-entry-closure", [str(python), str(out / "entry-closure-probe.py.txt"), "run_full_once.py", header_sha]),
+    ("reader-entry-closure", [str(python), str(out / "entry-closure-probe.py.txt"), "verify_full.py", header_sha]),
+]
+results = []
+for name, argv in commands:
+    write(name + ".command.json", {"argv": argv, "cwd": str(root), "environment": {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "src:."}, "suite_run_limit": 1, "timeout_s": 120})
+    started = time.monotonic()
+    with (out / (name + ".stdout.txt")).open("x") as stdout, (out / (name + ".stderr.txt")).open("x") as stderr:
+        result = subprocess.run(argv, cwd=root, env=environment, stdout=stdout, stderr=stderr, timeout=120, check=False)
+    stdout_path, stderr_path = out / (name + ".stdout.txt"), out / (name + ".stderr.txt")
+    row = {"name": name, "exit_code": result.returncode, "wall_s": time.monotonic() - started, "stdout_path": stdout_path.name, "stdout_sha256": digest(stdout_path), "stderr_path": stderr_path.name, "stderr_sha256": digest(stderr_path)}
+    if name == "owned-suite":
+        match = re.search(r"(\d+) passed in ([0-9.]+)s", stdout_path.read_text())
+        row["passed"] = int(match.group(1)) if match else None
+    results.append(row)
+    write(name + ".execution.json", row)
+    print(json.dumps(row), flush=True)
+    if result.returncode != 0 or (name == "owned-suite" and row["passed"] != 131):
+        write("checks.json", {"status": "REQUEST_NEXT_ASTRA_PLAN", "results": results, "actual_runs": 0, "source_mutations": 0})
+        raise SystemExit(1)
+after = {str(path.resolve()): {"bytes": path.stat().st_size, "sha256": digest(path)} for path in protected}
+write("protected-after.json", after)
+write("owned-after.json", {path.name: digest(path) for path in owned})
+current_frozen = {str(path.relative_to(root)) for path in protocol.rglob("*") if path.is_file()}
+quiet = before == after and current_frozen == set(freeze_manifest) and not (protocol / "attempt-1").exists() and not (full / "offline").exists()
+write("checks.json", {"status": "PASS_SCOPED_CHECKS" if quiet else "REQUEST_NEXT_ASTRA_PLAN", "results": results, "protected_count": len(before), "protected_equal": before == after, "frozen_file_set_equal": current_frozen == set(freeze_manifest), "frozen_files": len(current_frozen), "owned_suite_runs": 1, "actual_runs": 0, "model_constructions": 0, "real_detector_calls": 0, "old_raw_decompressions": 0, "git_operations": 0})
+assert quiet
+print("PASS_SCOPED_CHECKS; protected inputs and 23 frozen files unchanged; actual0", flush=True)

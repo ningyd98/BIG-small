@@ -1,0 +1,128 @@
+{
+  "status": "STATIC_DEPENDENCY_EVIDENCE_ONLY",
+  "observed_at_utc": "2026-10-05T20:33:14.509210+00:00",
+  "author": "ROOT",
+  "input_pins": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "bytes": 4106,
+      "sha256": "d53ff8b09227d01c5c728f543c4ae818cb230fc98990fd80fea460589011c980"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "bytes": 47252,
+      "sha256": "8497625d14b8610e5eb1717a93c1f8cfc9802b2696dc1eedad42fb9b73e6ba96"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "bytes": 4887,
+      "sha256": "36a9bf16372607a4b25731090dfe7af30bc2d439f260510537bd9b29bef297cf"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "bytes": 3946,
+      "sha256": "e93613d272ee9960701508225fdcb2ccb7ad7e964f083941871b7d70448a3e88"
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "bytes": 23511,
+      "sha256": "ffce1cedb2cc9962ade0c5845d6ce92127372fa2248c0f4bc5f215706f5be86b"
+    },
+    {
+      "path": "tests/test_rgbd_lease_control.py",
+      "bytes": 5027,
+      "sha256": "54ca60069914b222a3f558da5b807310f41bdde489cbff494ad4a43539eedaad"
+    },
+    {
+      "path": "tests/test_rgbd_lease_handoff.py",
+      "bytes": 23788,
+      "sha256": "2eea572c84097366671b22a9ca75e044a1a732ce45554dad252ae16d2fb13987"
+    },
+    {
+      "path": "tests/test_visual_worker_owner.py",
+      "bytes": 18025,
+      "sha256": "2c3d8a142239ef4799c60696f179201fcc70bbff3c46f3fcd92434e4248b3685"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-05-operational-clock-repair-supplement.md",
+      "bytes": 6081,
+      "sha256": "6bf5022020253b73f08d00adf2785e1ca86ff1e34ca389a55e6c716fcc147030"
+    }
+  ],
+  "source_observations": [
+    {
+      "source": "src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "lines": [
+        47,
+        68,
+        73,
+        77,
+        83
+      ],
+      "fact": "Repository protocol exposes the existing publication lock, datetime expiry-CAS, acquire/heartbeat/release/expiry APIs; no domain D input on these interfaces."
+    },
+    {
+      "source": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "lines": [
+        53,
+        348,
+        362,
+        427,
+        434,
+        439,
+        497,
+        499,
+        519,
+        1199
+      ],
+      "fact": "SQLite uses UTC datetime _now; heartbeat samples after BEGIN IMMEDIATE and rejects expiry/release/cancellation/foreign ownership, updates both lease and job in one transaction. Expiry scan rechecks lease/worker/cutoff through CAS. Existing cross-process flock is reusable and must not be weakened."
+    },
+    {
+      "source": "src/cloud_edge_robot_arm/simulation_runtime/models.py",
+      "lines": [
+        106,
+        110,
+        111,
+        112,
+        117
+      ],
+      "fact": "Job lease timestamps acquired/expires/heartbeat and attempt timestamps are datetime. This snapshot has no operational owner/boot/domain/counter deadline in those types."
+    },
+    {
+      "source": "src/cloud_edge_robot_arm/vision/worker_owner.py",
+      "lines": [
+        131,
+        153,
+        166,
+        179,
+        190
+      ],
+      "fact": "read_visual_worker_lease joins current RUNNING job, exactly one live lease and exactly one open attempt under publication guard. It defaults to now=datetime.now(UTC); optional legacy caller datetime exists. OC2 calls without caller now and has not migrated lease clocks."
+    },
+    {
+      "source": "src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "lines": [
+        30,
+        37,
+        44,
+        73
+      ],
+      "fact": "Recovery first expire_leases, then rereads under publication guard and compares status/lease/worker before finishing attempt/CAS. Explicit requeue remains separate; historical artifact checks do not establish live operational authority."
+    }
+  ],
+  "scope": "NINE_LISTED_INPUTS_NOT_COMPLETE_OC3_CLOSURE",
+  "new_unplanned_product_failure": false,
+  "known_pending_gate": "OC3_LEASE_CLOCK_MIGRATION_NOT_DONE",
+  "repair_plan": "NOT_GENERATED_BY_THIS_AUDIT",
+  "product_imports_tests_DB_CLI_actual_network_Git": 0,
+  "excluded_live_sources": [
+    "operational_*",
+    "worker.py",
+    "protocol_generation.py",
+    "teacher.py",
+    "six_root_stage_documents"
+  ],
+  "formal_accepted": false,
+  "input_sha_after_read_unchanged": true,
+  "report_md_sha256": "43f7e98c4c9f87e02fa74c5dc2bc0f9bb49ab1440808d5363e9dfab3e87ed1f5"
+}

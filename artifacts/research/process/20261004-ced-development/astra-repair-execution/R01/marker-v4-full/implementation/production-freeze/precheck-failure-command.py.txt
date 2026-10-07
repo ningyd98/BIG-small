@@ -1,0 +1,18 @@
+import hashlib,importlib.util,json
+from pathlib import Path
+f=Path('artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full'); out=f/'implementation/production-freeze'
+assert not (f/'full-protocol').exists(); out.mkdir()
+spec=importlib.util.spec_from_file_location('production_freeze_precheck',f/'prepare_full.py'); P=importlib.util.module_from_spec(spec);spec.loader.exec_module(P)
+header=P.make_full_header();P.validate_full_header(header);inputs=P.input_inventory();sources,index=P.necessary_sources();P.check_origins(sources);resource=P.require_resources(f)
+assert len(sources)==48
+protected=[P.ROOT/n for n in sources]+[P.ROOT/n for n in inputs]+[Path(r['path']) for r in header['environment']['files'].values()]+[P.ROOT/r['archive'] for r in index.values()]
+protected += [f/n for n in P.OWNED]
+protected += [p for p in (f/'implementation/round58-preflight/source-before').iterdir() if p.is_file()]
+protected += [f/'implementation/root-fresh-process-closure'/n for n in ('result.json','command.json','execution.json','closure-command.py.txt')]
+before={str(p.resolve()):{'bytes':p.stat().st_size,'sha256':P.hash_file(p)} for p in sorted(set(protected))}
+owned={n:P.hash_file(f/n) for n in P.OWNED}
+command='PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:. .venv/bin/python '+str(f/'run_full_once.py')+' --prepare --protocol-directory '+str(f/'full-protocol')
+P.write_new(out/'input-inventory-before.json',before)
+P.write_new(out/'owned-before.json',owned)
+P.write_new(out/'command.json',{'command':command,'command_sha256':hashlib.sha256(command.encode()).hexdigest(),'stdout':'stdout.log','stderr':'stderr.log','source_count_before':len(sources),'environment_pin_count':len(header['environment']['files']),'input_pin_count':len(inputs),'initial_resources':resource,'authorization':'Explicit root authorization after PASS_FRESH_PROCESS_SOURCE_ONLY_CLOSURE; first and only production freeze; no code repair/retry/actual/decode/Git'})
+print(json.dumps({'status':'PRODUCTION_FREEZE_PRECHECK_PASS','sources':len(sources),'inputs':len(inputs),'environment_pins':len(header['environment']['files']),'protected_before':len(before),'resources':resource}))

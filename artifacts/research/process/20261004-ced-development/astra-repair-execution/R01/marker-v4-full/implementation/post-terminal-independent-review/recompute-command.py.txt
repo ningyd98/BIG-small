@@ -1,0 +1,198 @@
+"""Single parse of terminal derived rows; no project import, raw read or decode."""
+import hashlib
+import json
+import math
+import os
+import sys
+from collections import Counter
+from pathlib import Path
+
+root = Path.cwd().resolve()
+full = root / "artifacts/research/process/20261004-ced-development/astra-repair-execution/R01/marker-v4-full"
+out = full / "implementation/post-terminal-independent-review"
+offline = full / "offline"
+expected_report_sha = sys.argv[1]
+findings = []
+pins = {}
+
+def check(condition, reason, **details):
+    if not condition:
+        findings.append({"reason": reason, **details})
+
+def digest(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+def finite(value):
+    return type(value) in {int, float} and math.isfinite(value)
+
+def strict(raw):
+    def pairs(values):
+        result = {}
+        for key, value in values:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+    def constant(value):
+        raise ValueError("nonfinite JSON constant " + value)
+    return json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
+
+def document(path):
+    raw = path.read_bytes()
+    pins[str(path.relative_to(root))] = {"bytes": len(raw), "sha256": digest(raw)}
+    return strict(raw)
+
+def lines(path):
+    h, size = hashlib.sha256(), 0
+    with path.open("rb") as stream:
+        for line in stream:
+            h.update(line)
+            size += len(line)
+            if not line.endswith(b"\n"):
+                raise ValueError("truncated derived JSONL")
+            yield strict(line)
+    pins[str(path.relative_to(root))] = {"bytes": size, "sha256": h.hexdigest()}
+
+def audit(event, args):
+    if event != "open":
+        return
+    raw, mode, flags = args
+    if isinstance(raw, (str, bytes, os.PathLike)):
+        path = Path(os.fsdecode(raw)).resolve()
+        writing = (isinstance(mode, str) and any(mark in mode for mark in "wax+")) or (isinstance(flags, int) and bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC)))
+        if writing and not path.is_relative_to(out):
+            raise RuntimeError("post-terminal reviewer writes outside owned review directory")
+        if path.suffix == ".gz":
+            raise RuntimeError("post-terminal reviewer must not read compressed raw/journals")
+
+sys.addaudithook(audit)
+report = document(offline / "offline-verification.json")
+check(pins[str((offline / "offline-verification.json").relative_to(root))]["sha256"] == expected_report_sha, "root terminal report SHA differs")
+header = document(full / "full-protocol/header.json")
+actual_review = document(out / "actual-metadata-review.json")
+actual_execution = document(full / "actual/execution.json")
+root_terminal = document(full / "actual/root-terminal-summary.json")
+check(actual_execution["exit_code"] == 0 and actual_execution["actual_command_invocations"] == 1 and actual_execution["automatic_retries"] == 0, "actual invocation/terminal differs")
+check(root_terminal["series_summary"]["allocated_steps"] == root_terminal["series_summary"]["saved_steps"] == list(range(4807)), "actual allocated/saved exact range differs")
+registration = header["marker_registration"]
+registration_hash = digest(json.dumps(registration, sort_keys=True, separators=(",", ":"), allow_nan=False).encode())
+counts, reasons, ids = Counter(), Counter(), set()
+compact = []
+raw_valid = decoder_calls = 0
+min_side = None
+min_side_step = None
+max_gap = None
+gap_violations = []
+previous_time = None
+episode_ids = set()
+row_shape_errors = []
+for offset, row in enumerate(lines(offline / "offline-markers.jsonl")):
+    step = row["physics_step"]
+    check(type(step) is int and step == offset and offset < 4807, "new derived range/identity differs", offset=offset, step=step)
+    status = row["decode_status"]
+    counts[status] += 1
+    reasons[row.get("reason", status)] += 1
+    raw_valid += int(row.get("raw_valid") is True)
+    decoder_calls += int(row.get("decoder_called") is True)
+    stamp = row.get("sim_time_s")
+    if finite(stamp):
+        check(stamp == 0 if offset == 0 else previous_time is not None and stamp > previous_time, "derived SimulationS sequence differs", step=step)
+        if previous_time is not None:
+            gap = stamp - previous_time
+            max_gap = max(max_gap or 0, gap)
+            if not 0 < gap <= 0.005:
+                gap_violations.append(step)
+        previous_time = stamp
+    else:
+        row_shape_errors.append({"step": step, "reason": "missing/nonfinite/native numeric SimulationS"})
+    check(row["stability_status"] == "UNKNOWN", "row stability promotion", step=step)
+    if status in {"OBSERVED", "UNKNOWN"}:
+        observation_id = row["observation_id"]
+        check(type(observation_id) is str and bool(observation_id), "new observation ID invalid", step=step)
+        for hash_name in ("checksum", "original_sha256", "compressed_sha256"):
+            value = row[hash_name]
+            check(type(value) is str and len(value) == 64 and all(c in "0123456789abcdef" for c in value), "new derived SHA field invalid", step=step, field=hash_name)
+        for bytes_name in ("original_bytes", "compressed_bytes"):
+            check(type(row[bytes_name]) is int and row[bytes_name] > 0, "new derived byte field invalid", step=step, field=bytes_name)
+        check(set(row["raw_member_sha256"]) == set(row["raw_member_bytes"]) == {"rgb.png", "depth.f32", "valid_mask.u8"}, "raw member metadata inventory differs", step=step)
+        check(row["raw_member_bytes"]["depth.f32"] == 640 * 480 * 4 and row["raw_member_bytes"]["valid_mask.u8"] == 640 * 480 and row["raw_member_bytes"]["rgb.png"] > 0, "raw member metadata dimensions differ", step=step)
+        check(observation_id not in ids, "duplicate new observation ID", step=step)
+        ids.add(observation_id)
+        episode_ids.add(row["episode_id"])
+        marker = row["marker"]
+        check(marker["status"] == status and marker["observation_id"] == observation_id and marker["observation_checksum_sha256"] == row["checksum"] and marker["registration_hash"] == registration_hash, "marker/readout identity or registration binding differs", step=step)
+        check(marker["stability_status"] == "UNKNOWN" and marker["geometric_error_bound_m"] is None and marker["angular_velocity_bound_rad_s"] is None, "marker bound/stability promotion", step=step)
+        if status == "OBSERVED":
+            side = marker["measured_min_side_px"]
+            corners = marker["ordered_corners_px"]
+            check(marker["observed_marker_ids"] == [7] and type(marker["observed_marker_ids"][0]) is int, "observed marker ID differs", step=step)
+            check(finite(side) and side >= 8, "OBSERVED minimum side violates fixed detector gate", step=step)
+            check(type(corners) is list and len(corners) == 4 and all(type(point) is list and len(point) == 2 and all(finite(v) for v in point) and 1 <= point[0] < 638 and 1 <= point[1] < 478 for point in corners), "OBSERVED ordered corners missing/clipped/invalid", step=step)
+            for name, length in (("marker_center_world_m", 3), ("rotation_marker_to_world", 9), ("measured_edge_lengths_m", 4)):
+                values = marker[name]
+                check(type(values) is list and len(values) == length and all(finite(v) for v in values), "OBSERVED pose field invalid", step=step, field=name)
+            check(finite(marker["yaw_world_rad"]), "OBSERVED yaw invalid", step=step)
+            check(all(abs(value / registration["marker_size_m"] - 1) <= 0.30 for value in marker["measured_edge_lengths_m"]), "OBSERVED recorded metric size violates fixed sanity gate", step=step)
+            if finite(side) and (min_side is None or side < min_side):
+                min_side, min_side_step = side, step
+    compact.append({"physics_step": step, "decode_status": status, "sim_time_s": stamp})
+check(len(compact) == 4807, "new derived denominator differs", rows=len(compact))
+check(len(episode_ids) == 1 and root_terminal["series_summary"]["episode_id"] in episode_ids, "new derived episode binding differs")
+check(previous_time == root_terminal["series_summary"]["final_sim_time_s"], "new derived terminal SimulationS differs")
+check(dict(counts) == report["decode_status_counts"] and dict(reasons) == report["decode_reason_counts"] and raw_valid == report["raw_verified_frames"] and decoder_calls == report["decoder_calls"], "independent counts differ from report")
+check(max_gap == report["full_max_sample_gap_s"] and gap_violations == report["sampling_gap_violation_steps"], "independent actual gap differs from report")
+old_counts, transitions = Counter(), Counter()
+pair_rows = []
+for offset, pair in enumerate(lines(offline / "old-new-marker-pairs.jsonl")):
+    step = pair["physics_step"]
+    check(type(step) is int and step == offset and offset < 4807, "pair exact complete range differs", offset=offset, step=step)
+    if offset < len(compact):
+        check(pair["new"] == compact[offset]["decode_status"], "pair/new status differs", step=step)
+    old_counts[pair["old"]] += 1
+    transitions[pair["old"] + "->" + pair["new"]] += 1
+    pair_rows.append(pair)
+check(len(pair_rows) == 4807 and dict(old_counts) == {"OBSERVED": 4618, "UNKNOWN": 189}, "old paired denominator/count differs")
+check(dict(transitions) == report["transitions"] and dict(old_counts) == report["old_full_status_counts"], "independent old/new transitions differ from report")
+selection_path = full.parent / "marker-v4-preparation/selection-manifest.json"
+selection = document(selection_path)["selected_steps"]
+check(len(selection) == len(set(selection)) == 201, "original subgroup selection denominator differs")
+subgroup_new = Counter(compact[step]["decode_status"] for step in selection)
+subgroup_old = Counter(pair_rows[step]["old"] for step in selection)
+check(report["sparse_subgroup"]["denominator"] == 201 and dict(subgroup_new) == report["sparse_subgroup"]["new_status_counts"] and dict(subgroup_old) == report["sparse_subgroup"]["old_status_counts"], "independent201 subgroup differs")
+before = document(offline / "input-inventory-before.json")
+after = document(offline / "input-inventory-after.json")
+immutable = document(offline / "immutable-differences.json")
+recomputed_immutable = {"missing": sorted(before.keys() - after.keys()), "added": sorted(after.keys() - before.keys()), "changed": sorted(key for key in before.keys() & after.keys() if before[key] != after[key])}
+check(recomputed_immutable == immutable == report["immutable_differences"] and not any(immutable.values()) and report["originals_unchanged"] is True, "reader immutable report differs")
+actual_inventory = document(full / "actual/attempt-inventory.json")
+actual_manifest_binding_errors = []
+for name, pin in actual_inventory.items():
+    absolute = str((root / name).resolve())
+    if before.get(absolute) != pin or after.get(absolute) != pin:
+        actual_manifest_binding_errors.append(name)
+check(not actual_manifest_binding_errors, "reader protected new originals differ from root terminal manifest", examples=actual_manifest_binding_errors[:10])
+unexpected = document(offline / "unexpected-actual.json")
+check(not any(unexpected.values()) and report["raw_file_set_matches"] is True, "unexpected actual raw/range remains")
+comparison = report["recorded_comparison"]
+for name, expected in (("physical", 4807), ("actuator", 4806), ("commands", 743), ("scorer", 4807)):
+    value = comparison[name]
+    check(value["old_rows"] == value["new_rows"] == value["expected_rows"] == expected and value["complete_exact_denominators"] is True and value["different_rows"] == 0 and value["status"] == "ALL_RECORDED_FIELDS_EQUAL" and value["excluded_fields"] == ["episode_id"] and "OLD_FULL_QPOS_UNAVAILABLE" in value["scope"], "complete recorded comparison differs", kind=name)
+    mismatches = offline / value["mismatch_file"]
+    check(mismatches.stat().st_size == 0, "recorded mismatch file nonempty", kind=name)
+    document_bytes = mismatches.read_bytes()
+    pins[str(mismatches.relative_to(root))] = {"bytes": len(document_bytes), "sha256": digest(document_bytes)}
+nonpromotion = {"formal_accepted": False, "native_admission": "NOT_PROMOTED", "source_authenticity": "UNKNOWN", "independent_calibration_group": False, "continuous_motion": "NOT_CERTIFIED", "continuous_visibility": "NOT_ESTABLISHED", "future_stability": "UNAVAILABLE", "geometric_error_bound_m": None, "angular_velocity_bound_rad_s": None, "stability_status": "UNKNOWN"}
+for name, value in nonpromotion.items():
+    check(type(report[name]) is type(value) and report[name] == value, "report nonpromotion field differs", field=name)
+check(report["expected_frame_count"] == 4807 and report["execution_header_sha256"] == "2dec1ca5ac4352a90056f8734d26e8fdef1795da212537f1897c8e1a77542100" and report["reader_source_sha256"] == "011f7ef1d8a5adf615ec3108debb1072465a1a798cd11b7a14bf99e910f8bc09" and report["detector_source_sha256"] == "68f9e6e0675a4b6ccdead896bd767c685fd53357591ab1fdf4d71d124c72264f", "readout frozen header/source bindings differ")
+check(report["source_valid"] is True and report["source_failure"] is None and report["resource_abort"] is None, "reader source/resource failure")
+check(report["trace"]["trace_valid"] is True and not report["trace"]["errors"] and report["trace"]["physical_count"] == report["trace"]["scorer_count"] == report["trace"]["full_capture_state_count"] == 4807 and report["trace"]["actuator_count"] == 4806 and report["trace"]["commands"] == 743 and report["trace"]["final_guard_count"] == 1, "reader exact trace/final guard fails")
+check(report["reader_wall_s"] <= 1800 and report["reader_peak_rss_bytes"] <= 4 * 1024**3, "reader internal resource boundary exceeded")
+full_pass = not findings and not row_shape_errors and counts == {"OBSERVED": 4807} and raw_valid == decoder_calls == 4807 and not gap_violations and max_gap is not None and max_gap <= 0.005
+check(report["integrity_status"] == "VERIFIED_FULL_RAW_AND_RECORDED_TRACE" and report["sampling_gap_status"] == "PASS_RECORDED_SIMULATIONS" and report["full_frame_observability_status"] == "PASS_THIS_FULL_HORIZON", "reader reported development admission not pass")
+result = {"status": "PASS_SCOPED_FULL_HORIZON_FRAME_OBSERVABILITY_DEVELOPMENT_REVIEW" if full_pass and not findings else "REQUEST_NEXT_ASTRA_PLAN", "full_frame_observability_status": "PASS_THIS_FULL_HORIZON" if full_pass and not findings else "FAIL_OR_UNAVAILABLE", "expected_frame_count": 4807, "actual_invocations": 1, "root_reader_invocations": 1, "root_strict_detector_calls": decoder_calls, "independent_detector_calls": 0, "new_rows": len(compact), "new_status_counts": dict(counts), "new_reason_counts": dict(reasons), "raw_valid_flags": raw_valid, "unique_observation_ids": len(ids), "old_paired_status_counts": dict(old_counts), "complete_pair_rows": len(pair_rows), "transitions": dict(transitions), "sampling_gap_limit_s": 0.005, "max_saved_simulation_gap_s": max_gap, "sampling_gap_violation_steps": gap_violations, "first_sim_time_s": compact[0]["sim_time_s"], "last_sim_time_s": previous_time, "coverage": counts["OBSERVED"] / 4807, "minimum_recorded_marker_side_px": min_side, "minimum_side_step": min_side_step, "sparse_subgroup_denominator": 201, "sparse_subgroup_new_counts": dict(subgroup_new), "sparse_subgroup_old_counts": dict(subgroup_old), "recorded_comparison": comparison, "reader_protected_file_count": len(before), "reader_immutable_recomputed": recomputed_immutable, "actual_manifest_joined_members": len(actual_inventory), "actual_manifest_binding_errors": actual_manifest_binding_errors, "findings": findings, "row_shape_errors": row_shape_errors, "input_pins": pins, "nonpromotion": nonpromotion, "old_full_qpos_available": False, "old_or_new_raw_read_or_rehash_by_reviewer": False, "independent_physics_replay": False, "project_module_imports": 0, "test_or_source_closure_runs": 0, "network_or_git_operations": 0, "nine_independent_calibration_groups_established": False, "SI_or_certified_UTC_admission": "NOT_ESTABLISHED"}
+with (out / "recomputed.json").open("x") as stream:
+    json.dump(result, stream, indent=2, sort_keys=True, allow_nan=False)
+    stream.write("\n")
+print(json.dumps({key: result[key] for key in ("status", "full_frame_observability_status", "new_rows", "new_status_counts", "old_paired_status_counts", "transitions", "root_strict_detector_calls", "independent_detector_calls", "max_saved_simulation_gap_s", "minimum_recorded_marker_side_px", "minimum_side_step", "reader_protected_file_count", "findings", "row_shape_errors")}, indent=2))
+print("recomputed.json SHA256", digest((out / "recomputed.json").read_bytes()))
