@@ -1,0 +1,13 @@
+# 表结构分页修复步骤报告
+
+日期：2026-10-11；按本目录实际gpt-6-astra计划执行。全部输入SHA256核对通过，见execution-precheck.json；冻结候选B与旧图像保留在前轮candidate-evidence和evidence-before。
+
+采用候选C：主表在原研究行之前拆为两个具有原tblPr/tblGrid的表，在两表之间插入无文字的body级分页段；撤回无效的候选B表内pageBreakBefore。仅word/document.xml改变，其他包parts与B逐字节一致；正文w:t有序序列、原行数、所有表格grid/tblPr、唯一sectPr均保持。更新任务模板契约以说明有意的展示分页变化。
+
+生成exit 0，最终DOCX SHA256为4cc763d784b26adaef73e10064434029cd773f23a6c830b1c4cd9c3932c320b1，161181字节。render_and_diff运行exit 0（session 9022 / chunk bd21bd），参考8页、最终3页。已以原尺寸逐页打开最终3张PNG：第1页为元信息与技术背景，第2页从研究标题和完整首段开始，研究开发方案六字完整显示，第3页续目录、成果和进度；所有文字可读，未见裁切、重叠、异常空页、孤立标题或栏名拆分。目录第二章说明有正常跨页延续，未丢失文本。候选C满足本轮验收，未运行候选D。
+
+section_audit与style_lint执行exit 0，1节A4及源页边距保持；style_lint的直接格式和非Heading标题提示来自参照表单的源样式，python-docx对合并格重复遍历的计数不等于可见内容重复。全文内容/唯一顺序和包比较另外验证通过。细节见evidence-final。
+
+原.doc SHA256为6d9013939dbe7927ed5454b33f523865de35ac187ab00ea05b1f928be7de737d，参考.docx SHA256为b322171190e2ef86b4a649c9bea16913e7b1cd1db1d55e4e6a43c3ce9a33f0d7，未修改参考原件。
+
+仅交付开题申请Word文档，不运行产品测试或新实验；文档验证不等于真实机械臂能力、专利授权、毕业达标或正式研究验收。

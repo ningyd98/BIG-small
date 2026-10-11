@@ -1,0 +1,79 @@
+# Astra 文档分页限定修复计划
+
+模型：gpt-6-astra；日期：2026-10-11；状态：仅计划，未实施。
+
+## 原始问题与证据
+
+已成功渲染的3页申请表仍有跨页视觉缺陷：研究开发方案栏名被切开，研究正文仅首行留在page1。
+本代理打开并检查page1、page2、page3；page1底部出现二、研究内容及1.已完成的工作和首段一行，栏名仅研究开发；page2续首段及栏名方案。
+这是视觉QA未通过，不是 renderer 执行失败；不捏造失败exit code。
+冻结原件：`/tmp/bigsmall-opening-application-20261011/iteration-01.docx`，SHA已核实与原始DOCX一致。
+
+## 输入及 SHA256
+
+- `/home/ningyd/文档/ChatGPT/BIGsmall/AGENTS.md`：`8567e10635a650e2619905d6b3a6e0a885812060fecb1cdd4487bbf118593649`
+- `/home/ningyd/文档/ChatGPT/BIGsmall/output/doc/20261024-opening-application/开题申请表_集成电路工程_20261024.docx`：`05434c7ef32c1a03995efef410186b6a89ce9c41cb16e1da4ca30a749fa6b13a`
+- `/tmp/bigsmall-opening-application-20261011/build_application.py`：`0f5d752546a0c249586e56870d8b976f49b5c7918839b506fb52f96ca1c6946d`
+- `/tmp/bigsmall-opening-application-20261011/artifact.md`：`89f2a9230eee0a627d8d63835ec7dff108d776707e13a3a097de9c01dd9f52c9`
+- `/tmp/bigsmall-opening-application-20261011/开题报告-2101210559丁亚伟.docx`：`b322171190e2ef86b4a649c9bea16913e7b1cd1db1d55e4e6a43c3ce9a33f0d7`
+- `/home/ningyd/.codex/plugins/cache/openai-primary-runtime/documents/26.1009.11318/skills/documents/render_docx.py`：`876d5993324e2faaaa96a68a4f7504642e9a07e6df265b385b2baa03b231369e`
+- `/tmp/bigsmall-opening-application-20261011/template-fidelity-diff-01/b_render/page-1.png`：`0e3eac5209f66271de7ee6050a9c75a53c856c3516043657f7317b55a4140649`
+- `/tmp/bigsmall-opening-application-20261011/template-fidelity-diff-01/b_render/page-2.png`：`cc90311af414fc7da6dbaca6b80f8cabcafea15a4f4a7b63e0890ff187ee3fb1`
+- `/tmp/bigsmall-opening-application-20261011/template-fidelity-diff-01/b_render/page-3.png`：`3db7cae9a85e0cb17162391c72f6863c4e71cc5d44738a075cea8a67f39f2bc0`
+- `/tmp/bigsmall-opening-application-20261011/iteration-01.docx`：`05434c7ef32c1a03995efef410186b6a89ce9c41cb16e1da4ca30a749fa6b13a`
+
+## 根因与待验证假设
+
+- 脚本允许长研究表行正常跨页，但其栏名单个多行段落缺少明确 keepLines；标题 keepNext 不能保证整组首段在同页。
+- 窄标签列自然逐字换行，page1剩余空间不足以容纳6字与起始正文；目前自动分页切开了标签及第一正文段。
+- 首选最小keepLines控制完整栏名及第一正文段，可经现有keepNext使标题与首段自然移页；若不足，再在研究行两单元格首段同步pageBreakBefore。两种均属本轮已规划的局部属性试验，须以实际渲染验证。
+
+## 限定范围
+
+- 只修改任务生成脚本中研究行（索引6）的局部分页属性，并重新生成任务DOCX。
+- 先仅对研究行栏名段落和研究正文第一实际叙述段设置 w:keepLines w:val=1，保留现有标题 keepNext；若首次预览已把完整栏名与标题首段自然移到page2，则不添加强制分页。
+- 只写任务文档word/document.xml的上述pPr变更；保留所有w:t、字体、字号、行距、段间距、页设置、表格grid和其他包parts。
+- 本代理只写计划目录，不改DOCX/builder，不运行渲染。
+
+## 排除范围
+
+- 不对整个研究长行设置cantSplit：内容本来超过单页，此法不能保证可靠分页。
+- 不把整个研究行所有段落串联keepNext，不改整张表或全局段落规则。
+- 不拆表、不插入节、不缩字号、不改变模板页面、grid、正文事实或宏观规划。
+- 不修改产品代码、原附件、参考副本、skill或runtime。
+
+## 实施步骤与预期迭代
+
+- 实施前校验所列文件SHA，冻结当前DOCX和builder到任务失败证据目录，校验副本SHA；保留diff-01目录原样，后续输出diff-02或独立新目录。
+- 候选A：仅对研究行栏名和第一实际正文段加keepLines=1，保留标题keepNext。若A满足视觉验收即采用。若A仍保留page1残片，则候选B在A基础上对研究行两单元格第一段加pageBreakBefore=1。属性不得重复，并按OOXML pPr顺序插入（keepNext、keepLines、pageBreakBefore在spacing等之前）。
+- 生成后用包级diff验证仅允许的document.xml分页属性变化；w:t有序列表、sectPr、tblGrid和其余parts保持一致。
+- 用指定bundled Python运行根renderer生成新渲染；不得覆盖第一次渲染。逐页打开PNG检查全栏名位于同一页、研究起始标题及首段成组、无空页/裁切/重叠。
+- 记录实施前后SHA、命令退出码、图像路径、视觉检查结论和步骤报告；汇入阶段总结。
+
+## 验证与验收边界
+
+- 保留原始失败DOCX/render证据；输入SHA一致后才实施。
+- 栏名研究开发方案六字不可再跨页分离；研究部分自然从下一页开始，第一正文不只留一行在上一页。
+- 全文事实、字体字号、页尺寸和表格grid保持不变；其余parts字节一致；允许页分配变化，3页不是硬约束，不能用缩字来维持页数。 尽量保持3页，但不以牺牲正文和可读性为代价。
+- 全部页面可读、无异常空页、文字裁切、重叠或孤立标题；page1尾部因完整换页产生合理留白可接受。
+- A未将完整研究起始移页、或B的表内pageBreakBefore未生效，是本计划预见的布局迭代结果：保留每次独立DOCX/渲染证据，不覆盖。A/B选择及局部分页属性的撤回属于本轮，无需为每次正常预览重规划；两候选均不满足时停止扩大修复并提交下一轮Astra。新的运行失败、根因、拆表/改尺寸/全局规则等扩大范围仍需新计划。
+- 文档视觉修复不构成真实实验结果或正式研究验收。
+
+## 实际运行前置
+
+- python：`/home/ningyd/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3`
+- soffice：`/home/ningyd/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/soffice`
+- renderer：`/home/ningyd/.codex/plugins/cache/openai-primary-runtime/documents/26.1009.11318/skills/documents/render_docx.py`
+- 确认实际调用上述runtime，工作目录可写，输入SHA一致。
+- 本轮计划只验证静态输入和视觉证据，不宣称runtime或修复结果已通过。
+
+## 附带只读cwd调用失败及限定恢复
+
+- chunk：a89749
+- exit_code：2
+- cwd：/home/ningyd/.codex/worktrees/t12-p1-delivery/BIGsmall
+- command：rg --files artifacts/research/process/20261004-ced-development/astra-rounds/round-docx-application-render-entrypoint-20261011 && git branch --show-current && git log -1 --format='%H%n%s'
+- evidence：父代理报告：rg directory nonexistent；后续git命令因&&未执行。
+- cause：先前计划仅在主workspace，调用方在交付worktree用相对路径查询。
+- limited_recovery：只读查询使用主workspace绝对路径；交付复制前核实源存在和目的未占用；不得创建虚假占位或改其他状态。
+- acceptance：绝对源路径存在且SHA可核对；若后续交付需复制，单独核对复制字节。此项不改变产品或DOCX。
