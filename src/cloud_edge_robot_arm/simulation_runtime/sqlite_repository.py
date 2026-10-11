@@ -11,14 +11,17 @@ import fcntl
 import json
 import os
 import sqlite3
+import sys
 import threading
 from _thread import RLock
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from functools import wraps
 from pathlib import Path
-from typing import Any, cast
+from types import FunctionType
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from cloud_edge_robot_arm.simulation_runtime.models import (
@@ -29,12 +32,78 @@ from cloud_edge_robot_arm.simulation_runtime.models import (
     SimulationJobLease,
     SimulationJobRecord,
 )
+from cloud_edge_robot_arm.simulation_runtime.operational_lease import (
+    LeaseCommitAck,
+    LeaseProposal,
+    LockedLeaseView,
+    OperationalLeaseError,
+    OperationalLeaseSession,
+    _canonical,
+    _close_view,
+    _current_session,
+    _digest,
+    _epoch_has_ended,
+    _invalidate_view,
+    _issue_view,
+    _make_ack,
+    _proposal_record,
+    _revoke_epoch,
+    _seal_repository_target,
+    _view_record,
+)
 from cloud_edge_robot_arm.simulation_runtime.state_machine import validate_transition
 
 SCHEMA_VERSION = 1
 _PUBLICATION_REGISTRY_LOCK = threading.Lock()
 _PUBLICATION_LOCKS: dict[tuple[int, str], RLock] = {}
 _PUBLICATION_LOCAL = threading.local()
+_WRITER_REGISTRY_LOCK = threading.RLock()
+_WRITER_OWNERS: dict[str, _WriterOwner] = {}
+_WRITER_STACKS: dict[str, list[Callable[..., Any]]] = {}
+_DISPATCH_OWNERS: dict[int, _DispatchOwner] = {}
+_WRITER_FUNCTIONS: dict[str, Callable[..., Any]] = {}
+_DISPATCH_CODES: set[Any] = set()
+
+
+class _ContextManagerFunction(Protocol):
+    __wrapped__: FunctionType
+
+
+@dataclass(frozen=True)
+class _DispatchOwner:
+    repository: SQLiteSimulationJobRepository
+    function: Callable[..., Any]
+    job_id: str
+    pid: int
+    thread_id: int
+    native_thread_id: int
+
+
+@dataclass(frozen=True)
+class _WriterOwner:
+    repository: SQLiteSimulationJobRepository
+    database: Path
+    connection: sqlite3.Connection
+    nonce: str
+    pid: int
+    thread_id: int
+    native_thread_id: int
+    job_id: str
+    operation: str
+    dispatch: _DispatchOwner | None
+
+
+def _job_writer[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+    """Every public writer joins one guarded connection; nested helpers cannot bypass it."""
+
+    @wraps(function)
+    def guarded(*args: P.args, **kwargs: P.kwargs) -> R:
+        repository = cast(SQLiteSimulationJobRepository, args[0])
+        return cast(R, repository._writer_call(function, args, kwargs))
+
+    _WRITER_FUNCTIONS[function.__name__] = function
+    _DISPATCH_CODES.add(cast(FunctionType, guarded).__code__)
+    return guarded
 
 
 class SQLiteSimulationJobRepository:
@@ -45,6 +114,7 @@ class SQLiteSimulationJobRepository:
     """
 
     def __init__(self, database_path: Path) -> None:
+        self._transactions = threading.local()
         self.database_path = database_path
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
@@ -78,6 +148,7 @@ class SQLiteSimulationJobRepository:
                     held.remove(key)
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
+    @_job_writer
     def create_job(
         self,
         *,
@@ -173,6 +244,7 @@ class SQLiteSimulationJobRepository:
             ).fetchall()
         return [_job_from_row(row) for row in rows]
 
+    @_job_writer
     def update_status_cas(
         self,
         job_id: str,
@@ -218,6 +290,7 @@ class SQLiteSimulationJobRepository:
         expected_worker_id: str | None = None,
         lease_expired_before: datetime | None = None,
     ) -> SimulationJobRecord | None:
+        self._require_active_writer()
         self._initialize()
         validate_transition(expected, next_status)
         now = _now()
@@ -286,11 +359,13 @@ class SQLiteSimulationJobRepository:
         )
         return self.get_job(job_id)
 
+    @_job_writer
     def request_cancel(self, job_id: str) -> SimulationJobRecord:
         with self.publication_guard():
             return self._request_cancel_unlocked(job_id)
 
     def _request_cancel_unlocked(self, job_id: str) -> SimulationJobRecord:
+        self._require_active_writer()
         self._initialize()
         job = self.get_job(job_id)
         if job.status in {
@@ -345,38 +420,49 @@ class SQLiteSimulationJobRepository:
         # CANCEL_REQUESTED solely in the response object.
         return self.get_job(job_id)
 
+    @_job_writer
     def acquire_lease(
         self, *, worker_id: str, backend: str, lease_ttl_seconds: int
     ) -> SimulationJobLease | None:
         with self.publication_guard():
-            return self._acquire_lease_unlocked(
-                worker_id=worker_id,
-                backend=backend,
-                lease_ttl_seconds=lease_ttl_seconds,
-            )
+            session = _current_session(self)
+            if session is not None:
+                return self._acquire_operational(
+                    session,
+                    worker_id=worker_id,
+                    backend=backend,
+                    lease_ttl_seconds=lease_ttl_seconds,
+                )
+            with self._legacy_write_transaction():
+                return self._acquire_lease_unlocked(
+                    worker_id=worker_id,
+                    backend=backend,
+                    lease_ttl_seconds=lease_ttl_seconds,
+                )
 
     def _acquire_lease_unlocked(
         self, *, worker_id: str, backend: str, lease_ttl_seconds: int
     ) -> SimulationJobLease | None:
+        self._require_active_writer()
         self._initialize()
         now = _now()
         expires_at = now + timedelta(seconds=lease_ttl_seconds)
         lease_id = "lease-" + uuid4().hex[:16]
         with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
             # SQLite 没有 SKIP LOCKED；这里在同一事务里选择并更新 QUEUED job，
             # 状态条件就是防止重复消费的主要防线。
             row = conn.execute(
                 """
                 SELECT * FROM simulation_jobs
                 WHERE backend = ? AND status = ?
+                AND NOT EXISTS (SELECT 1 FROM simulation_operational_leases_v1 AS op
+                                WHERE op.job_id = simulation_jobs.job_id)
                 ORDER BY priority DESC, created_at ASC
                 LIMIT 1
                 """,
                 (backend, RuntimeJobStatus.QUEUED.value),
             ).fetchone()
             if row is None:
-                conn.execute("COMMIT")
                 return None
             job = _job_from_row(row)
             validate_transition(job.status, RuntimeJobStatus.VALIDATING)
@@ -405,7 +491,6 @@ class SQLiteSimulationJobRepository:
                 """,
                 (lease_id, job.job_id, worker_id, _dt(now), _dt(expires_at), _dt(now)),
             )
-            conn.execute("COMMIT")
         self.append_event(
             job.job_id,
             event_type="job_leased",
@@ -424,12 +509,12 @@ class SQLiteSimulationJobRepository:
             heartbeat_at=now,
         )
 
+    @_job_writer
     def heartbeat_lease(self, lease_id: str, *, lease_ttl_seconds: int) -> None:
         self._initialize()
         if type(lease_ttl_seconds) is not int or lease_ttl_seconds <= 0:
             raise ValueError("lease_ttl_seconds must be a positive integer")
         with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
             # Measure after lock acquisition: lock waits cannot revive expiry.
             now = _now()
             expires_at = now + timedelta(seconds=lease_ttl_seconds)
@@ -460,7 +545,6 @@ class SQLiteSimulationJobRepository:
                 ),
             )
             if cursor.rowcount != 1:
-                conn.execute("ROLLBACK")
                 raise RuntimeError("lease is expired, released or no longer actively owned")
             conn.execute(
                 """
@@ -469,8 +553,8 @@ class SQLiteSimulationJobRepository:
                 """,
                 (_dt(expires_at), _dt(now), lease_id),
             )
-            conn.execute("COMMIT")
 
+    @_job_writer
     def release_lease(self, lease_id: str) -> None:
         self._initialize()
         now = _now()
@@ -494,6 +578,7 @@ class SQLiteSimulationJobRepository:
             ).fetchall()
         return [_lease_from_row(row) for row in rows]
 
+    @_job_writer
     def expire_leases(self) -> list[str]:
         self._initialize()
         cutoff = _now()
@@ -535,6 +620,7 @@ class SQLiteSimulationJobRepository:
                 expired.append(job_id)
         return expired
 
+    @_job_writer
     def append_event(
         self,
         job_id: str,
@@ -550,12 +636,10 @@ class SQLiteSimulationJobRepository:
         event_id = "evt-" + uuid4().hex[:16]
         now = _now()
         with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
             job = conn.execute(
                 "SELECT run_id FROM simulation_jobs WHERE job_id = ?", (job_id,)
             ).fetchone()
             if job is None:
-                conn.execute("ROLLBACK")
                 raise KeyError(job_id)
             row = conn.execute(
                 """
@@ -594,7 +678,6 @@ class SQLiteSimulationJobRepository:
                     _dumps(payload),
                 ),
             )
-            conn.execute("COMMIT")
         return SimulationJobEvent(
             event_id=event_id,
             job_id=job_id,
@@ -633,6 +716,7 @@ class SQLiteSimulationJobRepository:
             ).fetchall()
         return [_event_from_row(row) for row in rows]
 
+    @_job_writer
     def save_metrics(self, job_id: str, metrics: list[dict[str, object]]) -> None:
         self._initialize()
         with self._connect() as conn:
@@ -664,6 +748,7 @@ class SQLiteSimulationJobRepository:
             ).fetchall()
         return [_loads(str(row["metric_json"])) for row in rows]
 
+    @_job_writer
     def save_artifacts(self, job_id: str, artifact_paths: dict[str, str]) -> None:
         self._initialize()
         with self._connect() as conn:
@@ -698,6 +783,7 @@ class SQLiteSimulationJobRepository:
             raise KeyError(run_id)
         return dict(_loads(str(row["artifact_paths_json"])))
 
+    @_job_writer
     def create_batch(
         self, *, batch_id: str, manifest: dict[str, object], run_ids: list[str]
     ) -> SimulationBatchRecord:
@@ -748,24 +834,36 @@ class SQLiteSimulationJobRepository:
             ).fetchall()
         return [_attempt_from_row(row) for row in rows]
 
+    @_job_writer
     def start_attempt(self, job_id: str, *, worker_id: str) -> SimulationJobAttempt:
         self._initialize()
         now = _now()
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT run_id, attempt FROM simulation_jobs WHERE job_id = ?", (job_id,)
+                "SELECT run_id, attempt, worker_id, lease_id FROM simulation_jobs WHERE job_id = ?",
+                (job_id,),
             ).fetchone()
             if row is None:
                 raise KeyError(job_id)
             attempt = int(row["attempt"]) + 1
-            conn.execute(
+            cursor = conn.execute(
                 """
                 UPDATE simulation_jobs
                 SET attempt = ?, worker_id = ?, updated_at = ?
-                WHERE job_id = ?
+                WHERE job_id = ? AND attempt = ? AND worker_id = ? AND lease_id = ?
                 """,
-                (attempt, worker_id, _dt(now), job_id),
+                (
+                    attempt,
+                    worker_id,
+                    _dt(now),
+                    job_id,
+                    int(row["attempt"]),
+                    str(row["worker_id"]),
+                    str(row["lease_id"]),
+                ),
             )
+            if cursor.rowcount != 1:
+                raise OperationalLeaseError("actual start_attempt CAS0")
             conn.execute(
                 """
                 INSERT INTO simulation_job_attempts (
@@ -787,6 +885,7 @@ class SQLiteSimulationJobRepository:
             artifact_paths={},
         )
 
+    @_job_writer
     def finish_attempt(
         self,
         job_id: str,
@@ -807,6 +906,7 @@ class SQLiteSimulationJobRepository:
                 (_dt(_now()), result, error, _dumps(artifact_paths), job_id, attempt),
             )
 
+    @_job_writer
     def finish_open_attempts(self, job_id: str, *, result: str, error: str) -> None:
         self._initialize()
         with self._connect() as conn:
@@ -838,6 +938,8 @@ class SQLiteSimulationJobRepository:
             rows = conn.execute(
                 """
                 SELECT * FROM simulation_jobs WHERE status IN (?, ?, ?, ?)
+                AND NOT EXISTS (SELECT 1 FROM simulation_operational_leases_v1 AS op
+                                WHERE op.job_id=simulation_jobs.job_id)
                 ORDER BY updated_at ASC
                 """,
                 (
@@ -868,11 +970,13 @@ class SQLiteSimulationJobRepository:
     def blocked_count(self) -> int:
         return self._count_status({RuntimeJobStatus.BLOCKED_BY_ENV})
 
+    @_job_writer
     def retry_job(self, job_id: str) -> SimulationJobRecord:
         with self.publication_guard():
             return self._retry_job_unlocked(job_id)
 
     def _retry_job_unlocked(self, job_id: str) -> SimulationJobRecord:
+        self._require_active_writer()
         job = self.get_job(job_id)
         if job.status not in {
             RuntimeJobStatus.FAILED,
@@ -896,8 +1000,13 @@ class SQLiteSimulationJobRepository:
                 WHERE job_id = ? AND status = ? AND lease_id = ? AND worker_id = ?
                 """,
                 (
-                    RuntimeJobStatus.QUEUED.value, _dt(queued_at), _dt(queued_at),
-                    job_id, job.status.value, job.lease_id, job.worker_id,
+                    RuntimeJobStatus.QUEUED.value,
+                    _dt(queued_at),
+                    _dt(queued_at),
+                    job_id,
+                    job.status.value,
+                    job.lease_id,
+                    job.worker_id,
                 ),
             )
             if cursor.rowcount != 1:
@@ -925,6 +1034,1073 @@ class SQLiteSimulationJobRepository:
             error_message="",
         )
 
+    def _writer_binding(self) -> _WriterOwner:
+        owner = getattr(self._transactions, "writer_owner", None)
+        with _WRITER_REGISTRY_LOCK:
+            if not isinstance(owner, _WriterOwner) or _WRITER_OWNERS.get(owner.nonce) is not owner:
+                raise OperationalLeaseError("private transaction owner registration required")
+            if (
+                owner.repository is not self
+                or owner.database != self.database_path.resolve()
+                or (owner.pid, owner.thread_id, owner.native_thread_id)
+                != (os.getpid(), threading.get_ident(), threading.get_native_id())
+                or getattr(self._transactions, "connection", None) is not owner.connection
+                or getattr(self._transactions, "nonce", None) != owner.nonce
+                or (owner.pid, str(owner.database))
+                not in getattr(_PUBLICATION_LOCAL, "held", set())
+            ):
+                raise OperationalLeaseError(
+                    "actual writer/guard/repository/thread binding mismatch"
+                )
+            if (
+                owner.dispatch is not None
+                and _DISPATCH_OWNERS.get(id(owner.dispatch)) is not owner.dispatch
+            ):
+                raise OperationalLeaseError("writer originating dispatcher ended")
+            return owner
+
+    def _require_active_writer(self) -> None:
+        owner = self._writer_binding()
+        if not owner.connection.in_transaction:
+            raise OperationalLeaseError("writer requires original real open transaction")
+        stack = _WRITER_STACKS.get(owner.nonce, [])
+        caller = sys._getframe(1).f_code
+        parent = sys._getframe(2).f_code
+        if stack and caller is stack[-1].__code__:
+            return
+        helper_parents = {
+            self._update_status_cas_unlocked.__code__: "update_status_cas",
+            self._request_cancel_unlocked.__code__: "request_cancel",
+            self._retry_job_unlocked.__code__: "retry_job",
+            self._acquire_lease_unlocked.__code__: "acquire_lease",
+        }
+        expected = helper_parents.get(caller)
+        if (
+            expected
+            and stack
+            and stack[-1] is _WRITER_FUNCTIONS[expected]
+            and parent is stack[-1].__code__
+        ):
+            return
+        if caller is self._terminalize_operational.__code__ and parent in {
+            self._dispatch_writer.__code__,
+            self._cleanup_operational_row.__code__,
+        }:
+            return
+        if (
+            caller is self._cleanup_operational_row.__code__
+            and stack
+            and stack[-1].__name__
+            in {"cleanup_operational_session", "terminate_orphaned_operational_attempts"}
+        ):
+            return
+        raise OperationalLeaseError("private helper was not called by its registered writer")
+
+    def _register_writer(
+        self, connection: sqlite3.Connection, nonce: str, job_id: str, operation: str
+    ) -> _WriterOwner:
+        allowed = {
+            cast(_ContextManagerFunction, self._legacy_write_transaction).__wrapped__.__code__,
+            cast(_ContextManagerFunction, self._operational_transaction).__wrapped__.__code__,
+            self._acquire_operational.__code__,
+        }
+        if sys._getframe(1).f_code not in allowed:
+            raise OperationalLeaseError("only concrete guarded transaction entry registers writer")
+        dispatch = getattr(self._transactions, "dispatch", None)
+        if dispatch is not None and _DISPATCH_OWNERS.get(id(dispatch)) is not dispatch:
+            raise OperationalLeaseError("unregistered originating dispatcher")
+        if dispatch is None and operation != "inspect":
+            session = _current_session(self)
+            if session is None:
+                raise OperationalLeaseError("transaction entry lacks actual worker scope")
+            session._check_ingress(operation)
+        key = (os.getpid(), str(self.database_path.resolve()))
+        if key not in getattr(_PUBLICATION_LOCAL, "held", set()) or not connection.in_transaction:
+            raise OperationalLeaseError("transaction registration requires true guard then BEGIN")
+        if getattr(self._transactions, "writer_owner", None) is not None:
+            raise OperationalLeaseError("writer registration cannot replace another transaction")
+        owner = _WriterOwner(
+            self,
+            self.database_path.resolve(),
+            connection,
+            nonce,
+            os.getpid(),
+            threading.get_ident(),
+            threading.get_native_id(),
+            job_id,
+            operation,
+            dispatch,
+        )
+        with _WRITER_REGISTRY_LOCK:
+            _WRITER_OWNERS[nonce] = owner
+            _WRITER_STACKS[nonce] = [dispatch.function] if dispatch is not None else []
+        self._transactions.connection = connection
+        self._transactions.nonce = nonce
+        self._transactions.commit = None
+        self._transactions.writer_owner = owner
+        return owner
+
+    def _unregister_writer(self, owner: _WriterOwner) -> None:
+        with _WRITER_REGISTRY_LOCK:
+            if _WRITER_OWNERS.get(owner.nonce) is owner:
+                _WRITER_OWNERS.pop(owner.nonce, None)
+                _WRITER_STACKS.pop(owner.nonce, None)
+            if getattr(self._transactions, "writer_owner", None) is owner:
+                self._transactions.connection = None
+                self._transactions.nonce = None
+                self._transactions.commit = None
+                self._transactions.writer_owner = None
+
+    def _finish_writer(self, owner: _WriterOwner, view: LockedLeaseView | None = None) -> None:
+        original_error = sys.exception()
+        try:
+            try:
+                if owner.connection.in_transaction:
+                    owner.connection.execute("ROLLBACK")
+            except sqlite3.Error:
+                if view is not None:
+                    _invalidate_view(view, "original connection unavailable on transaction exit")
+            finally:
+                if view is not None:
+                    _close_view(view)
+        except BaseException:
+            if original_error is None:
+                raise
+            # A secondary view cleanup fault cannot hide the original commit/ack error.
+        finally:
+            self._unregister_writer(owner)
+
+    def _txn_is_current(self, connection: sqlite3.Connection, nonce: str) -> bool:
+        try:
+            owner = self._writer_binding()
+        except OperationalLeaseError:
+            return False
+        return owner.connection is connection and owner.nonce == nonce
+
+    def _view_is_current(self, view: LockedLeaseView) -> bool:
+        return self._txn_is_current(view._connection, view._nonce)
+
+    def _commit_is_recorded(self, view: LockedLeaseView, identity: str) -> bool:
+        return (
+            self._view_is_current(view) and getattr(self._transactions, "commit", None) == identity
+        )
+
+    @contextmanager
+    def _legacy_write_transaction(self) -> Iterator[sqlite3.Connection]:
+        dispatch = getattr(self._transactions, "dispatch", None)
+        if dispatch is None or _DISPATCH_OWNERS.get(id(dispatch)) is not dispatch:
+            raise OperationalLeaseError("private legacy transaction requires actual dispatcher")
+        if getattr(self._transactions, "connection", None) is not None:
+            owner = self._writer_binding()
+            yield owner.connection
+            return
+        self._initialize()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            owner = self._register_writer(
+                connection, uuid4().hex, dispatch.job_id, dispatch.function.__name__
+            )
+            try:
+                yield connection
+                connection.execute("COMMIT")
+            finally:
+                self._finish_writer(owner)
+
+    def _operational_row(self, conn: sqlite3.Connection, job_id: str) -> dict[str, Any] | None:
+        row = conn.execute(
+            "SELECT * FROM simulation_operational_leases_v1 WHERE job_id=?", (job_id,)
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def _job_snapshot(self, conn: sqlite3.Connection, job_id: str) -> str:
+        row = conn.execute("SELECT * FROM simulation_jobs WHERE job_id=?", (job_id,)).fetchone()
+        attempts = conn.execute(
+            "SELECT * FROM simulation_job_attempts WHERE job_id=? ORDER BY attempt", (job_id,)
+        ).fetchall()
+        if row is None:
+            raise KeyError(job_id)
+        return json.dumps(
+            {"job": dict(row), "attempts": [dict(a) for a in attempts]},
+            sort_keys=True,
+            allow_nan=False,
+        )
+
+    @contextmanager
+    def _operational_transaction(
+        self,
+        session: OperationalLeaseSession,
+        *,
+        job_id: str | None,
+        purpose: str,
+        operation_sha256: str,
+    ) -> Iterator[LockedLeaseView]:
+        session._check_ingress(purpose)
+        if session.repository is not self or job_id != session.job_id:
+            raise OperationalLeaseError("session requires exact concrete repository/job")
+        with self.publication_guard():
+            self._initialize()
+            if getattr(self._transactions, "connection", None) is not None:
+                raise OperationalLeaseError("cannot issue nested/reused operational transaction")
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                nonce = uuid4().hex
+                owner = self._register_writer(conn, nonce, str(job_id), purpose)
+                view: LockedLeaseView | None = None
+                try:
+                    row = self._operational_row(conn, str(job_id))
+                    if row is None:
+                        raise OperationalLeaseError("missing actual operational row")
+                    self._validate_operational_row(conn, session, row)
+                    view = _issue_view(session, self, conn, nonce, row, purpose, operation_sha256)
+                    yield view
+                except BaseException:
+                    if view is not None:
+                        _invalidate_view(view, "operational transaction exception")
+                    raise
+                finally:
+                    self._finish_writer(owner, view)
+
+    def _validate_operational_row(
+        self, conn: sqlite3.Connection, session: OperationalLeaseSession, row: dict[str, Any]
+    ) -> None:
+        if (row["epoch"], row["lease_id"], row["worker_id"]) != (
+            session.epoch,
+            session.lease_id,
+            session.worker_id,
+        ):
+            raise OperationalLeaseError("actual epoch/lease/worker mismatch")
+        if row["job_snapshot_json"] != self._job_snapshot(conn, row["job_id"]):
+            raise OperationalLeaseError("actual job/attempt snapshot drift")
+        snapshot = json.loads(row["job_snapshot_json"])
+        job = snapshot["job"]
+        if (
+            job["cancel_requested"]
+            or job["lease_id"] != row["lease_id"]
+            or job["worker_id"] != row["worker_id"]
+        ):
+            raise OperationalLeaseError("actual cancel/reassignment veto")
+        open_attempts = [a for a in snapshot["attempts"] if a["ended_at"] == ""]
+        if row["lifecycle"] == "ACQUIRED":
+            if row["attempt"] is not None or open_attempts:
+                raise OperationalLeaseError("ACQUIRED cannot invent an open attempt")
+        elif row["lifecycle"] == "ATTEMPT_BOUND":
+            if len(open_attempts) != 1 or open_attempts[0]["attempt"] != row["attempt"]:
+                raise OperationalLeaseError("exact unique actual open attempt required")
+        else:
+            raise OperationalLeaseError("terminal operational lifecycle")
+
+    def _commit_operational_proposal(
+        self, view: LockedLeaseView, proposal: LeaseProposal
+    ) -> LeaseCommitAck:
+        issued = _view_record(view)
+        _proposal_record(proposal)
+        session = issued.session
+        session._check_ingress(issued.purpose)
+        if (
+            not self._view_is_current(view)
+            or view.state != "CONSUMED"
+            or proposal._view is not view
+        ):
+            raise OperationalLeaseError("unregistered consumed transaction/proposal")
+        conn = view._connection
+        try:
+            if not conn.in_transaction:
+                raise OperationalLeaseError("commit requires original still-open transaction")
+            target = dict(proposal.target)
+            if view.purpose == "acquire":
+                columns = list(target)
+                conn.execute(
+                    f"INSERT INTO simulation_operational_leases_v1 ({','.join(columns)}) "
+                    f"VALUES ({','.join('?' for _ in columns)})",
+                    tuple(target[c] for c in columns),
+                )
+            else:
+                columns = [key for key in target if key != "lease_id"]
+                before = view.snapshot
+                cursor = conn.execute(
+                    "UPDATE simulation_operational_leases_v1 SET "
+                    + ",".join(c + "=?" for c in columns)
+                    + " WHERE lease_id=? AND generation=? AND row_revision=? "
+                    "AND proposed_row_digest=?",
+                    tuple(target[c] for c in columns)
+                    + (
+                        before["lease_id"],
+                        before["generation"],
+                        before["row_revision"],
+                        before["proposed_row_digest"],
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise OperationalLeaseError("actual operational CAS rowcount is not one")
+            conn.execute("COMMIT")  # exactly one activation commit, no SQL ACTIVE phase
+            commit_identity = uuid4().hex
+            self._transactions.commit = commit_identity
+            row = self._operational_row(conn, target["job_id"])
+            if row is None:
+                raise OperationalLeaseError("successful commit reread missing")
+            return _make_ack(view, proposal, commit_identity, row)
+        except (sqlite3.Error, OperationalLeaseError) as error:
+            _invalidate_view(view, "CAS/commit/connection failed")
+            try:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            raise OperationalLeaseError("operational CAS/commit failed") from error
+
+    def _acquire_operational(
+        self,
+        session: OperationalLeaseSession,
+        *,
+        worker_id: str,
+        backend: str,
+        lease_ttl_seconds: int,
+    ) -> SimulationJobLease | None:
+        session._check_ingress("acquire")
+        if (
+            worker_id != session.worker_id
+            or backend != "MUJOCO"
+            or lease_ttl_seconds * 1_000_000_000 != session.ttl_ns
+        ):
+            raise OperationalLeaseError("acquisition differs from frozen worker policy")
+        self._initialize()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            owner = self._register_writer(conn, uuid4().hex, "", "acquire_lease")
+            view: LockedLeaseView | None = None
+            try:
+                row = conn.execute(
+                    "SELECT * FROM simulation_jobs WHERE backend=? AND status=? "
+                    "ORDER BY priority DESC, created_at ASC LIMIT 1",
+                    (backend, RuntimeJobStatus.QUEUED.value),
+                ).fetchone()
+                if row is None:
+                    conn.execute("ROLLBACK")
+                    return None
+                job = _job_from_row(row)
+                from cloud_edge_robot_arm.simulation_workbench.models import ExperimentDraft
+
+                draft = ExperimentDraft.model_validate(job.draft)
+                if (
+                    job.scenario_id != "S01_NORMAL_STATIC"
+                    or draft.input_mode != "RGBD"
+                    or draft.execution_scope != "VISION_CLOSED_LOOP"
+                    or draft.job_type == "DATASET_GENERATION"
+                ):
+                    raise OperationalLeaseError(
+                        "unsupported job remains on explicitly selected legacy route"
+                    )
+                if self._operational_row(conn, job.job_id) is not None:
+                    raise OperationalLeaseError(
+                        "same operational job cannot reacquire/reissue original"
+                    )
+                lease_id = "lease-" + uuid4().hex[:16]
+                session.job_id, session.lease_id = job.job_id, lease_id
+                bound_owner = replace(owner, job_id=job.job_id)
+                with _WRITER_REGISTRY_LOCK:
+                    _WRITER_OWNERS[owner.nonce] = bound_owner
+                self._transactions.writer_owner = bound_owner
+                owner = bound_owner
+                domain = session.domain
+                binding = session.worker.visual_role_binding
+                if binding is None:
+                    raise OperationalLeaseError("actual binding unavailable")
+                original_job = _digest(
+                    {
+                        key: dict(row)[key]
+                        for key in (
+                            "job_id",
+                            "run_id",
+                            "backend",
+                            "scenario_id",
+                            "draft_json",
+                            "timeout_seconds",
+                            "max_attempts",
+                            "source_commit",
+                            "source_tree_hash",
+                            "reproducibility_hash",
+                        )
+                    }
+                )
+                snapshot = {
+                    "lease_id": lease_id,
+                    "schema": "simulation.operational-leases.v1",
+                    "job_id": job.job_id,
+                    "run_id": job.run_id,
+                    "worker_id": worker_id,
+                    "attempt": None,
+                    "lifecycle": "ACQUIRED",
+                    "pid": domain.pid,
+                    "boot_id": domain.boot_id,
+                    "process_start_ticks": domain.process_start_ticks,
+                    "epoch": session.epoch,
+                    "generation": 0,
+                    "row_revision": 0,
+                    "original_job_digest": original_job,
+                    "original_policy_digest": _digest(
+                        {
+                            "job": original_job,
+                            "binding": binding.evidence(),
+                            "ttl_ns": session.ttl_ns,
+                        }
+                    ),
+                    "original_acquisition_json": "{}",
+                    "segment_json": "{}",
+                    "proposal_id": "",
+                    "operation_sha256": "",
+                    "job_snapshot_json": self._job_snapshot(conn, job.job_id),
+                    "proposed_row_digest": "",
+                    "durable_phase": "COMMITTED",
+                    "terminal_reason": "",
+                }
+                view = _issue_view(
+                    session,
+                    self,
+                    conn,
+                    self._transactions.nonce,
+                    snapshot,
+                    "acquire",
+                    _digest({"operation": "acquire", "job_id": job.job_id, "lease": lease_id}),
+                )
+                now = _now()  # legacy UTC diagnostic/extra veto only, post-guard/BEGIN
+                expires = now + timedelta(seconds=lease_ttl_seconds)
+                cursor = conn.execute(
+                    "UPDATE simulation_jobs SET status=?, updated_at=?, worker_id=?, "
+                    "lease_id=?, lease_expires_at=? WHERE job_id=? AND status=?",
+                    (
+                        RuntimeJobStatus.LEASED.value,
+                        _dt(now),
+                        worker_id,
+                        lease_id,
+                        _dt(expires),
+                        job.job_id,
+                        RuntimeJobStatus.QUEUED.value,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise OperationalLeaseError("actual acquisition job CAS0")
+                conn.execute(
+                    "INSERT INTO simulation_job_leases(lease_id, job_id, worker_id, acquired_at, "
+                    "expires_at, heartbeat_at, released_at) VALUES(?,?,?,?,?,?,'')",
+                    (lease_id, job.job_id, worker_id, _dt(now), _dt(expires), _dt(now)),
+                )
+                self.append_event(
+                    job.job_id,
+                    event_type="job_leased",
+                    source="simulation_runtime",
+                    payload={"worker_id": worker_id, "lease_id": lease_id},
+                    previous_status=RuntimeJobStatus.QUEUED.value,
+                    next_status=RuntimeJobStatus.LEASED.value,
+                    reason_code="lease_acquired",
+                )
+                _seal_repository_target(
+                    view, {"job_snapshot_json": self._job_snapshot(conn, job.job_id)}
+                )
+                proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                ack = self._commit_operational_proposal(view, proposal)
+                session.confirm_committed(ack)
+                return SimulationJobLease(
+                    lease_id=lease_id,
+                    job_id=job.job_id,
+                    worker_id=worker_id,
+                    acquired_at=now,
+                    expires_at=expires,
+                    heartbeat_at=now,
+                )
+            finally:
+                self._finish_writer(owner, view)
+
+    def _writer_call(
+        self, function: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> Any:
+        if (
+            sys._getframe(1).f_code not in _DISPATCH_CODES
+            or _WRITER_FUNCTIONS.get(function.__name__) is not function
+        ):
+            raise OperationalLeaseError(
+                "private dispatcher requires actual registered public writer"
+            )
+        name = function.__name__
+        job_id = str(args[1]) if len(args) > 1 else str(kwargs.get("job_id", ""))
+        with self.publication_guard():
+            if getattr(self._transactions, "connection", None) is not None:
+                owner = self._writer_binding()
+                stack = _WRITER_STACKS[owner.nonce]
+                caller = sys._getframe(2).f_code
+                actual_parent = stack[-1] if stack else None
+                same_job = job_id == owner.job_id or (
+                    not owner.job_id
+                    and owner.operation
+                    in {
+                        "create_job",
+                        "acquire_lease",
+                        "expire_leases",
+                        "terminate_orphaned_operational_attempts",
+                    }
+                )
+                event_callers = {f.__code__ for f in stack}
+                event_callers.update(
+                    {
+                        self._update_status_cas_unlocked.__code__,
+                        self._request_cancel_unlocked.__code__,
+                        self._retry_job_unlocked.__code__,
+                        self._acquire_lease_unlocked.__code__,
+                        self._acquire_operational.__code__,
+                    }
+                )
+                allowed = name == "append_event" and caller in event_callers and same_job
+                if owner.operation == "expire_leases" and name == "update_status_cas":
+                    allowed = (
+                        caller is _WRITER_FUNCTIONS["expire_leases"].__code__
+                        and kwargs.get("next_status") == RuntimeJobStatus.INTERRUPTED
+                    )
+                if owner.operation == "request_cancel" and name == "update_status_cas":
+                    allowed = (
+                        same_job
+                        and caller is self._request_cancel_unlocked.__code__
+                        and kwargs.get("next_status")
+                        in {RuntimeJobStatus.CANCEL_REQUESTED, RuntimeJobStatus.CANCELLED}
+                    )
+                if owner.operation == "finalize_operational_publication":
+                    subordinate = (
+                        name
+                        in {
+                            "save_metrics",
+                            "save_artifacts",
+                            "finish_attempt",
+                            "update_status_cas",
+                            "release_lease",
+                            "append_event",
+                        }
+                        and caller is _WRITER_FUNCTIONS[owner.operation].__code__
+                    )
+                    allowed = allowed or subordinate
+                    if name == "release_lease":
+                        allowed = (
+                            allowed
+                            and job_id
+                            == cast(OperationalLeaseSession, _current_session(self)).lease_id
+                        )
+                    else:
+                        allowed = allowed and same_job
+                if not allowed or actual_parent is None:
+                    raise OperationalLeaseError(
+                        "nested public mutation is not a registered same-job subordinate"
+                    )
+                if name != "append_event" and owner.operation not in {
+                    "expire_leases",
+                    "request_cancel",
+                    "finalize_operational_publication",
+                }:
+                    raise OperationalLeaseError("nested writer allowlist is event-only")
+                stack.append(function)
+                try:
+                    return function(*args, **kwargs)
+                finally:
+                    stack.pop()
+            if getattr(self._transactions, "dispatch", None) is not None:
+                raise OperationalLeaseError("root dispatcher cannot be recursively replaced")
+            dispatch = _DispatchOwner(
+                self,
+                function,
+                job_id,
+                os.getpid(),
+                threading.get_ident(),
+                threading.get_native_id(),
+            )
+            with _WRITER_REGISTRY_LOCK:
+                _DISPATCH_OWNERS[id(dispatch)] = dispatch
+            self._transactions.dispatch = dispatch
+            try:
+                return self._dispatch_writer(function, args, kwargs, job_id)
+            finally:
+                with _WRITER_REGISTRY_LOCK:
+                    _DISPATCH_OWNERS.pop(id(dispatch), None)
+                if getattr(self._transactions, "dispatch", None) is dispatch:
+                    self._transactions.dispatch = None
+
+    def _dispatch_writer(
+        self,
+        function: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        job_id: str,
+    ) -> Any:
+        self._initialize()
+        name = function.__name__
+        if name == "acquire_lease":
+            return function(*args, **kwargs)  # Acquisition itself owns guard -> BEGIN -> selection.
+        with self._connect() as lookup:
+            if name in {"heartbeat_lease", "release_lease"}:
+                lease = lookup.execute(
+                    "SELECT job_id FROM simulation_job_leases WHERE lease_id=?", (job_id,)
+                ).fetchone()
+                job_id = str(lease["job_id"]) if lease is not None else ""
+            row = self._operational_row(lookup, job_id) if job_id else None
+        dispatch = self._transactions.dispatch
+        bound_dispatch = replace(dispatch, job_id=job_id)
+        with _WRITER_REGISTRY_LOCK:
+            _DISPATCH_OWNERS.pop(id(dispatch), None)
+            _DISPATCH_OWNERS[id(bound_dispatch)] = bound_dispatch
+        self._transactions.dispatch = bound_dispatch
+        try:
+            if row is None:
+                with self._legacy_write_transaction() as connection:
+                    value = function(*args, **kwargs)
+                    if name == "expire_leases":
+                        for expired_job in value:
+                            operational = self._operational_row(connection, expired_job)
+                            if operational is not None:
+                                self._terminalize_operational(
+                                    connection, operational, "legacy UTC expiry veto"
+                                )
+                    return value
+            if name == "retry_job":
+                raise ValueError("operational_job_not_retryable")
+            if name == "update_status_cas" and kwargs["next_status"] == RuntimeJobStatus.QUEUED:
+                return None
+            negative_results = {"INTERRUPTED", "CANCELLED", "TIMED_OUT", "FAILED"}
+            safe = name in {"request_cancel", "release_lease", "cleanup_operational_session"}
+            if name in {"finish_open_attempts", "finish_attempt"}:
+                safe = kwargs.get("result") in negative_results and not kwargs.get(
+                    "artifact_paths", {}
+                )
+            if name == "update_status_cas":
+                safe = kwargs["next_status"].value in negative_results | {
+                    "CANCEL_REQUESTED",
+                    "CANCELLING",
+                }
+            if safe:
+                with self._legacy_write_transaction() as conn:
+                    before = self._operational_row(conn, job_id)
+                    if before != row:
+                        raise OperationalLeaseError("negative cleanup original row changed")
+                    if name == "release_lease" and str(args[1]) != row["lease_id"]:
+                        raise OperationalLeaseError(
+                            "negative release requires exact original lease"
+                        )
+                    if name == "finish_open_attempts":
+                        open_attempts = conn.execute(
+                            "SELECT * FROM simulation_job_attempts WHERE job_id=? AND ended_at=''",
+                            (job_id,),
+                        ).fetchall()
+                        if any(
+                            a["worker_id"] != row["worker_id"] or a["attempt"] != row["attempt"]
+                            for a in open_attempts
+                        ):
+                            raise OperationalLeaseError(
+                                "negative finish-open requires only the exact original attempt"
+                            )
+                    if name == "finish_attempt":
+                        attempt_row = conn.execute(
+                            "SELECT * FROM simulation_job_attempts WHERE job_id=? AND attempt=?",
+                            (job_id, kwargs["attempt"]),
+                        ).fetchone()
+                        if attempt_row is None or attempt_row["ended_at"]:
+                            return None
+                        if (
+                            attempt_row["worker_id"] != row["worker_id"]
+                            or kwargs["attempt"] != row["attempt"]
+                        ):
+                            raise OperationalLeaseError(
+                                "negative finish requires exact original open attempt"
+                            )
+                    if name == "update_status_cas":
+                        current = self.get_job(job_id)
+                        if kwargs["expected"] != current.status:
+                            return None
+                        if (
+                            kwargs.get("expected_worker_id", current.worker_id) != current.worker_id
+                            or kwargs.get("expected_lease_id", current.lease_id) != current.lease_id
+                        ):
+                            return None
+                        if kwargs.get("worker_id", "") not in {"", current.worker_id} or kwargs.get(
+                            "lease_id", ""
+                        ) not in {"", current.lease_id}:
+                            raise OperationalLeaseError("negative CAS cannot replace actual owner")
+                        kwargs = dict(
+                            kwargs,
+                            expected_worker_id=current.worker_id,
+                            expected_lease_id=current.lease_id,
+                        )
+                    value = function(*args, **kwargs)
+                    if name != "cleanup_operational_session" and (
+                        name != "update_status_cas" or value is not None
+                    ):
+                        self._terminalize_operational(conn, row, name)
+                    return value
+            session = _current_session(self)
+            if session is None:
+                raise OperationalLeaseError("legacy/generic caller cannot mutate operational job")
+            if (
+                name == "heartbeat_lease"
+                and kwargs["lease_ttl_seconds"] * 1_000_000_000 != session.ttl_ns
+            ):
+                raise OperationalLeaseError("heartbeat cannot change original TTL policy")
+            purpose = "heartbeat" if name == "heartbeat_lease" else name
+            with self._operational_transaction(
+                session,
+                job_id=job_id,
+                purpose=purpose,
+                operation_sha256=_digest({"name": name, "job": job_id}),
+            ) as view:
+                session.evaluate_locked(view)
+                if name == "start_attempt" and row["lifecycle"] != "ACQUIRED":
+                    raise OperationalLeaseError("second attempt bind cannot reset lifecycle")
+                if name == "finalize_operational_publication":
+                    self._transactions.publication_view = view
+                    try:
+                        value = function(*args, **kwargs)
+                    finally:
+                        self._transactions.publication_view = None
+                else:
+                    value = function(*args, **kwargs)
+                if name == "update_status_cas" and value is None:
+                    raise OperationalLeaseError("actual job status CAS0")
+                target: dict[str, Any] = {
+                    "job_snapshot_json": self._job_snapshot(view._connection, job_id)
+                }
+                if name == "start_attempt":
+                    target.update(attempt=value.attempt, lifecycle="ATTEMPT_BOUND")
+                elif name in {"finish_attempt", "finalize_operational_publication"}:
+                    target.update(
+                        lifecycle="TERMINAL",
+                        terminal_reason="owned publication completed"
+                        if name == "finalize_operational_publication"
+                        else "attempt finished",
+                    )
+                _seal_repository_target(view, target)
+                proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                ack = self._commit_operational_proposal(view, proposal)
+                session.confirm_committed(ack)
+                return value
+        finally:
+            with _WRITER_REGISTRY_LOCK:
+                _DISPATCH_OWNERS.pop(id(bound_dispatch), None)
+            if getattr(self._transactions, "dispatch", None) is bound_dispatch:
+                self._transactions.dispatch = dispatch
+                with _WRITER_REGISTRY_LOCK:
+                    _DISPATCH_OWNERS[id(dispatch)] = dispatch
+
+    @_job_writer
+    def finalize_operational_publication(
+        self,
+        job_id: str,
+        *,
+        attempt: int,
+        terminal: RuntimeJobStatus,
+        artifact_paths: dict[str, str],
+        metrics: list[dict[str, object]],
+        publish: Callable[[SimulationJobRecord, dict[str, Any]], dict[str, str]],
+        validate: Callable[[], None],
+    ) -> dict[str, str]:
+        """Preview exact final rows, write while live, then install that same frozen target."""
+        self._require_active_writer()
+        owner = self._writer_binding()
+        view = self._transactions.publication_view
+        issued = _view_record(view)
+        session = issued.session
+        if owner.operation != "finalize_operational_publication" or owner.job_id != job_id:
+            raise OperationalLeaseError("publication requires its actual root writer")
+        current = self.get_job(job_id)
+        expected = (
+            RuntimeJobStatus.RUNNING
+            if terminal == RuntimeJobStatus.BLOCKED_BY_ENV
+            else RuntimeJobStatus.FINALIZING
+        )
+        if (
+            current.status != expected
+            or current.attempt != attempt
+            or view.snapshot["attempt"] != attempt
+            or terminal
+            not in {
+                RuntimeJobStatus.SUCCEEDED,
+                RuntimeJobStatus.FAILED,
+                RuntimeJobStatus.BLOCKED_BY_ENV,
+            }
+        ):
+            raise OperationalLeaseError("publication requires the actual live finalizing attempt")
+        validate()
+        session.evaluate_locked(view)
+        conn = owner.connection
+        tables = (
+            "simulation_metrics",
+            "simulation_artifacts",
+            "simulation_job_events",
+            "simulation_job_attempts",
+            "simulation_job_leases",
+            "simulation_jobs",
+        )
+        conn.execute("SAVEPOINT operational_publication_preview")
+        try:
+            self.save_metrics(job_id, metrics)
+            self.save_artifacts(job_id, artifact_paths)
+            self.finish_attempt(
+                job_id,
+                attempt=attempt,
+                result=terminal.value,
+                error="",
+                artifact_paths=artifact_paths,
+            )
+            final = self.update_status_cas(
+                job_id,
+                expected=expected,
+                next_status=terminal,
+                reason_code=terminal.value.lower(),
+                worker_id=current.worker_id,
+                lease_id=current.lease_id,
+                expected_worker_id=current.worker_id,
+                expected_lease_id=current.lease_id,
+            )
+            if final is None:
+                raise OperationalLeaseError("publication preview exact job CAS0")
+            self.append_event(
+                job_id,
+                event_type="artifact_created",
+                source="simulation_runtime",
+                payload=dict(artifact_paths),
+            )
+            self.release_lease(current.lease_id)
+            frozen = {
+                table: tuple(
+                    dict(row)
+                    for row in conn.execute(
+                        "SELECT * FROM " + table + " WHERE job_id=?", (job_id,)
+                    ).fetchall()
+                )
+                for table in tables
+            }
+            snapshot = {
+                "events": self.list_events(current.run_id),
+                "attempts": self.list_attempts(current.run_id),
+                "leases": self.list_leases(current.run_id),
+            }
+            expected_snapshot = self._job_snapshot(conn, job_id)
+        finally:
+            conn.execute("ROLLBACK TO operational_publication_preview")
+            conn.execute("RELEASE operational_publication_preview")
+        # The preview was never committed. Actual job/attempt/lease are still live here.
+        self._validate_operational_row(conn, session, dict(view.snapshot))
+        session.evaluate_locked(view)
+        validate()
+        published = publish(final, snapshot)
+        if published != artifact_paths:
+            raise OperationalLeaseError(
+                "actual artifact paths differ from frozen publication target"
+            )
+        validate()
+        self._validate_operational_row(conn, session, dict(view.snapshot))
+        session.evaluate_locked(view)  # Fresh original D_lease bound after the filesystem work.
+        # Positive index/metrics rows precede real attempt close, lease release and terminal job.
+        for table in tables:
+            if table == "simulation_jobs":
+                target = frozen[table][0]
+                columns = tuple(key for key in target if key != "job_id")
+                cursor = conn.execute(
+                    "UPDATE simulation_jobs SET "
+                    + ",".join(key + "=?" for key in columns)
+                    + " WHERE job_id=? AND status=? AND worker_id=? AND lease_id=?",
+                    tuple(target[key] for key in columns)
+                    + (job_id, current.status.value, current.worker_id, current.lease_id),
+                )
+                if cursor.rowcount != 1:
+                    raise OperationalLeaseError("publication final exact job CAS0")
+            else:
+                conn.execute("DELETE FROM " + table + " WHERE job_id=?", (job_id,))
+                for target in frozen[table]:
+                    columns = tuple(target)
+                    conn.execute(
+                        "INSERT INTO "
+                        + table
+                        + "("
+                        + ",".join(columns)
+                        + ") VALUES("
+                        + ",".join("?" for _ in columns)
+                        + ")",
+                        tuple(target[key] for key in columns),
+                    )
+        if self._job_snapshot(conn, job_id) != expected_snapshot:
+            raise OperationalLeaseError("publication actual final snapshot differs from preview")
+        for table in tables:
+            actual = tuple(
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM " + table + " WHERE job_id=?", (job_id,)
+                ).fetchall()
+            )
+            if actual != frozen[table]:
+                raise OperationalLeaseError(
+                    "publication actual final rows differ from frozen target"
+                )
+        return published
+
+    def _terminalize_operational(
+        self,
+        conn: sqlite3.Connection,
+        before: dict[str, Any],
+        reason: str,
+        *,
+        phase: str = "REVOKED",
+    ) -> None:
+        self._require_active_writer()
+        if conn is not self._writer_binding().connection:
+            raise OperationalLeaseError("terminal cleanup connection differs from registered owner")
+        if phase not in {"REVOKED", "TERMINATED"}:
+            raise OperationalLeaseError("cleanup phase must be non-authoritative")
+        target = dict(before)
+        target.update(
+            durable_phase=phase,
+            lifecycle="TERMINAL",
+            terminal_reason=reason,
+            row_revision=int(before["row_revision"]) + 1,
+            generation=int(before["generation"]) + 1,
+            job_snapshot_json=self._job_snapshot(conn, before["job_id"]),
+        )
+        target["proposed_row_digest"] = _canonical(target)
+        columns = [key for key in target if key != "lease_id"]
+        cursor = conn.execute(
+            "UPDATE simulation_operational_leases_v1 SET "
+            + ",".join(c + "=?" for c in columns)
+            + " WHERE lease_id=? AND row_revision=? AND generation=? AND proposed_row_digest=?",
+            tuple(target[c] for c in columns)
+            + (
+                before["lease_id"],
+                before["row_revision"],
+                before["generation"],
+                before["proposed_row_digest"],
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise OperationalLeaseError("terminal mutation lost exact generation CAS")
+        _revoke_epoch(before["epoch"], reason)
+
+    def _cleanup_operational_row(
+        self, conn: sqlite3.Connection, row: dict[str, Any], reason: str
+    ) -> bool:
+        """Close only the original owner's residual negative state, under its exact row CAS."""
+        self._require_active_writer()
+        if (
+            conn is not self._writer_binding().connection
+            or self._operational_row(conn, row["job_id"]) != row
+        ):
+            raise OperationalLeaseError("cleanup requires the original registered transaction/row")
+        if row["proposed_row_digest"] != _canonical(row):
+            raise OperationalLeaseError("cleanup canonical row digest mismatch")
+        job = conn.execute(
+            "SELECT * FROM simulation_jobs WHERE job_id=?", (row["job_id"],)
+        ).fetchone()
+        if job is None:
+            return False
+        owned = job["worker_id"] == row["worker_id"] and job["lease_id"] == row["lease_id"]
+        residual = owned and job["status"] in {
+            "LEASED",
+            "STARTING",
+            "RUNNING",
+            "CANCEL_REQUESTED",
+            "CANCELLING",
+            "FINALIZING",
+        }
+        attempt = conn.execute(
+            "SELECT * FROM simulation_job_attempts "
+            "WHERE job_id=? AND attempt=? AND worker_id=? AND ended_at=''",
+            (row["job_id"], row["attempt"], row["worker_id"]),
+        ).fetchone()
+        lease = conn.execute(
+            "SELECT * FROM simulation_job_leases "
+            "WHERE lease_id=? AND job_id=? AND worker_id=? AND released_at=''",
+            (row["lease_id"], row["job_id"], row["worker_id"]),
+        ).fetchone()
+        if not residual and attempt is None and lease is None:
+            return False
+        now = _dt(_now())
+        if attempt is not None:
+            conn.execute(
+                "UPDATE simulation_job_attempts "
+                "SET ended_at=?,result='INTERRUPTED',error=?,artifact_paths_json='{}' "
+                "WHERE job_id=? AND attempt=? AND worker_id=? AND ended_at=''",
+                (now, reason, row["job_id"], row["attempt"], row["worker_id"]),
+            )
+        if residual:
+            conn.execute(
+                "UPDATE simulation_jobs SET status='INTERRUPTED',updated_at=?,"
+                "error_code='operational_epoch_ended',error_message=? "
+                "WHERE job_id=? AND status=? AND worker_id=? AND lease_id=?",
+                (now, reason, row["job_id"], job["status"], row["worker_id"], row["lease_id"]),
+            )
+        if lease is not None:
+            conn.execute(
+                "UPDATE simulation_job_leases SET released_at=? "
+                "WHERE lease_id=? AND job_id=? AND worker_id=? AND released_at=''",
+                (now, row["lease_id"], row["job_id"], row["worker_id"]),
+            )
+        self._terminalize_operational(conn, row, reason, phase="TERMINATED")
+        return True
+
+    @_job_writer
+    def cleanup_operational_session(self, job_id: str, *, session: OperationalLeaseSession) -> None:
+        self._require_active_writer()
+        if (
+            _current_session(self) is not session
+            or session.worker._operational_lease_session is not session
+            or session.job_id != job_id
+            or threading.get_ident() != session.main_thread
+            or threading.get_native_id() != session.main_native_thread
+        ):
+            raise OperationalLeaseError(
+                "negative cleanup requires the actual original poll session"
+            )
+        conn = self._writer_binding().connection
+        row = self._operational_row(conn, job_id)
+        if row is None:
+            return  # Acquisition never committed a row.
+        domain = session.domain
+        if (
+            row["epoch"] != session.epoch
+            or row["lease_id"] != session.lease_id
+            or row["worker_id"] != session.worker_id
+            or row["pid"] != domain.pid
+            or row["boot_id"] != domain.boot_id
+            or row["process_start_ticks"] != domain.process_start_ticks
+        ):
+            raise OperationalLeaseError("negative cleanup original epoch/lease/process mismatch")
+        self._cleanup_operational_row(conn, row, "original worker poll ended")
+
+    @_job_writer
+    def terminate_orphaned_operational_attempts(self) -> list[str]:
+        """Unknown live foreign process is never proof that an epoch is orphaned."""
+        self._require_active_writer()
+        conn = self._transactions.connection
+        rows = conn.execute(
+            "SELECT * FROM simulation_operational_leases_v1 "
+            "WHERE durable_phase IN ('COMMITTED','REVOKED','TERMINATED')"
+        ).fetchall()
+        terminated: list[str] = []
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        from cloud_edge_robot_arm.research.operational_time_v1 import _parse_process_start_ticks
+
+        for original in rows:
+            row = dict(original)
+            pid = int(row["pid"])
+            orphan = _epoch_has_ended(row["epoch"]) if pid == os.getpid() else False
+            if not orphan and pid != os.getpid():
+                try:
+                    stat = Path(f"/proc/{pid}/stat").read_text()
+                except FileNotFoundError:
+                    orphan = True
+                except OSError:
+                    continue
+                else:
+                    # Fixture identities can be CPU-typed; matching live PID alone remains UNKNOWN.
+                    if row["boot_id"] == boot:
+                        orphan = _parse_process_start_ticks(stat, expected_pid=pid) != int(
+                            row["process_start_ticks"]
+                        )
+            if not orphan:
+                continue
+            if self._cleanup_operational_row(conn, row, "orphaned epoch ended"):
+                terminated.append(row["job_id"])
+        return terminated
+
     def _count_status(self, statuses: set[RuntimeJobStatus]) -> int:
         self._initialize()
         placeholders = ",".join("?" for _ in statuses)
@@ -937,14 +2113,22 @@ class SQLiteSimulationJobRepository:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
+        active = getattr(self._transactions, "connection", None)
+        if active is not None:
+            self._writer_binding()
+            yield active
+            return
         conn = sqlite3.connect(self.database_path, isolation_level=None, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
         try:
             yield conn
-        except Exception:
-            conn.rollback()
+        except BaseException:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass  # Preserve the original fault when the same real connection closed.
             raise
         finally:
             # sqlite3.Connection 的 context manager 不会关闭连接；repository 方法必须
@@ -958,115 +2142,157 @@ class SQLiteSimulationJobRepository:
         return cast(sqlite3.Row | None, row)
 
     def _initialize(self) -> None:
-        with self._connect() as conn:
+        if getattr(self._transactions, "connection", None) is not None:
+            return
+        with self.publication_guard(), self._connect() as conn:
             conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS simulation_jobs (
-                    job_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL UNIQUE,
-                    batch_id TEXT NOT NULL DEFAULT '',
-                    backend TEXT NOT NULL,
-                    scenario_id TEXT NOT NULL,
-                    control_mode TEXT NOT NULL,
-                    seed INTEGER NOT NULL,
-                    manifest_id TEXT NOT NULL,
-                    reproducibility_hash TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    draft_json TEXT NOT NULL,
-                    manifest_json TEXT NOT NULL,
-                    attempt INTEGER NOT NULL DEFAULT 0,
-                    max_attempts INTEGER NOT NULL DEFAULT 1,
-                    priority INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    queued_at TEXT,
-                    started_at TEXT,
-                    completed_at TEXT,
-                    updated_at TEXT NOT NULL,
-                    timeout_seconds INTEGER NOT NULL,
-                    cancel_requested INTEGER NOT NULL DEFAULT 0,
-                    worker_id TEXT NOT NULL DEFAULT '',
-                    lease_id TEXT NOT NULL DEFAULT '',
-                    lease_expires_at TEXT,
-                    blocker_codes_json TEXT NOT NULL DEFAULT '[]',
-                    error_code TEXT NOT NULL DEFAULT '',
-                    error_message TEXT NOT NULL DEFAULT '',
-                    artifact_root TEXT NOT NULL DEFAULT '',
-                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',
-                    provenance_json TEXT NOT NULL DEFAULT '{}',
-                    source_commit TEXT NOT NULL DEFAULT '',
-                    source_tree_hash TEXT NOT NULL DEFAULT ''
-                );
-                CREATE INDEX IF NOT EXISTS idx_sim_jobs_status_backend
-                ON simulation_jobs(status, backend, priority, created_at);
-                CREATE TABLE IF NOT EXISTS simulation_job_events (
-                    event_id TEXT PRIMARY KEY,
-                    job_id TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
-                    sequence INTEGER NOT NULL,
-                    stream_sequence INTEGER NOT NULL UNIQUE,
-                    event_type TEXT NOT NULL,
-                    previous_status TEXT NOT NULL DEFAULT '',
-                    next_status TEXT NOT NULL DEFAULT '',
-                    reason_code TEXT NOT NULL DEFAULT '',
-                    timestamp TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_sim_events_run_sequence
-                ON simulation_job_events(run_id, sequence);
-                CREATE TABLE IF NOT EXISTS simulation_job_leases (
-                    lease_id TEXT PRIMARY KEY,
-                    job_id TEXT NOT NULL,
-                    worker_id TEXT NOT NULL,
-                    acquired_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    heartbeat_at TEXT NOT NULL,
-                    released_at TEXT NOT NULL DEFAULT '',
-                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)
-                );
-                CREATE TABLE IF NOT EXISTS simulation_job_attempts (
-                    job_id TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
-                    attempt INTEGER NOT NULL,
-                    worker_id TEXT NOT NULL,
-                    started_at TEXT NOT NULL,
-                    ended_at TEXT NOT NULL DEFAULT '',
-                    result TEXT NOT NULL,
-                    error TEXT NOT NULL DEFAULT '',
-                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',
-                    PRIMARY KEY(job_id, attempt),
-                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)
-                );
-                CREATE TABLE IF NOT EXISTS simulation_metrics (
-                    job_id TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
-                    metric_index INTEGER NOT NULL,
-                    metric_json TEXT NOT NULL,
-                    PRIMARY KEY(job_id, metric_index),
-                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)
-                );
-                CREATE TABLE IF NOT EXISTS simulation_artifacts (
-                    job_id TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    relative_path TEXT NOT NULL,
-                    PRIMARY KEY(job_id, name),
-                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)
-                );
-                CREATE TABLE IF NOT EXISTS simulation_batches (
-                    batch_id TEXT PRIMARY KEY,
-                    manifest_json TEXT NOT NULL,
-                    run_ids_json TEXT NOT NULL,
-                    total INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    completed_at TEXT NOT NULL DEFAULT ''
-                );
-                """
+                "\n"
+                "                CREATE TABLE IF NOT EXISTS schema_migrations (\n"
+                "                    version INTEGER PRIMARY KEY,\n"
+                "                    applied_at TEXT NOT NULL\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_jobs (\n"
+                "                    job_id TEXT PRIMARY KEY,\n"
+                "                    run_id TEXT NOT NULL UNIQUE,\n"
+                "                    batch_id TEXT NOT NULL DEFAULT '',\n"
+                "                    backend TEXT NOT NULL,\n"
+                "                    scenario_id TEXT NOT NULL,\n"
+                "                    control_mode TEXT NOT NULL,\n"
+                "                    seed INTEGER NOT NULL,\n"
+                "                    manifest_id TEXT NOT NULL,\n"
+                "                    reproducibility_hash TEXT NOT NULL,\n"
+                "                    status TEXT NOT NULL,\n"
+                "                    draft_json TEXT NOT NULL,\n"
+                "                    manifest_json TEXT NOT NULL,\n"
+                "                    attempt INTEGER NOT NULL DEFAULT 0,\n"
+                "                    max_attempts INTEGER NOT NULL DEFAULT 1,\n"
+                "                    priority INTEGER NOT NULL DEFAULT 0,\n"
+                "                    created_at TEXT NOT NULL,\n"
+                "                    queued_at TEXT,\n"
+                "                    started_at TEXT,\n"
+                "                    completed_at TEXT,\n"
+                "                    updated_at TEXT NOT NULL,\n"
+                "                    timeout_seconds INTEGER NOT NULL,\n"
+                "                    cancel_requested INTEGER NOT NULL DEFAULT 0,"
+                "\n"
+                "                    worker_id TEXT NOT NULL DEFAULT '',\n"
+                "                    lease_id TEXT NOT NULL DEFAULT '',\n"
+                "                    lease_expires_at TEXT,\n"
+                "                    blocker_codes_json TEXT NOT NULL DEFAULT '[]"
+                "',\n"
+                "                    error_code TEXT NOT NULL DEFAULT '',\n"
+                "                    error_message TEXT NOT NULL DEFAULT '',\n"
+                "                    artifact_root TEXT NOT NULL DEFAULT '',\n"
+                "                    artifact_paths_json TEXT NOT NULL DEFAULT '{"
+                "}',\n"
+                "                    provenance_json TEXT NOT NULL DEFAULT '{}',\n"
+                "                    source_commit TEXT NOT NULL DEFAULT '',\n"
+                "                    source_tree_hash TEXT NOT NULL DEFAULT ''\n"
+                "                );\n"
+                "                CREATE INDEX IF NOT EXISTS idx_sim_jobs_status_b"
+                "ackend\n"
+                "                ON simulation_jobs(status, backend, priority, cr"
+                "eated_at);\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_job_events"
+                " (\n"
+                "                    event_id TEXT PRIMARY KEY,\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    sequence INTEGER NOT NULL,\n"
+                "                    stream_sequence INTEGER NOT NULL UNIQUE,\n"
+                "                    event_type TEXT NOT NULL,\n"
+                "                    previous_status TEXT NOT NULL DEFAULT '',\n"
+                "                    next_status TEXT NOT NULL DEFAULT '',\n"
+                "                    reason_code TEXT NOT NULL DEFAULT '',\n"
+                "                    timestamp TEXT NOT NULL,\n"
+                "                    source TEXT NOT NULL,\n"
+                "                    payload_json TEXT NOT NULL,\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE INDEX IF NOT EXISTS idx_sim_events_run_se"
+                "quence\n"
+                "                ON simulation_job_events(run_id, sequence);\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_job_leases"
+                " (\n"
+                "                    lease_id TEXT PRIMARY KEY,\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    worker_id TEXT NOT NULL,\n"
+                "                    acquired_at TEXT NOT NULL,\n"
+                "                    expires_at TEXT NOT NULL,\n"
+                "                    heartbeat_at TEXT NOT NULL,\n"
+                "                    released_at TEXT NOT NULL DEFAULT '',\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_job_attemp"
+                "ts (\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    attempt INTEGER NOT NULL,\n"
+                "                    worker_id TEXT NOT NULL,\n"
+                "                    started_at TEXT NOT NULL,\n"
+                "                    ended_at TEXT NOT NULL DEFAULT '',\n"
+                "                    result TEXT NOT NULL,\n"
+                "                    error TEXT NOT NULL DEFAULT '',\n"
+                "                    artifact_paths_json TEXT NOT NULL DEFAULT '{"
+                "}',\n"
+                "                    PRIMARY KEY(job_id, attempt),\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_metrics (\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    metric_index INTEGER NOT NULL,\n"
+                "                    metric_json TEXT NOT NULL,\n"
+                "                    PRIMARY KEY(job_id, metric_index),\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_artifacts "
+                "(\n"
+                "                    job_id TEXT NOT NULL,\n"
+                "                    run_id TEXT NOT NULL,\n"
+                "                    name TEXT NOT NULL,\n"
+                "                    relative_path TEXT NOT NULL,\n"
+                "                    PRIMARY KEY(job_id, name),\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_operationa"
+                "l_leases_v1 (\n"
+                "                    lease_id TEXT PRIMARY KEY, schema TEXT NOT N"
+                "ULL,\n"
+                "                    job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT"
+                " NULL, worker_id TEXT NOT NULL,\n"
+                "                    attempt INTEGER, lifecycle TEXT NOT NULL,\n"
+                "                    pid INTEGER NOT NULL, boot_id TEXT NOT NULL,"
+                " process_start_ticks INTEGER NOT NULL,\n"
+                "                    epoch TEXT NOT NULL, generation INTEGER NOT "
+                "NULL, row_revision INTEGER NOT NULL,\n"
+                "                    original_job_digest TEXT NOT NULL, original_"
+                "policy_digest TEXT NOT NULL,\n"
+                "                    original_acquisition_json TEXT NOT NULL, seg"
+                "ment_json TEXT NOT NULL,\n"
+                "                    proposal_id TEXT NOT NULL, operation_sha256 "
+                "TEXT NOT NULL,\n"
+                "                    job_snapshot_json TEXT NOT NULL, proposed_ro"
+                "w_digest TEXT NOT NULL,\n"
+                "                    durable_phase TEXT NOT NULL, terminal_reason"
+                " TEXT NOT NULL,\n"
+                "                    FOREIGN KEY(job_id) REFERENCES simulation_jo"
+                "bs(job_id)\n"
+                "                );\n"
+                "                CREATE TABLE IF NOT EXISTS simulation_batches (\n"
+                "                    batch_id TEXT PRIMARY KEY,\n"
+                "                    manifest_json TEXT NOT NULL,\n"
+                "                    run_ids_json TEXT NOT NULL,\n"
+                "                    total INTEGER NOT NULL,\n"
+                "                    created_at TEXT NOT NULL,\n"
+                "                    completed_at TEXT NOT NULL DEFAULT ''\n"
+                "                );\n"
+                "                "
             )
             conn.execute(
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",

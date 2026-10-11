@@ -6,9 +6,10 @@ InMemory/临时 SQLite 可以用于测试。状态更新必须由实现层保证
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from cloud_edge_robot_arm.simulation_runtime.models import (
     RuntimeJobStatus,
@@ -18,6 +19,9 @@ from cloud_edge_robot_arm.simulation_runtime.models import (
     SimulationJobLease,
     SimulationJobRecord,
 )
+
+if TYPE_CHECKING:
+    from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseSession
 
 
 class SimulationJobRepository(Protocol):
@@ -79,6 +83,24 @@ class SimulationJobRepository(Protocol):
     def release_lease(self, lease_id: str) -> None: ...
 
     def list_leases(self, run_id: str) -> list[SimulationJobLease]: ...
+
+    def terminate_orphaned_operational_attempts(self) -> list[str]: ...
+
+    def cleanup_operational_session(
+        self, job_id: str, *, session: OperationalLeaseSession
+    ) -> None: ...
+
+    def finalize_operational_publication(
+        self,
+        job_id: str,
+        *,
+        attempt: int,
+        terminal: RuntimeJobStatus,
+        artifact_paths: dict[str, str],
+        metrics: list[dict[str, object]],
+        publish: Callable[[SimulationJobRecord, dict[str, Any]], dict[str, str]],
+        validate: Callable[[], None],
+    ) -> dict[str, str]: ...
 
     def expire_leases(self) -> list[str]: ...
 

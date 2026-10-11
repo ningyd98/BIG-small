@@ -1,0 +1,40 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round140-p6-delta-dependency-pin-recovery-20261011/implementation/before-delta-proof.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round139-p6-test-capture-lint-repair-20261011/implementation/delta-proof.py
+@@ -21,6 +21,11 @@
+     '# This preparation is actual authorized main-thread status CAS,',
+     '# never foreign success.',
+ ]
++ORIGINAL_SCOPE_PIN = {
++    'path': '/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round127-p6-private-authority-lifecycle-repair-20261011/implementation/scope-proof.py',
++    'bytes': 7714,
++    'sha256': '2fbff6a9b43ab829245f7e09370eb392e607b4af17b9c63dcfd6ef7e21b13983',
++}
+ 
+ 
+ def digest(blob):
+@@ -119,7 +124,10 @@
+ ]
+ dependencies = []
+ for path in dependency_paths:
+-    pin = pins[str(path)]
++    if str(path) == ORIGINAL_SCOPE_PIN['path']:
++        pin = ORIGINAL_SCOPE_PIN
++    else:
++        pin = pins[str(path)]
+     pinned(path, pin['bytes'], pin['sha256'])
+     dependencies.append(pin)
+ manifest = json.loads((OLD / 'finite-manifest.json').read_bytes())
+@@ -182,6 +190,13 @@
+     'before_test_sha256': digest(before_blob), 'final_test_sha256': digest(after_blob),
+     'final_test_bytes': len(after_blob), 'plan_sha256': PLAN_SHA,
+     'old_scope_proof_dependencies_unchanged': dependencies,
++    'supplemental_dependency_provenance': {
++        'pin': ORIGINAL_SCOPE_PIN,
++        'source_plan': str(ROUNDS / 'round140-p6-delta-dependency-pin-recovery-20261011/plan.json'),
++        'source_plan_sha256': 'bf95861fe0c6e81c934f76ff7d8fbd28cea82763ecdf1c2f99abf652aab001c3',
++        'historical_R139_inclusion': False,
++        'other_four_dependency_pin_source': str(BASE / 'plan.json'),
++    },
+     'exact_target': FUNCTION + '.for[source,target].check',
+     'bindings': CAPTURES, 'original_positional_count': 8,
+     'normalized_full_AST_type_comments_equal': True,

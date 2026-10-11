@@ -1,0 +1,129 @@
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+IndexError: list index out of range
+/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/evaluation.py
+65:         if self.worker_runtime is not None and self.device_pipeline != "OPENCV":
+66:             raise ValueError("worker ownership requires the explicit OpenCV device pipeline")
+67:         if self.worker_runtime is not None:
+68:             from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+69: 
+70:             if type(self.worker_runtime) is not VisualWorkerRuntime:
+71:                 raise ValueError("concrete live visual worker ownership required")
+72:             self.worker_runtime.validate_runtime_options(
+73:                 self.supervision_period_s, self.advance_physics_during_wait
+74:             )
+75:         if self.raw_recorder is not None and self.worker_runtime is None:
+76:             raise ValueError("raw recording requires the live visual worker source")
+77:         if self.supervision_period_s is not None and (
+78:             not math.isfinite(self.supervision_period_s) or self.supervision_period_s <= 0
+79:         ):
+80:             raise ValueError("supervision period must be finite and positive")
+81:         if self.scope != "CAPTURE_ONLY" and (
+82:             len(self.model_snapshot_hash) != 64
+83:             or any(c not in "0123456789abcdef" for c in self.model_snapshot_hash)
+84:         ):
+85:             raise ValueError("visual runs require an explicit frozen snapshot digest")
+86: 
+87: 
+88: @dataclass(frozen=True, slots=True)
+89: class VisualEpisodeOutcome(EpisodeOutcome):
+90:     """Extension leaves the authoritative T5 dataclass and serialized evidence intact."""
+91: 
+92:     evaluation_scope: str = "VISION_CLOSED_LOOP"
+93:     online_reported_complete: bool | None = False
+94:     physical_success: bool = False
+95:     verification_records: tuple[dict[str, Any], ...] = ()
+96:     terminal_reason: str | None = None
+97:     model_calls: int = 0
+98:     executed_actions: int = 0
+99:     observation_count: int = 0
+100:     episode_id: str = ""
+101: 
+102: 
+103: def combine_outcome(
+104:     physical: EpisodeOutcome,
+105:     *,
+106:     online_complete: bool,
+107:     records: tuple[dict[str, Any], ...],
+108:     terminal_reason: str | None = None,
+109:     model_calls: int = 0,
+110:     executed_actions: int = 0,
+111:     observation_count: int = 0,
+112:     episode_id: str = "",
+113: ) -> VisualEpisodeOutcome:
+114:     """Terminal conjunction only; this function cannot request another online action."""
+115:     values = asdict(physical)
+116:     success = online_complete and physical.success and terminal_reason is None
+117:     values.update(
+118:         success=success,
+119:         status=(
+120:             "SUCCESS" if success else "SAFETY_VIOLATION" if physical.safety_violation else "FAILED"
+121:         ),
+122:         failure_reason=None
+123:         if success
+124:         else terminal_reason or physical.failure_reason or "ONLINE_COMPLETION_NOT_VERIFIED",
+125:     )
+126:     return VisualEpisodeOutcome(
+127:         **values,
+128:         online_reported_complete=online_complete,
+129:         physical_success=physical.success,
+130:         verification_records=records,
+131:         terminal_reason=terminal_reason,
+132:         model_calls=model_calls,
+133:         executed_actions=executed_actions,
+134:         observation_count=observation_count,
+135:         episode_id=episode_id,
+136:     )
+137: 
+138: 
+139: @dataclass(frozen=True)
+140: class EvaluationReport:
+141:     assigned: int
+142:     succeeded: int
+143:     blocked: int
+144:     localization_errors_m: tuple[float, ...]
+145:     recognition_coverage: float
+146:     invalid_depth_rejection_rate: float
+147:     latency_summary: dict[str, float | None]
+148:     records: tuple[dict[str, Any], ...] = ()
+149:     evaluation_scope: str = "OFFLINE_MODEL_GROUNDING"
+150:     split: str = ""
+151:     invalid_depth_rejection_denominator: str = "all_assigned"
+152:     invalid_depth_rejected_count: int = 0
+153: 
+154: 
+155: def independent_top_center(labels: Mapping[str, Any]) -> tuple[float, float, float]:
+156:     """Reference is the labeled rigid box top center, never the predicted pixel."""
+157:     matches = [row for row in labels.get("instances", []) if row.get("role") == "target"]
+158:     if len(matches) != 1:
+159:         raise ValueError("independent target geometry is missing or ambiguous")
+/home/ningyd/文档/ChatGPT/BIGsmall/src/cloud_edge_robot_arm/vision/task_semantics.py
+78: def apply_s01_task_semantics(
+79:     result: Mapping[str, Any], instruction: str, *, grasp_profile: str = CURRENT_GRASP_PROFILE,
+80: ) -> dict[str, Any]:
+81:     """Conjoin terminal evidence without mutating the visual episode or its routes."""
+82:     semantics = evaluate_s01_task_semantics(instruction, grasp_profile=grasp_profile)
+83:     episode_success = result.get("success") is True
+84:     online_complete = result.get("online_reported_complete") is True
+85:     task_success = (
+86:         episode_success
+87:         and online_complete
+88:         and result.get("physical_success") is True
+89:         and result.get("terminal_reason") is None
+90:         and semantics["semantic_success"] is True
+91:     )
+92:     scored = {
+93:         **result,
+94:         **semantics,
+95:         "visual_episode_success": episode_success,
+96:         "visual_episode_status": result.get("status"),
+97:         "success": task_success,
+98:         "task_success": task_success,
+99:         "false_completion": online_complete and not task_success,
+100:     }
+101:     if not task_success:
+102:         if scored.get("status") == "SUCCESS":
+103:             scored["status"] = "FAILED"
+104:         if not scored.get("failure_reason") and not semantics["semantic_success"]:
+105:             scored["failure_reason"] = semantics["semantic_reason"]
+106:     return scored

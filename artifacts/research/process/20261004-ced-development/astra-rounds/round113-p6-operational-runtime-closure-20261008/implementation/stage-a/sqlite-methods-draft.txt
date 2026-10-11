@@ -1,0 +1,366 @@
+    def _require_active_writer(self) -> None:
+        if getattr(self._transactions, "connection", None) is None:
+            raise OperationalLeaseError("unlocked helper requires actual guarded writer")
+
+    def _txn_is_current(self, connection: sqlite3.Connection, nonce: str) -> bool:
+        return (getattr(self._transactions, "connection", None) is connection
+                and getattr(self._transactions, "nonce", None) == nonce)
+
+    def _view_is_current(self, view: LockedLeaseView) -> bool:
+        return self._txn_is_current(view._connection, view._nonce)
+
+    def _commit_is_recorded(self, view: LockedLeaseView, identity: str) -> bool:
+        return self._view_is_current(view) and getattr(self._transactions, "commit", None) == identity
+
+    @contextmanager
+    def _legacy_write_transaction(self) -> Iterator[sqlite3.Connection]:
+        self._initialize()
+        if getattr(self._transactions, "connection", None) is not None:
+            yield self._transactions.connection
+            return
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._transactions.connection = connection
+            self._transactions.nonce = uuid4().hex
+            self._transactions.commit = None
+            try:
+                yield connection
+                connection.execute("COMMIT")
+            except BaseException:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                raise
+            finally:
+                self._transactions.connection = None
+                self._transactions.nonce = None
+                self._transactions.commit = None
+
+    def _operational_row(self, conn: sqlite3.Connection, job_id: str) -> dict[str, Any] | None:
+        row = conn.execute("SELECT * FROM simulation_operational_leases_v1 WHERE job_id=?",
+                           (job_id,)).fetchone()
+        return dict(row) if row is not None else None
+
+    def _job_snapshot(self, conn: sqlite3.Connection, job_id: str) -> str:
+        row = conn.execute("SELECT * FROM simulation_jobs WHERE job_id=?", (job_id,)).fetchone()
+        attempts = conn.execute("SELECT * FROM simulation_job_attempts WHERE job_id=? ORDER BY attempt",
+                                (job_id,)).fetchall()
+        if row is None:
+            raise KeyError(job_id)
+        return json.dumps({"job": dict(row), "attempts": [dict(a) for a in attempts]},
+                          sort_keys=True, allow_nan=False)
+
+    @contextmanager
+    def _operational_transaction(self, session: OperationalLeaseSession, *, job_id: str | None,
+                                 purpose: str, operation_sha256: str) -> Iterator[LockedLeaseView]:
+        session._check_ingress(purpose)
+        if session.repository is not self or job_id != session.job_id:
+            raise OperationalLeaseError("session requires exact concrete repository/job")
+        with self.publication_guard():
+            self._initialize()
+            if getattr(self._transactions, "connection", None) is not None:
+                raise OperationalLeaseError("cannot issue nested/reused operational transaction")
+            with self._connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                nonce = uuid4().hex
+                self._transactions.connection = conn
+                self._transactions.nonce = nonce
+                self._transactions.commit = None
+                view: LockedLeaseView | None = None
+                try:
+                    row = self._operational_row(conn, str(job_id))
+                    if row is None:
+                        raise OperationalLeaseError("missing actual operational row")
+                    self._validate_operational_row(conn, session, row)
+                    view = _issue_view(session, self, conn, nonce, row, purpose, operation_sha256)
+                    yield view
+                except BaseException:
+                    if view is not None:
+                        _invalidate_view(view, "operational transaction exception")
+                    raise
+                finally:
+                    try:
+                        if conn.in_transaction:
+                            conn.execute("ROLLBACK")
+                    except sqlite3.Error:
+                        if view is not None:
+                            _invalidate_view(view, "real connection closed")
+                    if view is not None:
+                        _close_view(view)
+                    self._transactions.connection = None
+                    self._transactions.nonce = None
+                    self._transactions.commit = None
+
+    def _validate_operational_row(self, conn: sqlite3.Connection, session: OperationalLeaseSession,
+                                  row: dict[str, Any]) -> None:
+        if (row["epoch"], row["lease_id"], row["worker_id"]) != (
+            session.epoch, session.lease_id, session.worker_id
+        ):
+            raise OperationalLeaseError("actual epoch/lease/worker mismatch")
+        if row["job_snapshot_json"] != self._job_snapshot(conn, row["job_id"]):
+            raise OperationalLeaseError("actual job/attempt snapshot drift")
+        snapshot = json.loads(row["job_snapshot_json"])
+        job = snapshot["job"]
+        if job["cancel_requested"] or job["lease_id"] != row["lease_id"] or job["worker_id"] != row["worker_id"]:
+            raise OperationalLeaseError("actual cancel/reassignment veto")
+        open_attempts = [a for a in snapshot["attempts"] if a["ended_at"] == ""]
+        if row["lifecycle"] == "ACQUIRED":
+            if row["attempt"] is not None or open_attempts:
+                raise OperationalLeaseError("ACQUIRED cannot invent an open attempt")
+        elif row["lifecycle"] == "ATTEMPT_BOUND":
+            if len(open_attempts) != 1 or open_attempts[0]["attempt"] != row["attempt"]:
+                raise OperationalLeaseError("exact unique actual open attempt required")
+        else:
+            raise OperationalLeaseError("terminal operational lifecycle")
+
+    def _commit_operational_proposal(self, view: LockedLeaseView,
+                                     proposal: LeaseProposal) -> LeaseCommitAck:
+        session = view._session
+        session._check_ingress(view.purpose)
+        if not self._view_is_current(view) or view.state != "CONSUMED" or proposal._view is not view:
+            raise OperationalLeaseError("unregistered consumed transaction/proposal")
+        conn = view._connection
+        try:
+            if not conn.in_transaction:
+                raise OperationalLeaseError("commit requires original still-open transaction")
+            target = dict(proposal.target)
+            if view.purpose == "acquire":
+                columns = list(target)
+                conn.execute(
+                    f"INSERT INTO simulation_operational_leases_v1 ({','.join(columns)}) "
+                    f"VALUES ({','.join('?' for _ in columns)})", tuple(target[c] for c in columns),
+                )
+            else:
+                columns = [key for key in target if key != "lease_id"]
+                before = view.snapshot
+                cursor = conn.execute(
+                    "UPDATE simulation_operational_leases_v1 SET " + ",".join(c + "=?" for c in columns)
+                    + " WHERE lease_id=? AND generation=? AND row_revision=? AND proposed_row_digest=?",
+                    tuple(target[c] for c in columns) + (before["lease_id"], before["generation"],
+                                                        before["row_revision"], before["proposed_row_digest"]),
+                )
+                if cursor.rowcount != 1:
+                    raise OperationalLeaseError("actual operational CAS rowcount is not one")
+            conn.execute("COMMIT")  # exactly one activation commit, no SQL ACTIVE phase
+            commit_identity = uuid4().hex
+            self._transactions.commit = commit_identity
+            row = self._operational_row(conn, target["job_id"])
+            if row is None:
+                raise OperationalLeaseError("successful commit reread missing")
+            return _make_ack(view, proposal, commit_identity, row)
+        except (sqlite3.Error, OperationalLeaseError) as error:
+            _invalidate_view(view, "CAS/commit/connection failed")
+            try:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+            raise OperationalLeaseError("operational CAS/commit failed") from error
+
+    def _acquire_operational(self, session: OperationalLeaseSession, *, worker_id: str,
+                             backend: str, lease_ttl_seconds: int) -> SimulationJobLease | None:
+        session._check_ingress("acquire")
+        if worker_id != session.worker_id or backend != "MUJOCO" or lease_ttl_seconds * 1_000_000_000 != session.ttl_ns:
+            raise OperationalLeaseError("acquisition differs from frozen worker policy")
+        self._initialize()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            self._transactions.connection = conn
+            self._transactions.nonce = uuid4().hex
+            self._transactions.commit = None
+            view: LockedLeaseView | None = None
+            try:
+                row = conn.execute("SELECT * FROM simulation_jobs WHERE backend=? AND status=? "
+                                   "ORDER BY priority DESC, created_at ASC LIMIT 1",
+                                   (backend, RuntimeJobStatus.QUEUED.value)).fetchone()
+                if row is None:
+                    conn.execute("ROLLBACK")
+                    return None
+                job = _job_from_row(row)
+                from cloud_edge_robot_arm.simulation_workbench.models import ExperimentDraft
+                draft = ExperimentDraft.model_validate(job.draft)
+                if (job.scenario_id != "S01_NORMAL_STATIC" or draft.input_mode != "RGBD"
+                    or draft.execution_scope != "VISION_CLOSED_LOOP" or draft.job_type == "DATASET_GENERATION"):
+                    raise OperationalLeaseError("unsupported job remains on explicitly selected legacy route")
+                if self._operational_row(conn, job.job_id) is not None:
+                    raise OperationalLeaseError("same operational job cannot reacquire/reissue original")
+                lease_id = "lease-" + uuid4().hex[:16]
+                session.job_id, session.lease_id = job.job_id, lease_id
+                domain = session.domain
+                binding = session.worker.visual_role_binding
+                if binding is None:
+                    raise OperationalLeaseError("actual binding unavailable")
+                original_job = _digest({key: dict(row)[key] for key in (
+                    "job_id", "run_id", "backend", "scenario_id", "draft_json", "timeout_seconds",
+                    "max_attempts", "source_commit", "source_tree_hash", "reproducibility_hash",
+                )})
+                snapshot = {"lease_id": lease_id, "schema": "simulation.operational-leases.v1",
+                    "job_id": job.job_id, "run_id": job.run_id, "worker_id": worker_id,
+                    "attempt": None, "lifecycle": "ACQUIRED", "pid": domain.pid,
+                    "boot_id": domain.boot_id, "process_start_ticks": domain.process_start_ticks,
+                    "epoch": session.epoch, "generation": 0, "row_revision": 0,
+                    "original_job_digest": original_job,
+                    "original_policy_digest": _digest({"job": original_job, "binding": binding.evidence(),
+                                                       "ttl_ns": session.ttl_ns}),
+                    "original_acquisition_json": "{}", "segment_json": "{}", "proposal_id": "",
+                    "operation_sha256": "", "job_snapshot_json": self._job_snapshot(conn, job.job_id),
+                    "proposed_row_digest": "", "durable_phase": "COMMITTED", "terminal_reason": ""}
+                view = _issue_view(session, self, conn, self._transactions.nonce, snapshot, "acquire",
+                                   _digest({"operation": "acquire", "job_id": job.job_id, "lease": lease_id}))
+                now = _now()  # legacy UTC diagnostic/extra veto only, post-guard/BEGIN
+                expires = now + timedelta(seconds=lease_ttl_seconds)
+                cursor = conn.execute("UPDATE simulation_jobs SET status=?, updated_at=?, worker_id=?, "
+                                      "lease_id=?, lease_expires_at=? WHERE job_id=? AND status=?",
+                                      (RuntimeJobStatus.LEASED.value, _dt(now), worker_id, lease_id,
+                                       _dt(expires), job.job_id, RuntimeJobStatus.QUEUED.value))
+                if cursor.rowcount != 1:
+                    raise OperationalLeaseError("actual acquisition job CAS0")
+                conn.execute("INSERT INTO simulation_job_leases(lease_id, job_id, worker_id, acquired_at, "
+                             "expires_at, heartbeat_at, released_at) VALUES(?,?,?,?,?,?,'')",
+                             (lease_id, job.job_id, worker_id, _dt(now), _dt(expires), _dt(now)))
+                self.append_event(job.job_id, event_type="job_leased", source="simulation_runtime",
+                                  payload={"worker_id": worker_id, "lease_id": lease_id},
+                                  previous_status=RuntimeJobStatus.QUEUED.value,
+                                  next_status=RuntimeJobStatus.LEASED.value, reason_code="lease_acquired")
+                view._repository_target = {"job_snapshot_json": self._job_snapshot(conn, job.job_id)}
+                proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                ack = self._commit_operational_proposal(view, proposal)
+                session.confirm_committed(ack)
+                return SimulationJobLease(lease_id=lease_id, job_id=job.job_id, worker_id=worker_id,
+                                          acquired_at=now, expires_at=expires, heartbeat_at=now)
+            finally:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                if view is not None:
+                    _close_view(view)
+                self._transactions.connection = None
+                self._transactions.nonce = None
+                self._transactions.commit = None
+
+    def _writer_call(self, function: Callable[..., Any], args: tuple[Any, ...],
+                     kwargs: dict[str, Any]) -> Any:
+        with self.publication_guard():
+            if getattr(self._transactions, "connection", None) is not None:
+                return function(*args, **kwargs)  # genuine same-transaction internal nested writer
+            self._initialize()
+            name = function.__name__
+            job_id = str(args[1]) if len(args) > 1 else str(kwargs.get("job_id", ""))
+            with self._connect() as lookup:
+                if name in {"heartbeat_lease", "release_lease"}:
+                    lease = lookup.execute("SELECT job_id FROM simulation_job_leases WHERE lease_id=?",
+                                           (job_id,)).fetchone()
+                    job_id = str(lease["job_id"]) if lease is not None else ""
+                row = self._operational_row(lookup, job_id) if job_id else None
+            if row is None:
+                with self._legacy_write_transaction():
+                    return function(*args, **kwargs)
+            if name == "retry_job":
+                raise ValueError("operational_job_not_retryable")
+            if name == "update_status_cas" and kwargs["next_status"] == RuntimeJobStatus.QUEUED:
+                return None
+            session = _current_session(self)
+            safe = name in {"request_cancel", "release_lease", "finish_open_attempts"}
+            if name == "update_status_cas":
+                safe = kwargs["next_status"] in {
+                    RuntimeJobStatus.CANCEL_REQUESTED, RuntimeJobStatus.CANCELLING,
+                    RuntimeJobStatus.CANCELLED, RuntimeJobStatus.INTERRUPTED, RuntimeJobStatus.FAILED,
+                    RuntimeJobStatus.TIMED_OUT,
+                } or (kwargs.get("worker_id", "") not in {"", row["worker_id"]}
+                      or kwargs.get("lease_id", "") not in {"", row["lease_id"]})
+            cleanup = (session is not None and getattr(session, "main_thread", None) == threading.get_ident()
+                       and session.epoch == row["epoch"] and name in {
+                           "append_event", "save_metrics", "save_artifacts", "finish_attempt",
+                           "update_status_cas", "finish_open_attempts",
+                       } and (row["lifecycle"] == "TERMINAL" or row["durable_phase"] != "COMMITTED"))
+            if safe or cleanup:
+                with self._legacy_write_transaction() as conn:
+                    value = function(*args, **kwargs)
+                    self._terminalize_operational(conn, row, name)
+                    return value
+            if session is None:
+                raise OperationalLeaseError("legacy/generic caller cannot mutate operational job")
+            purpose = "heartbeat" if name == "heartbeat_lease" else name
+            with self._operational_transaction(session, job_id=job_id, purpose=purpose,
+                                               operation_sha256=_digest({"name": name, "job": job_id})) as view:
+                session.evaluate_locked(view)
+                if name == "start_attempt" and row["lifecycle"] != "ACQUIRED":
+                    raise OperationalLeaseError("second attempt bind cannot reset lifecycle")
+                value = function(*args, **kwargs)
+                if name == "update_status_cas" and value is None:
+                    raise OperationalLeaseError("actual job status CAS0")
+                conn = view._connection
+                target: dict[str, Any] = {"job_snapshot_json": self._job_snapshot(conn, job_id)}
+                if name == "start_attempt":
+                    target.update(attempt=value.attempt, lifecycle="ATTEMPT_BOUND")
+                elif name == "finish_attempt":
+                    target.update(lifecycle="TERMINAL", terminal_reason="attempt finished")
+                view._repository_target = target
+                proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                ack = self._commit_operational_proposal(view, proposal)
+                session.confirm_committed(ack)
+                return value
+
+    def _terminalize_operational(self, conn: sqlite3.Connection, before: dict[str, Any],
+                                 reason: str) -> None:
+        target = dict(before)
+        target.update(durable_phase="REVOKED", lifecycle="TERMINAL", terminal_reason=reason,
+                      row_revision=int(before["row_revision"]) + 1,
+                      generation=int(before["generation"]) + 1,
+                      job_snapshot_json=self._job_snapshot(conn, before["job_id"]))
+        target["proposed_row_digest"] = _canonical(target)
+        columns = [key for key in target if key != "lease_id"]
+        cursor = conn.execute("UPDATE simulation_operational_leases_v1 SET "
+                              + ",".join(c + "=?" for c in columns)
+                              + " WHERE lease_id=? AND row_revision=? AND generation=?",
+                              tuple(target[c] for c in columns)
+                              + (before["lease_id"], before["row_revision"], before["generation"]))
+        if cursor.rowcount != 1:
+            raise OperationalLeaseError("terminal mutation lost exact generation CAS")
+        _revoke_epoch(before["epoch"], reason)
+
+    @_job_writer
+    def terminate_orphaned_operational_attempts(self) -> list[str]:
+        """Unknown live foreign process is never proof that an epoch is orphaned."""
+        self._require_active_writer()
+        conn = self._transactions.connection
+        rows = conn.execute("SELECT * FROM simulation_operational_leases_v1 WHERE durable_phase='COMMITTED'").fetchall()
+        terminated: list[str] = []
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        from cloud_edge_robot_arm.research.operational_time_v1 import _parse_process_start_ticks
+        for original in rows:
+            row = dict(original)
+            pid = int(row["pid"])
+            orphan = _epoch_has_ended(row["epoch"]) if pid == os.getpid() else False
+            if not orphan and pid != os.getpid():
+                try:
+                    stat = Path(f"/proc/{pid}/stat").read_text()
+                except FileNotFoundError:
+                    orphan = True
+                except OSError:
+                    continue
+                else:
+                    # Fixture identities can be CPU-typed; matching live PID alone remains UNKNOWN.
+                    if row["boot_id"] == boot:
+                        orphan = _parse_process_start_ticks(stat, expected_pid=pid) != int(row["process_start_ticks"])
+            if not orphan:
+                continue
+            job = conn.execute("SELECT status FROM simulation_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
+            if job is None:
+                continue
+            conn.execute("UPDATE simulation_job_attempts SET ended_at=?, result='INTERRUPTED', error=? "
+                         "WHERE job_id=? AND ended_at=''",
+                         (_dt(_now()), "operational epoch ended", row["job_id"]))
+            conn.execute("UPDATE simulation_jobs SET status=?, updated_at=?, error_code=? WHERE job_id=? "
+                         "AND status IN (?,?,?)",
+                         (RuntimeJobStatus.INTERRUPTED.value, _dt(_now()), "operational_epoch_ended", row["job_id"],
+                          RuntimeJobStatus.LEASED.value, RuntimeJobStatus.STARTING.value, RuntimeJobStatus.RUNNING.value))
+            self._terminalize_operational(conn, row, "orphaned epoch ended")
+            conn.execute("UPDATE simulation_operational_leases_v1 SET durable_phase='TERMINATED' WHERE lease_id=?",
+                         (row["lease_id"],))
+            # Exact final durable-phase bytes participate in the canonical row digest.
+            final = self._operational_row(conn, row["job_id"])
+            if final is not None:
+                conn.execute("UPDATE simulation_operational_leases_v1 SET proposed_row_digest=? WHERE lease_id=?",
+                             (_canonical(final), row["lease_id"]))
+            terminated.append(row["job_id"])
+        return terminated
+

@@ -1,0 +1,145 @@
+{
+  "schema": "bigsmall.independent-frozen-final-review.v1",
+  "status": "STOPPED_ON_IMPORTANT_PRODUCT_FINDING",
+  "reviewer": "/root/p6_a_review",
+  "scope": "Stage A software LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO",
+  "final_acceptance": false,
+  "ready_to_merge": false,
+  "stage_A_passed": false,
+  "issues": {
+    "Critical": [],
+    "Important": [
+      {
+        "id": "R150-B1",
+        "severity": "Important",
+        "title": "Terminal commit acknowledgement failure retains SQL SUCCEEDED after withdrawing the accepted artifact files",
+        "paths": {
+          "sqlite": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/sqlite_repository.py",
+          "worker": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/worker.py",
+          "broker": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/operational_lease.py"
+        },
+        "locations": [
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/sqlite_repository.py",
+            "line": 1335,
+            "reason": "Actual COMMIT precedes same-connection row reread and ack issuance"
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/sqlite_repository.py",
+            "line": 1774,
+            "reason": "Terminal dispatcher commits and then asks broker confirmation"
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/worker.py",
+            "line": 522,
+            "reason": "Any finalizer failure withdraws promoted public files and writes accepted=false"
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/sqlite_repository.py",
+            "line": 1995,
+            "reason": "Cleanup recognizes only active residual job statuses"
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/sqlite_repository.py",
+            "line": 2013,
+            "reason": "Ended attempt plus released lease plus terminal SUCCEEDED gives immediate no-op"
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/operational_lease.py",
+            "line": 739,
+            "reason": "Confirmation still rejects original bound expiry, even after successful SQL commit"
+          },
+          {
+            "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round147-p6-foreign-repository-fixture-lock-recovery-20261012/implementation/new19-freeze/sources/operational_lease.py",
+            "line": 708,
+            "reason": "Response consume rechecks both original and proposed bounds"
+          }
+        ],
+        "trigger": "Run an otherwise healthy final SUCCEEDED publication; after terminal COMMIT succeeds, close its actual connection before reread, or cause confirm/consume to timeout or reach the original bound. The real final COMMIT has installed SUCCEEDED job + ended/SUCCEEDED attempt + released lease + success artifact paths and artifact_created event, so subsequent private ack or broker confirmation raises.",
+        "effect": "Worker withdraws public generated files to the epoch-private unconfirmed area and writes an explicit rejected-preview record, but both immediate exception cleanup and poll finally find no active job/open attempt/unreleased lease. They return without terminalizing the operational row or correcting persisted positive job/attempt/event/artifact metadata. SQL/API truth remains SUCCEEDED with paths to withdrawn files despite a rejected final handshake. This is not authority revival, but it exposes a positive terminal publication inconsistent with the required successful confirmation and natural public evidence.",
+        "evidence_boundary": "Deterministic source control flow, independently read frozen bytes. No new fault was executed in this review. Existing acquisition/bind fault tests inject actual COMMIT-close but do not target terminal publication. CPU controlled positive covers the healthy terminal chain only. Test passes do not cover this trigger.",
+        "requested_disposition": "ROOT -> genuine GPT-6-Astra limited new plan; no fix or new execution under R150."
+      }
+    ],
+    "Minor": []
+  },
+  "closure_observations": [
+    {
+      "id": "E1/G1",
+      "status": "provisional source repair observed",
+      "evidence": "Negative-only safe dispatcher requires current expected owner and denies positive status changes without genuine session; positive legal-source challenges and owner mismatches are among actual new19 nodes."
+    },
+    {
+      "id": "E2/G1",
+      "status": "provisional source repair observed",
+      "evidence": "Registered writer/dispatch owners, exact real stack/frame checks, same-job nested allowlist, direct legacy/TLS/cross-job negative tests observed."
+    },
+    {
+      "id": "E3/G2",
+      "status": "acquire/bind residual repair observed; terminal publication unresolved B1",
+      "evidence": "Poll finally owns negative cleanup before session close; orphan scans COMMITTED/REVOKED/TERMINATED. Existing actual commit-close coverage targets acquire/bind, not terminal."
+    },
+    {
+      "id": "E4/G3",
+      "status": "provisional source repair observed",
+      "evidence": "Frozen registry bindings retain original purpose/digest/snapshot/repository/path/conn/thread/nonce; sealed mirrors are checked, mutation/replay tests present."
+    },
+    {
+      "id": "E5/G4",
+      "status": "provisional source repair observed",
+      "evidence": "Reply consume checks original issued proposal generation and both previous/new segment deadlines; equality and after-bound tests both actual-pass nodes."
+    },
+    {
+      "id": "E6",
+      "status": "test mechanism repaired in source; full fixture audit pending",
+      "evidence": "Real queue barrier waits for actual wait-cap cancellation/unusable before releasing the late confirm request; no manual invalidate replaces the timeout trigger."
+    },
+    {
+      "id": "E7",
+      "status": "test mechanism repaired in source; full fixture audit pending",
+      "evidence": "Actual running/open attempt DB backup precedes original finally; ended original session is used for orphan recovery. Durable phases each retain original acquisition and forbid operational retry/requeue."
+    },
+    {
+      "id": "R134 S",
+      "status": "not closed",
+      "evidence": "Healthy staged publication + actual SQL/final files control exists, but terminal post-COMMIT failure leaves inconsistent positive SQL state (B1)."
+    },
+    {
+      "id": "R134 C",
+      "status": "provisional exception-safe owner/connect cleanup observed",
+      "evidence": "TLS/private writer finally cleanup and true acquire/bind fault tests are present; targeted recovery receipt/full resource fixture audit remains unfinished."
+    },
+    {
+      "id": "R134 F",
+      "status": "corrected foreign fixture mechanism observed; independent bridge pending",
+      "evidence": "Other same-DB repo initialized before original guarded open transaction; denial occurs inside genuine original transaction and checks seven tables. Strict test-only bridge supplied but not yet fully independently read."
+    }
+  ],
+  "declined_to_judge": [
+    "Full raw/result/fixture semantic crosschecks and independent text delta bridge review were not completed after B1 halted Track B. Existing hashes/JUnit and source reading cannot replace those pending checks.",
+    "R134 publication S is not closed because B1 is a terminal failure path. C/F and E1–E7/G1–G4 observations below are provisional source/evidence notes, not final acceptance.",
+    "R150 M1 special shared backend log has exact source-supported two-worker interpretation in activated plan. Aggregate calls lack per-instance instrumentation, so exact per-worker attribution is an inference, not new raw evidence.",
+    "Only eligible Stage A ceiling is LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO. B/C/D/P7/P8/native/physical/hardware/formal and whole-P6 acceptance remain declined."
+  ],
+  "actual_evidence_boundary": {
+    "unique_final_pass_nodes": 40,
+    "number_of_runs": 4,
+    "single_40_node_run": false,
+    "original_green20": "19PASS1FAIL retained; foreign constructor initialization lock before original authority scenario",
+    "corrected_foreign": "1PASS",
+    "new19": "19PASS",
+    "positive": "1PASS CPU_CONTROLLED_OUTCOME_NOT_PHYSICS_EVIDENCE, six injected flags only, physical/model/action/quantity outputs not validated",
+    "reviewer_product_tests_run": 0
+  },
+  "protocol": {
+    "R150_authorized_batches": 24,
+    "R150_used_batches": 7,
+    "R150_all_reader_exits": 0,
+    "before_R150_failures": 2,
+    "before_R150_unplanned_replacements": 3,
+    "retrospective_authorization": false
+  },
+  "assessment": "No acceptance. Important terminal publication issue requires a new actual Astra plan. Track B stopped immediately after reporting; remaining review/evidence work is not claimed complete.",
+  "input_pins": "input-pins.json",
+  "read_ledger": "read-ledger.json"
+}

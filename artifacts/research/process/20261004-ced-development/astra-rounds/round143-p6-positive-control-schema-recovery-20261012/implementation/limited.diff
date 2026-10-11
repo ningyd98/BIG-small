@@ -1,0 +1,78 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round143-p6-positive-control-schema-recovery-20261012/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -1580,7 +1580,7 @@
+                 assert before[key] == after[key] == 0.0
+             for key in ("executed_actions", "model_calls", "observation_count"):
+                 assert before[key] == after[key] == 0
+-            assert before["verification_records"] == after["verification_records"] == []
++            assert before["verification_records"] == after["verification_records"] == ()
+             outcomes.append({"original": before, "injected": after})
+             return controlled
+ 
+@@ -1605,9 +1605,12 @@
+         assert lease.lease_id == current.lease_id and lease.released_at is None
+         owner = runtime._operational_owner
+         assert owner is not None and owner.task_window is not None
+-        assert owner.task_origin is not None and not owner.clock._closed
++        app_clock = owner.clock
++        assert owner.task_origin is not None and not app_clock._closed
+         app_export = owner.export_record(owner.task_window)
+         assert app_export["domain"] and app_export["task_origin_event_id"]
++        assert app_export["domain"]["owner_thread_id"] == app_clock.domain.owner_thread_id
++        assert app_clock.domain.owner_thread_id == session.main_thread == threading.get_ident()
+         rows = _rows(repo)
+         assert len(rows) == 1
+         row = rows[0]
+@@ -1618,10 +1621,11 @@
+             _evidence_fields(
+                 {"job": current, "attempt": attempt, "lease": lease, "row": row,
+                  "app_export": app_export, "broker_domain": session.domain,
+-                 "app_owner_thread": owner.thread_id, "main_thread": session.main_thread}
+-            )
+-        )
+-        references.append((session, owner))
++                 "app_owner_thread": app_clock.domain.owner_thread_id,
++                 "main_thread": session.main_thread}
++            )
++        )
++        references.append((session, app_clock))
+         return "observed-real-open-running-authority"
+ 
+     observed, data = _exercise(monkeypatch, tmp_path, check, configure=configure)
+@@ -1629,8 +1633,8 @@
+     assert observed == "observed-real-open-running-authority"
+     assert len(observations) == len(outcomes) == len(wrapper_calls) == len(received) == 1
+     assert calls.count("episode") == calls.count("raw_exit") == calls.count("shutdown") == 1
+-    session, owner = references[0]
+-    assert session._closed and owner.clock._closed
++    session, app_clock = references[0]
++    assert session._closed and app_clock._closed
+     assert not session._broker.is_alive() and not session.join_failed
+     assert session._heartbeat_thread is not None and not session._heartbeat_thread.is_alive()
+     assert worker._operational_lease_session is None
+@@ -1695,11 +1699,13 @@
+ 
+     for key in ("job", "runtime_job"):
+         value = read_json(key)
+-        for field in ("job_id", "run_id", "worker_id", "lease_id", "attempt"):
++        for field in ("job_id", "run_id", "backend", "scenario_id", "control_mode", "seed",
++                      "attempt", "timeout_seconds", "source_commit", "source_tree_hash"):
+             assert value[field] == getattr(current, field)
+         assert value["status"] == "SUCCEEDED"
+-        assert value["completed_at"] == current.completed_at.isoformat()
+-        assert value["artifact_paths"] == current.artifact_paths
++        assert value["real_controller_contacted"] is False
++        assert value["hardware_motion_observed"] is False
++        assert value["hardware_write_operations"] == []
+     result = read_json("result")
+     assert result["status"] == "SUCCEEDED"
+     assert all(result[key] is True for key in (
+@@ -1761,7 +1767,7 @@
+          "resources": {"episode_wrapper_calls": len(wrapper_calls), "original_episode_calls": calls.count("episode"),
+                        "received": len(received), "raw_exit": calls.count("raw_exit"),
+                        "shutdown": calls.count("shutdown"), "session_closed": session._closed,
+-                       "app_clock_closed": owner.clock._closed,
++                       "app_clock_closed": app_clock._closed,
+                        "exercise_asserted_all_owner_clocks_closed": True,
+                        "broker_alive": session._broker.is_alive(),
+                        "heartbeat_alive": session._heartbeat_thread.is_alive(),

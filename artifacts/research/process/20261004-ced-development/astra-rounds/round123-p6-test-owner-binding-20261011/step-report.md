@@ -1,0 +1,1 @@
+R123 local restart owner binding applied from same runtime._operational_owner, original task_window asserted and exported. R122 history unchanged. Original RED belongs to old pre-R122 draft; no rerun. Remaining seven original validation commands await production readiness.

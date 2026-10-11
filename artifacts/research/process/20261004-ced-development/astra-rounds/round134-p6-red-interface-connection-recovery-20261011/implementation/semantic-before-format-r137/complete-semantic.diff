@@ -1,0 +1,1712 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/before/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/semantic-before-format-r137/sources/src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py
+@@ -9,6 +9,7 @@
+ import hashlib
+ import json
+ import math
++import os
+ import queue
+ import sqlite3
+ import sys
+@@ -16,6 +17,7 @@
+ from collections.abc import Iterator, Mapping
+ from contextlib import contextmanager
+ from dataclasses import asdict, dataclass, field
++from pathlib import Path
+ from types import MappingProxyType
+ from typing import TYPE_CHECKING, Any, cast
+ from uuid import uuid4
+@@ -39,9 +41,14 @@
+ _REGISTRY_LOCK = threading.RLock()
+ _SCOPE = threading.local()
+ _SESSIONS: dict[str, OperationalLeaseSession] = {}
+-_VIEWS: dict[int, LockedLeaseView] = {}
+-_PROPOSALS: dict[int, LeaseProposal] = {}
+-_ACKS: dict[int, LeaseCommitAck] = {}
++_VIEWS: dict[int, _IssuedView] = {}
++_VIEW_LIVES: dict[int, _ViewLife] = {}
++_PROPOSALS: dict[int, _IssuedProposal] = {}
++_PROPOSAL_STATES: dict[int, str] = {}
++_ACKS: dict[int, _IssuedAck] = {}
++_ACK_USES: dict[int, bool] = {}
++_REQUESTS: dict[int, _RequestBinding] = {}
++_REPLIES: dict[int, _ReplyBinding] = {}
+ 
+ 
+ class OperationalLeaseError(RuntimeError):
+@@ -59,6 +66,11 @@
+ 
+ 
+ class _Opaque:
++    def __setattr__(self, name: str, value: Any) -> None:
++        if getattr(self, "_sealed", False):
++            raise OperationalLeaseError("issued binding/lifecycle is owner controlled")
++        object.__setattr__(self, name, value)
++
+     def __copy__(self) -> object:
+         raise OperationalLeaseError("live lease capabilities cannot be copied")
+ 
+@@ -85,6 +97,68 @@
+     source_identity: str
+     schema: str = "simulation.operational-lease-observation.v1"
+     stage_label: str = "LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO"
++
++
++@dataclass(frozen=True)
++class _IssuedView:
++    view: LockedLeaseView
++    session: OperationalLeaseSession
++    repository: SQLiteSimulationJobRepository
++    database: Path
++    connection: sqlite3.Connection
++    nonce: str
++    pid: int
++    thread_id: int
++    native_thread_id: int
++    snapshot_json: str
++    purpose: str
++    operation_sha256: str
++
++
++@dataclass
++class _ViewLife:
++    state: str = "OPEN"
++    target_json: str = "{}"
++    proposal: LeaseProposal | None = None
++    ack: LeaseCommitAck | None = None
++
++
++@dataclass(frozen=True)
++class _IssuedProposal:
++    proposal: LeaseProposal
++    view: LockedLeaseView
++    target_json: str
++    segment: _Segment
++    previous: _Segment | None
++    binding: _IssuedView
++
++
++@dataclass(frozen=True)
++class _IssuedAck:
++    ack: LeaseCommitAck
++    proposal: LeaseProposal
++    commit_identity: str
++    row_digest: str
++
++
++@dataclass(frozen=True)
++class _RequestBinding:
++    request: _Request
++    kind: str
++    view: LockedLeaseView | None
++    ack: LeaseCommitAck | None
++    role: str
++    source_reply: _ReplyBinding | None
++
++
++@dataclass(frozen=True)
++class _ReplyBinding:
++    source: _Request
++    kind: str
++    view: _IssuedView
++    proposal: _IssuedProposal
++    generation: int
++    segments: tuple[_Segment, ...]
+ 
+ 
+ class LockedLeaseView(_Opaque):
+@@ -112,11 +186,17 @@
+         self.purpose = purpose
+         self.operation_sha256 = operation_sha256
+         self.state = "OPEN"
+-        self._repository_target: dict[str, Any] = {}
++        self._repository_target: Mapping[str, Any] = MappingProxyType({})
+         self._proposal: LeaseProposal | None = None
+         self._ack: LeaseCommitAck | None = None
+         with _REGISTRY_LOCK:
+-            _VIEWS[id(self)] = self
++            _VIEWS[id(self)] = _IssuedView(
++                self, session, repository, repository.database_path.resolve(), connection, nonce,
++                os.getpid(), self._thread_id, self._native_thread_id, self._snapshot_json,
++                purpose, operation_sha256,
++            )
++            _VIEW_LIVES[id(self)] = _ViewLife()
++        self._sealed = True
+ 
+     @property
+     def snapshot(self) -> Mapping[str, Any]:
+@@ -141,7 +221,9 @@
+         self._previous = previous
+         self.state = "PENDING"
+         with _REGISTRY_LOCK:
+-            _PROPOSALS[id(self)] = self
++            _PROPOSALS[id(self)] = _IssuedProposal(self, view, self._target_json, segment, previous, _view_record(view))
++            _PROPOSAL_STATES[id(self)] = "PENDING"
++        self._sealed = True
+ 
+     @property
+     def target(self) -> Mapping[str, Any]:
+@@ -159,10 +241,97 @@
+         self._row_digest = row_digest
+         self._used = False
+         with _REGISTRY_LOCK:
+-            _ACKS[id(self)] = self
+-
+-
+-@dataclass
++            _ACKS[id(self)] = _IssuedAck(self, proposal, commit_identity, row_digest)
++            _ACK_USES[id(self)] = False
++        self._sealed = True
++
++
++def _view_record(view: LockedLeaseView) -> _IssuedView:
++    with _REGISTRY_LOCK:
++        issued = _VIEWS.get(id(view))
++        life = _VIEW_LIVES.get(id(view))
++        if type(view) is not LockedLeaseView or issued is None or issued.view is not view or life is None:
++            raise OperationalLeaseError("unregistered issued view")
++        if (
++            issued.pid != os.getpid()
++            or view._session is not issued.session
++            or view._repository is not issued.repository
++            or issued.repository.database_path.resolve() != issued.database
++            or view._connection is not issued.connection
++            or view._nonce != issued.nonce
++            or (view._thread_id, view._native_thread_id) != (issued.thread_id, issued.native_thread_id)
++            or view._snapshot_json != issued.snapshot_json
++            or view.purpose != issued.purpose
++            or view.operation_sha256 != issued.operation_sha256
++            or view.state != life.state
++            or view._proposal is not life.proposal
++            or view._ack is not life.ack
++            or dict(view._repository_target) != json.loads(life.target_json)
++        ):
++            raise OperationalLeaseError("issued view binding/lifecycle retargeted")
++        return issued
++
++
++def _proposal_record(proposal: LeaseProposal) -> _IssuedProposal:
++    with _REGISTRY_LOCK:
++        issued = _PROPOSALS.get(id(proposal))
++        if (
++            type(proposal) is not LeaseProposal or issued is None or issued.proposal is not proposal
++            or proposal._view is not issued.view or proposal._target_json != issued.target_json
++            or proposal._segment is not issued.segment or proposal._previous is not issued.previous
++            or proposal.state != _PROPOSAL_STATES.get(id(proposal))
++        ):
++            raise OperationalLeaseError("proposal binding/lifecycle mismatch")
++        bound = issued.binding
++        view = issued.view
++        if (bound.pid != os.getpid() or view._session is not bound.session
++                or view._repository is not bound.repository or bound.repository.database_path.resolve() != bound.database
++                or view._connection is not bound.connection or view._nonce != bound.nonce
++                or view._snapshot_json != bound.snapshot_json or view.purpose != bound.purpose
++                or view.operation_sha256 != bound.operation_sha256
++                or (view._thread_id, view._native_thread_id) != (bound.thread_id, bound.native_thread_id)):
++            raise OperationalLeaseError("proposal original issued view binding changed")
++        return issued
++
++
++def _ack_record(ack: LeaseCommitAck) -> _IssuedAck:
++    with _REGISTRY_LOCK:
++        issued = _ACKS.get(id(ack))
++        if (
++            type(ack) is not LeaseCommitAck or issued is None or issued.ack is not ack
++            or ack._proposal is not issued.proposal or ack._commit_identity != issued.commit_identity
++            or ack._row_digest != issued.row_digest or ack._used != _ACK_USES.get(id(ack))
++        ):
++            raise OperationalLeaseError("ack binding/lifecycle mismatch")
++        _proposal_record(issued.proposal)
++        return issued
++
++
++def _set_view_state(view: LockedLeaseView, state: str) -> None:
++    with _REGISTRY_LOCK:
++        _VIEW_LIVES[id(view)].state = state
++        object.__setattr__(view, "state", state)
++
++
++def _set_proposal_state(proposal: LeaseProposal, state: str) -> None:
++    with _REGISTRY_LOCK:
++        _PROPOSAL_STATES[id(proposal)] = state
++        object.__setattr__(proposal, "state", state)
++
++
++def _seal_repository_target(view: LockedLeaseView, target: Mapping[str, Any]) -> None:
++    issued = _view_record(view)
++    if sys._getframe(1).f_code not in {issued.repository._dispatch_writer.__code__, issued.repository._acquire_operational.__code__}:
++        raise OperationalLeaseError("only the actual repository dispatcher seals a target")
++    if not issued.repository._view_is_current(view):
++        raise OperationalLeaseError("only actual transaction owner seals mutation target")
++    encoded = json.dumps(dict(target), sort_keys=True, allow_nan=False)
++    with _REGISTRY_LOCK:
++        _VIEW_LIVES[id(view)].target_json = encoded
++        object.__setattr__(view, "_repository_target", MappingProxyType(json.loads(encoded)))
++
++
++@dataclass(frozen=True)
+ class _Segment:
+     token: OperationalEventToken
+     event: OperationalBracket
+@@ -190,6 +359,17 @@
+     cancelled: threading.Event = field(default_factory=threading.Event)
+     result: Any = None
+     error: BaseException | None = None
++    source_reply: _ReplyBinding | None = None
++
++
++def _request_record(request: _Request) -> _RequestBinding:
++    with _REGISTRY_LOCK:
++        binding = _REQUESTS.get(id(request))
++        if (binding is None or binding.request is not request or request.kind != binding.kind
++                or request.view is not binding.view or request.ack is not binding.ack
++                or request.role != binding.role or request.source_reply is not binding.source_reply):
++            raise OperationalLeaseError("request relation is not the issued exact operation")
++        return binding
+ 
+ 
+ class OperationalLeaseSession(_Opaque):
+@@ -280,9 +460,9 @@
+     def _view(self, view: LockedLeaseView, *, committed: bool = False) -> None:
+         if type(view) is not LockedLeaseView:
+             raise OperationalLeaseError("caller descriptors cannot register locked views")
+-        with _REGISTRY_LOCK:
+-            if _VIEWS.get(id(view)) is not view or view._session is not self:
+-                raise OperationalLeaseError("unregistered/foreign view")
++        issued = _view_record(view)
++        if issued.session is not self:
++            raise OperationalLeaseError("foreign issued view")
+         if (view._thread_id, view._native_thread_id) != (
+             threading.get_ident(),
+             threading.get_native_id(),
+@@ -305,41 +485,71 @@
+ 
+     def _rpc(self, request: _Request) -> Any:
+         purpose = request.view.purpose if request.view is not None else "confirm"
+-        # Ack carries its true originating purpose for the narrowly scoped heartbeat.
+         if request.ack is not None:
+-            purpose = request.ack._proposal._view.purpose
++            purpose = _ack_record(request.ack).proposal._view.purpose
+         request.role = self._check_ingress(purpose)
+-        self._queue.put(request)  # no registry or database acquisition in broker
+-        if not request.completed.wait(self.wait_cap):
+-            request.cancelled.set()
+-            self.invalidate("RPC wait cap exceeded")
+-            raise OperationalLeaseError("broker request timed out; late reply is blocked")
+-        if request.error is not None:
+-            if isinstance(request.error, OperationalLeaseError):
+-                raise request.error
+-            self.invalidate("broker clock/RPC failure")
+-            raise OperationalLeaseError("broker clock/RPC failed") from request.error
+-        if self._unusable.is_set() or request.cancelled.is_set():
+-            raise OperationalLeaseError("late or revoked broker response")
+-        # Consumption rechecks the original domain via a second broker read, never D_app.
+-        if request.kind != "consume":
+-            check = _Request("consume")
+-            check.role = request.role
++        check: _Request | None = None
++        with _REGISTRY_LOCK:
++            _REQUESTS[id(request)] = _RequestBinding(
++                request, request.kind, request.view, request.ack, request.role, None)
++        try:
++            self._queue.put(request)
++            if not request.completed.wait(self.wait_cap):
++                request.cancelled.set()
++                self.invalidate("RPC wait cap exceeded")
++                raise OperationalLeaseError("broker request timed out; late reply is blocked")
++            if request.error is not None:
++                if isinstance(request.error, OperationalLeaseError):
++                    raise request.error
++                self.invalidate("broker clock/RPC failure")
++                raise OperationalLeaseError("broker clock/RPC failed") from request.error
++            if self._unusable.is_set() or request.cancelled.is_set():
++                raise OperationalLeaseError("late or revoked broker response")
++            with _REGISTRY_LOCK:
++                reply = _REPLIES.get(id(request))
++            if reply is None or reply.source is not request:
++                raise OperationalLeaseError("missing exact operation response binding")
++            check = _Request("consume", source_reply=reply, role=request.role)
++            with _REGISTRY_LOCK:
++                _REQUESTS[id(check)] = _RequestBinding(
++                    check, "consume", None, None, request.role, reply)
+             self._queue.put(check)
+             if not check.completed.wait(self.wait_cap):
+                 check.cancelled.set()
++                request.cancelled.set()
+                 self.invalidate("response consumption timeout")
+                 raise OperationalLeaseError("response consumption timed out")
+-            if check.error is not None or self._unusable.is_set():
+-                self.invalidate("response crossed original segment bound")
++            if (check.error is not None or self._unusable.is_set()
++                    or check.cancelled.is_set() or request.cancelled.is_set()):
++                self.invalidate("response crossed original operation segment bound")
+                 raise OperationalLeaseError("response crossed original lease bound")
+-        return request.result
++            return request.result
++        finally:
++            with _REGISTRY_LOCK:
++                _REQUESTS.pop(id(request), None)
++                _REPLIES.pop(id(request), None)
++                if check is not None:
++                    _REQUESTS.pop(id(check), None)
++
++    def _bind_reply(self, request: _Request, proposal: LeaseProposal) -> None:
++        binding = _request_record(request)
++        if binding.view is None:
++            raise OperationalLeaseError("response needs original issued view")
++        issued_view = _view_record(binding.view)
++        issued_proposal = _proposal_record(proposal)
++        segments = ((issued_proposal.previous, issued_proposal.segment)
++                    if binding.kind in {"propose", "confirm"} and issued_proposal.previous is not None
++                    else (issued_proposal.segment,))
++        with _REGISTRY_LOCK:
++            _REPLIES[id(request)] = _ReplyBinding(
++                request, binding.kind, issued_view, issued_proposal,
++                int(json.loads(issued_proposal.target_json)["generation"]), segments)
+ 
+     def evaluate_locked(self, view: LockedLeaseView) -> OperationalLeaseObservation:
+         self._check_ingress(view.purpose if type(view) is LockedLeaseView else "inspect")
+         self._view(view)
+         observation = self._rpc(_Request("evaluate", view=view))
+-        view.state = "DECIDED"
++        _set_view_state(view, "DECIDED")
+         return cast(OperationalLeaseObservation, observation)
+ 
+     def propose_locked(self, view: LockedLeaseView, *, ttl_ns: int) -> LeaseProposal:
+@@ -350,32 +560,36 @@
+         if view._proposal is not None:
+             raise OperationalLeaseError("view proposal already issued")
+         proposal = self._rpc(_Request("propose", view=view))
+-        view._proposal = proposal
+-        view.state = "CONSUMED"
++        with _REGISTRY_LOCK:
++            _VIEW_LIVES[id(view)].proposal = proposal
++            object.__setattr__(view, "_proposal", proposal)
++        _set_view_state(view, "CONSUMED")
+         return cast(LeaseProposal, proposal)
+ 
+     def confirm_committed(self, ack: LeaseCommitAck) -> OperationalLeaseObservation:
+         if type(ack) is not LeaseCommitAck:
+             raise OperationalLeaseError("unregistered commit descriptor")
+-        with _REGISTRY_LOCK:
+-            if _ACKS.get(id(ack)) is not ack or ack._used:
+-                raise OperationalLeaseError("commit acknowledgement replay")
++        _ack_record(ack)
++        if _ACK_USES[id(ack)]:
++            raise OperationalLeaseError("commit acknowledgement replay")
+         view = ack._proposal._view
+         self._check_ingress(view.purpose)
+         self._view(view, committed=True)
+-        ack._used = True
++        with _REGISTRY_LOCK:
++            _ACK_USES[id(ack)] = True
++            object.__setattr__(ack, "_used", True)
+         return cast(OperationalLeaseObservation, self._rpc(_Request("confirm", view=view, ack=ack)))
+ 
+     def invalidate(self, reason: str) -> None:
+         self._unusable.set()
+         self.cleanup_reason = reason
+         with _REGISTRY_LOCK:
+-            for proposal in _PROPOSALS.values():
+-                if proposal._view._session is self:
+-                    proposal.state = "REVOKED"
+-            for view in _VIEWS.values():
+-                if view._session is self and view.state not in {"CLOSED", "INVALIDATED"}:
+-                    view.state = "INVALIDATED"
++            for issued in _PROPOSALS.values():
++                if issued.binding.session is self:
++                    _set_proposal_state(issued.proposal, "REVOKED")
++            for issued in _VIEWS.values():
++                if issued.session is self and issued.view.state not in {"CLOSED", "INVALIDATED"}:
++                    _set_view_state(issued.view, "INVALIDATED")
+ 
+     def _serve(self) -> None:
+         clock: OperationalClockOwner | None = None
+@@ -389,6 +603,7 @@
+                 except queue.Empty:
+                     continue
+                 try:
++                    _request_record(request)
+                     if request.cancelled.is_set() or self._unusable.is_set():
+                         raise OperationalLeaseError("cancelled/unusable broker epoch")
+                     request.result = self._decide(clock, request)
+@@ -415,20 +630,29 @@
+         return current
+ 
+     def _decide(self, clock: OperationalClockOwner, request: _Request) -> Any:
+-        if request.kind == "consume":
+-            if self._pending is not None:
+-                self._live(clock, self._pending._segment)
+-                if self._pending._previous is not None:
+-                    self._live(clock, self._pending._previous)
+-            elif self._active is not None:
+-                self._live(clock, self._active._segment)
++        binding = _request_record(request)
++        if binding.kind == "consume":
++            reply = binding.source_reply
++            if reply is None or reply.source.cancelled.is_set() or self._unusable.is_set():
++                raise OperationalLeaseError("consumption cancelled or missing original response")
++            with _REGISTRY_LOCK:
++                if _REPLIES.get(id(reply.source)) is not reply:
++                    raise OperationalLeaseError("consumption response relation expired")
++            source = _request_record(reply.source)
++            if source.kind != reply.kind or source.view is not reply.view.view:
++                raise OperationalLeaseError("consumption does not match original operation")
++            _view_record(reply.view.view)
++            proposal = _proposal_record(reply.proposal.proposal)
++            if proposal is not reply.proposal or int(json.loads(proposal.target_json)["generation"]) != reply.generation:
++                raise OperationalLeaseError("consumption generation binding changed")
++            for segment in reply.segments:
++                self._live(clock, segment)
++            if reply.source.cancelled.is_set() or request.cancelled.is_set() or self._unusable.is_set():
++                raise OperationalLeaseError("late consume cannot expose response")
+             return None
+-        view = request.view
+-        if view is None:
+-            raise OperationalLeaseError("missing registered request view")
+-        with _REGISTRY_LOCK:
+-            if _VIEWS.get(id(view)) is not view:
+-                raise OperationalLeaseError("unregistered broker request relation")
++        view = binding.view
++        if view is None or _view_record(view).session is not self:
++            raise OperationalLeaseError("missing original registered request view")
+         row = dict(view.snapshot)
+         self.ingress_history.append(
+             {
+@@ -443,7 +667,9 @@
+             ack = request.ack
+             if ack is None or self._pending is not ack._proposal:
+                 raise OperationalLeaseError("no exact pending proposal for this commit")
++            _ack_record(ack)
+             proposal = ack._proposal
++            _proposal_record(proposal)
+             if proposal.state != "PENDING" or ack._row_digest != _canonical(proposal.target):
+                 raise OperationalLeaseError("committed row digest/proposal mismatch")
+             if proposal._previous is not None:
+@@ -451,7 +677,8 @@
+             current = self._live(clock, proposal._segment)
+             self._active = proposal
+             self._pending = None
+-            proposal.state = "ACTIVE"
++            _set_proposal_state(proposal, "ACTIVE")
++            self._bind_reply(request, proposal)
+             return self._observation(proposal.target, current)
+         if view.purpose != "acquire":
+             active = self._active
+@@ -463,6 +690,7 @@
+                 raise OperationalLeaseError("terminal durable row")
+             current = self._live(clock, active._segment)
+             if request.kind == "evaluate":
++                self._bind_reply(request, active)
+                 return self._observation(row, current)
+         elif self._active is not None or self._original is not None:
+             raise OperationalLeaseError("acquisition origin cannot be reissued")
+@@ -502,6 +730,7 @@
+             _token=_TOKEN, view=view, target=target, segment=segment, previous=previous
+         )
+         self._pending = proposal
++        self._bind_reply(request, proposal)
+         return proposal
+ 
+     def _observation(
+@@ -555,36 +784,41 @@
+         purpose=purpose,
+         operation_sha256=operation_sha256,
+     )
+-    view._repository_target = {}  # only concrete current transaction seals target fields
+     return view
+ 
+ 
+ def _make_ack(
+     view: LockedLeaseView, proposal: LeaseProposal, commit_identity: str, row: Mapping[str, Any]
+ ) -> LeaseCommitAck:
++    issued = _view_record(view)
++    if sys._getframe(1).f_code is not issued.repository._commit_operational_proposal.__code__:
++        raise OperationalLeaseError("only the actual commit owner creates an acknowledgement")
++    _proposal_record(proposal)
+     if view.state != "CONSUMED" or proposal._view is not view or proposal.state != "PENDING":
+         raise OperationalLeaseError("commit does not match one-use proposal")
+     if not view._repository._commit_is_recorded(view, commit_identity):
+         raise OperationalLeaseError("actual successful commit registry required")
+     if dict(row) != dict(proposal.target):
+         raise OperationalLeaseError("committed reread differs from intended canonical row")
+-    view.state = "COMMITTED"
++    _set_view_state(view, "COMMITTED")
+     ack = LeaseCommitAck(
+         _token=_TOKEN,
+         proposal=proposal,
+         commit_identity=commit_identity,
+         row_digest=_canonical(row),
+     )
+-    view._ack = ack
++    with _REGISTRY_LOCK:
++        _VIEW_LIVES[id(view)].ack = ack
++        object.__setattr__(view, "_ack", ack)
+     return ack
+ 
+ 
+ def _invalidate_view(view: LockedLeaseView, reason: str) -> None:
+     with _REGISTRY_LOCK:
+         if view._proposal is not None and view._proposal.state != "ACTIVE":
+-            view._proposal.state = "REVOKED"
++            _set_proposal_state(view._proposal, "REVOKED")
+             view._session.invalidate(reason)
+-        view.state = "INVALIDATED"
++        _set_view_state(view, "INVALIDATED")
+ 
+ 
+ def _close_view(view: LockedLeaseView) -> None:
+@@ -592,12 +826,14 @@
+         if view._proposal is not None and view._proposal.state != "ACTIVE":
+             _invalidate_view(view, "unconfirmed proposal scope exit")
+         elif view._proposal is None or view.state == "INVALIDATED":
+-            view.state = "INVALIDATED"
++            _set_view_state(view, "INVALIDATED")
+         else:
+-            view.state = "CLOSED"
++            _set_view_state(view, "CLOSED")
+         _VIEWS.pop(id(view), None)
++        _VIEW_LIVES.pop(id(view), None)
+         if view._ack is not None:
+             _ACKS.pop(id(view._ack), None)
++            _ACK_USES.pop(id(view._ack), None)
+ 
+ 
+ def _current_session(repository: SQLiteSimulationJobRepository) -> OperationalLeaseSession | None:
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/before/src/cloud_edge_robot_arm/simulation_runtime/repository.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/semantic-before-format-r137/sources/src/cloud_edge_robot_arm/simulation_runtime/repository.py
+@@ -6,9 +6,10 @@
+ 
+ from __future__ import annotations
+ 
++from collections.abc import Callable
+ from contextlib import AbstractContextManager
+ from datetime import datetime
+-from typing import Protocol
++from typing import TYPE_CHECKING, Any, Protocol
+ 
+ from cloud_edge_robot_arm.simulation_runtime.models import (
+     RuntimeJobStatus,
+@@ -18,6 +19,9 @@
+     SimulationJobLease,
+     SimulationJobRecord,
+ )
++
++if TYPE_CHECKING:
++    from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseSession
+ 
+ 
+ class SimulationJobRepository(Protocol):
+@@ -82,6 +86,15 @@
+ 
+     def terminate_orphaned_operational_attempts(self) -> list[str]: ...
+ 
++    def cleanup_operational_session(self, job_id: str, *, session: OperationalLeaseSession) -> None: ...
++
++    def finalize_operational_publication(
++        self, job_id: str, *, attempt: int, terminal: RuntimeJobStatus,
++        artifact_paths: dict[str, str], metrics: list[dict[str, object]],
++        publish: Callable[[SimulationJobRecord, dict[str, Any]], dict[str, str]],
++        validate: Callable[[], None],
++    ) -> dict[str, str]: ...
++
+     def expire_leases(self) -> list[str]: ...
+ 
+     def append_event(
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/before/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/semantic-before-format-r137/sources/src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py
+@@ -11,11 +11,12 @@
+ import json
+ import os
+ import sqlite3
++import sys
+ import threading
+ from _thread import RLock
+ from collections.abc import Callable, Iterator
+ from contextlib import contextmanager
+-from dataclasses import replace
++from dataclasses import dataclass, replace
+ from datetime import UTC, datetime, timedelta
+ from functools import wraps
+ from pathlib import Path
+@@ -44,7 +45,10 @@
+     _invalidate_view,
+     _issue_view,
+     _make_ack,
++    _proposal_record,
+     _revoke_epoch,
++    _seal_repository_target,
++    _view_record,
+ )
+ from cloud_edge_robot_arm.simulation_runtime.state_machine import validate_transition
+ 
+@@ -52,6 +56,36 @@
+ _PUBLICATION_REGISTRY_LOCK = threading.Lock()
+ _PUBLICATION_LOCKS: dict[tuple[int, str], RLock] = {}
+ _PUBLICATION_LOCAL = threading.local()
++_WRITER_REGISTRY_LOCK = threading.RLock()
++_WRITER_OWNERS: dict[str, _WriterOwner] = {}
++_WRITER_STACKS: dict[str, list[Callable[..., Any]]] = {}
++_DISPATCH_OWNERS: dict[int, _DispatchOwner] = {}
++_WRITER_FUNCTIONS: dict[str, Callable[..., Any]] = {}
++_DISPATCH_CODES: set[Any] = set()
++
++
++@dataclass(frozen=True)
++class _DispatchOwner:
++    repository: SQLiteSimulationJobRepository
++    function: Callable[..., Any]
++    job_id: str
++    pid: int
++    thread_id: int
++    native_thread_id: int
++
++
++@dataclass(frozen=True)
++class _WriterOwner:
++    repository: SQLiteSimulationJobRepository
++    database: Path
++    connection: sqlite3.Connection
++    nonce: str
++    pid: int
++    thread_id: int
++    native_thread_id: int
++    job_id: str
++    operation: str
++    dispatch: _DispatchOwner | None
+ 
+ 
+ def _job_writer[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+@@ -62,6 +96,8 @@
+         repository = cast(SQLiteSimulationJobRepository, args[0])
+         return cast(R, repository._writer_call(function, args, kwargs))
+ 
++    _WRITER_FUNCTIONS[function.__name__] = function
++    _DISPATCH_CODES.add(guarded.__code__)
+     return guarded
+ 
+ 
+@@ -379,6 +415,7 @@
+         # CANCEL_REQUESTED solely in the response object.
+         return self.get_job(job_id)
+ 
++    @_job_writer
+     def acquire_lease(
+         self, *, worker_id: str, backend: str, lease_ttl_seconds: int
+     ) -> SimulationJobLease | None:
+@@ -992,46 +1029,138 @@
+             error_message="",
+         )
+ 
++    def _writer_binding(self) -> _WriterOwner:
++        owner = getattr(self._transactions, "writer_owner", None)
++        with _WRITER_REGISTRY_LOCK:
++            if not isinstance(owner, _WriterOwner) or _WRITER_OWNERS.get(owner.nonce) is not owner:
++                raise OperationalLeaseError("private transaction owner registration required")
++            if (owner.repository is not self or owner.database != self.database_path.resolve()
++                    or (owner.pid, owner.thread_id, owner.native_thread_id)
++                    != (os.getpid(), threading.get_ident(), threading.get_native_id())
++                    or getattr(self._transactions, "connection", None) is not owner.connection
++                    or getattr(self._transactions, "nonce", None) != owner.nonce
++                    or (owner.pid, str(owner.database)) not in getattr(_PUBLICATION_LOCAL, "held", set())):
++                raise OperationalLeaseError("actual writer/guard/repository/thread binding mismatch")
++            if owner.dispatch is not None and _DISPATCH_OWNERS.get(id(owner.dispatch)) is not owner.dispatch:
++                raise OperationalLeaseError("writer originating dispatcher ended")
++            return owner
++
+     def _require_active_writer(self) -> None:
+-        if getattr(self._transactions, "connection", None) is None:
+-            raise OperationalLeaseError("unlocked helper requires actual guarded writer")
++        owner = self._writer_binding()
++        if not owner.connection.in_transaction:
++            raise OperationalLeaseError("writer requires original real open transaction")
++        stack = _WRITER_STACKS.get(owner.nonce, [])
++        caller = sys._getframe(1).f_code
++        parent = sys._getframe(2).f_code
++        if stack and caller is stack[-1].__code__:
++            return
++        helper_parents = {
++            self._update_status_cas_unlocked.__code__: "update_status_cas",
++            self._request_cancel_unlocked.__code__: "request_cancel",
++            self._retry_job_unlocked.__code__: "retry_job",
++            self._acquire_lease_unlocked.__code__: "acquire_lease",
++        }
++        expected = helper_parents.get(caller)
++        if expected and stack and stack[-1] is _WRITER_FUNCTIONS[expected] and parent is stack[-1].__code__:
++            return
++        if caller is self._terminalize_operational.__code__ and parent in {
++                self._dispatch_writer.__code__, self._cleanup_operational_row.__code__}:
++            return
++        if caller is self._cleanup_operational_row.__code__ and stack and stack[-1].__name__ in {
++                "cleanup_operational_session", "terminate_orphaned_operational_attempts"}:
++            return
++        raise OperationalLeaseError("private helper was not called by its registered writer")
++
++    def _register_writer(self, connection: sqlite3.Connection, nonce: str, job_id: str, operation: str) -> _WriterOwner:
++        allowed = {self._legacy_write_transaction.__wrapped__.__code__,
++                   self._operational_transaction.__wrapped__.__code__, self._acquire_operational.__code__}
++        if sys._getframe(1).f_code not in allowed:
++            raise OperationalLeaseError("only concrete guarded transaction entry registers writer")
++        dispatch = getattr(self._transactions, "dispatch", None)
++        if dispatch is not None and _DISPATCH_OWNERS.get(id(dispatch)) is not dispatch:
++            raise OperationalLeaseError("unregistered originating dispatcher")
++        if dispatch is None and operation != "inspect":
++            session = _current_session(self)
++            if session is None:
++                raise OperationalLeaseError("transaction entry lacks actual worker scope")
++            session._check_ingress(operation)
++        key = (os.getpid(), str(self.database_path.resolve()))
++        if key not in getattr(_PUBLICATION_LOCAL, "held", set()) or not connection.in_transaction:
++            raise OperationalLeaseError("transaction registration requires true guard then BEGIN")
++        if getattr(self._transactions, "writer_owner", None) is not None:
++            raise OperationalLeaseError("writer registration cannot replace another transaction")
++        owner = _WriterOwner(self, self.database_path.resolve(), connection, nonce, os.getpid(),
++                             threading.get_ident(), threading.get_native_id(), job_id, operation, dispatch)
++        with _WRITER_REGISTRY_LOCK:
++            _WRITER_OWNERS[nonce] = owner
++            _WRITER_STACKS[nonce] = [dispatch.function] if dispatch is not None else []
++        self._transactions.connection = connection
++        self._transactions.nonce = nonce
++        self._transactions.commit = None
++        self._transactions.writer_owner = owner
++        return owner
++
++    def _unregister_writer(self, owner: _WriterOwner) -> None:
++        with _WRITER_REGISTRY_LOCK:
++            if _WRITER_OWNERS.get(owner.nonce) is owner:
++                _WRITER_OWNERS.pop(owner.nonce, None)
++                _WRITER_STACKS.pop(owner.nonce, None)
++            if getattr(self._transactions, "writer_owner", None) is owner:
++                self._transactions.connection = None
++                self._transactions.nonce = None
++                self._transactions.commit = None
++                self._transactions.writer_owner = None
++
++    def _finish_writer(self, owner: _WriterOwner, view: LockedLeaseView | None = None) -> None:
++        original_error = sys.exception()
++        try:
++            try:
++                if owner.connection.in_transaction:
++                    owner.connection.execute("ROLLBACK")
++            except sqlite3.Error:
++                if view is not None:
++                    _invalidate_view(view, "original connection unavailable on transaction exit")
++            finally:
++                if view is not None:
++                    _close_view(view)
++        except BaseException:
++            if original_error is None:
++                raise
++            # A secondary view cleanup fault cannot hide the original commit/ack error.
++        finally:
++            self._unregister_writer(owner)
+ 
+     def _txn_is_current(self, connection: sqlite3.Connection, nonce: str) -> bool:
+-        return (
+-            getattr(self._transactions, "connection", None) is connection
+-            and getattr(self._transactions, "nonce", None) == nonce
+-        )
++        try:
++            owner = self._writer_binding()
++        except OperationalLeaseError:
++            return False
++        return owner.connection is connection and owner.nonce == nonce
+ 
+     def _view_is_current(self, view: LockedLeaseView) -> bool:
+         return self._txn_is_current(view._connection, view._nonce)
+ 
+     def _commit_is_recorded(self, view: LockedLeaseView, identity: str) -> bool:
+-        return (
+-            self._view_is_current(view) and getattr(self._transactions, "commit", None) == identity
+-        )
++        return self._view_is_current(view) and getattr(self._transactions, "commit", None) == identity
+ 
+     @contextmanager
+     def _legacy_write_transaction(self) -> Iterator[sqlite3.Connection]:
+-        self._initialize()
++        dispatch = getattr(self._transactions, "dispatch", None)
++        if dispatch is None or _DISPATCH_OWNERS.get(id(dispatch)) is not dispatch:
++            raise OperationalLeaseError("private legacy transaction requires actual dispatcher")
+         if getattr(self._transactions, "connection", None) is not None:
+-            yield self._transactions.connection
++            owner = self._writer_binding()
++            yield owner.connection
+             return
++        self._initialize()
+         with self._connect() as connection:
+             connection.execute("BEGIN IMMEDIATE")
+-            self._transactions.connection = connection
+-            self._transactions.nonce = uuid4().hex
+-            self._transactions.commit = None
++            owner = self._register_writer(connection, uuid4().hex, dispatch.job_id, dispatch.function.__name__)
+             try:
+                 yield connection
+                 connection.execute("COMMIT")
+-            except BaseException:
+-                if connection.in_transaction:
+-                    connection.execute("ROLLBACK")
+-                raise
+             finally:
+-                self._transactions.connection = None
+-                self._transactions.nonce = None
+-                self._transactions.commit = None
++                self._finish_writer(owner)
+ 
+     def _operational_row(self, conn: sqlite3.Connection, job_id: str) -> dict[str, Any] | None:
+         row = conn.execute(
+@@ -1071,9 +1200,7 @@
+             with self._connect() as conn:
+                 conn.execute("BEGIN IMMEDIATE")
+                 nonce = uuid4().hex
+-                self._transactions.connection = conn
+-                self._transactions.nonce = nonce
+-                self._transactions.commit = None
++                owner = self._register_writer(conn, nonce, str(job_id), purpose)
+                 view: LockedLeaseView | None = None
+                 try:
+                     row = self._operational_row(conn, str(job_id))
+@@ -1087,17 +1214,7 @@
+                         _invalidate_view(view, "operational transaction exception")
+                     raise
+                 finally:
+-                    try:
+-                        if conn.in_transaction:
+-                            conn.execute("ROLLBACK")
+-                    except sqlite3.Error:
+-                        if view is not None:
+-                            _invalidate_view(view, "real connection closed")
+-                    if view is not None:
+-                        _close_view(view)
+-                    self._transactions.connection = None
+-                    self._transactions.nonce = None
+-                    self._transactions.commit = None
++                    self._finish_writer(owner, view)
+ 
+     def _validate_operational_row(
+         self, conn: sqlite3.Connection, session: OperationalLeaseSession, row: dict[str, Any]
+@@ -1131,8 +1248,10 @@
+     def _commit_operational_proposal(
+         self, view: LockedLeaseView, proposal: LeaseProposal
+     ) -> LeaseCommitAck:
+-        session = view._session
+-        session._check_ingress(view.purpose)
++        issued = _view_record(view)
++        _proposal_record(proposal)
++        session = issued.session
++        session._check_ingress(issued.purpose)
+         if (
+             not self._view_is_current(view)
+             or view.state != "CONSUMED"
+@@ -1203,9 +1322,7 @@
+         self._initialize()
+         with self._connect() as conn:
+             conn.execute("BEGIN IMMEDIATE")
+-            self._transactions.connection = conn
+-            self._transactions.nonce = uuid4().hex
+-            self._transactions.commit = None
++            owner = self._register_writer(conn, uuid4().hex, "", "acquire_lease")
+             view: LockedLeaseView | None = None
+             try:
+                 row = conn.execute(
+@@ -1235,6 +1352,11 @@
+                     )
+                 lease_id = "lease-" + uuid4().hex[:16]
+                 session.job_id, session.lease_id = job.job_id, lease_id
++                bound_owner = replace(owner, job_id=job.job_id)
++                with _WRITER_REGISTRY_LOCK:
++                    _WRITER_OWNERS[owner.nonce] = bound_owner
++                self._transactions.writer_owner = bound_owner
++                owner = bound_owner
+                 domain = session.domain
+                 binding = session.worker.visual_role_binding
+                 if binding is None:
+@@ -1327,9 +1449,7 @@
+                     next_status=RuntimeJobStatus.LEASED.value,
+                     reason_code="lease_acquired",
+                 )
+-                view._repository_target = {
+-                    "job_snapshot_json": self._job_snapshot(conn, job.job_id)
+-                }
++                _seal_repository_target(view, {"job_snapshot_json": self._job_snapshot(conn, job.job_id)})
+                 proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                 ack = self._commit_operational_proposal(view, proposal)
+                 session.confirm_committed(ack)
+@@ -1342,30 +1462,82 @@
+                     heartbeat_at=now,
+                 )
+             finally:
+-                if conn.in_transaction:
+-                    conn.execute("ROLLBACK")
+-                if view is not None:
+-                    _close_view(view)
+-                self._transactions.connection = None
+-                self._transactions.nonce = None
+-                self._transactions.commit = None
++                self._finish_writer(owner, view)
+ 
+     def _writer_call(
+         self, function: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
+     ) -> Any:
++        if (sys._getframe(1).f_code not in _DISPATCH_CODES
++                or _WRITER_FUNCTIONS.get(function.__name__) is not function):
++            raise OperationalLeaseError("private dispatcher requires actual registered public writer")
++        name = function.__name__
++        job_id = str(args[1]) if len(args) > 1 else str(kwargs.get("job_id", ""))
+         with self.publication_guard():
+             if getattr(self._transactions, "connection", None) is not None:
+-                return function(*args, **kwargs)  # genuine same-transaction internal nested writer
+-            self._initialize()
+-            name = function.__name__
+-            job_id = str(args[1]) if len(args) > 1 else str(kwargs.get("job_id", ""))
+-            with self._connect() as lookup:
+-                if name in {"heartbeat_lease", "release_lease"}:
+-                    lease = lookup.execute(
+-                        "SELECT job_id FROM simulation_job_leases WHERE lease_id=?", (job_id,)
+-                    ).fetchone()
+-                    job_id = str(lease["job_id"]) if lease is not None else ""
+-                row = self._operational_row(lookup, job_id) if job_id else None
++                owner = self._writer_binding()
++                stack = _WRITER_STACKS[owner.nonce]
++                caller = sys._getframe(2).f_code
++                actual_parent = stack[-1] if stack else None
++                same_job = job_id == owner.job_id or (not owner.job_id and owner.operation in {
++                    "create_job", "acquire_lease", "expire_leases", "terminate_orphaned_operational_attempts"})
++                event_callers = {f.__code__ for f in stack}
++                event_callers.update({self._update_status_cas_unlocked.__code__,
++                                     self._request_cancel_unlocked.__code__, self._retry_job_unlocked.__code__,
++                                     self._acquire_lease_unlocked.__code__, self._acquire_operational.__code__})
++                allowed = name == "append_event" and caller in event_callers and same_job
++                if owner.operation == "expire_leases" and name == "update_status_cas":
++                    allowed = caller is _WRITER_FUNCTIONS["expire_leases"].__code__ and kwargs.get("next_status") == RuntimeJobStatus.INTERRUPTED
++                if owner.operation == "request_cancel" and name == "update_status_cas":
++                    allowed = (same_job and caller is self._request_cancel_unlocked.__code__
++                               and kwargs.get("next_status") in {RuntimeJobStatus.CANCEL_REQUESTED, RuntimeJobStatus.CANCELLED})
++                if owner.operation == "finalize_operational_publication":
++                    subordinate = (name in {"save_metrics", "save_artifacts", "finish_attempt", "update_status_cas", "release_lease", "append_event"}
++                                   and caller is _WRITER_FUNCTIONS[owner.operation].__code__)
++                    allowed = allowed or subordinate
++                    if name == "release_lease":
++                        allowed = allowed and job_id == _current_session(self).lease_id
++                    else:
++                        allowed = allowed and same_job
++                if not allowed or actual_parent is None:
++                    raise OperationalLeaseError("nested public mutation is not a registered same-job subordinate")
++                if name != "append_event" and owner.operation not in {"expire_leases", "request_cancel", "finalize_operational_publication"}:
++                    raise OperationalLeaseError("nested writer allowlist is event-only")
++                stack.append(function)
++                try:
++                    return function(*args, **kwargs)
++                finally:
++                    stack.pop()
++            if getattr(self._transactions, "dispatch", None) is not None:
++                raise OperationalLeaseError("root dispatcher cannot be recursively replaced")
++            dispatch = _DispatchOwner(self, function, job_id, os.getpid(), threading.get_ident(), threading.get_native_id())
++            with _WRITER_REGISTRY_LOCK:
++                _DISPATCH_OWNERS[id(dispatch)] = dispatch
++            self._transactions.dispatch = dispatch
++            try:
++                return self._dispatch_writer(function, args, kwargs, job_id)
++            finally:
++                with _WRITER_REGISTRY_LOCK:
++                    _DISPATCH_OWNERS.pop(id(dispatch), None)
++                if getattr(self._transactions, "dispatch", None) is dispatch:
++                    self._transactions.dispatch = None
++
++    def _dispatch_writer(self, function: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], job_id: str) -> Any:
++        self._initialize()
++        name = function.__name__
++        if name == "acquire_lease":
++            return function(*args, **kwargs)  # Acquisition itself owns guard -> BEGIN -> selection.
++        with self._connect() as lookup:
++            if name in {"heartbeat_lease", "release_lease"}:
++                lease = lookup.execute("SELECT job_id FROM simulation_job_leases WHERE lease_id=?", (job_id,)).fetchone()
++                job_id = str(lease["job_id"]) if lease is not None else ""
++            row = self._operational_row(lookup, job_id) if job_id else None
++        dispatch = self._transactions.dispatch
++        bound_dispatch = replace(dispatch, job_id=job_id)
++        with _WRITER_REGISTRY_LOCK:
++            _DISPATCH_OWNERS.pop(id(dispatch), None)
++            _DISPATCH_OWNERS[id(bound_dispatch)] = bound_dispatch
++        self._transactions.dispatch = bound_dispatch
++        try:
+             if row is None:
+                 with self._legacy_write_transaction() as connection:
+                     value = function(*args, **kwargs)
+@@ -1373,88 +1545,181 @@
+                         for expired_job in value:
+                             operational = self._operational_row(connection, expired_job)
+                             if operational is not None:
+-                                self._terminalize_operational(
+-                                    connection, operational, "legacy UTC expiry veto"
+-                                )
++                                self._terminalize_operational(connection, operational, "legacy UTC expiry veto")
+                     return value
+             if name == "retry_job":
+                 raise ValueError("operational_job_not_retryable")
+             if name == "update_status_cas" and kwargs["next_status"] == RuntimeJobStatus.QUEUED:
+                 return None
++            negative_results = {"INTERRUPTED", "CANCELLED", "TIMED_OUT", "FAILED"}
++            safe = name in {"request_cancel", "release_lease", "cleanup_operational_session"}
++            if name in {"finish_open_attempts", "finish_attempt"}:
++                safe = kwargs.get("result") in negative_results and not kwargs.get("artifact_paths", {})
++            if name == "update_status_cas":
++                safe = kwargs["next_status"].value in negative_results | {"CANCEL_REQUESTED", "CANCELLING"}
++            if safe:
++                with self._legacy_write_transaction() as conn:
++                    before = self._operational_row(conn, job_id)
++                    if before != row:
++                        raise OperationalLeaseError("negative cleanup original row changed")
++                    if name == "release_lease" and str(args[1]) != row['lease_id']:
++                        raise OperationalLeaseError("negative release requires exact original lease")
++                    if name == "finish_open_attempts":
++                        open_attempts = conn.execute("SELECT * FROM simulation_job_attempts "
++                                                     "WHERE job_id=? AND ended_at=''", (job_id,)).fetchall()
++                        if any(a['worker_id'] != row['worker_id'] or a['attempt'] != row['attempt'] for a in open_attempts):
++                            raise OperationalLeaseError("negative finish-open requires only the exact original attempt")
++                    if name == "finish_attempt":
++                        attempt_row = conn.execute("SELECT * FROM simulation_job_attempts "
++                                                   "WHERE job_id=? AND attempt=?", (job_id, kwargs['attempt'])).fetchone()
++                        if attempt_row is None or attempt_row['ended_at']:
++                            return None
++                        if attempt_row['worker_id'] != row['worker_id'] or kwargs['attempt'] != row['attempt']:
++                            raise OperationalLeaseError("negative finish requires exact original open attempt")
++                    if name == "update_status_cas":
++                        current = self.get_job(job_id)
++                        if kwargs['expected'] != current.status:
++                            return None
++                        if kwargs.get('expected_worker_id', current.worker_id) != current.worker_id or kwargs.get('expected_lease_id', current.lease_id) != current.lease_id:
++                            return None
++                        if kwargs.get('worker_id', '') not in {'', current.worker_id} or kwargs.get('lease_id', '') not in {'', current.lease_id}:
++                            raise OperationalLeaseError("negative CAS cannot replace actual owner")
++                        kwargs = dict(kwargs, expected_worker_id=current.worker_id, expected_lease_id=current.lease_id)
++                    value = function(*args, **kwargs)
++                    if name != "cleanup_operational_session" and (name != "update_status_cas" or value is not None):
++                        self._terminalize_operational(conn, row, name)
++                    return value
+             session = _current_session(self)
+-            safe = name in {"request_cancel", "release_lease"}
+-            if name == "finish_open_attempts":
+-                safe = kwargs.get("result") in {"INTERRUPTED", "CANCELLED", "TIMED_OUT", "FAILED"}
+-            if name == "update_status_cas":
+-                safe = kwargs["next_status"] in {
+-                    RuntimeJobStatus.CANCEL_REQUESTED,
+-                    RuntimeJobStatus.CANCELLING,
+-                    RuntimeJobStatus.CANCELLED,
+-                    RuntimeJobStatus.INTERRUPTED,
+-                    RuntimeJobStatus.FAILED,
+-                    RuntimeJobStatus.TIMED_OUT,
+-                } or (
+-                    kwargs.get("worker_id", "") not in {"", row["worker_id"]}
+-                    or kwargs.get("lease_id", "") not in {"", row["lease_id"]}
+-                )
+-            cleanup = (
+-                session is not None
+-                and getattr(session, "main_thread", None) == threading.get_ident()
+-                and session.epoch == row["epoch"]
+-                and name
+-                in {
+-                    "append_event",
+-                    "save_metrics",
+-                    "save_artifacts",
+-                    "finish_attempt",
+-                    "update_status_cas",
+-                    "finish_open_attempts",
+-                }
+-                and (row["lifecycle"] == "TERMINAL" or row["durable_phase"] != "COMMITTED")
+-            )
+-            if safe or cleanup:
+-                with self._legacy_write_transaction() as conn:
+-                    value = function(*args, **kwargs)
+-                    self._terminalize_operational(conn, row, name)
+-                    return value
+             if session is None:
+                 raise OperationalLeaseError("legacy/generic caller cannot mutate operational job")
+-            if (
+-                name == "heartbeat_lease"
+-                and kwargs["lease_ttl_seconds"] * 1_000_000_000 != session.ttl_ns
+-            ):
++            if name == "heartbeat_lease" and kwargs['lease_ttl_seconds'] * 1_000_000_000 != session.ttl_ns:
+                 raise OperationalLeaseError("heartbeat cannot change original TTL policy")
+             purpose = "heartbeat" if name == "heartbeat_lease" else name
+-            with self._operational_transaction(
+-                session,
+-                job_id=job_id,
+-                purpose=purpose,
+-                operation_sha256=_digest({"name": name, "job": job_id}),
+-            ) as view:
++            with self._operational_transaction(session, job_id=job_id, purpose=purpose,
++                    operation_sha256=_digest({'name': name, 'job': job_id})) as view:
+                 session.evaluate_locked(view)
+-                if name == "start_attempt" and row["lifecycle"] != "ACQUIRED":
++                if name == "start_attempt" and row['lifecycle'] != 'ACQUIRED':
+                     raise OperationalLeaseError("second attempt bind cannot reset lifecycle")
+-                value = function(*args, **kwargs)
++                if name == "finalize_operational_publication":
++                    self._transactions.publication_view = view
++                    try:
++                        value = function(*args, **kwargs)
++                    finally:
++                        self._transactions.publication_view = None
++                else:
++                    value = function(*args, **kwargs)
+                 if name == "update_status_cas" and value is None:
+                     raise OperationalLeaseError("actual job status CAS0")
+-                conn = view._connection
+-                target: dict[str, Any] = {"job_snapshot_json": self._job_snapshot(conn, job_id)}
++                target: dict[str, Any] = {'job_snapshot_json': self._job_snapshot(view._connection, job_id)}
+                 if name == "start_attempt":
+-                    target.update(attempt=value.attempt, lifecycle="ATTEMPT_BOUND")
+-                elif name == "finish_attempt":
+-                    target.update(lifecycle="TERMINAL", terminal_reason="attempt finished")
+-                view._repository_target = target
++                    target.update(attempt=value.attempt, lifecycle='ATTEMPT_BOUND')
++                elif name in {'finish_attempt', 'finalize_operational_publication'}:
++                    target.update(lifecycle='TERMINAL', terminal_reason='owned publication completed' if name == 'finalize_operational_publication' else 'attempt finished')
++                _seal_repository_target(view, target)
+                 proposal = session.propose_locked(view, ttl_ns=session.ttl_ns)
+                 ack = self._commit_operational_proposal(view, proposal)
+                 session.confirm_committed(ack)
+                 return value
++        finally:
++            with _WRITER_REGISTRY_LOCK:
++                _DISPATCH_OWNERS.pop(id(bound_dispatch), None)
++            if getattr(self._transactions, "dispatch", None) is bound_dispatch:
++                self._transactions.dispatch = dispatch
++                with _WRITER_REGISTRY_LOCK:
++                    _DISPATCH_OWNERS[id(dispatch)] = dispatch
++
++    @_job_writer
++    def finalize_operational_publication(
++        self, job_id: str, *, attempt: int, terminal: RuntimeJobStatus,
++        artifact_paths: dict[str, str], metrics: list[dict[str, object]],
++        publish: Callable[[SimulationJobRecord, dict[str, Any]], dict[str, str]],
++        validate: Callable[[], None],
++    ) -> dict[str, str]:
++        """Preview exact final rows, write while live, then install that same frozen target."""
++        self._require_active_writer()
++        owner = self._writer_binding()
++        view = self._transactions.publication_view
++        issued = _view_record(view)
++        session = issued.session
++        if owner.operation != "finalize_operational_publication" or owner.job_id != job_id:
++            raise OperationalLeaseError("publication requires its actual root writer")
++        current = self.get_job(job_id)
++        expected = RuntimeJobStatus.RUNNING if terminal == RuntimeJobStatus.BLOCKED_BY_ENV else RuntimeJobStatus.FINALIZING
++        if (current.status != expected or current.attempt != attempt
++                or view.snapshot["attempt"] != attempt or terminal not in {
++                    RuntimeJobStatus.SUCCEEDED, RuntimeJobStatus.FAILED, RuntimeJobStatus.BLOCKED_BY_ENV}):
++            raise OperationalLeaseError("publication requires the actual live finalizing attempt")
++        validate()
++        session.evaluate_locked(view)
++        conn = owner.connection
++        tables = ("simulation_metrics", "simulation_artifacts", "simulation_job_events",
++                  "simulation_job_attempts", "simulation_job_leases", "simulation_jobs")
++        conn.execute("SAVEPOINT operational_publication_preview")
++        try:
++            self.save_metrics(job_id, metrics)
++            self.save_artifacts(job_id, artifact_paths)
++            self.finish_attempt(job_id, attempt=attempt, result=terminal.value, error="", artifact_paths=artifact_paths)
++            final = self.update_status_cas(job_id, expected=expected,
++                                          next_status=terminal, reason_code=terminal.value.lower(),
++                                          worker_id=current.worker_id, lease_id=current.lease_id,
++                                          expected_worker_id=current.worker_id, expected_lease_id=current.lease_id)
++            if final is None:
++                raise OperationalLeaseError("publication preview exact job CAS0")
++            self.append_event(job_id, event_type="artifact_created", source="simulation_runtime", payload=dict(artifact_paths))
++            self.release_lease(current.lease_id)
++            frozen = {table: tuple(dict(row) for row in conn.execute("SELECT * FROM " + table + " WHERE job_id=?", (job_id,)).fetchall()) for table in tables}
++            snapshot = {"events": self.list_events(current.run_id), "attempts": self.list_attempts(current.run_id),
++                        "leases": self.list_leases(current.run_id)}
++            expected_snapshot = self._job_snapshot(conn, job_id)
++        finally:
++            conn.execute("ROLLBACK TO operational_publication_preview")
++            conn.execute("RELEASE operational_publication_preview")
++        # The preview was never committed. Actual job/attempt/lease are still live here.
++        self._validate_operational_row(conn, session, dict(view.snapshot))
++        session.evaluate_locked(view)
++        validate()
++        published = publish(final, snapshot)
++        if published != artifact_paths:
++            raise OperationalLeaseError("actual artifact paths differ from frozen publication target")
++        validate()
++        self._validate_operational_row(conn, session, dict(view.snapshot))
++        session.evaluate_locked(view)  # Fresh original D_lease bound after the filesystem work.
++        # Positive index/metrics rows precede real attempt close, lease release and terminal job.
++        for table in tables:
++            if table == "simulation_jobs":
++                target = frozen[table][0]
++                columns = tuple(key for key in target if key != "job_id")
++                cursor = conn.execute("UPDATE simulation_jobs SET " + ",".join(key + "=?" for key in columns)
++                                      + " WHERE job_id=? AND status=? AND worker_id=? AND lease_id=?",
++                                      tuple(target[key] for key in columns) + (job_id, current.status.value, current.worker_id, current.lease_id))
++                if cursor.rowcount != 1:
++                    raise OperationalLeaseError("publication final exact job CAS0")
++            else:
++                conn.execute("DELETE FROM " + table + " WHERE job_id=?", (job_id,))
++                for target in frozen[table]:
++                    columns = tuple(target)
++                    conn.execute("INSERT INTO " + table + "(" + ",".join(columns) + ") VALUES(" + ",".join("?" for _ in columns) + ")",
++                                 tuple(target[key] for key in columns))
++        if self._job_snapshot(conn, job_id) != expected_snapshot:
++            raise OperationalLeaseError("publication actual final snapshot differs from preview")
++        for table in tables:
++            actual = tuple(dict(row) for row in conn.execute("SELECT * FROM " + table + " WHERE job_id=?", (job_id,)).fetchall())
++            if actual != frozen[table]:
++                raise OperationalLeaseError("publication actual final rows differ from frozen target")
++        return published
+ 
+     def _terminalize_operational(
+-        self, conn: sqlite3.Connection, before: dict[str, Any], reason: str
++        self, conn: sqlite3.Connection, before: dict[str, Any], reason: str,
++        *, phase: str = "REVOKED",
+     ) -> None:
++        self._require_active_writer()
++        if conn is not self._writer_binding().connection:
++            raise OperationalLeaseError("terminal cleanup connection differs from registered owner")
++        if phase not in {"REVOKED", "TERMINATED"}:
++            raise OperationalLeaseError("cleanup phase must be non-authoritative")
+         target = dict(before)
+         target.update(
+-            durable_phase="REVOKED",
++            durable_phase=phase,
+             lifecycle="TERMINAL",
+             terminal_reason=reason,
+             row_revision=int(before["row_revision"]) + 1,
+@@ -1466,13 +1731,69 @@
+         cursor = conn.execute(
+             "UPDATE simulation_operational_leases_v1 SET "
+             + ",".join(c + "=?" for c in columns)
+-            + " WHERE lease_id=? AND row_revision=? AND generation=?",
++            + " WHERE lease_id=? AND row_revision=? AND generation=? AND proposed_row_digest=?",
+             tuple(target[c] for c in columns)
+-            + (before["lease_id"], before["row_revision"], before["generation"]),
++            + (before["lease_id"], before["row_revision"], before["generation"], before["proposed_row_digest"]),
+         )
+         if cursor.rowcount != 1:
+             raise OperationalLeaseError("terminal mutation lost exact generation CAS")
+         _revoke_epoch(before["epoch"], reason)
++
++    def _cleanup_operational_row(self, conn: sqlite3.Connection, row: dict[str, Any], reason: str) -> bool:
++        """Close only the original owner's residual negative state, under its exact row CAS."""
++        self._require_active_writer()
++        if conn is not self._writer_binding().connection or self._operational_row(conn, row["job_id"]) != row:
++            raise OperationalLeaseError("cleanup requires the original registered transaction/row")
++        if row["proposed_row_digest"] != _canonical(row):
++            raise OperationalLeaseError("cleanup canonical row digest mismatch")
++        job = conn.execute("SELECT * FROM simulation_jobs WHERE job_id=?", (row["job_id"],)).fetchone()
++        if job is None:
++            return False
++        owned = job["worker_id"] == row["worker_id"] and job["lease_id"] == row["lease_id"]
++        residual = owned and job["status"] in {"LEASED", "STARTING", "RUNNING", "CANCEL_REQUESTED", "CANCELLING", "FINALIZING"}
++        attempt = conn.execute("SELECT * FROM simulation_job_attempts "
++                               "WHERE job_id=? AND attempt=? AND worker_id=? AND ended_at=''",
++                               (row["job_id"], row["attempt"], row["worker_id"])).fetchone()
++        lease = conn.execute("SELECT * FROM simulation_job_leases "
++                             "WHERE lease_id=? AND job_id=? AND worker_id=? AND released_at=''",
++                             (row["lease_id"], row["job_id"], row["worker_id"])).fetchone()
++        if not residual and attempt is None and lease is None:
++            return False
++        now = _dt(_now())
++        if attempt is not None:
++            conn.execute("UPDATE simulation_job_attempts "
++                         "SET ended_at=?,result='INTERRUPTED',error=?,artifact_paths_json='{}' "
++                         "WHERE job_id=? AND attempt=? AND worker_id=? AND ended_at=''",
++                         (now, reason, row["job_id"], row["attempt"], row["worker_id"]))
++        if residual:
++            conn.execute("UPDATE simulation_jobs SET status='INTERRUPTED',updated_at=?,"
++                         "error_code='operational_epoch_ended',error_message=? "
++                         "WHERE job_id=? AND status=? AND worker_id=? AND lease_id=?",
++                         (now, reason, row["job_id"], job["status"], row["worker_id"], row["lease_id"]))
++        if lease is not None:
++            conn.execute("UPDATE simulation_job_leases SET released_at=? "
++                         "WHERE lease_id=? AND job_id=? AND worker_id=? AND released_at=''",
++                         (now, row["lease_id"], row["job_id"], row["worker_id"]))
++        self._terminalize_operational(conn, row, reason, phase="TERMINATED")
++        return True
++
++    @_job_writer
++    def cleanup_operational_session(self, job_id: str, *, session: OperationalLeaseSession) -> None:
++        self._require_active_writer()
++        if (_current_session(self) is not session or session.worker._operational_lease_session is not session
++                or session.job_id != job_id or threading.get_ident() != session.main_thread
++                or threading.get_native_id() != session.main_native_thread):
++            raise OperationalLeaseError("negative cleanup requires the actual original poll session")
++        conn = self._writer_binding().connection
++        row = self._operational_row(conn, job_id)
++        if row is None:
++            return  # Acquisition never committed a row.
++        domain = session.domain
++        if (row["epoch"] != session.epoch or row["lease_id"] != session.lease_id
++                or row["worker_id"] != session.worker_id or row["pid"] != domain.pid
++                or row["boot_id"] != domain.boot_id or row["process_start_ticks"] != domain.process_start_ticks):
++            raise OperationalLeaseError("negative cleanup original epoch/lease/process mismatch")
++        self._cleanup_operational_row(conn, row, "original worker poll ended")
+ 
+     @_job_writer
+     def terminate_orphaned_operational_attempts(self) -> list[str]:
+@@ -1480,7 +1801,8 @@
+         self._require_active_writer()
+         conn = self._transactions.connection
+         rows = conn.execute(
+-            "SELECT * FROM simulation_operational_leases_v1 WHERE durable_phase='COMMITTED'"
++            "SELECT * FROM simulation_operational_leases_v1 "
++            "WHERE durable_phase IN ('COMMITTED','REVOKED','TERMINATED')"
+         ).fetchall()
+         terminated: list[str] = []
+         boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+@@ -1505,44 +1827,8 @@
+                         )
+             if not orphan:
+                 continue
+-            job = conn.execute(
+-                "SELECT status FROM simulation_jobs WHERE job_id=?", (row["job_id"],)
+-            ).fetchone()
+-            if job is None:
+-                continue
+-            conn.execute(
+-                "UPDATE simulation_job_attempts SET ended_at=?, result='INTERRUPTED', error=? "
+-                "WHERE job_id=? AND ended_at=''",
+-                (_dt(_now()), "operational epoch ended", row["job_id"]),
+-            )
+-            conn.execute(
+-                "UPDATE simulation_jobs SET status=?, updated_at=?, error_code=? WHERE job_id=? "
+-                "AND status IN (?,?,?)",
+-                (
+-                    RuntimeJobStatus.INTERRUPTED.value,
+-                    _dt(_now()),
+-                    "operational_epoch_ended",
+-                    row["job_id"],
+-                    RuntimeJobStatus.LEASED.value,
+-                    RuntimeJobStatus.STARTING.value,
+-                    RuntimeJobStatus.RUNNING.value,
+-                ),
+-            )
+-            self._terminalize_operational(conn, row, "orphaned epoch ended")
+-            conn.execute(
+-                "UPDATE simulation_operational_leases_v1 "
+-                "SET durable_phase='TERMINATED' WHERE lease_id=?",
+-                (row["lease_id"],),
+-            )
+-            # Exact final durable-phase bytes participate in the canonical row digest.
+-            final = self._operational_row(conn, row["job_id"])
+-            if final is not None:
+-                conn.execute(
+-                    "UPDATE simulation_operational_leases_v1 "
+-                    "SET proposed_row_digest=? WHERE lease_id=?",
+-                    (_canonical(final), row["lease_id"]),
+-                )
+-            terminated.append(row["job_id"])
++            if self._cleanup_operational_row(conn, row, "orphaned epoch ended"):
++                terminated.append(row["job_id"])
+         return terminated
+ 
+     def _count_status(self, statuses: set[RuntimeJobStatus]) -> int:
+@@ -1559,6 +1845,7 @@
+     def _connect(self) -> Iterator[sqlite3.Connection]:
+         active = getattr(self._transactions, "connection", None)
+         if active is not None:
++            self._writer_binding()
+             yield active
+             return
+         conn = sqlite3.connect(self.database_path, isolation_level=None, check_same_thread=False)
+@@ -1567,8 +1854,11 @@
+         conn.execute("PRAGMA journal_mode = WAL")
+         try:
+             yield conn
+-        except Exception:
+-            conn.rollback()
++        except BaseException:
++            try:
++                conn.rollback()
++            except sqlite3.Error:
++                pass  # Preserve the original fault when the same real connection closed.
+             raise
+         finally:
+             # sqlite3.Connection 的 context manager 不会关闭连接；repository 方法必须
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/before/src/cloud_edge_robot_arm/simulation_runtime/worker.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/semantic-before-format-r137/sources/src/cloud_edge_robot_arm/simulation_runtime/worker.py
+@@ -225,7 +225,9 @@
+                     if session is not None and heartbeat.is_alive():
+                         session.join_failed = True
+                 try:
+-                    if lease is not None:
++                    if session is not None and session.job_id:
++                        self.repository.cleanup_operational_session(session.job_id, session=session)
++                    elif session is None and lease is not None:
+                         self.repository.release_lease(lease.lease_id)
+                 finally:
+                     self.active_job_id = ""
+@@ -314,6 +316,15 @@
+                 self._raise_if_cancelled_or_timed_out(job_id, job, start_monotonic)
+                 if self._active_job_cancelled(job):
+                     raise RuntimeError("lease lost before evidence publication")
++                if self._operational_lease_session is not None:
++                    if terminal != RuntimeJobStatus.BLOCKED_BY_ENV:
++                        self._transition(job_id, RuntimeJobStatus.RUNNING, RuntimeJobStatus.FINALIZING, lease_id)
++                    artifacts = self._publish_operational_artifacts(
++                        job, attempt=attempt.attempt, terminal=terminal,
++                        events=events, metrics=metrics, result=result,
++                        start_monotonic=start_monotonic,
++                    )
++                    return
+                 if terminal == RuntimeJobStatus.BLOCKED_BY_ENV:
+                     self._transition(job_id, RuntimeJobStatus.RUNNING, terminal, lease_id)
+                 else:
+@@ -360,6 +371,12 @@
+                 if isinstance(exc, (CancelledByOperator, TimedOut))
+                 else (f"{type(exc).__name__}: {exc}")
+             )
++            if self._operational_lease_session is not None:
++                # An ended/revoked caller has no positive archival capability. The
++                # original poll finally closes its exact residual SQL owner instead.
++                self._operational_lease_session.invalidate(error)
++                self.repository.cleanup_operational_session(job_id, session=self._operational_lease_session)
++                return
+             if (
+                 publishing_success
+                 and result is not None
+@@ -404,6 +421,82 @@
+             from cloud_edge_robot_arm.vision.operational_windows import _revoke_worker
+ 
+             _revoke_worker(self)
++
++    def _publish_operational_artifacts(
++        self, job: SimulationJobRecord, *, attempt: int, terminal: RuntimeJobStatus,
++        events: list[TimelineEvent], metrics: list[SimulationMetric],
++        result: dict[str, Any] | ExperimentResult, start_monotonic: float,
++    ) -> dict[str, str]:
++        """Keep previews private; only a live original owner can promote the final files."""
++        session = self._operational_lease_session
++        if session is None:
++            raise RuntimeError("operational publication lost its original session")
++        run_dir = self.artifact_root / job.artifact_root
++        private = run_dir / (".operational-publication-" + session.epoch)
++        stage, backup, rejected = private / "stage", private / "previous", private / "unconfirmed"
++        stage.mkdir(parents=True, exist_ok=False)
++        backup.mkdir()
++        rejected.mkdir()
++        promoted: list[Path] = []
++        expected_paths = self._artifact_paths(job)
++
++        def validate() -> None:
++            current = self.repository.get_job(job.job_id)
++            if current.cancel_requested or current.status in {
++                RuntimeJobStatus.CANCEL_REQUESTED, RuntimeJobStatus.CANCELLING, RuntimeJobStatus.CANCELLED,
++            }:
++                raise CancelledByOperator("cancelled during publication")
++            if (time.monotonic() - start_monotonic) >= job.timeout_seconds:
++                raise TimedOut("original task timeout during publication")
++            expected = RuntimeJobStatus.RUNNING if terminal == RuntimeJobStatus.BLOCKED_BY_ENV else RuntimeJobStatus.FINALIZING
++            if (session._unusable.is_set() or self._heartbeat_failed.is_set()
++                    or current.status != expected or current.attempt != attempt
++                    or not self._owns_artifact_publication(current, job.lease_id)):
++                raise RuntimeError("original owner/UTC lease veto during publication")
++
++        def publish(final: SimulationJobRecord, snapshot: dict[str, Any]) -> dict[str, str]:
++            written = self._write_artifacts(final, events=events, metrics=metrics, result=result,
++                                            expected_terminal_status=terminal,
++                                            publication_snapshot=snapshot, publication_directory=stage)
++            paths = {}
++            for name, relative in written.items():
++                actual = self.artifact_root / relative
++                paths[name] = ((run_dir / actual.name).relative_to(self.artifact_root).as_posix()
++                               if actual.parent == stage else relative)
++                if not actual.is_file():
++                    raise RuntimeError("publication did not write its exact artifact target")
++            if paths != expected_paths:
++                raise RuntimeError("publication preview artifact map differs from final target")
++            validate()
++            for source in sorted(stage.iterdir()):
++                destination = run_dir / source.name
++                if destination.exists():
++                    destination.replace(backup / source.name)
++                source.replace(destination)
++                promoted.append(destination)
++            return paths
++
++        try:
++            return self.repository.finalize_operational_publication(
++                job.job_id, attempt=attempt, terminal=terminal, artifact_paths=expected_paths,
++                metrics=[metric.model_dump(mode="json") for metric in metrics],
++                publish=publish, validate=validate,
++            )
++        except BaseException as error:
++            # Retain exact failed preview bytes as explicitly unconfirmed diagnostics,
++            # withdraw their public names, and restore any pre-existing originals.
++            for destination in reversed(promoted):
++                if destination.exists():
++                    destination.replace(rejected / destination.name)
++            for previous in backup.iterdir():
++                previous.replace(run_dir / previous.name)
++            _atomic_write_json(private / "rejection.json", {
++                "status": "UNCONFIRMED_PREVIEW_NOT_ACCEPTED", "accepted": False,
++                "epoch": session.epoch, "job_id": job.job_id, "lease_id": job.lease_id,
++                "error": f"{type(error).__name__}: {error}",
++                "preview_is_committed_evidence": False,
++            })
++            raise
+ 
+     def _recover_failed_publication(
+         self,
+@@ -1138,8 +1231,10 @@
+         metrics: list[SimulationMetric],
+         result: dict[str, Any] | ExperimentResult,
+         expected_terminal_status: RuntimeJobStatus | None = None,
++        publication_snapshot: dict[str, Any] | None = None,
++        publication_directory: Path | None = None,
+     ) -> dict[str, str]:
+-        run_dir = self.artifact_root / job.artifact_root
++        run_dir = publication_directory or self.artifact_root / job.artifact_root
+         run_dir.mkdir(parents=True, exist_ok=True)
+         # artifact 文件是重启恢复和验收的第二真源；数据库缺记录时可以从这里恢复，
+         # 但写入时仍只保存相对路径，避免泄露本机目录。
+@@ -1169,7 +1264,7 @@
+             "sim_real_gap_report": run_dir / "sim_real_gap_report.json",
+         }
+         _atomic_write_json(paths["run_manifest"], redact(job.manifest))
+-        job_events = self.repository.list_events(job.run_id)
++        job_events = publication_snapshot["events"] if publication_snapshot is not None else self.repository.list_events(job.run_id)
+         _atomic_write_jsonl(
+             paths["events"],
+             [
+@@ -1277,7 +1372,7 @@
+             if event.previous_status or event.next_status
+         ]
+         _atomic_write_jsonl(paths["state_transitions"], transitions)
+-        attempts = self.repository.list_attempts(job.run_id)
++        attempts = publication_snapshot["attempts"] if publication_snapshot is not None else self.repository.list_attempts(job.run_id)
+         _atomic_write_jsonl(
+             paths["attempts"],
+             [
+@@ -1292,7 +1387,7 @@
+                 for attempt in attempts
+             ],
+         )
+-        leases = self.repository.list_leases(job.run_id)
++        leases = publication_snapshot["leases"] if publication_snapshot is not None else self.repository.list_leases(job.run_id)
+         lease_rows = [
+             {
+                 "job_id": lease.job_id,
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/before/tests/test_operational_runtime_closure.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round134-p6-red-interface-connection-recovery-20261011/implementation/semantic-before-format-r137/sources/tests/test_operational_runtime_closure.py
+@@ -11,7 +11,9 @@
+ import sqlite3
+ import threading
+ from contextlib import closing, contextmanager
+-from dataclasses import asdict
++from dataclasses import asdict, is_dataclass
++from datetime import datetime
++from enum import Enum
+ from pathlib import Path
+ 
+ import pytest
+@@ -92,8 +94,22 @@
+     )
+ 
+ 
++def _evidence_fields(value):
++    if is_dataclass(value) and not isinstance(value, type):
++        return _evidence_fields(asdict(value))
++    if isinstance(value, datetime):
++        return value.isoformat()
++    if isinstance(value, Enum):
++        return _evidence_fields(value.value)
++    if isinstance(value, dict):
++        return {key: _evidence_fields(item) for key, item in value.items()}
++    if isinstance(value, (list, tuple)):
++        return [_evidence_fields(item) for item in value]
++    return value
++
++
+ def _evidence(tmp_path, name, payload):
+-    (tmp_path / f"{name}.json").write_text(json.dumps(payload, default=str, indent=2) + "\n")
++    (tmp_path / f"{name}.json").write_text(json.dumps(_evidence_fields(payload), indent=2) + "\n")
+ 
+ 
+ def _exercise(monkeypatch, tmp_path, callback, *, initialize=None, configure=None):
+@@ -578,8 +594,9 @@
+         "restart",
+         {
+             "variant": variant,
+-            "attempts": before_attempts,
+-            "current": current.model_dump(mode="json"),
++            "before_attempts": before_attempts,
++            "recovered_attempts": recovered,
++            "current": current,
+         },
+     )
+ 
+@@ -705,7 +722,7 @@
+         ]
+         payload_rejections = [_denied_with_unchanged_rows(repo, operation) for operation in operations]
+         repo.release_lease(session.lease_id)
+-        _evidence(tmp_path, "revoked-legal-source-denials", {"source": current.model_dump(mode="json"),
++        _evidence(tmp_path, "revoked-legal-source-denials", {"source": current,
+                   "positive_rejection": rejection, "payload_rejections": payload_rejections})
+         return variant
+ 
+@@ -751,7 +768,7 @@
+                     raise errors[0]
+                 assert results
+                 _evidence(trial_root, "legal-source-positive-challenge", {
+-                    "variant": variant, "source": current.model_dump(mode="json"),
++                    "variant": variant, "source": current,
+                     "target": target.value, "rejections": results})
+             finally:
+                 thread.join(timeout=2)
+@@ -863,9 +880,8 @@
+                     faults.append("actual-initial-heartbeat-queue-get-fault")
+                     raise RuntimeError("actual queue receiver fault before execute")
+                 return request
+-            monkeypatch.setattr(session._queue, "get", fault_get)
++            hooks.setattr(session._queue, "get", fault_get)
+         return owner
+-    monkeypatch.setattr(module, "open_operational_clock", broker_clock)
+     original_connect = repo._connect
+     def after_commit(conn):
+         rows = [dict(row) for row in conn.execute("SELECT * FROM simulation_operational_leases_v1")]
+@@ -887,18 +903,35 @@
+         else:
+             with original_connect() as conn:
+                 yield _CommitCloseConnection(conn, after_commit)
+-    monkeypatch.setattr(repo, "_connect", connections)
+     errors = []
+     try:
+-        try:
+-            worker.poll_once()
+-        except (module.OperationalLeaseError, sqlite3.Error) as error:
+-            errors.append(str(error))
+-        assert faults and committed, "actual requested commit/queue fault did not occur"
+-        assert sessions and sessions[0]._unusable.is_set() and sessions[0]._closed
+-        assert all(clock._closed for clock in clocks)
++        with monkeypatch.context() as hooks:
++            hooks.setattr(module, "open_operational_clock", broker_clock)
++            hooks.setattr(repo, "_connect", connections)
++            try:
++                worker.poll_once()
++            except (module.OperationalLeaseError, sqlite3.Error) as error:
++                errors.append(str(error))
++            assert len(faults) == 1 and len(committed) == 1, "actual one-shot commit/queue fault did not occur"
++            assert sessions and sessions[0]._unusable.is_set() and sessions[0]._closed
++            assert all(clock._closed for clock in clocks)
++            assert all(getattr(repo._transactions, name, None) is None
++                       for name in ("connection", "nonce", "commit", "writer_owner"))
++            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import _WRITER_OWNERS
++            assert not any(owner.repository is repo and owner.thread_id == threading.get_ident()
++                           for owner in _WRITER_OWNERS.values())
++            released_registration = {"TLS": "cleared-by-real-owner-exit", "private_owner": "unregistered"}
++        # Hooks are restored only after real owner/TLS cleanup has been asserted.
++        assert repo._connect == original_connect
++        attempts = repo.list_attempts(job.run_id)
++        current = repo.get_job(job.job_id)
++        leases = repo.list_leases(job.run_id)
+         _evidence(tmp_path, "actual-failure-cleanup", {"variant": variant, "committed": committed,
+-                  "faults": faults, "errors": errors, "after": _rows(repo)})
++                  "faults": faults, "errors": errors, "after": _rows(repo),
++                  "attempts": attempts, "current": current, "leases": leases,
++                  "registration": released_registration,
++                  "broker_clocks_closed": [clock._closed for clock in clocks],
++                  "app_clock": "not issued before acquisition/initial heartbeat/bind failure"})
+         return data, committed, sessions
+     finally:
+         events.close()

@@ -1,0 +1,20 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round139-p6-test-capture-lint-repair-20261011/implementation/before-test.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/tests/test_operational_runtime_closure.py
+@@ -789,11 +789,15 @@
+         trial_root = tmp_path / source.value.lower()
+         trial_root.mkdir()
+ 
+-        def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):
++        def check(
++            module, session, runtime, lease_raw, app_raw, worker, repo, job,
++            *, source=source, target=target, trial_root=trial_root,
++        ):
+             current = repo.get_job(job.job_id)
+             assert current.status == RuntimeJobStatus.RUNNING
+             if source == RuntimeJobStatus.FINALIZING:
+-                # This preparation is actual authorized main-thread status CAS, never foreign success.
++                # This preparation is actual authorized main-thread status CAS,
++                # never foreign success.
+                 prepared = repo.update_status_cas(
+                     job.job_id,
+                     expected=RuntimeJobStatus.RUNNING,

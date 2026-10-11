@@ -85,3 +85,22 @@ T13继续完成在线恢复与局部修复的真实来源及G4要求；边缘模
 本轮按[Astra R117计划](../../artifacts/research/process/20261004-ced-development/astra-rounds/round117-project-status-plan-20261011/plan.md)仅新增状态与计划文档，未运行产品测试、云模型或仿真实验。主树既有改动和嵌套工作区保持。完整批量raw、运行数据库、凭据、模型权重和SDK仍按原交付边界管理；本轮远端小型报告与元数据不是完整复现包。部分历史终审资料仅在主工作区，来源可用性与SHA见本轮验证记录。
 
 本文件同时作为本轮阶段总结；限定实施和核对结果见[R117步骤报告](../../artifacts/research/process/20261004-ced-development/astra-rounds/round117-project-status-plan-20261011/step-report.md)。
+
+
+## 2026-10-12 当前 P6 A 阶段状态（R155）
+
+本段更新并覆盖此前正文中 P6 A 待执行、待终审或未验收的当前状态描述；此前正文和各轮记录保留为历史。
+
+ROOT 已依据 R152 独立终审限定接受 A 阶段软件交付，上限为 LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO。终审在此范围内 Critical、Important、Minor 已确认问题均为0，24/24读取已用尽。
+
+40个唯一通过节点来自四次实际运行：历史 GREEN20 的19 PASS（原1 FAIL完整保留）、R147修正foreign单例1 PASS、new19的19 PASS、R141 CPU受控正链1 PASS。这不是一次40节点运行；R145类型变更和R147夹具变更仅按已核精确证明沿用证据。原静态失败与过程工具失败未删除。
+
+CPU正链先调用原episode一次，仅注入六项结局flags，22个自然文件hash已核；模型调用、动作和物理量证据均为0。legacy UTC veto保留。B9公开确认与SQL历史区分仍为OPEN，精确terminal COMMIT成功后失确认组合未实际执行。B/C/D为NOT_ACTIVATED，P6_complete=false；native、physics、硬件真实运行与formal验收均未提升。
+
+下一步依既定顺序推进B9/B、C、P7/P8、D；B9需显式区分SQL事实与已确认发布，并先按Astra计划限定验证。R153旧HEAD前置失败原件保留；R154只读诊断的文本覆盖限制及eligible=false未改写。R155明确采用315fd不相交基线，保全100个开题文档相关既有文件，不对其语义作本轮判断。本段编制时Git交付待执行，实际提交、推送与三SHA结果以本轮提交外postpush-receipt.json为准。远端选定载荷不是完整raw/数据库复现包。
+
+验收记录：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/acceptance.json
+
+终审原件：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round152-p6-review-recovery-index-schema-20261012/review/final-review.json SHA256 db83f79f83f9fd50e56b965949a913da90f7c485776c16f15aa75e7c812b5bf4
+
+交付实际收据：/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round155-p6-disjoint-head-finite-delivery-20261012/postpush-receipt.json

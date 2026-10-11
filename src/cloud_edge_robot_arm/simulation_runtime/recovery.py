@@ -30,7 +30,8 @@ class ArtifactRecoveryService:
         # 先让 repository 标记过期租约，再基于 artifact 完整性决定是否进入
         # RECOVERY_PENDING；只有显式允许时才重新入队，避免启动恢复无意中
         # 重复执行已经需要人工复核的任务。
-        interrupted = self.repository.expire_leases()
+        operational_terminated = self.repository.terminate_orphaned_operational_attempts()
+        interrupted = operational_terminated + self.repository.expire_leases()
         recovered: list[str] = []
         incomplete: list[str] = []
         for snapshot in self.repository.find_recoverable_jobs():

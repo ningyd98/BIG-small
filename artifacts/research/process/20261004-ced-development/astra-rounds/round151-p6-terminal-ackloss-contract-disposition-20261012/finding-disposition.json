@@ -1,0 +1,46 @@
+{
+  "status": "DISPOSITION_NO_STAGE_A_PRODUCT_REPAIR_AUTHORIZED_RESUME_INDEPENDENT_REVIEW",
+  "original": {
+    "candidate": "R150-B1 Important terminal-publication post-COMMIT acknowledgement loss",
+    "provenance": "Original source-only STOP report and later interpretive addendum retained unchanged; all12 stop-authority-index file pins independently match. No terminal fault reproduction, traceback, new pytest or production change exists.",
+    "original_observation": "Terminal SQL COMMIT precedes reread/ack/broker confirm; post-COMMIT failure can withdraw promoted public files into unconfirmed diagnostics and retain SQL SUCCEEDED/ended attempt/released lease. Cleanup does not overwrite complete terminal history.",
+    "question": "Does this violate StageA lease authority, or describe intentionally retained committed audit plus a later publication-consumer boundary?"
+  },
+  "dispositions": [
+    {
+      "id": "F1",
+      "verdict": "SOURCE_FACT_SUPPORTED",
+      "evidence": "sqlite_repository1335-1349,1772-1775; worker512-542. Successful real COMMIT precedes same-connection reread/private ack/fresh broker confirmation. Failure path withdraws public names, restores previous files and writes rejection accepted=false. These are control-flow facts, not an executed final-publication failure."
+    },
+    {
+      "id": "F2",
+      "verdict": "RETAINED_TERMINAL_SQL_IS_DESIGN_CONFORMANT_FOR_A",
+      "evidence": "R113 design75-82 separates SQL durable COMMITTED and private broker ACTIVE, and explicitly leaves lost-ack committed rows as nonauthorizing evidence; safe release/orphan cleanup may write negative phases. R127 Task3 explicitly forbids overwriting already-terminal success and preserves completed historical attempts. Current cleanup1995-2014 no-op for complete SUCCEEDED/ended/released is consistent, not proof of a cleanup defect.",
+      "prohibited_change": "Do not rewrite committed SUCCEEDED to failed/interrupted/recovery_pending, reopen attempt/lease, add recursive activation, or force REVOKED solely to satisfy the original candidate."
+    },
+    {
+      "id": "F3",
+      "verdict": "NO_SUPPORTED_POSITIVE_AUTHORITY_REVIVAL",
+      "evidence": "Broker _decide747-754 requires exact active generation/digest and rejects lifecycle TERMINAL even with durable_phase COMMITTED. R113 design80 requires both private ACTIVE and exact usable lifecycle. Failure invalidates/blocks session, and lifecycle exit closes it. An old ACTIVE generation cannot match newly committed row.",
+      "qualification": "SQL COMMIT is the durable mutation linearization point, NOT sole live execution authority. Broker final confirm/consume is NOT merely transport ACK: it checks original hard-open bounds and activates private generation. No claim of an actually reproduced failed final handshake or complete product correctness."
+    },
+    {
+      "id": "F4",
+      "verdict": "PUBLIC_PRESENTATION_LIMIT_CONFIRMED_B9_INPUT_REQUIRED",
+      "evidence": "Protected service.py202-215 exposes attempts/result/artifact_paths;240-241 returns get_artifacts;394-423 forwards SQL status/artifact_paths;503 counts SUCCEEDED. These paths do not consume rejection.json or expose an explicit confirmed-publication distinction. Therefore do not claim public readers already veto unconfirmed output.",
+      "scope_judgment": "These public presentation fields are persisted job/history views, not the private broker authority path. No identified consumer in this review treats them alone as broker-confirmed accepted physical/formal evidence. Their presence plus missing withdrawn files is insufficient to establish a new A lease-authority violation. Keep this limitation explicit and blocking any stronger claim of complete confirmed-publication/consumer closure; carry it to actual B9 planning, not silently discard."
+    },
+    {
+      "id": "F5",
+      "verdict": "TERMINAL_FAULT_COVERAGE_NOT_CLAIMED",
+      "evidence": "Current actual tests cover acquire/bind commit-close and healthy CPUpositive terminal success, not the exact final post-COMMIT close/confirm/consume trigger. Forty unique pass nodes remain four historical runs. No new RED or positive rerun is justified by a disproved authority inference.",
+      "rule": "No new product/test budget in this disposition. If a concrete consumer-authority requirement or actual defect is found later, stop and obtain a separate genuine Astra plan with exact scope/fault nodes/budgets; do not invent fault raw now."
+    },
+    {
+      "id": "F6",
+      "verdict": "REPORT_CATEGORY_CORRECTION_WITH_HISTORY_PRESERVED",
+      "evidence": "Original R134 S is dataclass evidence serialization, C exception-safe connection/owner cleanup, F genuine commit-close fixture preservation. Original STOP report's use of 'R134 S publication' and 'R134 F corrected foreign fixture' is a labeling mismatch; R147 owns corrected foreign fixture. New review should use accurate historical mapping without editing old STOP text."
+    }
+  ],
+  "acceptance": false
+}

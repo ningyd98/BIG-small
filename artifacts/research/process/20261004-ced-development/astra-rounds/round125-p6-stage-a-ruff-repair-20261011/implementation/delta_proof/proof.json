@@ -1,0 +1,721 @@
+{
+  "status": "PASS_BOUNDED_SOURCE_DELTA_ONLY",
+  "records": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py",
+      "old_sha256": "536e7e706f64ee303b0f39024037d6a847432ba5347d48fc83d0de03cec0ab60",
+      "new_sha256": "219aec2f763f69d24d87b2bd49381394b56fc26a164845572e0f88a204a6a384",
+      "formatter_AST_type_comments": true,
+      "normalized_full_AST_equal": true,
+      "ordered_constants_equal": true,
+      "anchored_comments_equal": true,
+      "old_SQL_constants": [
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "35b3be739f74e5e6c690287149d6c61940c6a160e5f14c332bf5b2530ce911f0",
+          "bytes": 46
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE run_id = ?'",
+          "utf8_sha256": "72d910bbeb2c91c7ae5791659cc6c8ad9d6e2433f0264decffdf0e606537dd10",
+          "bytes": 46
+        },
+        {
+          "repr": "'SELECT artifact_paths_json FROM simulation_jobs WHERE run_id = ?'",
+          "utf8_sha256": "199710acc25c0091a874b9f43104f8ee61f309bee5a0a65fb23b5064841761b8",
+          "bytes": 64
+        },
+        {
+          "repr": "'SELECT * FROM simulation_batches WHERE batch_id = ?'",
+          "utf8_sha256": "5d0d04640a8de50b48bf90d41c68cef4e9bd1450f0d76f65f61da6ff20513af3",
+          "bytes": 51
+        },
+        {
+          "repr": "'\\n                INSERT INTO simulation_jobs (\\n                    job_id, run_id, batch_id, backend, scenario_id, control_mode, seed,\\n                    manifest_id, reproducibility_hash, status, draft_json, manifest_json,\\n                    attempt, max_attempts, priority, created_at, updated_at, timeout_seconds,\\n                    cancel_requested, artifact_root, source_commit, source_tree_hash,\\n                    provenance_json, blocker_codes_json, artifact_paths_json\\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)\\n                '",
+          "utf8_sha256": "d465e9f6d0ca3338cbf8ce425b006d40fa8d446543e25c71a62138647996ff60",
+          "bytes": 599
+        },
+        {
+          "repr": "'UPDATE simulation_jobs SET cancel_requested = 1, updated_at = ? WHERE job_id = ?'",
+          "utf8_sha256": "61b53b41fcede3761eb8bbd4e1badad270c15d708b460e2e8194336d464992e0",
+          "bytes": 80
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs\\n                SET status = ?, updated_at = ?, worker_id = ?, lease_id = ?, lease_expires_at = ?\\n                WHERE job_id = ? AND status = ?\\n                '",
+          "utf8_sha256": "62db2811719e2bf608e8360811bc5f25be02705e05262aed8ff0ce50329aeff4",
+          "bytes": 202
+        },
+        {
+          "repr": "\"\\n                INSERT INTO simulation_job_leases (\\n                    lease_id, job_id, worker_id, acquired_at, expires_at, heartbeat_at, released_at\\n                ) VALUES (?, ?, ?, ?, ?, ?, '')\\n                \"",
+          "utf8_sha256": "0ce99e015dcbbac26dd031d5c47e39abc3b29109f815acc29fc860b01bf40bd1",
+          "bytes": 217
+        },
+        {
+          "repr": "\"\\n                UPDATE simulation_job_leases SET heartbeat_at = ?, expires_at = ?\\n                WHERE lease_id = ? AND released_at = '' AND expires_at > ?\\n                AND EXISTS (\\n                    SELECT 1 FROM simulation_jobs AS job\\n                    WHERE job.job_id = simulation_job_leases.job_id\\n                    AND job.lease_id = simulation_job_leases.lease_id\\n                    AND job.worker_id = simulation_job_leases.worker_id\\n                    AND job.lease_expires_at > ? AND job.cancel_requested = 0\\n                    AND job.status IN (?, ?, ?)\\n                )\\n                \"",
+          "utf8_sha256": "3bee43f9ba6f2918307b4d15338e6659fd96db40d07ac6707d2d358f003aa6fd",
+          "bytes": 614
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs SET lease_expires_at = ?, updated_at = ?\\n                WHERE lease_id = ?\\n                '",
+          "utf8_sha256": "34e38e053dd8e8a96f4e94ab37c524a092a5937c7cb2ee3dfe0d02a694817359",
+          "bytes": 132
+        },
+        {
+          "repr": "'UPDATE simulation_job_leases SET released_at = ? WHERE lease_id = ?'",
+          "utf8_sha256": "deaf42b4ab0821732a1cfe863dc6dcb9b3ef0dafc588aff01866ac1cb8deafdc",
+          "bytes": 67
+        },
+        {
+          "repr": "'\\n                INSERT INTO simulation_job_events (\\n                    event_id, job_id, run_id, sequence, stream_sequence, event_type,\\n                    previous_status, next_status, reason_code, timestamp, source, payload_json\\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\\n                '",
+          "utf8_sha256": "8aaf70818dd6af16906bbbc3a6ca47feb35d63b00a044a67ccaf05fc247d05cf",
+          "bytes": 311
+        },
+        {
+          "repr": "'DELETE FROM simulation_metrics WHERE job_id = ?'",
+          "utf8_sha256": "6a1ad37e3e26e13faaae5ebc8dbc1e9bf5acc8eccd3c81b16ee3160d29752ae0",
+          "bytes": 47
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs\\n                SET artifact_paths_json = ?, updated_at = ?\\n                WHERE job_id = ?\\n                '",
+          "utf8_sha256": "70964bcb3d6a889b3ecb3c9407b35b7cb2b9046bb3be8a1f3ec59fd9c45a5765",
+          "bytes": 149
+        },
+        {
+          "repr": "'DELETE FROM simulation_artifacts WHERE job_id = ?'",
+          "utf8_sha256": "c6864978cab970b29c3cfaa3b15159abeec818df2c9fee625a0e7a7935bbf49d",
+          "bytes": 49
+        },
+        {
+          "repr": "\"\\n                INSERT OR REPLACE INTO simulation_batches (\\n                    batch_id, manifest_json, run_ids_json, total, created_at, completed_at\\n                ) VALUES (?, ?, ?, ?, ?, '')\\n                \"",
+          "utf8_sha256": "f32b643387988760bdf018f29e8fb7f992f1382c92b61af8709fa7df5009a688",
+          "bytes": 213
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs\\n                SET attempt = ?, worker_id = ?, updated_at = ?\\n                WHERE job_id = ? AND attempt = ? AND worker_id = ? AND lease_id = ?\\n                '",
+          "utf8_sha256": "17eac36b862e41bcb3d80d33b75dc1457bc775c16d7fe23c19488c4b3030c6dd",
+          "bytes": 203
+        },
+        {
+          "repr": "\"\\n                INSERT INTO simulation_job_attempts (\\n                    job_id, run_id, attempt, worker_id, started_at, ended_at, result,\\n                    error, artifact_paths_json\\n                ) VALUES (?, ?, ?, ?, ?, '', 'RUNNING', '', ?)\\n                \"",
+          "utf8_sha256": "3f3070c3b35553a28ddd625b390324f776cd3fb96b45b426be1e9c9423ef1d3c",
+          "bytes": 267
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_job_attempts\\n                SET ended_at = ?, result = ?, error = ?, artifact_paths_json = ?\\n                WHERE job_id = ? AND attempt = ?\\n                '",
+          "utf8_sha256": "80eb169a8bbedb5b8f9e5d3c5db34833a2c2d04a29152b2bbf009be2b8c6df89",
+          "bytes": 194
+        },
+        {
+          "repr": "\"\\n                UPDATE simulation_job_attempts\\n                SET ended_at = ?, result = ?, error = ?\\n                WHERE job_id = ? AND ended_at = ''\\n                \"",
+          "utf8_sha256": "827e6580236d867ec9b2dfad55cbc8d3888d0e08d3167611caed188cc04b7f2c",
+          "bytes": 171
+        },
+        {
+          "repr": "\"\\n                UPDATE simulation_jobs\\n                SET status = ?, cancel_requested = 0, completed_at = NULL,\\n                    queued_at = ?, updated_at = ?,\\n                    worker_id = '', lease_id = '', lease_expires_at = NULL,\\n                    error_code = '', error_message = ''\\n                WHERE job_id = ? AND status = ? AND lease_id = ? AND worker_id = ?\\n                \"",
+          "utf8_sha256": "a6dc22d7d75c7077eb405cfd36c42b3afd0cfae2129076e3eeb6f1c0713c3769",
+          "bytes": 397
+        },
+        {
+          "repr": "\"UPDATE simulation_job_attempts SET ended_at=?, result='INTERRUPTED', error=? WHERE job_id=? AND ended_at=''\"",
+          "utf8_sha256": "c0cbe1587ce6a45cc1b1ddc3e81cd5d80ea8d051e36f7db6e48b4e071243627f",
+          "bytes": 107
+        },
+        {
+          "repr": "'UPDATE simulation_jobs SET status=?, updated_at=?, error_code=? WHERE job_id=? AND status IN (?,?,?)'",
+          "utf8_sha256": "7911db7b7d7bef5af26e7b40359e4a267e5201de21f12c251bff9305c99b6c94",
+          "bytes": 100
+        },
+        {
+          "repr": "\"UPDATE simulation_operational_leases_v1 SET durable_phase='TERMINATED' WHERE lease_id=?\"",
+          "utf8_sha256": "5a62efb0855cd317d159690df98c92422a7d5b7da54b1d166dff04ed8950a81a",
+          "bytes": 87
+        },
+        {
+          "repr": "\"\\n                CREATE TABLE IF NOT EXISTS schema_migrations (\\n                    version INTEGER PRIMARY KEY,\\n                    applied_at TEXT NOT NULL\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_jobs (\\n                    job_id TEXT PRIMARY KEY,\\n                    run_id TEXT NOT NULL UNIQUE,\\n                    batch_id TEXT NOT NULL DEFAULT '',\\n                    backend TEXT NOT NULL,\\n                    scenario_id TEXT NOT NULL,\\n                    control_mode TEXT NOT NULL,\\n                    seed INTEGER NOT NULL,\\n                    manifest_id TEXT NOT NULL,\\n                    reproducibility_hash TEXT NOT NULL,\\n                    status TEXT NOT NULL,\\n                    draft_json TEXT NOT NULL,\\n                    manifest_json TEXT NOT NULL,\\n                    attempt INTEGER NOT NULL DEFAULT 0,\\n                    max_attempts INTEGER NOT NULL DEFAULT 1,\\n                    priority INTEGER NOT NULL DEFAULT 0,\\n                    created_at TEXT NOT NULL,\\n                    queued_at TEXT,\\n                    started_at TEXT,\\n                    completed_at TEXT,\\n                    updated_at TEXT NOT NULL,\\n                    timeout_seconds INTEGER NOT NULL,\\n                    cancel_requested INTEGER NOT NULL DEFAULT 0,\\n                    worker_id TEXT NOT NULL DEFAULT '',\\n                    lease_id TEXT NOT NULL DEFAULT '',\\n                    lease_expires_at TEXT,\\n                    blocker_codes_json TEXT NOT NULL DEFAULT '[]',\\n                    error_code TEXT NOT NULL DEFAULT '',\\n                    error_message TEXT NOT NULL DEFAULT '',\\n                    artifact_root TEXT NOT NULL DEFAULT '',\\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\\n                    provenance_json TEXT NOT NULL DEFAULT '{}',\\n                    source_commit TEXT NOT NULL DEFAULT '',\\n                    source_tree_hash TEXT NOT NULL DEFAULT ''\\n                );\\n                CREATE INDEX IF NOT EXISTS idx_sim_jobs_status_backend\\n                ON simulation_jobs(status, backend, priority, created_at);\\n                CREATE TABLE IF NOT EXISTS simulation_job_events (\\n                    event_id TEXT PRIMARY KEY,\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    sequence INTEGER NOT NULL,\\n                    stream_sequence INTEGER NOT NULL UNIQUE,\\n                    event_type TEXT NOT NULL,\\n                    previous_status TEXT NOT NULL DEFAULT '',\\n                    next_status TEXT NOT NULL DEFAULT '',\\n                    reason_code TEXT NOT NULL DEFAULT '',\\n                    timestamp TEXT NOT NULL,\\n                    source TEXT NOT NULL,\\n                    payload_json TEXT NOT NULL,\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE INDEX IF NOT EXISTS idx_sim_events_run_sequence\\n                ON simulation_job_events(run_id, sequence);\\n                CREATE TABLE IF NOT EXISTS simulation_job_leases (\\n                    lease_id TEXT PRIMARY KEY,\\n                    job_id TEXT NOT NULL,\\n                    worker_id TEXT NOT NULL,\\n                    acquired_at TEXT NOT NULL,\\n                    expires_at TEXT NOT NULL,\\n                    heartbeat_at TEXT NOT NULL,\\n                    released_at TEXT NOT NULL DEFAULT '',\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_job_attempts (\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    attempt INTEGER NOT NULL,\\n                    worker_id TEXT NOT NULL,\\n                    started_at TEXT NOT NULL,\\n                    ended_at TEXT NOT NULL DEFAULT '',\\n                    result TEXT NOT NULL,\\n                    error TEXT NOT NULL DEFAULT '',\\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\\n                    PRIMARY KEY(job_id, attempt),\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_metrics (\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    metric_index INTEGER NOT NULL,\\n                    metric_json TEXT NOT NULL,\\n                    PRIMARY KEY(job_id, metric_index),\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_artifacts (\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    name TEXT NOT NULL,\\n                    relative_path TEXT NOT NULL,\\n                    PRIMARY KEY(job_id, name),\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_operational_leases_v1 (\\n                    lease_id TEXT PRIMARY KEY, schema TEXT NOT NULL,\\n                    job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL, worker_id TEXT NOT NULL,\\n                    attempt INTEGER, lifecycle TEXT NOT NULL,\\n                    pid INTEGER NOT NULL, boot_id TEXT NOT NULL, process_start_ticks INTEGER NOT NULL,\\n                    epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL,\\n                    original_job_digest TEXT NOT NULL, original_policy_digest TEXT NOT NULL,\\n                    original_acquisition_json TEXT NOT NULL, segment_json TEXT NOT NULL,\\n                    proposal_id TEXT NOT NULL, operation_sha256 TEXT NOT NULL,\\n                    job_snapshot_json TEXT NOT NULL, proposed_row_digest TEXT NOT NULL,\\n                    durable_phase TEXT NOT NULL, terminal_reason TEXT NOT NULL,\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_batches (\\n                    batch_id TEXT PRIMARY KEY,\\n                    manifest_json TEXT NOT NULL,\\n                    run_ids_json TEXT NOT NULL,\\n                    total INTEGER NOT NULL,\\n                    created_at TEXT NOT NULL,\\n                    completed_at TEXT NOT NULL DEFAULT ''\\n                );\\n                \"",
+          "utf8_sha256": "a3ddbf6a2b6b4f582c743f7e988444b2457ceb2259958bace87dd430b8395227",
+          "bytes": 6355
+        },
+        {
+          "repr": "'INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)'",
+          "utf8_sha256": "504dd2c5df3dfb73079dcc0ff2dce22e1ae7b056fed331393a29c8b867ac0b8b",
+          "bytes": 74
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs SET '",
+          "utf8_sha256": "5e22a1c30f5ec6a6b4303d99df5a7109c380cf0c86e1cb31730d9f4151226604",
+          "bytes": 44
+        },
+        {
+          "repr": "'\\n                    INSERT INTO simulation_metrics (job_id, run_id, metric_index, metric_json)\\n                    VALUES (?, ?, ?, ?)\\n                    '",
+          "utf8_sha256": "6b1a8554b9e151ccda5133492282a6d6234aa5a2bcac92b0badd55606270cabe",
+          "bytes": 156
+        },
+        {
+          "repr": "'\\n                    INSERT INTO simulation_artifacts (job_id, run_id, name, relative_path)\\n                    VALUES (?, ?, ?, ?)\\n                    '",
+          "utf8_sha256": "46f63d03f0cb71c9356c61c579ed2cdc7c2a6a6fdc2fa41492e769e75a16d02a",
+          "bytes": 152
+        },
+        {
+          "repr": "'SELECT * FROM simulation_operational_leases_v1 WHERE job_id=?'",
+          "utf8_sha256": "8e83e25811d76d71cba69f85b86474f0f5f323ee69ed891fdc53e4b84e137648",
+          "bytes": 61
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE job_id=?'",
+          "utf8_sha256": "9e7c49adbb8591a47a6508611b57f9c0e8353d3d733dcfaeac34302c2ca04d18",
+          "bytes": 44
+        },
+        {
+          "repr": "'SELECT * FROM simulation_job_attempts WHERE job_id=? ORDER BY attempt'",
+          "utf8_sha256": "32718400c1c6e2965ce5f70abe0589b469c60552cfe544e74c81aa22e678be98",
+          "bytes": 69
+        },
+        {
+          "repr": "'UPDATE simulation_jobs SET status=?, updated_at=?, worker_id=?, lease_id=?, lease_expires_at=? WHERE job_id=? AND status=?'",
+          "utf8_sha256": "9693d4ad3b2c1c5b1861382a95d226621b80a2c06ccae35857577c528ac50c9f",
+          "bytes": 122
+        },
+        {
+          "repr": "\"INSERT INTO simulation_job_leases(lease_id, job_id, worker_id, acquired_at, expires_at, heartbeat_at, released_at) VALUES(?,?,?,?,?,?,'')\"",
+          "utf8_sha256": "9da0c32eda634fadbfd40980b305fea088eba58f361d7702cfbdde584e85b1ed",
+          "bytes": 137
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET '",
+          "utf8_sha256": "dd5e6e1f9579de5d110f261ab450e4b8767c36ebbeddbfcabda00109dc37e607",
+          "bytes": 44
+        },
+        {
+          "repr": "\"SELECT * FROM simulation_operational_leases_v1 WHERE durable_phase='COMMITTED'\"",
+          "utf8_sha256": "33f1fe16a84522b31b998fb39e37692f0893e3669cbcc35cbbccd882467b25dd",
+          "bytes": 78
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET proposed_row_digest=? WHERE lease_id=?'",
+          "utf8_sha256": "71d54c30cfe3b28bfff1d66b1337152fd6afd0c7307359231a02a79b2cd1b7cd",
+          "bytes": 82
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs ORDER BY created_at DESC, run_id ASC'",
+          "utf8_sha256": "a279358299d62bfc0a7410be45bbb9270f6307e3c92ff4e1a1ef89cdfa71d690",
+          "bytes": 66
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_jobs\\n                WHERE backend = ? AND status = ?\\n                AND NOT EXISTS (SELECT 1 FROM simulation_operational_leases_v1 AS op\\n                                WHERE op.job_id = simulation_jobs.job_id)\\n                ORDER BY priority DESC, created_at ASC\\n                LIMIT 1\\n                '",
+          "utf8_sha256": "efd4170b416b971e0557880535420c527f32f6279cb042cd9d2ca8a7ae5b8cb3",
+          "bytes": 350
+        },
+        {
+          "repr": "'\\n                SELECT leases.* FROM simulation_job_leases AS leases\\n                JOIN simulation_jobs AS jobs ON jobs.job_id = leases.job_id\\n                WHERE jobs.run_id = ?\\n                ORDER BY leases.acquired_at ASC\\n                '",
+          "utf8_sha256": "ee75052c65f01249f38fb4211c044c3ed7087d6f2a3e6a2b5e642d16202c37f1",
+          "bytes": 248
+        },
+        {
+          "repr": "\"\\n                SELECT job_id, status, lease_id, worker_id FROM simulation_jobs\\n                WHERE lease_expires_at IS NOT NULL\\n                AND lease_expires_at != ''\\n                AND lease_expires_at <= ?\\n                AND status IN (?, ?, ?)\\n                \"",
+          "utf8_sha256": "0e870578b02cfd2d27bdbbba4322f9f16e57c3fed7fb695151da443ec004997e",
+          "bytes": 273
+        },
+        {
+          "repr": "'SELECT run_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "22e11288fb153a658a2ab17883887ee5fb9dc67fd28caf073421e4291edbd10d",
+          "bytes": 51
+        },
+        {
+          "repr": "'\\n                SELECT COALESCE(MAX(sequence), 0) AS sequence\\n                FROM simulation_job_events\\n                WHERE job_id = ?\\n                '",
+          "utf8_sha256": "a0366b7e3d43a4ae12cedb4ec49ce351eae59172576a9e5047ae22245366d113",
+          "bytes": 155
+        },
+        {
+          "repr": "'SELECT COALESCE(MAX(stream_sequence), 0) AS sequence FROM simulation_job_events'",
+          "utf8_sha256": "60e53f01c0723913f28e7c2473c1d116ee646908b976b83b13871d92c4d1c061",
+          "bytes": 79
+        },
+        {
+          "repr": "'SELECT * FROM simulation_job_events WHERE run_id = ? ORDER BY sequence ASC'",
+          "utf8_sha256": "4b7e245f50a0d7301562fd7faad9d4a0e608fad74335c7882189a01d6d2c4935",
+          "bytes": 74
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_job_events\\n                WHERE stream_sequence > ?\\n                ORDER BY stream_sequence ASC\\n                LIMIT 512\\n                '",
+          "utf8_sha256": "938aaed416bd91450f077ec11e88aba66d21a2c840cf91d21ebddc14a2fb2263",
+          "bytes": 182
+        },
+        {
+          "repr": "'SELECT run_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "22e11288fb153a658a2ab17883887ee5fb9dc67fd28caf073421e4291edbd10d",
+          "bytes": 51
+        },
+        {
+          "repr": "'\\n                SELECT metric_json FROM simulation_metrics\\n                WHERE run_id = ?\\n                ORDER BY metric_index ASC\\n                '",
+          "utf8_sha256": "d2766e865c421466d6b4651cacee6e57336598750d0ef4c9a2de7df85c058264",
+          "bytes": 151
+        },
+        {
+          "repr": "'SELECT run_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "22e11288fb153a658a2ab17883887ee5fb9dc67fd28caf073421e4291edbd10d",
+          "bytes": 51
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE batch_id = ? ORDER BY created_at ASC'",
+          "utf8_sha256": "38e8fd9ddf875c54553cabd33ce0c8af5936cf16c5c3f58903f59f3d001a36df",
+          "bytes": 72
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_job_attempts\\n                WHERE run_id = ?\\n                ORDER BY attempt ASC\\n                '",
+          "utf8_sha256": "d1562446593d4799f538f032b5bd67bc58694ec4cae9893c728b88e4bdc52925",
+          "bytes": 141
+        },
+        {
+          "repr": "'SELECT run_id, attempt, worker_id, lease_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "cc743bc6d914e6396d5773178c17095f3589db3558c22cc85afd9979fff180c1",
+          "bytes": 81
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_jobs\\n                WHERE status = ?\\n                ORDER BY priority DESC, created_at ASC\\n                '",
+          "utf8_sha256": "0ccff6d6d25d3756e051d52e2a4f8713eb77bccfbf0e4b399362d8ebcc2d8bd8",
+          "bytes": 151
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_jobs WHERE status IN (?, ?, ?, ?)\\n                AND NOT EXISTS (SELECT 1 FROM simulation_operational_leases_v1 AS op\\n                                WHERE op.job_id=simulation_jobs.job_id)\\n                ORDER BY updated_at ASC\\n                '",
+          "utf8_sha256": "160348899f01d2de994cfb08ded188b2f7beacc856e48f5239c898be7821acb9",
+          "bytes": 289
+        },
+        {
+          "repr": "'INSERT INTO simulation_operational_leases_v1 ('",
+          "utf8_sha256": "99467fc140881ef3d79b31f31a1b8ad4412b11fe44b6c6e99761d554b8a594c6",
+          "bytes": 46
+        },
+        {
+          "repr": "'SELECT status FROM simulation_jobs WHERE job_id=?'",
+          "utf8_sha256": "21189398db23b73e6d14fb82b132bb5ddcf8051a0f4f50e23b8623e3617982d9",
+          "bytes": 49
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET '",
+          "utf8_sha256": "dd5e6e1f9579de5d110f261ab450e4b8767c36ebbeddbfcabda00109dc37e607",
+          "bytes": 44
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE backend=? AND status=? ORDER BY priority DESC, created_at ASC LIMIT 1'",
+          "utf8_sha256": "0afdc307eb647cda026c9faa37c1602df532ff11f75e45be5cd4e889684d1018",
+          "bytes": 105
+        },
+        {
+          "repr": "'SELECT COUNT(*) AS count FROM simulation_jobs WHERE status IN ('",
+          "utf8_sha256": "05ec8863f37744d8ad78ced014be9c5e46fce9f27da42642f883458d3653d7f1",
+          "bytes": 63
+        },
+        {
+          "repr": "'SELECT job_id FROM simulation_job_leases WHERE lease_id=?'",
+          "utf8_sha256": "11b7e8c8312ad852e6cb154de7662d615b7480322cbc0432fd89cf1c881c116e",
+          "bytes": 57
+        }
+      ],
+      "new_SQL_constants": [
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "35b3be739f74e5e6c690287149d6c61940c6a160e5f14c332bf5b2530ce911f0",
+          "bytes": 46
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE run_id = ?'",
+          "utf8_sha256": "72d910bbeb2c91c7ae5791659cc6c8ad9d6e2433f0264decffdf0e606537dd10",
+          "bytes": 46
+        },
+        {
+          "repr": "'SELECT artifact_paths_json FROM simulation_jobs WHERE run_id = ?'",
+          "utf8_sha256": "199710acc25c0091a874b9f43104f8ee61f309bee5a0a65fb23b5064841761b8",
+          "bytes": 64
+        },
+        {
+          "repr": "'SELECT * FROM simulation_batches WHERE batch_id = ?'",
+          "utf8_sha256": "5d0d04640a8de50b48bf90d41c68cef4e9bd1450f0d76f65f61da6ff20513af3",
+          "bytes": 51
+        },
+        {
+          "repr": "'\\n                INSERT INTO simulation_jobs (\\n                    job_id, run_id, batch_id, backend, scenario_id, control_mode, seed,\\n                    manifest_id, reproducibility_hash, status, draft_json, manifest_json,\\n                    attempt, max_attempts, priority, created_at, updated_at, timeout_seconds,\\n                    cancel_requested, artifact_root, source_commit, source_tree_hash,\\n                    provenance_json, blocker_codes_json, artifact_paths_json\\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)\\n                '",
+          "utf8_sha256": "d465e9f6d0ca3338cbf8ce425b006d40fa8d446543e25c71a62138647996ff60",
+          "bytes": 599
+        },
+        {
+          "repr": "'UPDATE simulation_jobs SET cancel_requested = 1, updated_at = ? WHERE job_id = ?'",
+          "utf8_sha256": "61b53b41fcede3761eb8bbd4e1badad270c15d708b460e2e8194336d464992e0",
+          "bytes": 80
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs\\n                SET status = ?, updated_at = ?, worker_id = ?, lease_id = ?, lease_expires_at = ?\\n                WHERE job_id = ? AND status = ?\\n                '",
+          "utf8_sha256": "62db2811719e2bf608e8360811bc5f25be02705e05262aed8ff0ce50329aeff4",
+          "bytes": 202
+        },
+        {
+          "repr": "\"\\n                INSERT INTO simulation_job_leases (\\n                    lease_id, job_id, worker_id, acquired_at, expires_at, heartbeat_at, released_at\\n                ) VALUES (?, ?, ?, ?, ?, ?, '')\\n                \"",
+          "utf8_sha256": "0ce99e015dcbbac26dd031d5c47e39abc3b29109f815acc29fc860b01bf40bd1",
+          "bytes": 217
+        },
+        {
+          "repr": "\"\\n                UPDATE simulation_job_leases SET heartbeat_at = ?, expires_at = ?\\n                WHERE lease_id = ? AND released_at = '' AND expires_at > ?\\n                AND EXISTS (\\n                    SELECT 1 FROM simulation_jobs AS job\\n                    WHERE job.job_id = simulation_job_leases.job_id\\n                    AND job.lease_id = simulation_job_leases.lease_id\\n                    AND job.worker_id = simulation_job_leases.worker_id\\n                    AND job.lease_expires_at > ? AND job.cancel_requested = 0\\n                    AND job.status IN (?, ?, ?)\\n                )\\n                \"",
+          "utf8_sha256": "3bee43f9ba6f2918307b4d15338e6659fd96db40d07ac6707d2d358f003aa6fd",
+          "bytes": 614
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs SET lease_expires_at = ?, updated_at = ?\\n                WHERE lease_id = ?\\n                '",
+          "utf8_sha256": "34e38e053dd8e8a96f4e94ab37c524a092a5937c7cb2ee3dfe0d02a694817359",
+          "bytes": 132
+        },
+        {
+          "repr": "'UPDATE simulation_job_leases SET released_at = ? WHERE lease_id = ?'",
+          "utf8_sha256": "deaf42b4ab0821732a1cfe863dc6dcb9b3ef0dafc588aff01866ac1cb8deafdc",
+          "bytes": 67
+        },
+        {
+          "repr": "'\\n                INSERT INTO simulation_job_events (\\n                    event_id, job_id, run_id, sequence, stream_sequence, event_type,\\n                    previous_status, next_status, reason_code, timestamp, source, payload_json\\n                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\\n                '",
+          "utf8_sha256": "8aaf70818dd6af16906bbbc3a6ca47feb35d63b00a044a67ccaf05fc247d05cf",
+          "bytes": 311
+        },
+        {
+          "repr": "'DELETE FROM simulation_metrics WHERE job_id = ?'",
+          "utf8_sha256": "6a1ad37e3e26e13faaae5ebc8dbc1e9bf5acc8eccd3c81b16ee3160d29752ae0",
+          "bytes": 47
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs\\n                SET artifact_paths_json = ?, updated_at = ?\\n                WHERE job_id = ?\\n                '",
+          "utf8_sha256": "70964bcb3d6a889b3ecb3c9407b35b7cb2b9046bb3be8a1f3ec59fd9c45a5765",
+          "bytes": 149
+        },
+        {
+          "repr": "'DELETE FROM simulation_artifacts WHERE job_id = ?'",
+          "utf8_sha256": "c6864978cab970b29c3cfaa3b15159abeec818df2c9fee625a0e7a7935bbf49d",
+          "bytes": 49
+        },
+        {
+          "repr": "\"\\n                INSERT OR REPLACE INTO simulation_batches (\\n                    batch_id, manifest_json, run_ids_json, total, created_at, completed_at\\n                ) VALUES (?, ?, ?, ?, ?, '')\\n                \"",
+          "utf8_sha256": "f32b643387988760bdf018f29e8fb7f992f1382c92b61af8709fa7df5009a688",
+          "bytes": 213
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs\\n                SET attempt = ?, worker_id = ?, updated_at = ?\\n                WHERE job_id = ? AND attempt = ? AND worker_id = ? AND lease_id = ?\\n                '",
+          "utf8_sha256": "17eac36b862e41bcb3d80d33b75dc1457bc775c16d7fe23c19488c4b3030c6dd",
+          "bytes": 203
+        },
+        {
+          "repr": "\"\\n                INSERT INTO simulation_job_attempts (\\n                    job_id, run_id, attempt, worker_id, started_at, ended_at, result,\\n                    error, artifact_paths_json\\n                ) VALUES (?, ?, ?, ?, ?, '', 'RUNNING', '', ?)\\n                \"",
+          "utf8_sha256": "3f3070c3b35553a28ddd625b390324f776cd3fb96b45b426be1e9c9423ef1d3c",
+          "bytes": 267
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_job_attempts\\n                SET ended_at = ?, result = ?, error = ?, artifact_paths_json = ?\\n                WHERE job_id = ? AND attempt = ?\\n                '",
+          "utf8_sha256": "80eb169a8bbedb5b8f9e5d3c5db34833a2c2d04a29152b2bbf009be2b8c6df89",
+          "bytes": 194
+        },
+        {
+          "repr": "\"\\n                UPDATE simulation_job_attempts\\n                SET ended_at = ?, result = ?, error = ?\\n                WHERE job_id = ? AND ended_at = ''\\n                \"",
+          "utf8_sha256": "827e6580236d867ec9b2dfad55cbc8d3888d0e08d3167611caed188cc04b7f2c",
+          "bytes": 171
+        },
+        {
+          "repr": "\"\\n                UPDATE simulation_jobs\\n                SET status = ?, cancel_requested = 0, completed_at = NULL,\\n                    queued_at = ?, updated_at = ?,\\n                    worker_id = '', lease_id = '', lease_expires_at = NULL,\\n                    error_code = '', error_message = ''\\n                WHERE job_id = ? AND status = ? AND lease_id = ? AND worker_id = ?\\n                \"",
+          "utf8_sha256": "a6dc22d7d75c7077eb405cfd36c42b3afd0cfae2129076e3eeb6f1c0713c3769",
+          "bytes": 397
+        },
+        {
+          "repr": "\"UPDATE simulation_job_attempts SET ended_at=?, result='INTERRUPTED', error=? WHERE job_id=? AND ended_at=''\"",
+          "utf8_sha256": "c0cbe1587ce6a45cc1b1ddc3e81cd5d80ea8d051e36f7db6e48b4e071243627f",
+          "bytes": 107
+        },
+        {
+          "repr": "'UPDATE simulation_jobs SET status=?, updated_at=?, error_code=? WHERE job_id=? AND status IN (?,?,?)'",
+          "utf8_sha256": "7911db7b7d7bef5af26e7b40359e4a267e5201de21f12c251bff9305c99b6c94",
+          "bytes": 100
+        },
+        {
+          "repr": "\"UPDATE simulation_operational_leases_v1 SET durable_phase='TERMINATED' WHERE lease_id=?\"",
+          "utf8_sha256": "5a62efb0855cd317d159690df98c92422a7d5b7da54b1d166dff04ed8950a81a",
+          "bytes": 87
+        },
+        {
+          "repr": "\"\\n                CREATE TABLE IF NOT EXISTS schema_migrations (\\n                    version INTEGER PRIMARY KEY,\\n                    applied_at TEXT NOT NULL\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_jobs (\\n                    job_id TEXT PRIMARY KEY,\\n                    run_id TEXT NOT NULL UNIQUE,\\n                    batch_id TEXT NOT NULL DEFAULT '',\\n                    backend TEXT NOT NULL,\\n                    scenario_id TEXT NOT NULL,\\n                    control_mode TEXT NOT NULL,\\n                    seed INTEGER NOT NULL,\\n                    manifest_id TEXT NOT NULL,\\n                    reproducibility_hash TEXT NOT NULL,\\n                    status TEXT NOT NULL,\\n                    draft_json TEXT NOT NULL,\\n                    manifest_json TEXT NOT NULL,\\n                    attempt INTEGER NOT NULL DEFAULT 0,\\n                    max_attempts INTEGER NOT NULL DEFAULT 1,\\n                    priority INTEGER NOT NULL DEFAULT 0,\\n                    created_at TEXT NOT NULL,\\n                    queued_at TEXT,\\n                    started_at TEXT,\\n                    completed_at TEXT,\\n                    updated_at TEXT NOT NULL,\\n                    timeout_seconds INTEGER NOT NULL,\\n                    cancel_requested INTEGER NOT NULL DEFAULT 0,\\n                    worker_id TEXT NOT NULL DEFAULT '',\\n                    lease_id TEXT NOT NULL DEFAULT '',\\n                    lease_expires_at TEXT,\\n                    blocker_codes_json TEXT NOT NULL DEFAULT '[]',\\n                    error_code TEXT NOT NULL DEFAULT '',\\n                    error_message TEXT NOT NULL DEFAULT '',\\n                    artifact_root TEXT NOT NULL DEFAULT '',\\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\\n                    provenance_json TEXT NOT NULL DEFAULT '{}',\\n                    source_commit TEXT NOT NULL DEFAULT '',\\n                    source_tree_hash TEXT NOT NULL DEFAULT ''\\n                );\\n                CREATE INDEX IF NOT EXISTS idx_sim_jobs_status_backend\\n                ON simulation_jobs(status, backend, priority, created_at);\\n                CREATE TABLE IF NOT EXISTS simulation_job_events (\\n                    event_id TEXT PRIMARY KEY,\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    sequence INTEGER NOT NULL,\\n                    stream_sequence INTEGER NOT NULL UNIQUE,\\n                    event_type TEXT NOT NULL,\\n                    previous_status TEXT NOT NULL DEFAULT '',\\n                    next_status TEXT NOT NULL DEFAULT '',\\n                    reason_code TEXT NOT NULL DEFAULT '',\\n                    timestamp TEXT NOT NULL,\\n                    source TEXT NOT NULL,\\n                    payload_json TEXT NOT NULL,\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE INDEX IF NOT EXISTS idx_sim_events_run_sequence\\n                ON simulation_job_events(run_id, sequence);\\n                CREATE TABLE IF NOT EXISTS simulation_job_leases (\\n                    lease_id TEXT PRIMARY KEY,\\n                    job_id TEXT NOT NULL,\\n                    worker_id TEXT NOT NULL,\\n                    acquired_at TEXT NOT NULL,\\n                    expires_at TEXT NOT NULL,\\n                    heartbeat_at TEXT NOT NULL,\\n                    released_at TEXT NOT NULL DEFAULT '',\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_job_attempts (\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    attempt INTEGER NOT NULL,\\n                    worker_id TEXT NOT NULL,\\n                    started_at TEXT NOT NULL,\\n                    ended_at TEXT NOT NULL DEFAULT '',\\n                    result TEXT NOT NULL,\\n                    error TEXT NOT NULL DEFAULT '',\\n                    artifact_paths_json TEXT NOT NULL DEFAULT '{}',\\n                    PRIMARY KEY(job_id, attempt),\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_metrics (\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    metric_index INTEGER NOT NULL,\\n                    metric_json TEXT NOT NULL,\\n                    PRIMARY KEY(job_id, metric_index),\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_artifacts (\\n                    job_id TEXT NOT NULL,\\n                    run_id TEXT NOT NULL,\\n                    name TEXT NOT NULL,\\n                    relative_path TEXT NOT NULL,\\n                    PRIMARY KEY(job_id, name),\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_operational_leases_v1 (\\n                    lease_id TEXT PRIMARY KEY, schema TEXT NOT NULL,\\n                    job_id TEXT NOT NULL UNIQUE, run_id TEXT NOT NULL, worker_id TEXT NOT NULL,\\n                    attempt INTEGER, lifecycle TEXT NOT NULL,\\n                    pid INTEGER NOT NULL, boot_id TEXT NOT NULL, process_start_ticks INTEGER NOT NULL,\\n                    epoch TEXT NOT NULL, generation INTEGER NOT NULL, row_revision INTEGER NOT NULL,\\n                    original_job_digest TEXT NOT NULL, original_policy_digest TEXT NOT NULL,\\n                    original_acquisition_json TEXT NOT NULL, segment_json TEXT NOT NULL,\\n                    proposal_id TEXT NOT NULL, operation_sha256 TEXT NOT NULL,\\n                    job_snapshot_json TEXT NOT NULL, proposed_row_digest TEXT NOT NULL,\\n                    durable_phase TEXT NOT NULL, terminal_reason TEXT NOT NULL,\\n                    FOREIGN KEY(job_id) REFERENCES simulation_jobs(job_id)\\n                );\\n                CREATE TABLE IF NOT EXISTS simulation_batches (\\n                    batch_id TEXT PRIMARY KEY,\\n                    manifest_json TEXT NOT NULL,\\n                    run_ids_json TEXT NOT NULL,\\n                    total INTEGER NOT NULL,\\n                    created_at TEXT NOT NULL,\\n                    completed_at TEXT NOT NULL DEFAULT ''\\n                );\\n                \"",
+          "utf8_sha256": "a3ddbf6a2b6b4f582c743f7e988444b2457ceb2259958bace87dd430b8395227",
+          "bytes": 6355
+        },
+        {
+          "repr": "'INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)'",
+          "utf8_sha256": "504dd2c5df3dfb73079dcc0ff2dce22e1ae7b056fed331393a29c8b867ac0b8b",
+          "bytes": 74
+        },
+        {
+          "repr": "'\\n                UPDATE simulation_jobs SET '",
+          "utf8_sha256": "5e22a1c30f5ec6a6b4303d99df5a7109c380cf0c86e1cb31730d9f4151226604",
+          "bytes": 44
+        },
+        {
+          "repr": "'\\n                    INSERT INTO simulation_metrics (job_id, run_id, metric_index, metric_json)\\n                    VALUES (?, ?, ?, ?)\\n                    '",
+          "utf8_sha256": "6b1a8554b9e151ccda5133492282a6d6234aa5a2bcac92b0badd55606270cabe",
+          "bytes": 156
+        },
+        {
+          "repr": "'\\n                    INSERT INTO simulation_artifacts (job_id, run_id, name, relative_path)\\n                    VALUES (?, ?, ?, ?)\\n                    '",
+          "utf8_sha256": "46f63d03f0cb71c9356c61c579ed2cdc7c2a6a6fdc2fa41492e769e75a16d02a",
+          "bytes": 152
+        },
+        {
+          "repr": "'SELECT * FROM simulation_operational_leases_v1 WHERE job_id=?'",
+          "utf8_sha256": "8e83e25811d76d71cba69f85b86474f0f5f323ee69ed891fdc53e4b84e137648",
+          "bytes": 61
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE job_id=?'",
+          "utf8_sha256": "9e7c49adbb8591a47a6508611b57f9c0e8353d3d733dcfaeac34302c2ca04d18",
+          "bytes": 44
+        },
+        {
+          "repr": "'SELECT * FROM simulation_job_attempts WHERE job_id=? ORDER BY attempt'",
+          "utf8_sha256": "32718400c1c6e2965ce5f70abe0589b469c60552cfe544e74c81aa22e678be98",
+          "bytes": 69
+        },
+        {
+          "repr": "'UPDATE simulation_jobs SET status=?, updated_at=?, worker_id=?, lease_id=?, lease_expires_at=? WHERE job_id=? AND status=?'",
+          "utf8_sha256": "9693d4ad3b2c1c5b1861382a95d226621b80a2c06ccae35857577c528ac50c9f",
+          "bytes": 122
+        },
+        {
+          "repr": "\"INSERT INTO simulation_job_leases(lease_id, job_id, worker_id, acquired_at, expires_at, heartbeat_at, released_at) VALUES(?,?,?,?,?,?,'')\"",
+          "utf8_sha256": "9da0c32eda634fadbfd40980b305fea088eba58f361d7702cfbdde584e85b1ed",
+          "bytes": 137
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET '",
+          "utf8_sha256": "dd5e6e1f9579de5d110f261ab450e4b8767c36ebbeddbfcabda00109dc37e607",
+          "bytes": 44
+        },
+        {
+          "repr": "\"SELECT * FROM simulation_operational_leases_v1 WHERE durable_phase='COMMITTED'\"",
+          "utf8_sha256": "33f1fe16a84522b31b998fb39e37692f0893e3669cbcc35cbbccd882467b25dd",
+          "bytes": 78
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET proposed_row_digest=? WHERE lease_id=?'",
+          "utf8_sha256": "71d54c30cfe3b28bfff1d66b1337152fd6afd0c7307359231a02a79b2cd1b7cd",
+          "bytes": 82
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs ORDER BY created_at DESC, run_id ASC'",
+          "utf8_sha256": "a279358299d62bfc0a7410be45bbb9270f6307e3c92ff4e1a1ef89cdfa71d690",
+          "bytes": 66
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_jobs\\n                WHERE backend = ? AND status = ?\\n                AND NOT EXISTS (SELECT 1 FROM simulation_operational_leases_v1 AS op\\n                                WHERE op.job_id = simulation_jobs.job_id)\\n                ORDER BY priority DESC, created_at ASC\\n                LIMIT 1\\n                '",
+          "utf8_sha256": "efd4170b416b971e0557880535420c527f32f6279cb042cd9d2ca8a7ae5b8cb3",
+          "bytes": 350
+        },
+        {
+          "repr": "'\\n                SELECT leases.* FROM simulation_job_leases AS leases\\n                JOIN simulation_jobs AS jobs ON jobs.job_id = leases.job_id\\n                WHERE jobs.run_id = ?\\n                ORDER BY leases.acquired_at ASC\\n                '",
+          "utf8_sha256": "ee75052c65f01249f38fb4211c044c3ed7087d6f2a3e6a2b5e642d16202c37f1",
+          "bytes": 248
+        },
+        {
+          "repr": "\"\\n                SELECT job_id, status, lease_id, worker_id FROM simulation_jobs\\n                WHERE lease_expires_at IS NOT NULL\\n                AND lease_expires_at != ''\\n                AND lease_expires_at <= ?\\n                AND status IN (?, ?, ?)\\n                \"",
+          "utf8_sha256": "0e870578b02cfd2d27bdbbba4322f9f16e57c3fed7fb695151da443ec004997e",
+          "bytes": 273
+        },
+        {
+          "repr": "'SELECT run_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "22e11288fb153a658a2ab17883887ee5fb9dc67fd28caf073421e4291edbd10d",
+          "bytes": 51
+        },
+        {
+          "repr": "'\\n                SELECT COALESCE(MAX(sequence), 0) AS sequence\\n                FROM simulation_job_events\\n                WHERE job_id = ?\\n                '",
+          "utf8_sha256": "a0366b7e3d43a4ae12cedb4ec49ce351eae59172576a9e5047ae22245366d113",
+          "bytes": 155
+        },
+        {
+          "repr": "'SELECT COALESCE(MAX(stream_sequence), 0) AS sequence FROM simulation_job_events'",
+          "utf8_sha256": "60e53f01c0723913f28e7c2473c1d116ee646908b976b83b13871d92c4d1c061",
+          "bytes": 79
+        },
+        {
+          "repr": "'SELECT * FROM simulation_job_events WHERE run_id = ? ORDER BY sequence ASC'",
+          "utf8_sha256": "4b7e245f50a0d7301562fd7faad9d4a0e608fad74335c7882189a01d6d2c4935",
+          "bytes": 74
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_job_events\\n                WHERE stream_sequence > ?\\n                ORDER BY stream_sequence ASC\\n                LIMIT 512\\n                '",
+          "utf8_sha256": "938aaed416bd91450f077ec11e88aba66d21a2c840cf91d21ebddc14a2fb2263",
+          "bytes": 182
+        },
+        {
+          "repr": "'SELECT run_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "22e11288fb153a658a2ab17883887ee5fb9dc67fd28caf073421e4291edbd10d",
+          "bytes": 51
+        },
+        {
+          "repr": "'\\n                SELECT metric_json FROM simulation_metrics\\n                WHERE run_id = ?\\n                ORDER BY metric_index ASC\\n                '",
+          "utf8_sha256": "d2766e865c421466d6b4651cacee6e57336598750d0ef4c9a2de7df85c058264",
+          "bytes": 151
+        },
+        {
+          "repr": "'SELECT run_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "22e11288fb153a658a2ab17883887ee5fb9dc67fd28caf073421e4291edbd10d",
+          "bytes": 51
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE batch_id = ? ORDER BY created_at ASC'",
+          "utf8_sha256": "38e8fd9ddf875c54553cabd33ce0c8af5936cf16c5c3f58903f59f3d001a36df",
+          "bytes": 72
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_job_attempts\\n                WHERE run_id = ?\\n                ORDER BY attempt ASC\\n                '",
+          "utf8_sha256": "d1562446593d4799f538f032b5bd67bc58694ec4cae9893c728b88e4bdc52925",
+          "bytes": 141
+        },
+        {
+          "repr": "'SELECT run_id, attempt, worker_id, lease_id FROM simulation_jobs WHERE job_id = ?'",
+          "utf8_sha256": "cc743bc6d914e6396d5773178c17095f3589db3558c22cc85afd9979fff180c1",
+          "bytes": 81
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_jobs\\n                WHERE status = ?\\n                ORDER BY priority DESC, created_at ASC\\n                '",
+          "utf8_sha256": "0ccff6d6d25d3756e051d52e2a4f8713eb77bccfbf0e4b399362d8ebcc2d8bd8",
+          "bytes": 151
+        },
+        {
+          "repr": "'\\n                SELECT * FROM simulation_jobs WHERE status IN (?, ?, ?, ?)\\n                AND NOT EXISTS (SELECT 1 FROM simulation_operational_leases_v1 AS op\\n                                WHERE op.job_id=simulation_jobs.job_id)\\n                ORDER BY updated_at ASC\\n                '",
+          "utf8_sha256": "160348899f01d2de994cfb08ded188b2f7beacc856e48f5239c898be7821acb9",
+          "bytes": 289
+        },
+        {
+          "repr": "'INSERT INTO simulation_operational_leases_v1 ('",
+          "utf8_sha256": "99467fc140881ef3d79b31f31a1b8ad4412b11fe44b6c6e99761d554b8a594c6",
+          "bytes": 46
+        },
+        {
+          "repr": "'SELECT status FROM simulation_jobs WHERE job_id=?'",
+          "utf8_sha256": "21189398db23b73e6d14fb82b132bb5ddcf8051a0f4f50e23b8623e3617982d9",
+          "bytes": 49
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET '",
+          "utf8_sha256": "dd5e6e1f9579de5d110f261ab450e4b8767c36ebbeddbfcabda00109dc37e607",
+          "bytes": 44
+        },
+        {
+          "repr": "'SELECT * FROM simulation_jobs WHERE backend=? AND status=? ORDER BY priority DESC, created_at ASC LIMIT 1'",
+          "utf8_sha256": "0afdc307eb647cda026c9faa37c1602df532ff11f75e45be5cd4e889684d1018",
+          "bytes": 105
+        },
+        {
+          "repr": "'SELECT COUNT(*) AS count FROM simulation_jobs WHERE status IN ('",
+          "utf8_sha256": "05ec8863f37744d8ad78ced014be9c5e46fce9f27da42642f883458d3653d7f1",
+          "bytes": 63
+        },
+        {
+          "repr": "'SELECT job_id FROM simulation_job_leases WHERE lease_id=?'",
+          "utf8_sha256": "11b7e8c8312ad852e6cb154de7662d615b7480322cbc0432fd89cf1c881c116e",
+          "bytes": 57
+        }
+      ]
+    },
+    {
+      "path": "tests/test_operational_runtime_closure.py",
+      "old_sha256": "2e83dd5afeccdec4896a4b6ccdd9799d540fa7c73fc53e1bf46d773c4a1e9ee6",
+      "new_sha256": "751f1ae0814ccf308c4d6c6a89bf66f3235099dc86a860bb11108c022b798b4b",
+      "formatter_AST_type_comments": true,
+      "normalized_full_AST_equal": true,
+      "ordered_constants_equal": true,
+      "anchored_comments_equal": true,
+      "old_SQL_constants": [
+        {
+          "repr": "\"UPDATE simulation_operational_leases_v1 SET pid=?, epoch=?, durable_phase='COMMITTED'\"",
+          "utf8_sha256": "493764f68a7775f48dc2916332cbdd2707f206fc031f215624effceab8985553",
+          "bytes": 85
+        },
+        {
+          "repr": "\"UPDATE simulation_jobs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE job_id=?\"",
+          "utf8_sha256": "cda14f5499c8c064ac8b89fb89237aba0adb3792973c8c1240a0cab216724c0b",
+          "bytes": 86
+        },
+        {
+          "repr": "'SELECT * FROM simulation_operational_leases_v1 ORDER BY lease_id'",
+          "utf8_sha256": "7951b37608dab67e4a2c6840d75d1420b938d15f587e92ed15fdc83b149dd278",
+          "bytes": 64
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET row_revision=row_revision+1 WHERE job_id=?'",
+          "utf8_sha256": "330aed2f5ef0c7fe6153b909956921da3991212056918502e07007fd86c60966",
+          "bytes": 86
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET row_revision=row_revision+1 WHERE job_id=?'",
+          "utf8_sha256": "330aed2f5ef0c7fe6153b909956921da3991212056918502e07007fd86c60966",
+          "bytes": 86
+        },
+        {
+          "repr": "'SELECT * FROM '",
+          "utf8_sha256": "6fbe93702679a9d082144bf3096315f19b3aa9fe4a684eb22574ebbc742ba706",
+          "bytes": 14
+        }
+      ],
+      "new_SQL_constants": [
+        {
+          "repr": "\"UPDATE simulation_operational_leases_v1 SET pid=?, epoch=?, durable_phase='COMMITTED'\"",
+          "utf8_sha256": "493764f68a7775f48dc2916332cbdd2707f206fc031f215624effceab8985553",
+          "bytes": 85
+        },
+        {
+          "repr": "\"UPDATE simulation_jobs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE job_id=?\"",
+          "utf8_sha256": "cda14f5499c8c064ac8b89fb89237aba0adb3792973c8c1240a0cab216724c0b",
+          "bytes": 86
+        },
+        {
+          "repr": "'SELECT * FROM simulation_operational_leases_v1 ORDER BY lease_id'",
+          "utf8_sha256": "7951b37608dab67e4a2c6840d75d1420b938d15f587e92ed15fdc83b149dd278",
+          "bytes": 64
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET row_revision=row_revision+1 WHERE job_id=?'",
+          "utf8_sha256": "330aed2f5ef0c7fe6153b909956921da3991212056918502e07007fd86c60966",
+          "bytes": 86
+        },
+        {
+          "repr": "'UPDATE simulation_operational_leases_v1 SET row_revision=row_revision+1 WHERE job_id=?'",
+          "utf8_sha256": "330aed2f5ef0c7fe6153b909956921da3991212056918502e07007fd86c60966",
+          "bytes": 86
+        },
+        {
+          "repr": "'SELECT * FROM '",
+          "utf8_sha256": "6fbe93702679a9d082144bf3096315f19b3aa9fe4a684eb22574ebbc742ba706",
+          "bytes": 14
+        }
+      ]
+    }
+  ],
+  "four_other_sources_unchanged": [
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py",
+      "sha256": "e741b3d6de1c0914f7157cc9c9af471ccc139a1363a430151a032171c1898233",
+      "bytes": 29091
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/repository.py",
+      "sha256": "e8000336da84e54b37cb2ca552e1e04b9f743b1f6db68da51223529f490796af",
+      "bytes": 4179
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/worker.py",
+      "sha256": "88c2176864fe4886cd3ef788ce47a0e0aeb98411f6a34585ca36a998b3dc4394",
+      "bytes": 84805
+    },
+    {
+      "path": "src/cloud_edge_robot_arm/simulation_runtime/recovery.py",
+      "sha256": "70edefdc953cea27c65d9fe6228aaf7be4a062320c306966c5c7f04862857d79",
+      "bytes": 4062
+    }
+  ],
+  "original_scope_proof_unchanged": {
+    "path": "artifacts/research/process/20261004-ced-development/astra-rounds/round113-p6-operational-runtime-closure-20261008/implementation/stage-a/scope_proof/proof.json",
+    "sha256": "5c9a38c425acb91c69daebe1ab490cbe78bcd6e422e39e8c536f63348f097807",
+    "bytes": 39104
+  },
+  "original_RED_old_draft": true,
+  "runtime_verdict": false,
+  "acceptance": "LEASE_FOUNDATION_WITH_LEGACY_UTC_VETO pending remaining checks and independent review"
+}

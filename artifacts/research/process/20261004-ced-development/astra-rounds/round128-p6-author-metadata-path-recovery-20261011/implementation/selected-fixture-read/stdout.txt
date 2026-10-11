@@ -1,0 +1,24 @@
+61:def software_factory(
+62:    monkeypatch, tmp_path, *, during_initialize=None, during_settle=None, during_episode=None
+103:    received = []
+156:        received.append((actual_planner, actual_robot, actual_capture, policy))
+157:        if during_episode:
+158:            during_episode(worker, repo, job, source_root)
+197:    return repo, job, worker, calls, received, backend, event_repository
+204:    repo, job, worker, calls, received, backend, events = software_factory(monkeypatch, tmp_path)
+218:    planner, robot, capture, policy = received[0]
+260:    repo, job, worker, calls, received, _, _ = software_factory(monkeypatch, tmp_path, **params)
+264:    assert received == []
+273:    repo, job, worker, calls, received, _, _ = software_factory(
+278:    assert received == []
+288:    repo, job, worker, calls, received, _, _ = software_factory(monkeypatch, tmp_path)
+310:    assert received == []
+313:def test_source_drift_during_episode_rejects_returned_result(monkeypatch, tmp_path):
+318:    repo, job, worker, calls, received, _, _ = software_factory(
+319:        monkeypatch, tmp_path, during_episode=rewrite
+324:    assert len(received) == 1
+354:    repo, job, worker, calls, received, backend, _ = software_factory(monkeypatch, tmp_path)
+357:    assert len(received) == 1, repo.get_job(job.job_id).error_message
+358:    _, robot, capture, policy = received[0]
+388:    repo, job, worker, calls, received, _, _ = software_factory(monkeypatch, tmp_path)
+391:    assert received == [] and "episode" not in calls

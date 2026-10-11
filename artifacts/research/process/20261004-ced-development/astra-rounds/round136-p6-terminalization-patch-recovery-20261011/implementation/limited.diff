@@ -1,0 +1,32 @@
+--- before
++++ after
+@@ -1609,14 +1609,15 @@
+                     _DISPATCH_OWNERS[id(dispatch)] = dispatch
+ 
+     def _terminalize_operational(
+-        self, conn: sqlite3.Connection, before: dict[str, Any], reason: str
++        self, conn: sqlite3.Connection, before: dict[str, Any], reason: str,
++        *, phase: str = "REVOKED",
+     ) -> None:
+         self._require_active_writer()
+         if conn is not self._writer_binding().connection:
+             raise OperationalLeaseError("terminal cleanup connection differs from registered owner")
+         target = dict(before)
+         target.update(
+-            durable_phase="REVOKED",
++            durable_phase=phase,
+             lifecycle="TERMINAL",
+             terminal_reason=reason,
+             row_revision=int(before["row_revision"]) + 1,
+@@ -1628,9 +1629,9 @@
+         cursor = conn.execute(
+             "UPDATE simulation_operational_leases_v1 SET "
+             + ",".join(c + "=?" for c in columns)
+-            + " WHERE lease_id=? AND row_revision=? AND generation=?",
++            + " WHERE lease_id=? AND row_revision=? AND generation=? AND proposed_row_digest=?",
+             tuple(target[c] for c in columns)
+-            + (before["lease_id"], before["row_revision"], before["generation"]),
++            + (before["lease_id"], before["row_revision"], before["generation"], before["proposed_row_digest"]),
+         )
+         if cursor.rowcount != 1:
+             raise OperationalLeaseError("terminal mutation lost exact generation CAS")

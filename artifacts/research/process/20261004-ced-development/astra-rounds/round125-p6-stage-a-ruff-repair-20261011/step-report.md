@@ -1,0 +1,3 @@
+# Stage A stopped after R125 Ruff
+
+NEEDS_ASTRA: R125 Ruff actual exit1, UP0492 for planned private PEP695 parameters. No self-fix or retry. R125 formatter and bounded delta proof exit0, with original SQL constants and narrow AST/comments unchanged. Current six sources and complete originals frozen at `artifacts/research/process/20261004-ced-development/astra-rounds/round125-p6-stage-a-ruff-repair-20261011/implementation/stopped-up049`. All3 R125 budgets consumed; original format_check/mypy/GREEN unused. RED belongs to old draft. Stage A remains unaccepted; no B/C/D/native/actual/formal execution.

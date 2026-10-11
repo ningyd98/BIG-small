@@ -1,0 +1,9 @@
+{
+  "path": "tests/test_operational_runtime_closure.py",
+  "before_sha256": "8c804e3db2390d0268f6ff68dd8322008feebcb05281b8bd1992d2f2f293db8f",
+  "after_sha256": "4ccdc0a50b459485db27ea1d14626652b8ab1171a580c9bac1f386f1de227eae",
+  "diff": "--- \n+++ \n@@ -419,7 +419,9 @@\n def test_restart_terminates_without_reissue(monkeypatch, tmp_path, variant):\n     captured = []\n     def check(module, session, runtime, lease_raw, app_raw, worker, repo, job):\n-        captured.append((session, runtime._operational_owner.export_record(owner.task_window), _rows(repo)[0]))\n+        owner = runtime._operational_owner\n+        assert owner is not None and owner.task_window is not None\n+        captured.append((session, owner.export_record(owner.task_window), _rows(repo)[0]))\n         return session.epoch\n     _, data = _exercise(monkeypatch, tmp_path, check)\n     repo, job, worker, calls, received, backend, events = data\n",
+  "scope": "restart check local owner binding only",
+  "original_RED_old_draft": true,
+  "R122_metadata_unchanged": true
+}

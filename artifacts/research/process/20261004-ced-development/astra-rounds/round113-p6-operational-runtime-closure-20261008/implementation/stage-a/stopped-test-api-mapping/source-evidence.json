@@ -1,0 +1,30 @@
+[
+  {
+    "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+    "sha256": "a8287b841281221466dd2f0890b7ad9542d5567250484748d299619cd15fbb79",
+    "line_start": 227,
+    "line_end": 255,
+    "original_source_excerpt": "class OperationalWindowOwner:\n    \"\"\"Opaque lifecycle owner. Public descriptors cannot construct or install it.\"\"\"\n\n    def __init__(self, startup: _Startup, *, _capability: object) -> None:\n        if _capability is not _CONSTRUCTION:\n            raise OperationalTimeError(\"use genuine normal worker startup\")\n        self._startup = startup\n        self._clock = open_operational_clock()\n        self._closed = False\n        self._windows: dict[str, _Window] = {}\n        self._observations: dict[str, tuple[OperationalBracket, str]] = {}\n        self._observation_values: dict[str, object] = {}\n        self._references: dict[tuple[str, str, int], str] = {}\n        self._policies: dict[tuple[str, str], tuple[int, str]] = {}\n        self._maximum_ages: dict[str, tuple[int, str]] = {}\n        self._source_root: object | None = None\n        self._source_hashes: dict[str, str] | None = None\n        self._source_identity = startup.job_source\n        self._origin_tuple: object | None = None\n        self._episode_id: str | None = None\n        self.task_origin_token: OperationalEventToken | None = None\n        self.task_origin: OperationalBracket | None = None\n        self.task_window: str | None = None\n        self._hard: tuple[_Hard, ...] = ()\n\n    def __copy__(self) -> object:\n        raise OperationalTimeError(\"live window owners cannot be copied\")\n\n    def __deepcopy__(self, memo: dict[int, object]) -> object:\n"
+  },
+  {
+    "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+    "sha256": "a8287b841281221466dd2f0890b7ad9542d5567250484748d299619cd15fbb79",
+    "line_start": 330,
+    "line_end": 357,
+    "original_source_excerpt": "        self.task_origin_token = self._clock.begin_event(\"ORIGINAL_TASK_D\")\n\n    def _mark_origin(self) -> None:\n        self._clock.mark_event(self.task_origin_token)\n\n    def _seal_origin(self, original_tuple: object) -> None:\n        if self.task_origin is not None:\n            raise OperationalTimeError(\"original origin cannot be refreshed\")\n        self.task_origin = self._clock.end_event(self.task_origin_token)\n        self._origin_tuple = original_tuple\n        s = self._startup\n        self._hard = tuple(\n            _Hard(\n                self._clock.start_deadline(task_key=key, origin=self.task_origin, budget_ns=budget),\n                key,\n            )\n            for key, budget in (\n                (s.job_source + \":task\", s.task_ns),\n                (s.binding_hash + \":verification\", s.verification_ns),\n            )\n        )\n        self.task_window = self.issue(\n            \"bootstrap\", self.task_origin, budget_ns=s.task_ns, parent_ids=()\n        )\n\n    def _bind_inputs(self, source: object, limits: object) -> None:\n        self._check_live()\n        s = self._startup\n"
+  },
+  {
+    "path": "src/cloud_edge_robot_arm/vision/operational_windows.py",
+    "sha256": "a8287b841281221466dd2f0890b7ad9542d5567250484748d299619cd15fbb79",
+    "line_start": 460,
+    "line_end": 472,
+    "original_source_excerpt": "    def export_record(self, window_id: str) -> dict[str, Any]:\n        self._check_live()\n        window = self._windows[window_id]\n        ages = [\n            {\n                \"event_id\": _event_token(self, age.event).event_identity,\n                \"source_id\": age.source_id,\n                \"lower_ns\": age.event.lower_ns,\n                \"upper_ns\": age.event.upper_ns,\n                \"max_age_ns\": age.budget_ns,\n                \"upper_age_inclusive\": True,\n                \"expiry_upper_ns\": age.event.lower_ns + age.budget_ns,\n            }\n"
+  },
+  {
+    "path": "src/cloud_edge_robot_arm/vision/worker_runtime.py",
+    "sha256": "940c9cbd5271b38e9310561f641da6bef0ff510588d87ca9fe6bf034613fa51d",
+    "line_start": 265,
+    "line_end": 278,
+    "original_source_excerpt": "        _operational_handoff: object | None = None,\n    ) -> None:\n        if type(source) is not WorkerRuntimeSource or type(role_binding) is not RoleRuntimeBinding:\n            raise TypeError(\"concrete worker source and role binding required\")\n        self.source = source\n        self.role_binding = role_binding\n        self._operational_owner = (\n            _consume_handoff(\n                _operational_handoff, source, role_binding, verification_limits, episode_id\n            )\n            if _operational_handoff is not None\n            else None\n        )\n        self._operational_pending = {}\n"
+  }
+]
