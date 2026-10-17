@@ -1,0 +1,29 @@
+{
+  "round": "R287",
+  "stage": "ordinary_source_preparation_byteproof",
+  "invocation": {
+    "cmd": "'/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python' - <<'PY'\nfrom pathlib import Path\nimport json,hashlib,base64,difflib\nR=Path('/home/ningyd/文档/ChatGPT/BIGsmall'); A=R/'artifacts/research/process/20261004-ced-development/astra-rounds'; D=A/'round287-p6-t2-runner-completion-marker-contract-20261017'; I=D/'implementation'\ndef pin(p):\n p=Path(p); b=p.read_bytes(); return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\ndef check(rec):\n actual=pin(rec['path']); assert all(actual[k]==rec[k] for k in ('path','bytes','sha256')),rec['path']; return actual\ndef save(p,b):\n with Path(p).open('xb') as f: f.write(b)\n return pin(p)\ndef write(p,obj): return save(p,(json.dumps(obj,ensure_ascii=False,indent=2)+'\\n').encode())\nP=json.loads((D/'plan.json').read_bytes()); inputs=[check(v) for v in P['inputs']]\nmanifest=json.loads((D/'before/manifest.json').read_bytes())\nfor row in manifest['records']:\n check(row['original']); check(row['archive']); b=Path(row['original']['path']).read_bytes(); assert b==Path(row['archive']['path']).read_bytes()==base64.b64decode(row['base64']); assert Path(row['original']['path']).stat().st_mode==row['mode']==Path(row['archive']['path']).stat().st_mode\noriginal=manifest['records'][0]; old=Path(original['archive']['path']).read_bytes(); candidate=I/'prepared-run-evidence-source.txt'; new=candidate.read_bytes()\nassert pin(candidate)['sha256']=='c4865f0bea01accbbb5787b38fd790f4af3abfcf10d220384a43f1e15239b6ad'\nmarkers=[(b'def behavior_resources_complete(summary):\\n',b'\\n\\ndef main():'),(b'                cleanup = outcome[\"cleanup\"]\\n',b'                display = {\"round\": \"R285\"')]\nnewmarkers=[(b'def completion_marker_fact(container):\\n',b'\\n\\ndef main():'),(b'                outcome[\"final_assessment\"] = ',b'                display = {\"round\": \"R285\"')]\nregions=[]; oldbounds=[]; newbounds=[]\nfor label,(left,right),(nleft,nright) in zip(('completion_helper','final_assessment_and_persistence'),markers,newmarkers):\n assert old.count(left)==old.count(right)==new.count(nleft)==new.count(nright)==1\n s=old.index(left); e=old.index(right,s); ns=new.index(nleft); ne=new.index(nright,ns)\n oldbounds.append((s,e)); newbounds.append((ns,ne)); regions.append({'label':label,'before':{'start_byte':s,'end_byte':e,'start_line':old[:s].count(b'\\n')+1,'bytes':e-s,'sha256':hashlib.sha256(old[s:e]).hexdigest()},'after':{'start_byte':ns,'end_byte':ne,'start_line':new[:ns].count(b'\\n')+1,'bytes':ne-ns,'sha256':hashlib.sha256(new[ns:ne]).hexdigest()}})\n(s1,e1),(s2,e2)=oldbounds; (n1,m1),(n2,m2)=newbounds\nassert old[:s1]==new[:n1] and old[e1:s2]==new[m1:n2] and old[e2:]==new[m2:]\nassert new==old[:s1]+new[n1:m1]+old[e1:s2]+new[n2:m2]+old[e2:]\nidx=json.loads(Path(P['inputs'][17]['path']).read_bytes()); sources=idx['sources']; protected=idx['authority_before']['protected']; assert len(sources)==27 and len(protected)==211\nfor row in sources:\n check(row); check(row['physical']); b=Path(row['path']).read_bytes(); assert b==base64.b64decode(row['base64'])==Path(row['physical']['path']).read_bytes(); assert Path(row['path']).stat().st_mode==row['mode']\nfor row in protected: check(row)\ntarget=I/'run-evidence-corrected.py'; assert not target.exists() and not target.is_symlink()\nlimited=save(I/'limited.diff',''.join(difflib.unified_diff(old.decode().splitlines(True),new.decode().splitlines(True),fromfile=original['original']['path'],tofile=str(target))).encode())\nproof={'round':'R287','status':'SOURCE_ONLY_BYTE_SCOPE_PROVED','before':original,'candidate':pin(candidate),'target_before':None,'regions':regions,'unchanged_regions':[{'label':label,'bytes':len(part),'sha256':hashlib.sha256(part).hexdigest(),'exact_before_after':True} for label,part in [('prefix',old[:s1]),('between_helpers_and_final_assessment',old[e1:s2]),('suffix',old[e2:])]],'reconstruction_exact':True,'input_records':inputs,'current_sources':[{k:r[k] for k in ('path','bytes','sha256')} for r in sources],'protected':protected,'source_count':27,'protected_count':211,'runtime_executed':False,'limited_diff':limited}\nproofpin=write(I/'source-regions-scope-proof.json',proof)\nprint(json.dumps({'candidate':pin(candidate),'candidate_lines':len(new.splitlines()),'before_manifest':pin(D/'before/manifest.json'),'scope_proof':proofpin,'limited_diff':limited,'input_count':len(inputs),'source_count':len(sources),'protected_count':len(protected),'target_before':None},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "yield_time_ms": 10000,
+    "max_output_tokens": 1600
+  },
+  "actual_tool_return": {
+    "chunk_id": "966fc6",
+    "wall_time_seconds": 0.00000897,
+    "exit_code": 1,
+    "original_token_count": 23,
+    "output": "Traceback (most recent call last):\n  File \"<stdin>\", line 22, in <module>\nAssertionError\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null,
+  "source_execution": false,
+  "runtime_executed": false,
+  "status": "STOP_NEW_METADATA_ASSERTION_FAILURE_NO_RETRY",
+  "output_status": "No output write occurs before the failing line in this exact source; candidate and its prior native receipt already existed. No implementation Add was attempted.",
+  "candidate_before_failure": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round287-p6-t2-runner-completion-marker-contract-20261017/implementation/prepared-run-evidence-source.txt",
+    "bytes": 86520,
+    "sha256": "c4865f0bea01accbbb5787b38fd790f4af3abfcf10d220384a43f1e15239b6ad",
+    "lines": 1447
+  }
+}

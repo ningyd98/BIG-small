@@ -1,0 +1,803 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round287-p6-t2-runner-completion-marker-contract-20261017/implementation/run-evidence-corrected.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round289-p6-t2-accepted-runner-validation-continuation-20261017/implementation/run-evidence.py
+@@ -1,4 +1,4 @@
+-"""R285: two wait validations and one independent session-evidence diagnostic."""
++"""R289: two wait validations and one independent session-evidence diagnostic."""
+ from __future__ import annotations
+ 
+ import base64
+@@ -17,13 +17,13 @@
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+ ROUNDS = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds"
+-D = ROUNDS / "round285-p6-t2-new-test-generation-validation-continuation-20261017"
++D = ROUNDS / "round289-p6-t2-accepted-runner-validation-continuation-20261017"
+ PARENT = ROUNDS / "round276-p6-t2-first-session-invalidation-capture-20261017"
+ R274 = ROUNDS / "round274-p6-t2-wait-fixture-clock-scope-20261017"
+ R281 = ROUNDS / "round281-p6-t2-post-expiry-session-denial-assertion-20261017"
+-PLAN_SHA = "22983a42ecd12e188440b42a0491c059957e96998b546e769e3bd3ceaef0ffa0"
+-OBS_SHA = "3af0606bc3b09737f0c744ab7819a9fdfb94b32e7f516045ebd3a66218682508"
+-SUPPLEMENT_SHA = "39b5cae7d0841f2c8901d7a30910018dd312840ecbdb96c4f064641b56db03b8"
++PLAN_SHA = "4bc64ed58a737cb9f6bbe7386a9937a189b3e1522258e8a85c051bbd8f5fe5fb"
++OBS_SHA = "82c31139a709e11ca78fefaae3bc8df9cda1612a0584e2c391a527b9b1501cf3"
++SUPPLEMENT_SHA = "fc267162c6ad812a056191eef27c727ae2009248c2034c58baeae53562fdfd19"
+ TEST_SHA = "193f45147160f52ba53956df506ddbc602b81f2248990eea604366a39e63ef13"
+ CASE_NAMES = {"after-both-lock-denial.json", "true-commit-loss.json",
+               "restart-no-authority.json", "same-owner-exact-history.json",
+@@ -452,7 +452,7 @@
+             and stat.S_IMODE(path.lstat().st_mode) == mode,
+             "author immediate full-bytes/mode CAS failed")
+     raw = author_bytes(value)
+-    temporary = path.with_name(path.name + ".r258-next")
++    temporary = path.with_name(path.name + ".r289-next")
+     write_bytes(temporary, raw, mode)
+     require(stat.S_IMODE(temporary.lstat().st_mode) == mode,
+             "replacement must retain original author mode")
+@@ -519,7 +519,7 @@
+             else:
+                 sides.append({"path": str(side), "exists": False, "is_symlink": False, "pin": None})
+         records.append({"pin": bytes_pin(path, raw), "archive": archive, "sidecars": sides,
+-                        "provenance": "This genuine new R285 diagnostic run only; old bytes not recovered"})
++                        "provenance": "This genuine new R289 diagnostic run only; old bytes not recovered"})
+     return records
+ 
+ 
+@@ -558,7 +558,7 @@
+                 "prerequisite.json"]
+     if command["kind"] == "diagnostic_only":
+         expected += ["passive/events.json", "passive/summary.json"]
+-    require(command["outputs"] == expected, "exact R285 finite output names required")
++    require(command["outputs"] == expected, "exact R289 finite output names required")
+     return {"directory": directory, "invocation": directory / expected[0],
+             "stdout": directory / expected[1], "stderr": directory / expected[2],
+             "JUnit": directory / expected[3], "result": directory / expected[4],
+@@ -586,66 +586,139 @@
+     return {"present": present, "absent": absent_count}
+ 
+ 
++def verify_prior_runs(context):
++    plan, supplement = context["plan"], context["supplement"]
++    contract = supplement["prior_runs_contract"]
++    name = context["name"]
++    required = contract["required_prior_command_ids"][name]
++    require(required == {"wait_memory": [], "wait_sqlite": ["wait_memory"],
++                         "dual_first_invalidation": ["wait_memory", "wait_sqlite"]}[name],
++            "exact ordered prior command identities required")
++    selected = context["reservation"]["prior_runs_supplement"]
++    require(selected["path"] == contract["paths"][name]
++            == str(D / "root-prior-run-supplements" / (name + ".json")),
++            "one exact selected prior supplement path required")
++    value = decode_json(checked(selected))
++    require(value["round"] == "R289" and value["command_id"] == name
++            and pin_identity(value["plan"]) == pin_identity(context["source_gate"]["plan"])
++            and pin_identity(value["observation"]) == pin_identity(context["source_gate"]["observation"]),
++            "prior supplement generation differs")
++    receipts = value["prior_receipts"]
++    require(type(receipts) is list and len(receipts) == len(required) <= 2
++            and [r["command_id"] for r in receipts] == required,
++            "only accepted preceding R289 receipts may be consumed")
++    expected_fields = {"command_id", "acceptance", "result", "actual_tool_return",
++                       "persistent_index", "new_retained_databases"}
++    for ordinal, row in enumerate(receipts):
++        require(set(row) == expected_fields, "exact finite prior receipt fields required")
++        acceptance = decode_json(checked(row["acceptance"]))
++        require(acceptance["round"] == "R289" and acceptance["command_id"] == row["command_id"]
++                and acceptance["status"] == "VERIFIED_COMPLETE_BEHAVIOR_CAPTURE",
++                "preceding behavior requires independent ROOT complete-capture acceptance")
++        for key in ("result", "actual_tool_return", "persistent_index"):
++            require(pin_identity(acceptance[key]) == pin_identity(row[key]),
++                    "prior acceptance and exact artifact pin differ")
++            checked(row[key])
++        result = decode_json(checked(row["result"]))
++        require(result["round"] == "R289" and result["command_id"] == row["command_id"]
++                and result["child_exit"] == result["wrapper_exit"] == 0
++                and result["timed_out"] is False and result["behavior_accepted"] is True
++                and result["capture_integrity_complete"] is True,
++                "preceding result is not a normal complete behavior capture")
++        index = decode_json(checked(row["persistent_index"]))
++        pairs = row["new_retained_databases"]
++        require(type(pairs) is list and pairs == index["new_retained_databases"]
++                == result["new_retained_databases"] == acceptance["new_retained_databases"],
++                "prior DB evidence must equal its actual accepted index/result")
++        verify_db_pairs(pairs, len(pairs))
++        next_key = "wait_sqlite" if row["command_id"] == "wait_memory" else "dual_first_invalidation"
++        release = acceptance["next_command_release"]
++        require(release["status"] == "NEXT_INDEPENDENT_COMMAND_ALLOWED"
++                and release["next_key"] == next_key,
++                "prior receipt must retain its own actual next-command release")
++        if ordinal == len(receipts) - 1:
++            require(next_key == name, "last accepted receipt must explicitly allow selected command")
++    return {"pin": pin_identity(selected), "value": value}
++
++
+ def authority(context):
+-    plan, gate = context["plan"], context["source_gate"]
+-    changes = context["context_manifest"]["changes"]
+-    expected_context = {r["path"] for r in plan["context_update"]["before_inputs"]}
+-    require(type(changes) is list and len(changes) == 2, "two precise R285 context generations required")
+-    mapped, context_after = {}, []
+-    for row in changes:
+-        original = pin_identity(row["before"]["original"])
+-        raw = bytes_record(row["before"])
+-        require(original["path"] in expected_context and original["path"] not in mapped
+-                and row["after"]["path"] == original["path"], "unexpected context generation")
+-        require(any(pin_identity(q) == original for q in plan["context_update"]["before_inputs"]),
+-                "context original is not the frozen planning identity")
+-        after = checked(row["after"])
+-        require(checked(row["after_archive"]) == after
+-                and Path(row["after"]["path"]).lstat().st_mode == row["mode"],
+-                "context after/full prepared archive/mode differs")
+-        mapped[original["path"]] = (original, raw)
+-        context_after.append(pin_identity(row["after"]))
+-    require(set(mapped) == expected_context, "context mapping incomplete")
+-    require(len(plan["inputs"]) == 33
++    plan, gate, supplement = context["plan"], context["source_gate"], context["supplement"]
++    require(len(plan["inputs"]) == 32
+             and [pin_identity(x) for x in context["observation"]["inputs"]]
+-            == [pin_identity(x) for x in plan["inputs"]], "exact33 R285 authorities required")
+-    records, mapped_count = [], 0
++            == [pin_identity(x) for x in plan["inputs"]], "exact32 R289 authorities required")
++    records = []
+     for ordinal, row in enumerate(plan["inputs"]):
+-        item = pin_identity(row)
+-        if item["path"] in mapped:
+-            original, raw = mapped[item["path"]]
+-            require(item == original and bytes_pin(item["path"], raw) == item,
+-                    "old context identity has no exact physical generation")
+-            resolution = "EXACT_CONTEXT_BEFORE_TO_FROZEN_AFTER"
+-            mapped_count += 1
+-        else:
+-            checked(item)
+-            resolution = "CURRENT_EXACT"
+-        records.append({"ordinal": ordinal, "pin": item, "resolution": resolution})
+-    require(mapped_count == 2, "only two old planning context identities may map")
+-    supplement = context["supplement"]
+-    require(supplement["round"] == "R285" and supplement["input_count"] == 6
+-            and len(supplement["inputs"]) == 6
++        checked(row)
++        records.append({"ordinal": ordinal, "pin": pin_identity(row), "resolution": "CURRENT_EXACT"})
++    require(supplement["round"] == "R289" and supplement["input_count"] == 8
++            and len(supplement["inputs"]) == 8
+             and pin_identity(supplement["plan"]) == pin_identity(gate["plan"])
+             and pin_identity(supplement["observation"]) == pin_identity(gate["observation"])
+             and pin_identity(supplement["context_manifest"]) == pin_identity(gate["context_manifest"]),
+-            "exact actual R285 six-input supplement required")
++            "exact actual R289 eight-input supplement required")
+     for row in supplement["inputs"] + gate["fixed_inputs"] + context["stable_controls"]:
+         checked(row)
++
++    def input_pin(path):
++        rows = [q for q in plan["inputs"] + supplement["inputs"] if q["path"] == str(path)]
++        require(len(rows) == 1, "one explicit finite input identity required: " + str(path))
++        return rows[0]
++
++    baseline = ROUNDS / "round285-p6-t2-new-test-generation-validation-continuation-20261017"
+     container_pin = plan["authority_contract"]["container"]
+-    require(container_pin["path"] == str(PARENT / "implementation/wait_memory/before/source-index.json"),
+-            "exact accepted R276 source container required")
++    require(container_pin["path"] == str(baseline / "implementation/wait_memory/before/source-index.json"),
++            "exact accepted R285 current193f source container required")
+     old_index = decode_json(checked(container_pin))
+     prior = old_index["authority_before"]
+     require(len(old_index["sources"]) == 27 and len(prior["protected"]) == 211
+             and len(prior["accepted_history_generations"]) == 68,
+             "accepted finite27/211/68 authority differs")
+ 
+-    # Each old test identity is resolved through its own complete physical bytes.
+-    generation_pin = next(q for q in plan["inputs"]
+-                          if q["path"] == str(R281 / "implementation/generation-manifest.json"))
++    # Two exact context transitions: old planning -> R285 after -> R287 frozen after.
++    earlier_context_pin = input_pin(baseline / "root-context-update.json")
++    earlier_context = decode_json(checked(earlier_context_pin))
++    changes = context["context_manifest"]["changes"]
++    require(earlier_context["round"] == "R285" and type(earlier_context["changes"]) is list
++            and len(earlier_context["changes"]) == 2 and type(changes) is list and len(changes) == 2,
++            "two complete context changes in each exact generation required")
++    expected_context = {r["path"]: pin_identity(r) for r in plan["context_update"]["before_inputs"]}
++    context_after, context_generations = [], []
++    seen_context = set()
++    for row in changes:
++        original = pin_identity(row["before"]["original"])
++        logical = original["path"]
++        require(logical in expected_context and logical not in seen_context,
++                "unexpected or duplicated context path")
++        seen_context.add(logical)
++        raw = bytes_record(row["before"])
++        earlier = [q for q in earlier_context["changes"] if q["after"]["path"] == logical]
++        require(len(earlier) == 1, "one explicit prior context generation required")
++        first = earlier[0]
++        bytes_record(first["before"])
++        require(pin_identity(first["after"]) == original
++                and checked(first["after_archive"]) == raw
++                and first["mode"] == row["mode"],
++                "R285 context after must be exact R287 physical before")
++        live = checked(row["after"])
++        require(pin_identity(row["after"]) == expected_context[logical]
++                and checked(row["after_archive"]) == live
++                and Path(logical).lstat().st_mode == row["mode"],
++                "frozen current context must match R287 after/archive/mode")
++        require(any(pin_identity(q) == pin_identity(first["after"])
++                    for q in prior["context_after"]), "accepted prior context after differs")
++        old_context_rows = [q["pin"] for q in prior["input_records"]
++                            if q["pin"]["path"] == logical]
++        require(len(old_context_rows) == 1
++                and pin_identity(old_context_rows[0]) == pin_identity(first["before"]["original"]),
++                "old context input requires its own exact full physical generation")
++        context_after.append(pin_identity(row["after"]))
++        context_generations.append({"prior": first, "current": row})
++    require(seen_context == set(expected_context), "current context map incomplete")
++
++    # Keep the accepted ed602 -> ebf1 -> 193f physical chain without collapsing generations.
++    generation_pin = input_pin(R281 / "implementation/generation-manifest.json")
+     generation = decode_json(checked(generation_pin))
+-    before_pin = next(q for q in plan["inputs"] if q["path"] == str(R281 / "before/manifest.json"))
++    before_pin = input_pin(R281 / "before/manifest.json")
+     before_manifest = decode_json(checked(before_pin))
+     ebf = bytes_record(before_manifest)
+     require(pin_identity(generation["old"]["original"]) == pin_identity(before_manifest["original"])
+@@ -661,15 +734,14 @@
+             and base64.b64decode(adopted["base64"], validate=True) == current_raw
+             and hashlib.sha256(current_raw).hexdigest() == TEST_SHA,
+             "R281 current193f full after generation differs")
+-    acceptance_pin = plan["source_generation"]["acceptance"]
++    acceptance_pin = input_pin(R281 / "root-independent-source-acceptance.json")
+     checked(acceptance_pin)
+-    old_test_chain = prior["test_generation"]
++    old_test_chain = prior["test_generation"]["ed602"]
+     ed602 = bytes_record(old_test_chain["before"])
+     require(checked(old_test_chain["after"]) == ebf
+             and pin_identity(old_test_chain["before"]["original"]) != pin_identity(before_manifest["original"]),
+             "ed602 and ebf1 cannot be collapsed into one generation")
+-    r274_plan_pin = next(q["pin"] for q in prior["input_records"]
+-                         if q["pin"]["path"] == str(R274 / "plan.json"))
++    r274_plan_pin = input_pin(R274 / "plan.json")
+     r274_plan = decode_json(checked(r274_plan_pin))
+     expected = ed602
+     for change in r274_plan["exact_source_change"]["changes"]:
+@@ -681,17 +753,13 @@
+     for row in old_index["sources"]:
+         original = pin_identity(row)
+         full = checked(row["physical"])
+-        require(base64.b64decode(row["base64"], validate=True) == full,
+-                "accepted source physical/base64 differs")
++        require(checked(original) == full == base64.b64decode(row["base64"], validate=True)
++                and Path(original["path"]).lstat().st_mode == row["mode"],
++                "current source original/physical/base64/mode differs")
+         if original["path"] == current_test["path"]:
+-            require(original == pin_identity(before_manifest["original"]) and full == ebf,
+-                    "R276 baseline test must be exact R281 physical before")
+-            current, physical = pin_identity(current_test), adopted["archive"]
+-        else:
+-            require(checked(original) == full, "one of26 other current source bytes differs")
+-            current, physical = original, row["physical"]
+-        require(Path(current["path"]).lstat().st_mode == row["mode"], "current source mode differs")
+-        sources.append({**current, "mode": row["mode"], "physical": physical})
++            require(original == pin_identity(current_test) and full == current_raw,
++                    "R285 source container must already contain exact current193f")
++        sources.append({**original, "mode": row["mode"], "physical": row["physical"]})
+     require([pin_identity(q) for q in sources]
+             == [pin_identity(q) for q in context["observation"]["current_sources"]],
+             "exact observed current27 identity order differs")
+@@ -710,8 +778,17 @@
+         absence(row["path"])
+     groups = prior["old_retained_groups"]
+     require(type(groups) is dict and set(groups) == {"R242_R248", "R251"}, "exact old DB groups required")
++    observed_groups = {}
++    known = context["observation"]["known_database_records"]
++    require(type(known) is list and len(known) == 54, "exact54 observed retained DB records required")
++    for row in known:
++        observed_groups.setdefault(row["group"], []).append(row["record"])
++    require(set(observed_groups) == {"R242_R248", "R251", "R258", "wait_memory_failure",
++                                    "dual_progress", "R276_wait_memory", "R285_wait_memory"},
++            "exact seven observed retained DB groups required")
+     for key, count in (("R242_R248", 12), ("R251", 18)):
+-        require(type(groups[key]) is list and len(groups[key]) == count, "old retained DB count differs")
++        require(type(groups[key]) is list and len(groups[key]) == count
++                and groups[key] == observed_groups[key], "old retained DB source/count differs")
+         for row in groups[key]:
+             checked(row["pin"])
+             require(len(row["sidecars"]) == 3, "three old retained sidecar states required")
+@@ -720,60 +797,96 @@
+                         "old retained DB sidecar absence differs")
+                 absence(side["path"])
+     original_pairs = prior["R258_retained_DB_pairs"]
+-    require(verify_db_pairs(original_pairs, 10) == {"present": 2, "absent": 28},
+-            "R258 exact present/absent sidecar boundary differs")
+-    old_result_pin = next(q for q in plan["inputs"]
+-                          if q["path"] == str(PARENT / "implementation/wait_memory/result.json"))
++    require(original_pairs == observed_groups["R258"]
++            and verify_db_pairs(original_pairs, 10) == {"present": 2, "absent": 28},
++            "R258 exact original/present/absent sidecar boundary differs")
++    old_result_pin = input_pin(PARENT / "implementation/wait_memory/result.json")
+     old_result = decode_json(checked(old_result_pin))
+-    known = context["observation"]["known_database_records"]
+-    require(type(known) is list and len(known) == 10, "exact ten observed R268/R276 DB records required")
+-    added_pairs = {name: [] for name in ("wait_memory_failure", "dual_progress", "R276_wait_memory")}
+-    for row in known:
+-        require(row["group"] in added_pairs, "unexpected known DB group")
+-        added_pairs[row["group"]].append(row["record"])
++    added_pairs = prior["R268_R276_retained_DB_pairs"]
++    require(set(added_pairs) == {"wait_memory_failure", "dual_progress", "R276_wait_memory"},
++            "exact R268/R276 group names required")
+     for key, count in (("wait_memory_failure", 4), ("dual_progress", 2), ("R276_wait_memory", 4)):
++        require(added_pairs[key] == observed_groups[key], "exact R268/R276 observed records differ")
+         status = verify_db_pairs(added_pairs[key], count)
+         if key == "R276_wait_memory":
+             require(added_pairs[key] == old_result["new_retained_databases"]
+                     and status == {"present": 0, "absent": 12}, "R276 four DB/12 absent sidecars differ")
+-        else:
+-            require(added_pairs[key] == prior["R268_retained_DB_pairs"][key],
+-                    "exact original R268 DB records differ")
+-
+-    # Preserve old controls only by actual complete physical generations.
+-    settled_pin = next(q for q in plan["inputs"]
+-                       if q["path"] == str(PARENT / "root-wait-memory-independent-acceptance.json"))
++    r285_index_pin = input_pin(baseline / "implementation/wait_memory/persistent-file-database-index.json")
++    r285_index = decode_json(checked(r285_index_pin))
++    r285_pairs = r285_index["new_retained_databases"]
++    require(r285_pairs == observed_groups["R285_wait_memory"]
++            and verify_db_pairs(r285_pairs, 4) == {"present": 0, "absent": 12},
++            "R285 four DB pairs must come from actual persistent index, not absent result")
++    absence(baseline / "implementation/wait_memory/result.json")
++
++    # R276 history is preserved from its accepted actual result/ROOT settlement.
++    settled_pin = input_pin(PARENT / "root-wait-memory-independent-acceptance.json")
+     settled = decode_json(checked(settled_pin))
+-    root_old = settled["root_before"]
+-    bytes_record(root_old)
++    bytes_record(settled["root_before"])
++    require(prior["old_ROOT_settlement_generation"]["generation"] == settled["root_before"]
++            and pin_identity(prior["old_ROOT_settlement_generation"]["acceptance"])
++            == pin_identity(settled_pin), "exact R276 prior ROOT generation differs")
+     known_author = old_result["known_author_generations"]
+-    require(type(known_author["mode"]) is int, "original author mode observation required")
+     author_rows = {}
+     for key in ("before", "reserved", "spent"):
+         row = known_author[key]
+         raw = base64.b64decode(row["base64"], validate=True)
+         require(bytes_pin(row["pin"]["path"], raw) == pin_identity(row["pin"]),
+-                "old author exact generation identity differs")
++                "R276 AUTHOR exact generation identity differs")
+         author_rows[key] = raw
+-    controls = []
+-    for row in old_index["control_before"]:
+-        full = bytes_record(row)
+-        logical = row["original"]["path"]
+-        if logical == str(PARENT / "root-command-ledger.json"):
+-            require(pin_identity(row["original"]) == pin_identity(root_old["original"]),
+-                    "old ROOT RESERVED must join actual settlement physical before")
+-        if logical == str(PARENT / "implementation/command-ledger.json"):
+-            require(full == author_rows["before"]
+-                    and pin_identity(row["original"]) == pin_identity(known_author["before"]["pin"]),
+-                    "old AUTHOR baseline control differs")
+-        controls.append(row)
+     require(stable_bytes(PARENT / "implementation/wait_memory/before/author-reserved.json")
+             == author_rows["reserved"]
+             and stable_bytes(PARENT / "implementation/wait_memory/author-spent.json") == author_rows["spent"],
+-            "old AUTHOR reserved/spent full physical archives differ")
+-    old_roles = context["observation"]["R276_role_pins"]
++            "R276 AUTHOR complete physical generations differ")
++    for row in prior["old_control_generations"]:
++        bytes_record(row)
++    for role in ("ROOT", "AUTHOR"):
++        checked(prior["old_role_pins"][role])
++
++    # The failed R285 wrapper has no result; use actual reservation/invocation and physical archives.
++    settlement_pin = input_pin(ROUNDS / "round287-p6-t2-runner-completion-marker-contract-20261017"
++                               / "root-failure-settlement.json")
++    settlement = decode_json(checked(settlement_pin))
++    r285_root_before = bytes_record(settlement["root_before"])
++    current_root = checked(settlement["root_after"])
++    current_author = checked(settlement["author_unchanged"])
++    reservation_pin = input_pin(baseline / "root-reservations/wait_memory.json")
++    reservation = decode_json(checked(reservation_pin))
++    invocation_pin = input_pin(baseline / "implementation/wait_memory/invocation.json")
++    invocation = decode_json(checked(invocation_pin))
++    require(invocation["role_before"] == reservation["role_before"],
++            "R285 actual invocation and reservation full before differ")
++    roles = {role: str(baseline / ("root-command-ledger.json" if role == "ROOT"
++                                  else "implementation/command-ledger.json")) for role in ("ROOT", "AUTHOR")}
++    before_rows = {r["original"]["path"]: r for r in reservation["role_before"]}
++    require(set(before_rows) == set(roles.values()), "exact R285 before role paths required")
++    author_before_raw = bytes_record(before_rows[roles["AUTHOR"]])
++    require(pin_identity(before_rows[roles["AUTHOR"]]["original"])
++            == pin_identity(reservation["author_role_before"]), "R285 AUTHOR before pin differs")
++    reserved_pin = input_pin(baseline / "implementation/wait_memory/before/author-reserved.json")
++    spent_pin = input_pin(baseline / "implementation/wait_memory/author-spent.json")
++    reserved_raw, spent_raw = checked(reserved_pin), checked(spent_pin)
++    require(pin_identity(invocation["author_reserved"]) == bytes_pin(roles["AUTHOR"], reserved_raw)
++            and current_author == spent_raw
++            and pin_identity(settlement["author_unchanged"]) == bytes_pin(roles["AUTHOR"], spent_raw),
++            "R285 real AUTHOR reserved/spent generation differs")
++    controls = []
++    for row in old_index["control_before"]:
++        raw = bytes_record(row)
++        logical = row["original"]["path"]
++        if logical == roles["ROOT"]:
++            require(pin_identity(row["original"]) == pin_identity(settlement["root_before"]["original"])
++                    and raw == r285_root_before, "R285 ROOT78c full physical settlement join differs")
++        elif logical == roles["AUTHOR"]:
++            require(raw == author_before_raw
++                    and pin_identity(row["original"]) == pin_identity(reservation["author_role_before"]),
++                    "R285 AUTHOR actual before control join differs")
++        controls.append(row)
++    old_roles = {role: context["observation"]["R285_role_pins"][role]["pin"] for role in ("ROOT", "AUTHOR")}
+     for role in ("ROOT", "AUTHOR"):
+         raw = checked(old_roles[role])
++        require(raw == (current_root if role == "ROOT" else current_author),
++                "current R285 role must equal exact accepted settlement generation")
+         value = decode_json(raw)
+         entry = value["commands"]["wait_memory"]
+         require(entry["used"] == 1 and entry["remaining"] == 0 and entry["state"].startswith("SPENT"),
+@@ -781,51 +894,61 @@
+         for key in ("wait_sqlite", "dual_first_invalidation"):
+             entry = value["commands"][key]
+             require(entry["used"] == 0 and entry["remaining"] == 1,
+-                    "old unused identity cannot be consumed or retargeted")
+-        if role == "AUTHOR":
+-            require(raw == author_rows["spent"], "old current AUTHOR must equal actual spent generation")
++                    "old held routes remain historical and cannot be consumed")
+     for row in context["sources"].values():
+         checked(row)
++    prior_runs = verify_prior_runs(context)
+     return {"input_records": records, "supplement_inputs": supplement["inputs"],
+             "fixed_inputs": gate["fixed_inputs"], "context_after": context_after,
++            "context_generations": context_generations,
+             "sources": sources, "protected": prior["protected"], "source_authority": container_pin,
+             "accepted_history_generations": prior["accepted_history_generations"],
+             "history_reaudited_as_current": False, "old_control_generations": controls,
+-            "old_ROOT_settlement_generation": {"acceptance": settled_pin, "generation": root_old},
+-            "old_AUTHOR_generations": known_author, "old_role_pins": old_roles,
++            "old_R276_authority": {"ROOT_settlement": settled_pin, "AUTHOR_generations": known_author,
++                                   "controls": prior["old_control_generations"],
++                                   "role_pins": prior["old_role_pins"]},
++            "old_ROOT_settlement_generation": {"acceptance": settlement_pin, "generation": settlement["root_before"],
++                                               "after": settlement["root_after"]},
++            "old_AUTHOR_generations": {"before": before_rows[roles["AUTHOR"]],
++                                       "reserved": {"pin": bytes_pin(roles["AUTHOR"], reserved_raw),
++                                                    "archive": reserved_pin, "base64": base64.b64encode(reserved_raw).decode("ascii")},
++                                       "spent": {"pin": bytes_pin(roles["AUTHOR"], spent_raw),
++                                                 "archive": spent_pin, "base64": base64.b64encode(spent_raw).decode("ascii")}},
++            "old_role_pins": old_roles,
+             "test_generation": {"ed602": old_test_chain, "ebf1": before_manifest,
+                                 "193f": generation, "ROOT_acceptance": acceptance_pin},
+             "missing_registry35": missing, "old_absent_sidecars90": sides,
+             "old_retained_groups": groups, "R258_retained_DB_pairs": original_pairs,
+-            "R268_R276_retained_DB_pairs": added_pairs}
++            "R268_R276_retained_DB_pairs": added_pairs, "R285_retained_DB_pairs": r285_pairs,
++            "prior_runs": prior_runs}
+ 
+ 
+ def preconditions():
+-    require(len(sys.argv) == 2, "one R285 key required")
++    require(len(sys.argv) == 2, "one R289 key required")
+     name = sys.argv[1]
+     require(name in {"wait_memory", "wait_sqlite", "dual_first_invalidation"}
+             and Path.cwd() == ROOT and Path(sys.executable).absolute() == ROOT / ".venv/bin/python",
+-            "exact R285 command/interpreter/cwd required")
++            "exact R289 command/interpreter/cwd required")
+     plan_raw, obs_raw = stable_bytes(D / "plan.json"), stable_bytes(D / "input-observation.json")
+     supplement_raw = stable_bytes(D / "prerequisite-supplement.json")
+     require(hashlib.sha256(plan_raw).hexdigest() == PLAN_SHA
+             and hashlib.sha256(obs_raw).hexdigest() == OBS_SHA
+-            and hashlib.sha256(supplement_raw).hexdigest() == SUPPLEMENT_SHA, "frozen R285 authority differs")
++            and hashlib.sha256(supplement_raw).hexdigest() == SUPPLEMENT_SHA, "frozen R289 authority differs")
+     plan, observation, supplement = map(decode_json, (plan_raw, obs_raw, supplement_raw))
+     command = plan["commands"][name]
+     require(command["limits"]["child_seconds"] == 600 and command["limits"]["cleanup_total_seconds"] == 15
+             and command["limits"]["raw_stream_threshold_bytes_each"] == 33554432
+             and command["node_count"] == 1
+             and [a for a in command["child_argv"] if "::" in a] == [command["node"]],
+-            "exact R285 one-node finite command required")
++            "exact R289 one-node finite command required")
+     require(command["child_env"]["BIGSMALL_R158_COMMAND"] == "t2_green",
+             "frozen resource fixture command name required")
+-    trace_requested = "r285_session_evidence" in command["child_argv"]
++    trace_requested = "r289_session_evidence" in command["child_argv"]
+     require(trace_requested == (name == "dual_first_invalidation")
+             and "r268_failure_evidence" not in command["child_argv"], "wait cannot load a trace observer")
+     source_path, script_path = D / "source-gate.json", D / "script-gate.json"
+     gate, script_gate = read_json(source_path), read_json(script_path)
+-    require(gate["round"] == script_gate["round"] == "R285"
++    require(gate["round"] == script_gate["round"] == "R289"
+             and gate["status"] == "VERIFIED_SOURCE_ONLY" and script_gate["status"] == "VERIFIED_BY_ROOT",
+             "ROOT complete source/runtime gates required")
+     require(pin_identity(gate["plan"]) == bytes_pin(D / "plan.json", plan_raw)
+@@ -835,7 +958,7 @@
+             and pin_identity(script_gate["source_gate"]) == _t2_pin(source_path), "ROOT authority generation differs")
+     sources = gate["sources"]
+     require(set(sources) == {"plugin", "runner"} and script_gate["sources"] == sources
+-            and pin_identity(sources["runner"]) == _t2_pin(Path(__file__)), "two exact reviewed R285 sources required")
++            and pin_identity(sources["runner"]) == _t2_pin(Path(__file__)), "two exact reviewed R289 sources required")
+     roles = {key: plan["runner_contract"]["roles"][key] for key in ("ROOT", "AUTHOR")}
+     require(script_gate["commands"] == plan["commands"] and script_gate["role_files"] == roles,
+             "ROOT commands/role-file interface differs")
+@@ -845,13 +968,13 @@
+             and all(q["path"] not in set(roles.values()) | {str(source_path), str(script_path)}
+                     for q in gate["fixed_inputs"]), "no live mutable control in fixed input loop")
+     context_manifest = decode_json(checked(gate["context_manifest"]))
+-    require(context_manifest["round"] == "R285" and context_manifest["T2_complete"] is False,
++    require(context_manifest["round"] == "R287" and context_manifest["T2_complete"] is False,
+             "exact ROOT factual context map required")
+     reservation_dir = D / "root-reservations"
+     require(script_gate["reservation_directory"] == str(reservation_dir), "exact reservation directory required")
+     reservation_path = reservation_dir / (name + ".json")
+     reservation = read_json(reservation_path)
+-    require(reservation["round"] == "R285" and reservation["command_id"] == name
++    require(reservation["round"] == "R289" and reservation["command_id"] == name
+             and type(reservation["reservation_id"]) is str and reservation["reservation_id"]
+             and reservation["command"] == command and reservation["sources"] == sources
+             and pin_identity(reservation["plan"]) == pin_identity(gate["plan"])
+@@ -864,20 +987,23 @@
+     require(set(full_before) == set(roles.values()), "exact new role-before paths required")
+     root_before, author_before = (decode_json(full_before[roles[key]]) for key in ("ROOT", "AUTHOR"))
+     for role, value in (("ROOT", root_before), ("AUTHOR", author_before)):
+-        require(value["round"] == "R285" and value["role"] == role
++        require(value["round"] == "R289" and value["role"] == role
+                 and pin_identity(value["plan"]) == pin_identity(gate["plan"])
+                 and set(value["commands"]) == set(plan["commands"]), "new role identity differs")
+         entry = value["commands"][name]
+         require(entry["authorized"] == 1 and entry["used"] == 0 and entry["remaining"] == 1
+                 and entry["state"] == "HELD_PENDING_ROOT_SOURCE_INPUT_ARGV_GATE"
+                 and entry["command"] == command, "selected new role must be HELD0/1")
++    prior_pin = pin_identity(reservation["prior_runs_supplement"])
++    require(prior_pin["path"] == supplement["prior_runs_contract"]["paths"][name],
++            "selected exact prior supplement must be reservation-bound")
+     continuation = {"reservation_id": reservation["reservation_id"], "plan": reservation["plan"],
+                     "source_gate": reservation["source_gate"], "script_gate": reservation["script_gate"],
+-                    "sources": sources, "command": command}
++                    "sources": sources, "command": command, "prior_runs_supplement": prior_pin}
+     root_expected = copy.deepcopy(root_before)
+     selected = root_expected["commands"][name]
+     selected.update(state="RESERVED_BY_ROOT", used=1, remaining=0, reservation_id=reservation["reservation_id"])
+-    selected.setdefault("continuation", {})["R285"] = continuation
++    selected.setdefault("continuation", {})["R289"] = continuation
+     require(reservation["root_role_after"]["path"] == roles["ROOT"]
+             and decode_json(checked(reservation["root_role_after"])) == root_expected,
+             "ROOT selected-key CAS transition differs")
+@@ -885,12 +1011,25 @@
+     require(reservation["author_role_before"]["path"] == roles["AUTHOR"]
+             and author_raw == full_before[roles["AUTHOR"]], "author exact current before differs")
+     stable = [_t2_pin(source_path), _t2_pin(script_path), _t2_pin(reservation_path),
+-              reservation["root_role_after"], gate["context_manifest"]]
++              reservation["root_role_after"], gate["context_manifest"], prior_pin]
+     context = {"plan": plan, "observation": observation, "supplement": supplement, "command": command,
+                "name": name, "source_gate": gate, "sources": sources, "reservation": reservation,
+                "context_manifest": context_manifest, "stable_controls": stable,
+                "author_before": author_before, "author_raw": author_raw,
+                "author_path": Path(roles["AUTHOR"]), "continuation": continuation}
++    required_prior = supplement["prior_runs_contract"]["required_prior_command_ids"][name]
++    selected_prior = decode_json(checked(prior_pin))
++    require(type(selected_prior["prior_receipts"]) is list
++            and [r["command_id"] for r in selected_prior["prior_receipts"]] == required_prior,
++            "exact prior command order required before selected reservation")
++    for row in selected_prior["prior_receipts"]:
++        for role, value in (("ROOT", root_before), ("AUTHOR", author_before)):
++            previous = value["commands"][row["command_id"]]
++            require(previous["used"] == 1 and previous["remaining"] == 0
++                    and previous["state"].startswith("SPENT"), "preceding command must remain spent")
++            if role == "ROOT":
++                require(pin_identity(previous["independent_acceptance"]) == pin_identity(row["acceptance"]),
++                        "preceding ROOT key must bind its independent acceptance")
+     context["paths"] = command_paths(command)
+     require(context["paths"]["directory"] == D / "implementation" / name, "exact new output directory required")
+     absence(context["paths"]["directory"])
+@@ -915,7 +1054,7 @@
+         raw = checked(row)
+         archive = write_bytes(output / "before/controls" / (str(ordinal) + ".bin"), raw)
+         controls.append({"original": row, "archive": archive, "base64": base64.b64encode(raw).decode("ascii")})
+-    return write_json(paths["before"], {"round": "R285", "command_id": context["name"],
++    return write_json(paths["before"], {"round": "R289", "command_id": context["name"],
+         "sources": sources, "new_sources": context["sources"], "control_before": controls,
+         "authority_before": context["before_check"], "runtime_scope": context["command"]["kind"]})
+ 
+@@ -963,7 +1102,7 @@
+                       "relative_path": str(path.relative_to(root)), "witnesses": witnesses,
+                       "actual_owner": ({"nodeid": node, "pid": pid} if witnesses else None),
+                       "unavailable_reason": None if witnesses else "No completed matching actual sidecar witness"})
+-    return {"round": "R285", "expected_node": node, "actual_sidecars": sidecars, "scenario_files": files,
++    return {"round": "R289", "expected_node": node, "actual_sidecars": sidecars, "scenario_files": files,
+             "whole_run_resource_completeness": None if summary is None else summary["complete_sidecar_set"],
+             "interpretation": "Partial timeout files are actual bytes; no missing owner or resource record is invented."}
+ 
+@@ -973,20 +1112,20 @@
+     expected_names = {"events.json", "summary.json"}
+     files = sorted(directory.iterdir())
+     require(len(files) <= 2 and all(p.name in expected_names for p in files),
+-            "only two R285 passive files permitted")
++            "only two R289 passive files permitted")
+     records, contents, total, errors = [], {}, 0, []
+     for path in files:
+         raw = stable_bytes(path)
+         total += len(raw)
+-        require(total <= 131072, "R285 total passive128KiB exceeded")
++        require(total <= 131072, "R289 total passive128KiB exceeded")
+         value = decode_json(raw)
+-        require(value["round"] == "R285" and value["command_id"] == "dual_first_invalidation"
++        require(value["round"] == "R289" and value["command_id"] == "dual_first_invalidation"
+                 and value["nodeid"] == node and value["pid"] == pid,
+                 "passive actual command/node/PID differs")
+         require(value["bounds"] == context["plan"]["passive_observer"]["bounds"],
+                 "passive finite bounds differ")
+         expected_sources = {"plugin": context["sources"]["plugin"],
+-                            "lease": next(x for x in context["plan"]["inputs"]
++                            "lease": next(x for x in context["before_check"]["sources"]
+                                           if x["path"] == str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")),
+                             "test": next(x for x in context["plan"]["inputs"]
+                                          if x["path"] == str(ROOT / "tests/test_operational_runtime_closure.py")),
+@@ -1006,8 +1145,8 @@
+                 "complete": False, "incomplete": True, "observer_errors": errors,
+                 "unavailable": "One or both real passive files absent", "first_cause": None,
+                 "normal_finish_observed": summary is not None, "legal_RED": False, "GREEN": False}
+-    require(event_file["schema_version"] == "bigsmall.r285.session-events.v1"
+-            and summary["schema_version"] == "bigsmall.r285.session-summary.v1",
++    require(event_file["schema_version"] == "bigsmall.r289.session-events.v1"
++            and summary["schema_version"] == "bigsmall.r289.session-summary.v1",
+             "exact two passive schemas required")
+     for key in ("events_count", "dropped_events", "first_observed", "hooks_before", "hooks_after",
+                 "hooks_equal", "cap_hit", "incomplete", "observer_errors", "omitted_observer_errors"):
+@@ -1165,7 +1304,7 @@
+     author = copy.deepcopy(context["author_before"])
+     entry = author["commands"][name]
+     entry.update(state="RESERVED", used=1, remaining=0, reservation_id=reservation["reservation_id"])
+-    entry.setdefault("continuation", {})["R285"] = context["continuation"]
++    entry.setdefault("continuation", {})["R289"] = context["continuation"]
+     reserved_raw = author_bytes(author)
+     spent = copy.deepcopy(author)
+     spent["commands"][name].update(state="SPENT", result_path=str(paths["result"]))
+@@ -1176,7 +1315,7 @@
+     process, previous_term, handler_installed = None, signal.getsignal(signal.SIGTERM), False
+     started, captured = time.monotonic(), {}
+     outcome = {
+-        "round": "R285", "command_id": name, "budget_identity": command["budget_identity"],
++        "round": "R289", "command_id": name, "budget_identity": command["budget_identity"],
+         "reservation_id": reservation["reservation_id"], "attempt": 1, "retry": 0,
+         "started": False, "pid": None, "child_exit": None, "wrapper_exit": 2,
+         "timed_out": False, "interrupted": False, "output_limited": False,
+@@ -1239,7 +1378,7 @@
+         outcome["author_reserved"] = bytes_pin(context["author_path"], reserved_raw)
+         write_bytes(paths["directory"] / "before/author-reserved.json", reserved_raw, mode)
+         invocation = {
+-            "round": "R285", "command_id": name, "budget_identity": command["budget_identity"],
++            "round": "R289", "command_id": name, "budget_identity": command["budget_identity"],
+             "reservation_id": reservation["reservation_id"], "command": command,
+             "argv": command["child_argv"], "cwd": command["cwd"],
+             "actual_environment": command["child_env"], "shell": False, "start_new_session": True,
+@@ -1310,7 +1449,7 @@
+                 outcome["new_retained_databases"] = capture("new raw DB/sidecar retention",
+                     lambda: retained_new_databases(index, paths["directory"]))
+                 outcome["index"] = capture("new persistent index persistence", lambda: write_json(
+-                    paths["index"], {"round": "R285", "command_id": name, "root": str(temp),
++                    paths["index"], {"round": "R289", "command_id": name, "root": str(temp),
+                                      "records": index, "new_retained_databases": outcome["new_retained_databases"],
+                                      "SQL_executed": False, "old_missing_recovered": False}))
+             outcome["cases"] = capture("available actual cases persistence", lambda: write_json(
+@@ -1430,7 +1569,7 @@
+                     raise
+                 finally:
+                     result_pin = write_json(paths["result"], outcome)
+-                display = {"round": "R285", "command_id": name, "child_exit": outcome["child_exit"],
++                display = {"round": "R289", "command_id": name, "child_exit": outcome["child_exit"],
+                            "wrapper_exit": outcome["wrapper_exit"], "timed_out": outcome["timed_out"],
+                            "output_limited": outcome["output_limited"],
+                            "diagnostic_complete": outcome["diagnostic_complete"] if result_pin else False,
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round285-p6-t2-new-test-generation-validation-continuation-20261017/implementation/r285_session_evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round289-p6-t2-accepted-runner-validation-continuation-20261017/implementation/r289_session_evidence.py
+@@ -1,4 +1,4 @@
+-"""R285 finite observation of original lease-session events; no authority."""
++"""R289 finite observation of original lease-session events; no authority."""
+ from pathlib import Path
+ import hashlib
+ import json
+@@ -9,12 +9,12 @@
+ import pytest
+ 
+ ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
+-D = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round285-p6-t2-new-test-generation-validation-continuation-20261017"
++D = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round289-p6-t2-accepted-runner-validation-continuation-20261017"
+ LEASE = str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")
+ TEST = ROOT / "tests/test_operational_runtime_closure.py"
+ LEASE_SHA = "f71d9bcb9c38a7c93e989f7649360b4a0624b4cc2d869bc389b9c9f6b8a76580"
+ TEST_SHA = "193f45147160f52ba53956df506ddbc602b81f2248990eea604366a39e63ef13"
+-PLAN_SHA = "22983a42ecd12e188440b42a0491c059957e96998b546e769e3bd3ceaef0ffa0"
++PLAN_SHA = "4bc64ed58a737cb9f6bbe7386a9937a189b3e1522258e8a85c051bbd8f5fe5fb"
+ NODE = "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit"
+ KEY = "dual_first_invalidation"
+ TARGETS = {
+@@ -294,22 +294,22 @@
+ def pytest_configure(config):
+     global _STATE
+     if _STATE is not None:
+-        raise RuntimeError("R285 observer configured twice")
+-    command = os.environ["BIGSMALL_R285_COMMAND"]
+-    directory = Path(os.environ["BIGSMALL_R285_OBSERVATION_DIR"])
++        raise RuntimeError("R289 observer configured twice")
++    command = os.environ["BIGSMALL_R289_COMMAND"]
++    directory = Path(os.environ["BIGSMALL_R289_OBSERVATION_DIR"])
+     if command != KEY or directory != D / "implementation" / KEY / "passive":
+-        raise RuntimeError("exact R285 diagnostic identity/sink required")
++        raise RuntimeError("exact R289 diagnostic identity/sink required")
+     if not directory.is_dir() or directory.is_symlink():
+-        raise RuntimeError("existing exclusive R285 passive directory required")
++        raise RuntimeError("existing exclusive R289 passive directory required")
+     if float(config.getini("faulthandler_timeout") or 0.0) != 540:
+         raise RuntimeError("native faulthandler540 required")
+     sources = {"lease": pin(Path(LEASE)), "test": pin(TEST), "plugin": pin(Path(__file__)),
+                "plan": pin(D / "plan.json"), "source_gate": pin(D / "source-gate.json")}
+     if (sources["lease"]["sha256"] != LEASE_SHA or sources["test"]["sha256"] != TEST_SHA
+             or sources["plan"]["sha256"] != PLAN_SHA):
+-        raise RuntimeError("frozen R285 source generation differs")
++        raise RuntimeError("frozen R289 source generation differs")
+     gate = json.loads((D / "source-gate.json").read_bytes())
+-    if gate["round"] != "R285" or gate["sources"]["plugin"] != sources["plugin"]:
++    if gate["round"] != "R289" or gate["sources"]["plugin"] != sources["plugin"]:
+         raise RuntimeError("ROOT source gate does not bind this complete plugin")
+     _STATE = {"directory": directory, "sources": sources, "records": [], "sessions": {},
+               "estimated_record_bytes": 0, "dropped_events": 0, "drops_by_reason": {},
+@@ -322,11 +322,11 @@
+ @pytest.hookimpl(hookwrapper=True, tryfirst=True)
+ def pytest_runtest_call(item):
+     if _STATE is None or item.nodeid != NODE:
+-        raise RuntimeError("one exact R285 dual call required")
++        raise RuntimeError("one exact R289 dual call required")
+     before = hook_values()
+     if before[0] is not None or before[1] is not None:
+         error_record("unknown preexisting trace", RuntimeError())
+-        raise RuntimeError("R285 refuses unknown preexisting trace")
++        raise RuntimeError("R289 refuses unknown preexisting trace")
+     _STATE["hooks_before"] = hook_records(before)
+     _STATE["call_started"] = True
+     baseline = set(live_thread_ids())
+@@ -400,7 +400,7 @@
+         return
+     state = _STATE
+     state["normal_finish"] = True
+-    metadata = {"round": "R285", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
++    metadata = {"round": "R289", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
+                 "sources": state["sources"], "bounds": BOUNDS,
+                 "events_count": len(state["records"]), "dropped_events": state["dropped_events"],
+                 "first_observed": list(state["sessions"].values()),
+@@ -412,9 +412,9 @@
+                 "cap_hit": bool(state["dropped_events"]), "incomplete": state["incomplete"],
+                 "snapshot_boundary": "Non-atomic target-event fields; no audit of unobserved registry mutations.",
+                 "legal_RED": False, "GREEN": False}
+-    events = {**metadata, "schema_version": "bigsmall.r285.session-events.v1",
++    events = {**metadata, "schema_version": "bigsmall.r289.session-events.v1",
+               "records": state["records"], "drops_by_reason": state["drops_by_reason"]}
+-    summary = {**metadata, "schema_version": "bigsmall.r285.session-summary.v1",
++    summary = {**metadata, "schema_version": "bigsmall.r289.session-summary.v1",
+                "normal_sessionfinish_observed": True,
+                "exitstatus": int(exitstatus) if type(exitstatus) is int else None,
+                "call_started": state["call_started"],
+@@ -429,17 +429,17 @@
+         event_raw = (json.dumps(events, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
+         summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
+         if len(event_raw) + len(summary_raw) + 4096 > 131072:
+-            raise ValueError("R285 persisted evidence would exceed128KiB; no oversized write")
++            raise ValueError("R289 persisted evidence would exceed128KiB; no oversized write")
+         with (state["directory"] / "events.json").open("xb") as handle:
+             descriptor = handle.fileno()
+             if handle.write(event_raw) != len(event_raw):
+-                raise OSError("partial R285 events write")
++                raise OSError("partial R289 events write")
+         state["handles"].append({"path": str(state["directory"] / "events.json"),
+                                  "fd": descriptor, "closed_observed": handle.closed})
+         summary["own_handles"] = state["handles"]
+         summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
+         if len(event_raw) + len(summary_raw) > 131072:
+-            raise ValueError("R285 final128KiB bound")
++            raise ValueError("R289 final128KiB bound")
+         with (state["directory"] / "summary.json").open("xb") as handle:
+             summary["own_handles"] = state["handles"] + [{
+                 "path": str(state["directory"] / "summary.json"), "fd": handle.fileno(),
+@@ -447,8 +447,8 @@
+                 "limitation": "Own final close follows this payload; not observable in it."}]
+             summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
+             if len(event_raw) + len(summary_raw) > 131072:
+-                raise ValueError("R285 handle metadata exceeds128KiB")
++                raise ValueError("R289 handle metadata exceeds128KiB")
+             if handle.write(summary_raw) != len(summary_raw):
+-                raise OSError("partial R285 summary write")
++                raise OSError("partial R289 summary write")
+     except BaseException as error:
+         error_record("exclusive post-restoration persistence", error)

@@ -1,0 +1,109 @@
+{
+  "round": "R297",
+  "actual_model": "gpt-6-astra",
+  "status": "STATIC_SOURCE_REVIEW_NOT_RUNTIME_FAILURE",
+  "inputs": [
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/plan.json",
+      "bytes": 35664,
+      "sha256": "68c41755f5717446324f89d6c2b8b5740e0c47fef351e7846b99d31a966720f9"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/input-observation.json",
+      "bytes": 12090,
+      "sha256": "ed8cbdce09f97e6af736d65aec7b758737a83320b0c7c3717148bef3307f0136"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/prerequisite-supplement.json",
+      "bytes": 10880,
+      "sha256": "c5dc9272778f79247bf8d5fd2a2b324f68cebc4638e6b62af707de36fbf326b5"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/root-plan-applicability.json",
+      "bytes": 49053,
+      "sha256": "a904ec0da224c48a12bf347c16335c71babe2287f5bd1e09770bd9acac19496d"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/root-plugin-counting-source-review.json",
+      "bytes": 34503,
+      "sha256": "3a8bcec2d8c71c27389b0b71d7b2e28dd7a0de45b5dcb75123b07d873dab0541"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/r296_session_evidence.py",
+      "bytes": 30437,
+      "sha256": "bca996d6a23a68180fda0c3536cbb4069d65c0d81b31d2116df6deb1cd4da962"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/prepared-r296-session-evidence-source.txt",
+      "bytes": 30437,
+      "sha256": "bca996d6a23a68180fda0c3536cbb4069d65c0d81b31d2116df6deb1cd4da962"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/after-r296-session-evidence.py",
+      "bytes": 30437,
+      "sha256": "bca996d6a23a68180fda0c3536cbb4069d65c0d81b31d2116df6deb1cd4da962"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/plugin-native-tool-returns.json",
+      "bytes": 66554,
+      "sha256": "6e7427e6272609e0610fa2f124a1730cf8488edd292f96916ff15a240a8b0344"
+    },
+    {
+      "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round296-p6-t2-rpc-timeout-passive-evidence-completion-20261017/implementation/plugin-limited.diff",
+      "bytes": 21842,
+      "sha256": "5baf9e9e54b48d4fa68a8f4072ac1cc193d8f506047cf92618f1528de6953b8a"
+    }
+  ],
+  "before_manifest": {
+    "path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round297-p6-t2-selected-event-attempt-accounting-20261017/before/manifest.json",
+    "bytes": 207566,
+    "sha256": "48a7dc502d99a0d921f6e1980226517d5ed6c09a3959eeef5b31feaa63cbfa8a"
+  },
+  "finding": "record_event session_identity_reused calls drop and returns before append_record; attempted_records increments only at append_record and sessions6 branch. The identity-reuse drop path is uncounted, contrary to P296 all actual attempts/drops/reasons. This is a static source finding, not an executed runtime failure.",
+  "independent_source_read_actuals": [
+    "eb9d06 exit0 lines1-304",
+    "fa4a29 exit0 lines305-608",
+    "1e42dc exit0 finite input/schema identity"
+  ],
+  "proved_flow": {
+    "selected_target": "record_event returns before counter for non-target or unselected event category; existing identity_reused drops before append_record counter.",
+    "post_unwind": "Existing makereport counts only once append_record is reached; traceback/exception extraction errors precede the old counter.",
+    "error_boundary": "Outer global binding failures before exact target/category selection cannot be counted as selected target attempts; preserve observer_errors/incomplete as coverage uncertainty.",
+    "first_witness": "rpc_timeout_witness_attempted is an attempt flag set before snapshot/admission. A dropped or erroring event must not be promoted to a retained witness. No witness sampling fields change."
+  },
+  "exact_replacements": [
+    {
+      "id": "A",
+      "before": "def append_record(row, session_row=None):\n    _STATE[\"attempted_records\"] += 1\n",
+      "after": "def append_record(row, session_row=None):\n",
+      "original_occurrences": 1
+    },
+    {
+      "id": "B",
+      "before": "    if category not in spec[1]:\n        return\n    sid = id(session)\n",
+      "after": "    if category not in spec[1]:\n        return\n    _STATE[\"attempted_records\"] += 1\n    sid = id(session)\n",
+      "original_occurrences": 1
+    },
+    {
+      "id": "C",
+      "before": "        if len(sessions) >= 6:\n            _STATE[\"attempted_records\"] += 1\n            drop(\"sessions6\")\n",
+      "after": "        if len(sessions) >= 6:\n            drop(\"sessions6\")\n",
+      "original_occurrences": 1
+    },
+    {
+      "id": "D",
+      "before": "    if _STATE is None or item.nodeid != NODE or call.excinfo is None:\n        return None\n    try:\n",
+      "after": "    if _STATE is None or item.nodeid != NODE or call.excinfo is None:\n        return None\n    _STATE[\"attempted_records\"] += 1\n    try:\n",
+      "original_occurrences": 1
+    }
+  ],
+  "derived_after": {
+    "bytes": 30429,
+    "sha256": "e6c2858afae2928bb5db279d82ac2a87465ccca6d0a6e5a7a46208bdb4059cc3",
+    "lines": 608,
+    "status": "DERIVED_ONLY_NOT_WRITTEN_OR_EXECUTED"
+  },
+  "runtime_executed": false,
+  "source_modified": false,
+  "new_slots": 0
+}

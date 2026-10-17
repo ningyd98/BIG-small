@@ -1,0 +1,72 @@
+                def exercise(runtime, session, worker, repo, job, events, reads, observed):
+                    from cloud_edge_robot_arm.contracts import RobotState
+                    from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
+
+                    initial = runtime.bootstrap.to_payload()
+                    before = _b_t2_snapshot(events, reads)
+                    operation_id = backend + ":blocked:" + domain
+                    transition = _b_t2_bootstrap_request(
+                        runtime.bootstrap, "RESERVE_INITIAL_CAPTURE", operation_id
+                    )
+                    history, errors, holder, state = _b_t2_wait_for_event_lock(
+                        runtime, session, repo, events, observed, domain, clock_start=clock_start
+                    )
+                    try:
+                        with pytest.raises((RuntimeError, ValueError),
+                                           match="expired|deadline|invalid|bound|live|domain|authority") as first_denial:
+                            _b_t2_operation(runtime, events, transition)
+                    finally:
+                        observed.wait_observer = None
+                        for release in observed.release_events:
+                            release.set()
+                        holder.join(timeout=5)
+                        assert not holder.is_alive()
+                        assert not errors, errors
+                    names = [item["event"] for item in history]
+                    for earlier, later in zip((
+                        "holder_owns_real_lock", "real_lock_acquire_c_call",
+                        "main_returned_from_profile_inside_real_acquire", "advance_original_counter",
+                    ), (
+                        "real_lock_acquire_c_call", "main_returned_from_profile_inside_real_acquire",
+                        "advance_original_counter", "holder_releases_real_lock",
+                    )):
+                        assert names.index(earlier) < names.index(later)
+                    assert state["returned"] is True
+                    after = _b_t2_snapshot(events, reads)
+                    retained = _b_t2_retained_spend(after, initial, 0)
+                    assert retained["payload"]["revision"] == initial["payload"]["revision"]
+                    assert retained["payload"]["pending"] == initial["payload"]["pending"]
+                    job_rows = [dict(row) for row in reads["job"].execute(
+                        "SELECT * FROM simulation_local_publications_v1 WHERE operation_id=?",
+                        (operation_id,),
+                    )]
+                    assert not any(row["phase"] == "COMPLETE" for row in job_rows)
+                    if domain == "D_lease":
+                        advances = [item for item in history
+                                    if item["event"] == "advance_original_counter"
+                                    and item["kind"] == "D_lease"]
+                        assert len(advances) == 1
+                        assert advances[0]["before"] < session.ttl_ns <= advances[0]["after"]
+                        with pytest.raises(
+                            OperationalLeaseError,
+                            match=r"^session is closed, revoked or unregistered$",
+                        ) as subsequent_denial:
+                            runtime.reserve_capture(RobotState(connected=True), initial=True)
+                        assert type(subsequent_denial.value) is OperationalLeaseError
+                    else:
+                        with pytest.raises((RuntimeError, ValueError),
+                                           match="expired|deadline|invalid|bound|live|domain|authority") as subsequent_denial:
+                            runtime.reserve_capture(RobotState(connected=True), initial=True)
+                    _b_t2_case_evidence(directory, "after-both-lock-denial", {
+                        "domain": domain, "backend": backend, "before": before, "after": after,
+                        "initial": initial, "retained": retained, "history": history,
+                        "job_rows": job_rows, "worker_id": id(worker), "session_id": id(session),
+                        "job_repository_id": id(repo), "event_repository_id": id(events),
+                        "clock_identities": [asdict(raw.current_identity)
+                                             for _, raw, _ in observed.clocks],
+                        "first_denial": {"type": type(first_denial.value).__name__,
+                                         "message": str(first_denial.value)},
+                        "subsequent_denial": {"type": type(subsequent_denial.value).__name__,
+                                              "message": str(subsequent_denial.value)},
+                    })
+                    return operation_id

@@ -1,0 +1,42 @@
+--- immutable-R276-failed-gate
++++ R283-corrected-gate
+@@ -1,4 +1,4 @@
+-"""ROOT finite metadata integrity review; settle the actual failed wait once, never rerun."""
++"""R283 ROOT finite metadata integrity review; preserve the original failed gate."""
+ from pathlib import Path
+ import base64,copy,hashlib,json,os,stat,xml.etree.ElementTree as ET
+ D=Path("/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round276-p6-t2-first-session-invalidation-capture-20261017")
+@@ -55,9 +55,14 @@
+ resources=json.loads(checked(r["resources"]))
+ check("actual completed selected sidecar",resources["all_records_valid"] is True and resources["complete_sidecar_set"] is True and resources["validation_errors"]==[] and len(resources["records"])==1 and resources["actual_node_counts"]=={res["command"]["node"]:1})
+ objects=[]
++sidecar_marker_observations=[]
+ for row in resources["records"]:
+  data=json.loads(checked(row["pin"]))
+- check("raw resource identity matches",data==row["data"] and data["pid"]==r["pid"] and data["nodeid"]==res["command"]["node"] and data["entered_behavior"] is True and data["assertions_completed"] is False)
++ check("raw resource identity matches",data==row["data"] and data["pid"]==r["pid"] and data["nodeid"]==res["command"]["node"] and data["entered_behavior"] is True)
++ marker_present="assertions_completed" in data
++ marker_value=data["assertions_completed"] if marker_present else None
++ sidecar_marker_observations.append({"raw":row["pin"],"nodeid":data["nodeid"],"pid":data["pid"],"present":marker_present,"value":marker_value,"status":"observed" if marker_present else "unobserved"})
++ check("fixed failed raw marker remains absent and unobserved",marker_present is False and marker_value is None)
+  objects+=data["resources"]
+  check("two actual wait poll lifecycles",len(data["worker_lifecycles"])==2 and all(q["attempted"] is True and q["entered"] is True for q in data["worker_lifecycles"]))
+ check("actual allocation denominator and cleanup",len(objects)==resources["counts"]["allocation_attempts"]==537 and sum(q["initialized"] is True for q in objects)==resources["counts"]["initialized"]==535 and all(q["cleanup_observed"] is True and q["pid"]==r["pid"] for q in objects) and resources["counts"]["cleanup_observed"]==537)
+@@ -91,7 +96,7 @@
+  else:check("source snapshot stable control unchanged",checked(row["original"])==b)
+ failed=[q for q in checks if not q["passed"]]
+ if failed:
+- report=save(D/"root-wait-memory-integrity-failed.json",encoded({"round":"R276","checks":checks,"failed":failed,"runtime":0,"ROOT_role_unmodified":True}))
++ report=save(D/"root-wait-memory-integrity-failed.json",encoded({"round":"R276","checks":checks,"failed":failed,"runtime":0,"ROOT_role_unmodified":True,"sidecar_marker_observations":sidecar_marker_observations}))
+  print(json.dumps({"status":"INDEPENDENT_METADATA_INTEGRITY_FAILED_STOP_ASTRA","failed":len(failed),"report":report},ensure_ascii=False));raise SystemExit(2)
+ archive=save(D/"before/settlements/wait_memory/root-command-ledger.json",root_raw,mode)
+ root_before={"original":pin(root_path,root_raw),"archive":archive,"mode":mode,"base64":base64.b64encode(root_raw).decode("ascii")}
+@@ -102,7 +107,7 @@
+ assert root_path.read_bytes()==root_raw and root_path.lstat().st_mode==mode and author_path.read_bytes()==expected_author_raw and author_path.lstat().st_mode==author_before_record["mode"]
+ os.replace(temporary,root_path)
+ assert root_path.read_bytes()==after_raw and root_path.lstat().st_mode==mode
+-report={"round":"R276","command_id":name,"status":"INDEPENDENT_FAILED_WAIT_CAPTURE_ACCEPTED_SPENT","checks":checks,"checks_passed":len(checks),"result":rp,"actual_tool_return":tp,"root_before":root_before,"root_after":pin(root_path,after_raw),"author_after":r["author_spent"],"child_exit":1,"wrapper_exit":1,"timed_out":False,"capture_integrity_complete":True,"behavior_accepted":False,"failure":"Post-expiry reserve_capture at4339/4341 rejected by session guard but message fails regex; cause/fix await R281 Astra","resource_objects_observed":537,"initialized_observed":535,"cleanup_observed":537,"new_DB_count":len(r["new_retained_databases"]),"other_commands_released":False,"T2_complete":False,"native_accepted":False,"formal_accepted":False}
++report={"round":"R276","command_id":name,"status":"INDEPENDENT_FAILED_WAIT_CAPTURE_ACCEPTED_SPENT","checks":checks,"checks_passed":len(checks),"result":rp,"actual_tool_return":tp,"root_before":root_before,"root_after":pin(root_path,after_raw),"author_after":r["author_spent"],"child_exit":1,"wrapper_exit":1,"timed_out":False,"capture_integrity_complete":True,"behavior_accepted":False,"failure":"Post-expiry reserve_capture at4339/4341 rejected by session guard but message fails regex; cause/fix await R281 Astra","resource_objects_observed":537,"initialized_observed":535,"cleanup_observed":537,"new_DB_count":len(r["new_retained_databases"]),"sidecar_marker_observations":sidecar_marker_observations,"other_commands_released":False,"T2_complete":False,"native_accepted":False,"formal_accepted":False}
+ report_pin=save(D/"root-wait-memory-independent-acceptance.json",encoded(report))
+ output=json.dumps({"status":report["status"],"checks":len(checks),"acceptance":report_pin,"root_after":report["root_after"],"author_after":r["author_spent"],"behavior_accepted":False,"T2_complete":False},ensure_ascii=False)
+ assert len((output+"\n").encode())<=6000

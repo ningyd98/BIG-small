@@ -4296,6 +4296,7 @@ def test_memory_sqlite_publication_wait_requires_current_d(monkeypatch, tmp_path
 
                 def exercise(runtime, session, worker, repo, job, events, reads, observed):
                     from cloud_edge_robot_arm.contracts import RobotState
+                    from cloud_edge_robot_arm.simulation_runtime.operational_lease import OperationalLeaseError
 
                     initial = runtime.bootstrap.to_payload()
                     before = _b_t2_snapshot(events, reads)
@@ -4308,7 +4309,7 @@ def test_memory_sqlite_publication_wait_requires_current_d(monkeypatch, tmp_path
                     )
                     try:
                         with pytest.raises((RuntimeError, ValueError),
-                                           match="expired|deadline|invalid|bound|live|domain|authority"):
+                                           match="expired|deadline|invalid|bound|live|domain|authority") as first_denial:
                             _b_t2_operation(runtime, events, transition)
                     finally:
                         observed.wait_observer = None
@@ -4336,9 +4337,22 @@ def test_memory_sqlite_publication_wait_requires_current_d(monkeypatch, tmp_path
                         (operation_id,),
                     )]
                     assert not any(row["phase"] == "COMPLETE" for row in job_rows)
-                    with pytest.raises((RuntimeError, ValueError),
-                                       match="expired|deadline|invalid|bound|live|domain|authority"):
-                        runtime.reserve_capture(RobotState(connected=True), initial=True)
+                    if domain == "D_lease":
+                        advances = [item for item in history
+                                    if item["event"] == "advance_original_counter"
+                                    and item["kind"] == "D_lease"]
+                        assert len(advances) == 1
+                        assert advances[0]["before"] < session.ttl_ns <= advances[0]["after"]
+                        with pytest.raises(
+                            OperationalLeaseError,
+                            match=r"^session is closed, revoked or unregistered$",
+                        ) as subsequent_denial:
+                            runtime.reserve_capture(RobotState(connected=True), initial=True)
+                        assert type(subsequent_denial.value) is OperationalLeaseError
+                    else:
+                        with pytest.raises((RuntimeError, ValueError),
+                                           match="expired|deadline|invalid|bound|live|domain|authority") as subsequent_denial:
+                            runtime.reserve_capture(RobotState(connected=True), initial=True)
                     _b_t2_case_evidence(directory, "after-both-lock-denial", {
                         "domain": domain, "backend": backend, "before": before, "after": after,
                         "initial": initial, "retained": retained, "history": history,
@@ -4346,6 +4360,10 @@ def test_memory_sqlite_publication_wait_requires_current_d(monkeypatch, tmp_path
                         "job_repository_id": id(repo), "event_repository_id": id(events),
                         "clock_identities": [asdict(raw.current_identity)
                                              for _, raw, _ in observed.clocks],
+                        "first_denial": {"type": type(first_denial.value).__name__,
+                                         "message": str(first_denial.value)},
+                        "subsequent_denial": {"type": type(subsequent_denial.value).__name__,
+                                              "message": str(subsequent_denial.value)},
                     })
                     return operation_id
 

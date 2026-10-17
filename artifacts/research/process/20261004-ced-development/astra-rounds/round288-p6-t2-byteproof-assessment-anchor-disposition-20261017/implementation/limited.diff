@@ -1,0 +1,180 @@
+--- /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round285-p6-t2-new-test-generation-validation-continuation-20261017/implementation/run-evidence.py
++++ /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round287-p6-t2-runner-completion-marker-contract-20261017/implementation/run-evidence-corrected.py
+@@ -1101,13 +1101,56 @@
+             "normal_finish_observed": True, "legal_RED": False, "GREEN": False}
+ 
+ 
+-def behavior_resources_complete(summary):
+-    if summary is None or not summary["all_records_valid"] or not summary["complete_sidecar_set"]:
++def completion_marker_fact(container):
++    if type(container) is not dict:
++        return {"present": None, "type": None, "value": None,
++                "interpretation": "container unavailable or malformed"}
++    if "assertions_completed" not in container:
++        return {"present": False, "type": None, "value": None,
++                "interpretation": "unobserved at this location"}
++    value = container["assertions_completed"]
++    return {"present": True, "type": type(value).__name__, "value": value,
++            "interpretation": "observed at this location"}
++
++
++def behavior_resources_complete(summary, *, facts):
++    facts.update({"eligible": False, "reason": None, "records": []})
++    if type(summary) is not dict or type(summary.get("records")) is not list:
++        facts["reason"] = "resource summary or records unavailable/malformed"
+         return False
+-    return bool(summary["records"] and all(
+-        row["data"]["entered_behavior"] is True and row["data"]["assertions_completed"] is True
+-        for row in summary["records"]))
+-
++    eligible = bool(summary["records"] and summary.get("all_records_valid") is True
++                    and summary.get("complete_sidecar_set") is True)
++    for ordinal, row in enumerate(summary["records"]):
++        data = row.get("data") if type(row) is dict else None
++        observations = data.get("observations") if type(data) is dict else None
++        top = completion_marker_fact(data)
++        nested = completion_marker_fact(observations)
++        valid = bool(type(data) is dict and type(observations) is dict
++                     and data.get("entered_behavior") is True
++                     and nested["present"] is True and nested["type"] == "bool"
++                     and nested["value"] is True)
++        reason = None
++        if type(data) is not dict:
++            reason = "data unavailable/malformed"
++        elif type(observations) is not dict:
++            reason = "observations unavailable/malformed"
++        elif nested["present"] is not True:
++            reason = "nested completion marker absent"
++        elif nested["type"] != "bool":
++            reason = "nested completion marker has non-bool type"
++        elif nested["value"] is not True:
++            reason = "nested completion marker observed false"
++        elif data.get("entered_behavior") is not True:
++            reason = "entered_behavior is not true"
++        facts["records"].append({
++            "ordinal": ordinal, "data_type": type(data).__name__,
++            "observations_present": type(data) is dict and "observations" in data,
++            "observations_type": type(observations).__name__,
++            "top_level": top, "nested": nested, "eligible": valid, "reason": reason})
++        eligible = eligible and valid
++    facts["eligible"] = bool(eligible)
++    facts["reason"] = None if eligible else "resource prerequisites or nested completion not satisfied"
++    return facts["eligible"]
+ 
+ def main():
+     context = preconditions()
+@@ -1319,47 +1362,74 @@
+             finally:
+                 if handler_installed:
+                     capture("restore TERM handler", lambda: signal.signal(signal.SIGTERM, previous_term))
+-                cleanup = outcome["cleanup"]
+-                resource = captured.get("resources") or {}
+-                passive = captured.get("passive") or {}
+-                junit = outcome["JUnit"] or {}
+-                dual = command["kind"] == "diagnostic_only"
+-                integrity = bool(
+-                    outcome["started"] and not outcome["errors"] and not outcome["interrupted"]
+-                    and not outcome["output_limited"] and outcome["author_spent"] is not None
+-                    and cleanup is not None and cleanup["leader_reaped"]
+-                    and cleanup["group_remaining"] is False and not cleanup["cleanup_errors"]
+-                    and (outcome["timed_out"] or outcome["child_exit"] in {0, 1})
+-                    and resource.get("all_records_valid") is True
+-                    and (outcome["timed_out"] or junit.get("available") is True)
+-                    and (outcome["prerequisite"] or {}).get("accepted") is True
+-                    and outcome["before"] is not None and outcome["after"] is not None
+-                    and outcome["index"] is not None and outcome["cases"] is not None
+-                    and outcome.get("streams", {}).get("stdout") is not None
+-                    and outcome.get("streams", {}).get("stderr") is not None)
+-                if dual and (captured.get("passive") is None or passive.get("observer_errors")):
+-                    integrity = False
+-                outcome["capture_integrity_complete"] = integrity
+-                outcome["diagnostic_complete"] = bool(dual and integrity and passive.get("complete") is True)
+-                outcome["behavior_accepted"] = bool(
+-                    not dual and integrity and not outcome["timed_out"] and outcome["child_exit"] == 0
+-                    and junit.get("available") is True and junit.get("tests") == 1
+-                    and junit.get("failures") == junit.get("errors") == junit.get("skips") == 0
+-                    and behavior_resources_complete(captured.get("resources")))
+-                outcome["evidence_may_be_partial"] = bool(
+-                    outcome["timed_out"] or not resource.get("complete_sidecar_set")
+-                    or (dual and passive.get("complete") is not True))
+-                outcome["wrapper_exit"] = (
+-                    2 if not integrity else 0 if dual or outcome["behavior_accepted"] else 1)
+-                outcome["elapsed_seconds"] = time.monotonic() - started
+-                outcome["classification"] = (
+-                    "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA" if not integrity else
+-                    "DIAGNOSTIC_FACTS_ONLY_REQUIRES_ROOT_INTEGRITY_REVIEW" if dual else
+-                    "SELECTED_WAIT_BEHAVIOR_ACCEPTED_PENDING_ROOT_REVIEW" if outcome["behavior_accepted"] else
+-                    "SELECTED_WAIT_UNEXPECTED_OUTCOME_STOP_NEXT_ASTRA")
+-                result_pin = capture("best-available result persistence", lambda: write_json(paths["result"], outcome))
+-                if result_pin is None:
++                outcome["final_assessment"] = {"status": "not_completed", "error": None}
++                outcome["completion_marker_assessment"] = {"eligible": False, "reason": "not assessed", "records": []}
++                outcome["capture_integrity_complete"] = False
++                outcome["diagnostic_complete"] = False
++                outcome["behavior_accepted"] = False
++                outcome["wrapper_exit"] = 2
++                outcome["classification"] = "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA"
++                result_pin = None
++                try:
++                    cleanup = outcome["cleanup"]
++                    resource = captured.get("resources") or {}
++                    passive = captured.get("passive") or {}
++                    junit = outcome["JUnit"] or {}
++                    dual = command["kind"] == "diagnostic_only"
++                    resources_complete = behavior_resources_complete(
++                        captured.get("resources"), facts=outcome["completion_marker_assessment"])
++                    integrity = bool(
++                        outcome["started"] and not outcome["errors"] and not outcome["interrupted"]
++                        and not outcome["output_limited"] and outcome["author_spent"] is not None
++                        and cleanup is not None and cleanup["leader_reaped"]
++                        and cleanup["group_remaining"] is False and not cleanup["cleanup_errors"]
++                        and (outcome["timed_out"] or outcome["child_exit"] in {0, 1})
++                        and resource.get("all_records_valid") is True
++                        and (outcome["timed_out"] or junit.get("available") is True)
++                        and (outcome["prerequisite"] or {}).get("accepted") is True
++                        and outcome["before"] is not None and outcome["after"] is not None
++                        and outcome["index"] is not None and outcome["cases"] is not None
++                        and outcome.get("streams", {}).get("stdout") is not None
++                        and outcome.get("streams", {}).get("stderr") is not None)
++                    if dual and (captured.get("passive") is None or passive.get("observer_errors")):
++                        integrity = False
++                    outcome["capture_integrity_complete"] = integrity
++                    outcome["diagnostic_complete"] = bool(dual and integrity and passive.get("complete") is True)
++                    outcome["behavior_accepted"] = bool(
++                        not dual and integrity and not outcome["timed_out"] and outcome["child_exit"] == 0
++                        and junit.get("available") is True and junit.get("tests") == 1
++                        and junit.get("failures") == junit.get("errors") == junit.get("skips") == 0
++                        and resources_complete)
++                    outcome["evidence_may_be_partial"] = bool(
++                        outcome["timed_out"] or not resource.get("complete_sidecar_set")
++                        or (dual and passive.get("complete") is not True))
++                    outcome["wrapper_exit"] = (
++                        2 if not integrity else 0 if dual or outcome["behavior_accepted"] else 1)
++                    outcome["elapsed_seconds"] = time.monotonic() - started
++                    outcome["classification"] = (
++                        "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA" if not integrity else
++                        "DIAGNOSTIC_FACTS_ONLY_REQUIRES_ROOT_INTEGRITY_REVIEW" if dual else
++                        "SELECTED_WAIT_BEHAVIOR_ACCEPTED_PENDING_ROOT_REVIEW" if outcome["behavior_accepted"] else
++                        "SELECTED_WAIT_UNEXPECTED_OUTCOME_STOP_NEXT_ASTRA")
++                    outcome["final_assessment"]["status"] = "completed"
++                except Exception as error:
++                    capture_error("final derived assessment", error)
++                    outcome["final_assessment"] = {"status": "failed", "error": outcome["errors"][-1]}
++                    outcome["capture_integrity_complete"] = False
++                    outcome["diagnostic_complete"] = False
++                    outcome["behavior_accepted"] = False
+                     outcome["wrapper_exit"] = 2
++                    outcome["classification"] = "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA"
++                except BaseException:
++                    outcome["final_assessment"]["status"] = "interrupted"
++                    outcome["capture_integrity_complete"] = False
++                    outcome["diagnostic_complete"] = False
++                    outcome["behavior_accepted"] = False
++                    outcome["wrapper_exit"] = 2
++                    outcome["classification"] = "EVIDENCE_OR_INFRASTRUCTURE_FAILURE_STOP_NEXT_ASTRA"
++                    raise
++                finally:
++                    result_pin = write_json(paths["result"], outcome)
+                 display = {"round": "R285", "command_id": name, "child_exit": outcome["child_exit"],
+                            "wrapper_exit": outcome["wrapper_exit"], "timed_out": outcome["timed_out"],
+                            "output_limited": outcome["output_limited"],

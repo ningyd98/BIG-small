@@ -669,3 +669,42 @@ R269至R273处置原helper命名、ROOT读命令/显示缓存、pytest ini归一
 - /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round275-p6-t2-dual-fixture-session-prerequisite-20261017/step-report.json；715 B；SHA256 4d520e079ebcaaf519fc2af730d6133c2aa2dd137f48a0635fdd82ee1ce251fb
 - /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round276-p6-t2-first-session-invalidation-capture-20261017/plan.json；48080 B；SHA256 bf3f11ceb390c316021714feffb54775d47bd2dcd5dc6f0ae59f9f8169a1c2a8
 - /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round276-p6-t2-first-session-invalidation-capture-20261017/prerequisite-supplement.json；5095 B；SHA256 9e1011333681dd85f92d302d995a28c0b28cfc8ee9fac259954fe97f66733374
+
+
+## R276–R285 执行前事实更新（2026-10-17）
+
+R276 的内存等待节点仅实际运行一次：child=1、wrapper=1，181.929099 秒，无超时，JUnit 1 FAIL / 0 ERROR / 0 SKIP。失败位于租约期限推进后的再次 reserve_capture：收到 OperationalLeaseError 的会话拒绝消息，与旧断言正则不匹配。D_app 已保留完整场景，D_lease 已执行此前的真实锁等待、首次拒绝、顺序、预算保持及无 COMPLETE 提交检查；首次被捕获异常及最初失效原因未保存，不能补称已直接观测首因。
+
+R283 经真实 09d017 exit0 / 479 项检查及 ROOT 19adf4 字节重建复核，接受的是失败证据完整性。仅选中 ROOT 额度结算为 SPENT_UNEXPECTED_FAILURE1/0；AUTHOR 原 SPENT1/0 保持。观察到的资源分母是537次分配、535次初始化、537次清理，不能代替未知 OS/native 资源。原 raw 的 assertions_completed 键缺失，明确记为 present=false/value=null/unobserved。四个新数据库原字节及12个 absent sidecar 保留。旧 sqlite/dual 仍 HELD0/1，不释放给新源码世代。
+
+R277–R280 的观察字段、runner 准备、读取和原生补丁归档表示差异均有独立步骤原件。实际 native 参数为权威，归档多一个末尾 LF 的关系逐字证明；native 返回{}的数值退出码和独立流仍为null。R282可选摘要 viewer、R284描述误作路径 reader 均弃用，原失败保留，零更正执行、零重放。
+
+R281 只修改等待测试 nested exercise 的四处源码：保存首次及后续拒绝事实；D_lease 依据已有 counter 记录核对原 session.ttl_ns 跨越，并精确验证后置 OperationalLeaseError 完整消息；D_app 与原锁、预算和无提交断言保留。当前 test255468/193f45147160f52ba53956df506ddbc602b81f2248990eea604366a39e63ef13，经 ROOT 1b7375 exit0 / 567 项源码检查接受，尚无此世代行为通过。
+
+R285 冻结三个新独立 once：内存等待、SQLite等待为行为验证，双库首次会话失效为诊断；逐项 ROOT reservation 和 literal release，当前均 HELD used0/remaining1，尚未创建新角色或运行。每 child600秒、总cleanup15秒、outer900秒；旧预算和失败不覆盖。双库即使 PASS 仍仅为诊断。
+
+T2/T12 尚未完成，native 与正式研究验收状态不提升；当前阶段是准备新世代执行脚本和独立运行门。
+
+
+## R285–R288：memory 实际证据、收尾修复与结算（2026-10-17）
+
+R285 唯一 memory 运行原回执364b4c exit1保留；原始 JUnit 为1 PASS，pytest181.29秒。完成标记实际位于observations.assertions_completed且为布尔true；原consumer误读顶层，导致无正常result。顶层缺失仍为未观察/null，不补写原件。
+
+R287 新路径runner c4865f0b（86520字节、1447行）修正完成位置并保护derived assessment/result保存；原reservation、启动、清理、AUTHOR spend和资源consumer不变，候选尚未执行。966fc6范围证明失败保留；R288新证明3d2cec exit0只修正唯一anchor，保持完整两region/outside字节重构。
+
+ROOT独立元数据dc66b8 exit0/2642项：实际资源542尝试、540初始化、542清理观察；四个新DB原件/归档、12项侧文件缺失、27当前源、211保护文件及原历史边界均核对。直接child exit及进程组最终清理回执仍未知/null，原正常capture不接受；JUnit与资源记录只作限定独立证据。
+
+原ROOT memory同key结算SPENT_UNEXPECTED_WRAPPER_FINALIZATION_FAILURE1/0，AUTHOR仍SPENT；sqlite/dual保持HELD0/1且未放行。完整before/base64/mode、CAS与after见R287/root-failure-settlement.json，源码接受与限定证据见R287/root-existing-evidence-assessment.json。
+
+T2/T12、native及正式研究验收仍未完成。本轮新增行为/静态/审阅/Git次数均0。下一步由实际Astra绑定已接受源码及本次真实上下文新世代，明确后续有界执行预算；不得复用已spent的memory槽。
+
+
+## R289：两项等待通过、dual诊断未完整（2026-10-17）
+
+memory与SQLite等待各一次，子测试0/运行器0，ROOT独立复核接受完整行为捕获；各新增4个保留数据库。dual一次414.430299505秒，子测试1/运行器0，在commit-seam-0准备阶段reserve_plan会话入口拒绝，尚未到预定故障注入；尝试365、初始化364、清理观察365，新增2个数据库。
+
+dual被动记录实际37420字节，共7条事件，预算估算导致10条丢弃。已观察heartbeat RPC wait cap exceeded→broker late reply→main入口拒绝；迟回根因仍未知。捕获完整性通过不代表诊断完整或行为通过。原始失败、丢弃与unknown均保留，不补写原件，不修改TTL/wait/产品保护。
+
+三个一次性槽均SPENT1/0；ROOT dual为SPENT_PARTIAL_DIAGNOSTIC_CAPTURE，AUTHOR已SPENT。已停止进一步运行。细节及角色完整before/base64/mode/CAS见R289/step-report.json、root-dual-first-invalidation-independent-assessment.json与root-dual-first-invalidation-role-settlement.json。
+
+27当前源、211保护文件未改；新增共10个数据库证据不恢复原35项丢失文件/90项缺失侧文件。T2、T12、native与正式研究验收仍未完成。新Git次数0，后续12批独立只读审阅仍未执行。下一步实际Astra以本次真实上下文和结算角色世代制定R296有限计划；旧spent槽不得复用。

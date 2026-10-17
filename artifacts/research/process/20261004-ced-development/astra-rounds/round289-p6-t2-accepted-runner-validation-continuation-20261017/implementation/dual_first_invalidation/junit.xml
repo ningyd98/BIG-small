@@ -1,0 +1,651 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="413.279" timestamp="2026-10-17T18:32:42.708827+08:00" hostname="ningyd-System-Product-Name"><testcase classname="tests.test_operational_runtime_closure" name="test_dual_database_order_and_partial_commit" time="412.645"><failure message="cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: session is closed, revoked or unregistered">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7bef615e63f0&gt;
+tmp_path = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round289-...tion-continuation-20261017/implementation/dual_first_invalidation/persistent-basetemp/test_dual_database_order_and_p0')
+request = &lt;FixtureRequest for &lt;Function test_dual_database_order_and_partial_commit&gt;&gt;
+
+    def test_dual_database_order_and_partial_commit(monkeypatch, tmp_path, request):
+        with _b_t2_attempt(request) as attempt:
+            _b_t2_api()
+            attempt["entered_behavior"] = True
+            with _b_t2_observe(monkeypatch, attempt) as observed:
+                cases = (("event", "PENDING"), ("job", "EVENT_COMMITTED"),
+                         ("event", "COMPLETE"), ("job", "COMPLETE"))
+                for index, (database, phase) in enumerate(cases):
+                    directory = tmp_path / ("commit-seam-" + str(index))
+    
+                    def exercise(runtime, session, worker, repo, job, events, reads, observed):
+                        before_record = _b_t2_capture_and_unusable_plan(runtime, events, "seam-setup")
+                        before = _b_t2_snapshot(events, reads)
+                        operation_id = "commit-seam:" + str(index)
+                        transition = _b_t2_bootstrap_request(
+                            before_record, "RESERVE_REOBSERVATION", operation_id
+                        )
+                        observed.fault.update(operation_id=operation_id, database=database,
+                                              phase=phase, fired=False)
+                        try:
+                            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                                _b_t2_operation(runtime, events, transition)
+                        finally:
+                            observed.fault["operation_id"] = None
+                        assert observed.fault["fired"] is True
+                        faults = [item for item in attempt["observations"]["scenarios"]
+                                  if item.get("operation_id") == operation_id
+                                  and item.get("kind") == "TRUE_COMMIT_THEN_SAME_CONNECTION_CLOSE"]
+                        assert len(faults) == 1
+                        assert faults[0]["in_transaction_after_commit"] is False
+                        assert faults[0]["actual_closed_connection_error"]["type"] == "ProgrammingError"
+                        rows = _b_t2_operation_rows(reads, operation_id)
+                        assert rows[database] and any(row["phase"] == phase for row in rows[database])
+                        identity = before_record.to_payload()["original_time"]["lease_identity"]
+                        for row in rows["event"] + rows["job"]:
+                            assert row["operation_id"] == operation_id
+                            assert row["operation_sha256"] == _b_t2_digest(transition)
+                            for field in ("job_id", "lease_id", "attempt", "epoch"):
+                                assert row[field] == identity[field]
+                            assert type(row["event_record_hash"]) is str and len(row["event_record_hash"]) == 64
+                        if index == 0:
+                            assert rows["job"] == [], "event PENDING COMMIT must precede the job receipt"
+                        both_complete = all(any(row["phase"] == "COMPLETE" for row in value)
+                                            for value in rows.values())
+                        assert both_complete is (index == 3)
+                        if index &lt; 2:
+                            assert not any(row["phase"] == "COMPLETE" for row in rows["event"])
+                        if index == 2:
+                            assert not any(row["phase"] == "COMPLETE" for row in rows["job"])
+                        after = _b_t2_snapshot(events, reads)
+                        _b_t2_retained_spend(after, before_record.to_payload(), 1)
+                        _b_t2_case_evidence(directory, "true-commit-loss", {
+                            "database": database, "phase": phase, "before": before, "after": after,
+                            "rows": rows, "fault": faults[0], "both_complete": both_complete,
+                            "operation_id": operation_id, "operation_sha256": _b_t2_digest(transition),
+                            "original": before_record.to_payload()["original_time"],
+                            "returned_NEW_COMMIT": False,
+                        })
+                        return {"operation_id": operation_id, "run_id": runtime.source.run_id,
+                                "job_path": str(repo.database_path), "event_path": str(events.path),
+                                "before_record": before_record.to_payload(), "request": transition.to_payload()}
+    
+&gt;                   saved = _b_t2_exercise(monkeypatch, directory, "sqlite", observed, exercise)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:4435: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x7bef615e63f0&gt;
+directory = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round289-...ion-20261017/implementation/dual_first_invalidation/persistent-basetemp/test_dual_database_order_and_p0/commit-seam-0')
+backend = 'sqlite'
+observed = namespace(value={'schema_version': 'bigsmall.r158-t2-resource.v1', 'command_id': 't2_green', 'nodeid': 'tests/test_ope...aseSession object at 0x7bef608b8ce0&gt;], wait_observer=None, add=&lt;function _b_t2_observe.&lt;locals&gt;.add at 0x7bef6020fb00&gt;)
+callback = &lt;function test_dual_database_order_and_partial_commit.&lt;locals&gt;.exercise at 0x7bef602b0b80&gt;
+
+    def _b_t2_exercise(monkeypatch, directory, backend, observed, callback):
+        from cloud_edge_robot_arm.repositories.event_autonomy import InMemoryEventAutonomyRepository
+        from cloud_edge_robot_arm.simulation_runtime import operational_lease
+        from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import SQLiteSimulationJobRepository
+        from tests.test_visual_worker_factory import software_factory
+    
+        directory.mkdir(parents=True, exist_ok=False)
+        outcomes, errors, reads = [], [], {}
+        received = None
+        events = None
+    
+        def episode(worker, repo, job, source_root):
+            runtime = received[0][3].worker_runtime
+            session = worker._operational_lease_session
+            assert type(repo) is SQLiteSimulationJobRepository
+            assert runtime.source.event_repository is events
+            assert runtime._operational_owner is not None and session is not None
+            for thread, kind in ((session._broker, "broker_thread"),
+                                 (getattr(worker, "_heartbeat_thread", None), "heartbeat_thread")):
+                if thread is not None:
+                    record = observed.add(thread, kind)
+                    record["initialized"] = True
+            try:
+                outcomes.append(callback(runtime, session, worker, repo, job, events, reads, observed))
+            except BaseException as error:
+                errors.append(error)
+                raise
+    
+        with monkeypatch.context() as scoped:
+            data = software_factory(scoped, directory, during_episode=episode)
+            repo, job, worker, calls, received, _, original_events = data
+            events = original_events
+            if backend == "memory":
+                original_events.close()
+                events = InMemoryEventAutonomyRepository()
+                worker.visual_event_repository = events
+            worker.operational_time_mode = "LOCAL_TEMPORAL_PUBLICATION_V1"
+            try:
+                # All independent connections exist BEFORE any tested job view/event lock.
+                reads["job"] = sqlite3.connect(repo.database_path)
+                reads["job"].row_factory = sqlite3.Row
+                if backend == "sqlite":
+                    reads["event"] = sqlite3.connect(events.path)
+                    reads["event"].row_factory = sqlite3.Row
+                assert worker.poll_once()
+                if errors:
+&gt;                   raise errors[0]
+
+tests/test_operational_runtime_closure.py:4084: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x7bef608b8890&gt;
+job = SimulationJobRecord(job_id='job-3e1536f082654915', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+draft = ExperimentDraft(backend=&lt;SimulationBackend.MUJOCO: 'MUJOCO'&gt;, job_type='SIMULATION', dataset_config=None, run_type=&lt;Si...ainRandomizationDraft(enabled=False, level='NONE', parameters={}), tags=['phase11-1-test'], description='runtime test')
+
+    def _run_rgbd(
+        self, job: SimulationJobRecord, draft: ExperimentDraft, *, start_monotonic: float
+    ) -&gt; tuple[dict[str, Any], list[TimelineEvent], list[SimulationMetric]]:
+        from cloud_edge_robot_arm.cloud.planning.models import InitialPlanningRequest
+        from cloud_edge_robot_arm.cloud.planning.pipeline import PlanningPipeline
+        from cloud_edge_robot_arm.vision.capture import (
+            capture_simulated_observation,
+            save_observation,
+        )
+        from cloud_edge_robot_arm.vision.planner import RGBDPlannerAdapter
+        from cloud_edge_robot_arm.vision.request_control import (
+            ModelCallCancelled,
+            ModelCallTimedOut,
+            bounded_model_call,
+        )
+    
+        run_dir = self._rgbd_work_dir(job)
+        try:
+            if job.backend not in {"MUJOCO", "ISAAC_SIM"}:
+                raise RuntimeError(
+                    "RGBD_CAMERA_REQUIRED: select MuJoCo or Isaac; Mock is legacy only"
+                )
+            if draft.execution_scope == "VISION_CLOSED_LOOP":
+&gt;               return self._run_visual_closed_loop(job, draft, start_monotonic=start_monotonic)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:796: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x7bef608b8890&gt;
+job = SimulationJobRecord(job_id='job-3e1536f082654915', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+draft = ExperimentDraft(backend=&lt;SimulationBackend.MUJOCO: 'MUJOCO'&gt;, job_type='SIMULATION', dataset_config=None, run_type=&lt;Si...ainRandomizationDraft(enabled=False, level='NONE', parameters={}), tags=['phase11-1-test'], description='runtime test')
+
+    def _run_visual_closed_loop(
+        self, job: SimulationJobRecord, draft: ExperimentDraft, *, start_monotonic: float
+    ) -&gt; tuple[dict[str, Any], list[TimelineEvent], list[SimulationMetric]]:
+        operational_application = getattr(self, "_operational_prefix_application", None)
+        if operational_application is not None:
+            from cloud_edge_robot_arm.research.operational_prefix_v1 import (
+                OperationalPrefixApplicationV1,
+                run_operational_prefix_v1,
+            )
+    
+            if getattr(self, "_native_clock_prefix_application", None) is not None:
+                raise ValueError("two source-only prefix applications cannot share one worker")
+            if type(operational_application) is not OperationalPrefixApplicationV1:
+                raise TypeError("exact configured operational prefix application required")
+            return run_operational_prefix_v1(
+                operational_application, self, job, start_monotonic=start_monotonic
+            )
+        prefix_application = getattr(self, "_native_clock_prefix_application", None)
+        if prefix_application is not None:
+            from cloud_edge_robot_arm.research.native_clock_publication_v2 import (
+                NativeClockPrefixApplicationV2,
+                run_native_reset_clock_prefix_v2,
+            )
+    
+            if type(prefix_application) is not NativeClockPrefixApplicationV2:
+                raise TypeError("exact configured source-only prefix application required")
+            return run_native_reset_clock_prefix_v2(
+                cast(NativeClockPrefixApplicationV2, prefix_application),
+                self,
+                job,
+                start_monotonic=start_monotonic,
+            )
+        from pydantic_core import to_jsonable_python
+    
+        from cloud_edge_robot_arm.simulation.config import SimulatorConfig
+        from cloud_edge_robot_arm.simulation.models import PhysicalScenarioConfig
+        from cloud_edge_robot_arm.simulation.mujoco.backend import MuJoCoPhysicsBackend
+        from cloud_edge_robot_arm.simulation.mujoco.skill_robot import MuJoCoSkillRobot
+        from cloud_edge_robot_arm.vision.capture import MuJoCoCaptureSession
+        from cloud_edge_robot_arm.vision.evaluation import ExecutionPolicy
+        from cloud_edge_robot_arm.vision.execution import run_visual_episode
+        from cloud_edge_robot_arm.vision.planner import RGBDModelUnavailable, RGBDPlannerAdapter
+        from cloud_edge_robot_arm.vision.task_semantics import apply_s01_task_semantics
+        from cloud_edge_robot_arm.vision.top_grasp import calibration_asset_sha256
+    
+        binding = self.visual_role_binding
+    
+        if job.backend != "MUJOCO" or job.scenario_id != "S01_NORMAL_STATIC":
+            raise RGBDModelUnavailable("RGBD_MODEL_UNAVAILABLE: unsupported online asset/scenario")
+        if self.planner_factory is None:
+            raise RGBDModelUnavailable("RGBD_MODEL_UNAVAILABLE: explicit frozen planner required")
+        planner = self.planner_factory()
+        if not isinstance(planner, RGBDPlannerAdapter):
+            raise RGBDModelUnavailable("RGBD_MODEL_UNAVAILABLE: visual adapter required")
+        snapshot = getattr(planner, "model_snapshot", None)
+        if (
+            snapshot is None
+            or (binding is None and not snapshot.weight_digest)
+            or calibration_asset_sha256(snapshot.grasp_profile) is None
+        ):
+            raise RGBDModelUnavailable(
+                "RGBD_MODEL_UNAVAILABLE: configure a verified research snapshot"
+            )
+        self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
+        runtime_source = None
+        operational_handoff = None
+        verification_limits = None
+        source_hashes: Mapping[str, str] | None = None
+        required_sources: frozenset[str] = frozenset()
+        supervision_period_s: float | None = None
+        advance_physics_during_wait = False
+        if binding is not None:
+            from cloud_edge_robot_arm.edge.recovery.verification_router import VerificationBudget
+            from cloud_edge_robot_arm.simulation_runtime.sqlite_repository import (
+                SQLiteSimulationJobRepository,
+            )
+            from cloud_edge_robot_arm.vision.raw_recorder_v3 import RECORDER_SOURCE_PATHS
+            from cloud_edge_robot_arm.vision.worker_owner import (
+                pin_worker_source_inventory,
+                read_visual_worker_lease,
+            )
+            from cloud_edge_robot_arm.vision.worker_runtime import (
+                REQUIRED_WORKER_RUNTIME_SOURCES,
+                WorkerRuntimeSource,
+            )
+    
+            if self.visual_event_repository is None or self.visual_robot_id is None:
+                raise ValueError("visual worker configuration changed")
+            if type(self.repository) is not SQLiteSimulationJobRepository:
+                raise TypeError("persisted OpenCV worker requires a concrete SQLite job repository")
+            job_repository = cast(SQLiteSimulationJobRepository, self.repository)
+            origin = self._active_task_origin
+            if origin is None or origin[:2] != (job.job_id, start_monotonic):
+                raise ValueError("OpenCV factory requires the current worker task clock")
+            original_parameters = job.draft.get("parameter_overrides", {})
+            if type(original_parameters) is not dict:
+                raise ValueError("concrete original worker parameter sources required")
+            period_ms = original_parameters.get("supervision_period_ms")
+            if period_ms is not None and (
+                type(period_ms) not in {int, float}
+                or not math.isfinite(period_ms)
+                or period_ms &lt;= 0
+            ):
+                raise ValueError("finite positive original supervision period source required")
+            original_waits = original_parameters.get("advance_physics_during_wait", False)
+            if type(original_waits) is not bool:
+                raise ValueError("strict original passive wait flag source required")
+            supervision_period_s = None if period_ms is None else period_ms / 1000
+            advance_physics_during_wait = original_waits
+            budget_data = binding.edge_policy.get("verification_budget")
+            if not isinstance(budget_data, Mapping):
+                raise ValueError("frozen verification limits are missing")
+            verification_limits = VerificationBudget(**dict(cast(Mapping[str, Any], budget_data)))
+            required_sources = (
+                REQUIRED_WORKER_RUNTIME_SOURCES
+                | VISUAL_WORKER_FACTORY_SOURCE_PATHS
+                | RECORDER_SOURCE_PATHS
+            )
+            inventory: dict[str, str] = {}
+            for role_sources in (
+                binding.bundle.cloud_snapshot.source_hashes,
+                binding.edge_snapshot.source_hashes,
+                binding.device_source_hashes,
+            ):
+                for name, expected in role_sources.items():
+                    if name in inventory and inventory[name] != expected:
+                        raise ValueError("role source inventories disagree")
+                    inventory[name] = expected
+            for name in required_sources:
+                current_hash = hashlib.sha256((binding.root / name).read_bytes()).hexdigest()
+                if name in inventory and inventory[name] != current_hash:
+                    raise ValueError("required worker source differs from frozen role source")
+                inventory[name] = current_hash
+            source_hashes = pin_worker_source_inventory(
+                binding.root, inventory, required_paths=required_sources
+            )
+            # This first concrete re-read precedes all backend initialization.
+            read_visual_worker_lease(
+                job_repository,
+                job_id=job.job_id,
+                run_id=job.run_id,
+                worker_id=self.worker_id,
+                lease_id=job.lease_id,
+            )
+            binding.validate(planner)
+            runtime_source = WorkerRuntimeSource(
+                job_repository=job_repository,
+                event_repository=self.visual_event_repository,
+                job_id=job.job_id,
+                run_id=job.run_id,
+                worker_id=self.worker_id,
+                lease_id=job.lease_id,
+                source_root=binding.root,
+                source_hashes=source_hashes,
+                robot_id=self.visual_robot_id,
+                plan_id=f"visual-plan:{uuid.uuid4().hex}",
+                task_started_at=origin[2],
+                task_timeout_s=float(job.timeout_seconds),
+            )
+            from cloud_edge_robot_arm.vision.operational_windows import _new_handoff
+    
+            operational_handoff = _new_handoff(self, runtime_source, verification_limits)
+    
+        def check_setup_boundary() -&gt; None:
+            self._raise_if_cancelled_or_timed_out(job.job_id, job, start_monotonic)
+            if binding is not None:
+                assert source_hashes is not None
+                read_visual_worker_lease(
+                    job_repository,
+                    job_id=job.job_id,
+                    run_id=job.run_id,
+                    worker_id=self.worker_id,
+                    lease_id=job.lease_id,
+                )
+                pin_worker_source_inventory(
+                    binding.root, source_hashes, required_paths=required_sources
+                )
+                binding.validate(planner)
+    
+        config = SimulatorConfig(render_rgb=True, render_depth=True, seed=job.seed)
+        backend = MuJoCoPhysicsBackend()
+        run_dir = self._rgbd_work_dir(job)
+        try:
+            backend.initialize(config)
+            with ExitStack() as resources:
+                raw_recorder = None
+                if runtime_source is not None:
+                    from cloud_edge_robot_arm.edge.runtime.skill_executor import SkillExecutor
+                    from cloud_edge_robot_arm.edge.runtime.skill_registry import SkillRegistry
+                    from cloud_edge_robot_arm.vision.raw_recorder_v3 import VisualRawRecorderV3
+    
+                    assert binding is not None
+                    check_setup_boundary()
+                    robot = MuJoCoSkillRobot(backend)
+                    capture = resources.enter_context(MuJoCoCaptureSession(config, backend=backend))
+                    executor = SkillExecutor(robot=robot, registry=SkillRegistry.default())
+                    raw_recorder = resources.enter_context(
+                        VisualRawRecorderV3(
+                            backend,
+                            capture,
+                            executor,
+                            directory=run_dir / "raw_episode_v3",
+                            source_root=binding.root,
+                            source_hashes=runtime_source.source_hashes,
+                        )
+                    )
+                    check_setup_boundary()
+                # OPENCV enters the source observer before this actual RESET;
+                # LEGACY retains its original reset/settle/capture order.
+                backend.reset(PhysicalScenarioConfig.scenario(job.scenario_id, seed=job.seed))
+                if runtime_source is not None:
+                    check_setup_boundary()
+                if raw_recorder is not None:
+                    with raw_recorder.purpose("SETTLE"):
+                        backend.step(steps=120)
+                else:
+                    backend.step(steps=120)
+                if runtime_source is not None:
+                    check_setup_boundary()
+                else:
+                    robot = MuJoCoSkillRobot(backend)
+                    capture = resources.enter_context(MuJoCoCaptureSession(config, backend=backend))
+                worker_runtime = None
+                if runtime_source is not None:
+                    from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+    
+                    assert binding is not None and verification_limits is not None
+                    # reset supplies the actual shared backend episode, never a request ID.
+                    episode_id = backend._episode_id
+                    if type(episode_id) is not str or not episode_id:
+                        raise ValueError("shared backend did not supply an episode identity")
+                    worker_runtime = VisualWorkerRuntime(
+                        runtime_source,
+                        episode_id=episode_id,
+                        instruction=draft.user_instruction,
+                        role_binding=binding,
+                        model_snapshot_hash=snapshot.digest(),
+                        verification_limits=verification_limits,
+                        _operational_handoff=operational_handoff,
+                    )
+                    worker_runtime.check_active(robot.get_state())
+                policy_arguments: dict[str, Any] = {}
+                if worker_runtime is not None:
+                    worker_runtime.check_active(robot.get_state())
+                    policy_arguments.update(
+                        device_pipeline="OPENCV",
+                        role_binding=binding,
+                        verification_budget=verification_limits,
+                        worker_runtime=worker_runtime,
+                        raw_recorder=raw_recorder,
+                        supervision_period_s=supervision_period_s,
+                        advance_physics_during_wait=advance_physics_during_wait,
+                    )
+&gt;               outcome = run_visual_episode(
+                    planner,
+                    robot,
+                    capture,
+                    ExecutionPolicy(
+                        instruction=draft.user_instruction,
+                        model_snapshot_hash=snapshot.digest(),
+                        timeout_s=max(
+                            0.001, job.timeout_seconds - (time.monotonic() - start_monotonic)
+                        ),
+                        cancelled=lambda: self._active_job_cancelled(job),
+                        output_dir=run_dir / "visual_episode",
+                        **policy_arguments,
+                    ),
+                )
+
+src/cloud_edge_robot_arm/simulation_runtime/worker.py:1152: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+actual_planner = &lt;cloud_edge_robot_arm.vision.planner.RGBDPlannerAdapter object at 0x7bef600eac00&gt;
+actual_robot = namespace(_backend=namespace(_episode_id='software-shared-backend-episode', initialize=&lt;function software_factory.&lt;loc...ctory.&lt;locals&gt;.&lt;lambda&gt; at 0x7bef607598a0&gt;), get_state=&lt;function software_factory.&lt;locals&gt;.&lt;lambda&gt; at 0x7bef60759940&gt;)
+actual_capture = namespace(_backend=namespace(_episode_id='software-shared-backend-episode', initialize=&lt;function software_factory.&lt;loc...tle at 0x7bef60759800&gt;, shutdown=&lt;function software_factory.&lt;locals&gt;.&lt;lambda&gt; at 0x7bef607598a0&gt;), _owns_backend=False)
+policy = ExecutionPolicy(instruction='将红色方块放到绿色区域', scope='VISION_CLOSED_LOOP', timeout_s=5.5127046260167845, model_snapshot_ha...deadline_s': 120.0}), 'runtime_router': 'verification_router.v1', 'capabilities': ('CONTINUE', 'REOBSERVE', 'STOP')})))
+
+    def episode(actual_planner, actual_robot, actual_capture, policy):
+        calls.append("episode")
+        received.append((actual_planner, actual_robot, actual_capture, policy))
+        if during_episode:
+&gt;           during_episode(worker, repo, job, source_root)
+
+tests/test_visual_worker_factory.py:158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+worker = &lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x7bef608b8890&gt;
+repo = &lt;cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x7bef600eb200&gt;
+job = SimulationJobRecord(job_id='job-3e1536f082654915', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+source_root = PosixPath('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round289-...61017/implementation/dual_first_invalidation/persistent-basetemp/test_dual_database_order_and_p0/commit-seam-0/source')
+
+    def episode(worker, repo, job, source_root):
+        runtime = received[0][3].worker_runtime
+        session = worker._operational_lease_session
+        assert type(repo) is SQLiteSimulationJobRepository
+        assert runtime.source.event_repository is events
+        assert runtime._operational_owner is not None and session is not None
+        for thread, kind in ((session._broker, "broker_thread"),
+                             (getattr(worker, "_heartbeat_thread", None), "heartbeat_thread")):
+            if thread is not None:
+                record = observed.add(thread, kind)
+                record["initialized"] = True
+        try:
+&gt;           outcomes.append(callback(runtime, session, worker, repo, job, events, reads, observed))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:4061: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+runtime = &lt;cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x7bef606d7350&gt;
+session = &lt;cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x7bef608b8ce0&gt;
+worker = &lt;cloud_edge_robot_arm.simulation_runtime.worker.SimulationWorker object at 0x7bef608b8890&gt;
+repo = &lt;cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x7bef600eb200&gt;
+job = SimulationJobRecord(job_id='job-3e1536f082654915', run_id='terminal-test', batch_id='', backend='MUJOCO', scenario_id=...age='', artifact_root='terminal-test', artifact_paths={}, provenance={}, source_commit='test', source_tree_hash='test')
+events = &lt;cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7bef608b8590&gt;
+reads = {'event': &lt;tests.test_operational_runtime_closure._b_t2_observe.&lt;locals&gt;._b_t2_Connection object at 0x7bef60613c50&gt;, 'job': &lt;tests.test_operational_runtime_closure._b_t2_observe.&lt;locals&gt;._b_t2_Connection object at 0x7bef60613b50&gt;}
+observed = namespace(value={'schema_version': 'bigsmall.r158-t2-resource.v1', 'command_id': 't2_green', 'nodeid': 'tests/test_ope...aseSession object at 0x7bef608b8ce0&gt;], wait_observer=None, add=&lt;function _b_t2_observe.&lt;locals&gt;.add at 0x7bef6020fb00&gt;)
+
+    def exercise(runtime, session, worker, repo, job, events, reads, observed):
+&gt;       before_record = _b_t2_capture_and_unusable_plan(runtime, events, "seam-setup")
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:4384: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+runtime = &lt;cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x7bef606d7350&gt;
+events = &lt;cloud_edge_robot_arm.repositories.event_autonomy.sqlite.SQLiteEventAutonomyRepository object at 0x7bef608b8590&gt;
+key = 'seam-setup'
+
+    def _b_t2_capture_and_unusable_plan(runtime, events, key):
+        from datetime import UTC, datetime
+        from cloud_edge_robot_arm.cloud.planning.models import PlannerDraft
+        from cloud_edge_robot_arm.contracts import RobotState
+        from tests.test_visual_bootstrap import frame
+    
+        assert runtime.source.event_repository is events
+        record = runtime.bootstrap
+        original = copy.deepcopy(record.to_payload()["original_time"])
+        assert record.to_payload()["schema_version"] == "visual.bootstrap.record.local.v1"
+        robot_state = RobotState(connected=True)
+        claim = runtime.reserve_capture(robot_state, initial=True)
+        reserved = runtime.bootstrap
+        assert reserved.to_payload()["schema_version"] == "visual.bootstrap.record.local.v1"
+        assert reserved.to_payload()["payload"]["pending"]["claim_id"] == claim
+        assert reserved.to_payload()["original_time"] == original
+        # CPU model diagnostic only: this UTC input is never a local lease/origin/deadline.
+        capture_timestamp = datetime.now(UTC)
+        observation = frame((None, None, capture_timestamp), frame_id=key + ":frame", at=capture_timestamp)
+        observation_payload = observation.model_dump(mode="json")
+        observation_payload.update(episode_id=record.definition.episode_id, checksum_sha256="")
+        observation = type(observation).model_validate(observation_payload)
+        runtime.complete_capture(claim, observation, robot_state)
+        captured = runtime.bootstrap
+        assert captured.to_payload()["original_time"] == original
+&gt;       claim = runtime.reserve_plan(robot_state)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_operational_runtime_closure.py:4017: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x7bef606d7350&gt;
+robot_state = RobotState(tcp_pose=Pose(x=0.0, y=0.0, z=0.18), gripper_open=True, holding_object_id=None, connected=True, stopped=False, estop_engaged=False, collision_detected=False)
+
+    def reserve_plan(self, robot_state: RobotState) -&gt; str:
+        with self._lock:
+&gt;           record = self._transition("RESERVE_PLAN", robot_state)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+src/cloud_edge_robot_arm/vision/worker_runtime.py:1887: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x7bef606d7350&gt;
+kind = 'RESERVE_PLAN'
+robot_state = RobotState(tcp_pose=Pose(x=0.0, y=0.0, z=0.18), gripper_open=True, holding_object_id=None, connected=True, stopped=False, estop_engaged=False, collision_detected=False)
+
+    def _transition(
+        self,
+        kind: str,
+        robot_state: RobotState,
+        *,
+        claim_id: str | None = None,
+        observation: RGBDObservation | None = None,
+        draft: PlannerDraft | None = None,
+    ) -&gt; VisualBootstrapRecord:
+        if self._local_mode:
+            self.check_active(robot_state)
+            current = self.bootstrap
+            from cloud_edge_robot_arm.vision.local_temporal import _history_state_hash
+    
+            body = {"scope": "BOOTSTRAP_SOURCE_ONLY", "bootstrap_id": self._bootstrap_id,
+                    "definition_hash": digest(current.to_payload()["payload"]["definition"]),
+                    "expected_record_hash": _history_state_hash(current._tag, current.semantic, self._local_original),
+                    "kind": kind, "event_key": f"worker-{kind.lower()}-{current.revision}",
+                    "robot_state": robot_state.model_dump(mode="json"), "claim_id": claim_id,
+                    "observation": None if observation is None else observation.model_dump(mode="json"),
+                    "draft": None if draft is None else asdict(draft)}
+            request = VisualBootstrapTransitionInput.from_payload(self._local_envelope(
+                "visual.bootstrap.transition.local.v1", body))
+&gt;           with self._local_publication_scope(operation_id=body["event_key"], operation_sha256=_local_digest(request)):
+
+src/cloud_edge_robot_arm/vision/worker_runtime.py:1789: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;contextlib._GeneratorContextManager object at 0x7bef61057cb0&gt;
+
+    def __enter__(self):
+        # do not keep args and kwds alive unnecessarily
+        # they are only needed for recreation, which is not possible anymore
+        del self.args, self.kwds, self.func
+        try:
+&gt;           return next(self.gen)
+                   ^^^^^^^^^^^^^^
+
+/usr/lib/python3.12/contextlib.py:137: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.vision.worker_runtime.VisualWorkerRuntime object at 0x7bef606d7350&gt;
+
+    @contextmanager
+    def _local_publication_scope(self, *, operation_id: str, operation_sha256: str):
+        """The sole job -&gt; event acquisition site; all decisions follow BOTH locks."""
+        if not self._local_mode:
+            raise RuntimeError("private local publication requires the registered local runtime")
+        key = (os.getpid(), threading.get_ident(), threading.get_native_id())
+        if key in _LOCAL_SCOPES:
+            raise RuntimeError("private publication scopes cannot recursively acquire event locks")
+        events = self.source.event_repository
+        event_lock = events._write_lock if type(events) is SQLiteEventAutonomyRepository else events._lock
+&gt;       with self.source.job_repository._local_read_scope(
+            self._local_session, job_id=self.source.job_id, purpose=operation_id,
+            operation_sha256=operation_sha256,
+        ) as view:
+
+src/cloud_edge_robot_arm/vision/worker_runtime.py:505: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;contextlib._GeneratorContextManager object at 0x7bef60d18a40&gt;
+
+    def __enter__(self):
+        # do not keep args and kwds alive unnecessarily
+        # they are only needed for recreation, which is not possible anymore
+        del self.args, self.kwds, self.func
+        try:
+&gt;           return next(self.gen)
+                   ^^^^^^^^^^^^^^
+
+/usr/lib/python3.12/contextlib.py:137: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.simulation_runtime.sqlite_repository.SQLiteSimulationJobRepository object at 0x7bef600eb200&gt;
+session = &lt;cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x7bef608b8ce0&gt;
+
+    @contextmanager
+    def _local_read_scope(self, session, *, job_id: str, purpose: str, operation_sha256: str):
+        """Issue or join a genuine private read view; descriptors cannot enter."""
+        from cloud_edge_robot_arm.vision.operational_windows import OperationalWindowOwner, _prepare_startup
+        from cloud_edge_robot_arm.vision.worker_runtime import VisualWorkerRuntime
+        from cloud_edge_robot_arm.simulation_runtime.worker import SimulationWorker
+    
+        caller = sys._getframe(2).f_code
+        allowed = {
+            _prepare_startup.__code__, OperationalWindowOwner._bind_inputs.__code__,
+            VisualWorkerRuntime._read_lease.__code__,
+            VisualWorkerRuntime._local_publication_scope.__wrapped__.__code__,
+            SimulationWorker._owns_artifact_publication.__code__,
+        }
+        if (type(session) is not OperationalLeaseSession or _current_session(self) is not session
+                or session.repository is not self or caller not in allowed
+                or session.worker._frozen_operational_time_mode != "LOCAL_TEMPORAL_PUBLICATION_V1"):
+            raise OperationalLeaseError("registered private local session/caller required")
+&gt;       session._check_ingress(purpose)
+
+src/cloud_edge_robot_arm/simulation_runtime/sqlite_repository.py:1327: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseSession object at 0x7bef608b8ce0&gt;
+purpose = 'worker-reserve_plan-2'
+
+    def _check_ingress(self, purpose: str) -&gt; str:
+        with _REGISTRY_LOCK:
+            if _SESSIONS.get(self.epoch) is not self or self._closed or self._unusable.is_set():
+&gt;               raise OperationalLeaseError("session is closed, revoked or unregistered")
+E               cloud_edge_robot_arm.simulation_runtime.operational_lease.OperationalLeaseError: session is closed, revoked or unregistered
+
+src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py:471: OperationalLeaseError</failure></testcase></testsuite></testsuites>

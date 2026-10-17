@@ -1,0 +1,457 @@
+*** Begin Patch
+*** Add File: /home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round285-p6-t2-new-test-generation-validation-continuation-20261017/implementation/r285_session_evidence.py
++"""R285 finite observation of original lease-session events; no authority."""
++from pathlib import Path
++import hashlib
++import json
++import os
++import sys
++import threading
++
++import pytest
++
++ROOT = Path("/home/ningyd/文档/ChatGPT/BIGsmall")
++D = ROOT / "artifacts/research/process/20261004-ced-development/astra-rounds/round285-p6-t2-new-test-generation-validation-continuation-20261017"
++LEASE = str(ROOT / "src/cloud_edge_robot_arm/simulation_runtime/operational_lease.py")
++TEST = ROOT / "tests/test_operational_runtime_closure.py"
++LEASE_SHA = "f71d9bcb9c38a7c93e989f7649360b4a0624b4cc2d869bc389b9c9f6b8a76580"
++TEST_SHA = "193f45147160f52ba53956df506ddbc602b81f2248990eea604366a39e63ef13"
++PLAN_SHA = "22983a42ecd12e188440b42a0491c059957e96998b546e769e3bd3ceaef0ffa0"
++NODE = "tests/test_operational_runtime_closure.py::test_dual_database_order_and_partial_commit"
++KEY = "dual_first_invalidation"
++TARGETS = {
++    ("__init__", 417): ("OperationalLeaseSession.__init__", {"call", "line455", "return"}),
++    ("invalidate", 640): ("OperationalLeaseSession.invalidate", {"call"}),
++    ("_check_ingress", 468): ("OperationalLeaseSession._check_ingress", {"line471", "exception"}),
++    ("_close_worker_lease_session", 982): ("_close_worker_lease_session", {"call", "line987", "return"}),
++}
++BOUNDS = {"sessions_max": 6, "events_per_session_max": 64, "stack_frames_max": 12,
++          "primitive_string_utf8_max": 1024, "exception_chain_max": 4,
++          "total_persisted_utf8_bytes_max": 131072, "files_max": 2}
++_STATE = None
++
++
++def pin(path):
++    data = path.read_bytes()
++    return {"path": str(path), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
++
++
++def typename(value):
++    cls = type(value)
++    return {"module": bounded(type.__getattribute__(cls, "__module__")),
++            "name": bounded(type.__getattribute__(cls, "__name__"))}
++
++
++def bounded(value):
++    if type(value) is not str:
++        return None
++    raw = value.encode("utf-8", errors="replace")
++    if len(raw) > 1024:
++        return {"prefix": raw[:1024].decode("utf-8", errors="ignore"),
++                "omitted_utf8_bytes_at_least": len(raw) - 1024}
++    return value
++
++
++def primitive(value, depth=0):
++    kind = type(value)
++    if value is None or kind is bool:
++        return value
++    if kind is int:
++        return value if value.bit_length() <= 256 else {"unavailable": "integer_bound"}
++    if kind is str:
++        return bounded(value)
++    if kind in (tuple, list) and depth < 2:
++        return {"items": [primitive(value[i], depth + 1) for i in range(min(8, len(value)))],
++                "omitted": max(0, len(value) - 8)}
++    return {"unavailable": "not_allowed_primitive", "type": typename(value)}
++
++
++def upper_json_bytes(value):
++    """Conservative UTF-8/escaping bound, without JSON serialization in callbacks."""
++    kind = type(value)
++    if value is None or kind is bool:
++        return 5
++    if kind is int:
++        return len(str(value)) + 1
++    if kind is str:
++        return 6 * len(value.encode("utf-8", errors="replace")) + 2
++    if kind is list:
++        return 2 + sum(upper_json_bytes(x) + 1 for x in value)
++    if kind is dict:
++        return 2 + sum(upper_json_bytes(k) + upper_json_bytes(v) + 2
++                       for k, v in dict.items(value))
++    return 128
++
++
++def hook_values():
++    return (sys.gettrace(), threading.gettrace(), sys.getprofile(), threading.getprofile())
++
++
++def hook_records(values):
++    return [None if value is None else {"id": id(value), "type": typename(value)} for value in values]
++
++
++def error_record(stage, error):
++    state = _STATE
++    if state is None:
++        return
++    state["incomplete"] = True
++    if len(state["observer_errors"]) < 8:
++        state["observer_errors"].append({"stage": stage, "type": typename(error)})
++    else:
++        state["omitted_observer_errors"] += 1
++
++
++def drop(reason):
++    _STATE["incomplete"] = True
++    _STATE["dropped_events"] += 1
++    counts = _STATE["drops_by_reason"]
++    counts[reason] = counts.get(reason, 0) + 1
++
++
++def target(frame):
++    code = frame.f_code
++    spec = TARGETS.get((code.co_name, code.co_firstlineno))
++    if (spec is None or code.co_filename != LEASE or code.co_qualname != spec[0]
++            or frame.f_globals.get("__name__") !=
++            "cloud_edge_robot_arm.simulation_runtime.operational_lease"):
++        return None
++    cls = frame.f_globals.get("OperationalLeaseSession")
++    value = frame.f_locals.get("session" if code.co_name == "_close_worker_lease_session" else "self")
++    if type(cls) is not type or type(value) is not cls:
++        return None
++    return spec, value
++
++
++def dictionary(value):
++    try:
++        result = object.__getattribute__(value, "__dict__")
++    except AttributeError:
++        return None
++    return result if type(result) is dict else None
++
++
++def session_snapshot(frame, session):
++    values = dictionary(session)
++    if values is None:
++        return {"session_id": id(session), "unavailable": "exact_session_dict_unavailable"}
++    snapshot = {"session_id": id(session), "post_event_non_atomic": True}
++    for key in ("epoch", "job_id", "lease_id", "worker_id", "cleanup_reason"):
++        value = dict.get(values, key)
++        snapshot[key] = bounded(value) if type(value) is str else None
++    for key in ("_closed", "join_failed"):
++        value = dict.get(values, key)
++        snapshot[key] = value if type(value) is bool else None
++    for key in ("main_thread", "main_native_thread"):
++        value = dict.get(values, key)
++        snapshot[key] = value if type(value) is int else None
++    for key in ("worker", "repository"):
++        value = dict.get(values, key)
++        if key == "worker" and value is None and frame.f_code.co_name == "__init__":
++            value = frame.f_locals.get("worker")
++        snapshot["worker_object_id" if key == "worker" else "repository_id"] = id(value) if value is not None else None
++    for key in ("_unusable", "_stop", "_ready"):
++        value = dict.get(values, key)
++        detail = dictionary(value) if type(value) is threading.Event else None
++        flag = dict.get(detail, "_flag") if detail is not None else None
++        snapshot[key] = {"event_id": id(value) if type(value) is threading.Event else None,
++                         "flag": flag if type(flag) is bool else None,
++                         "unavailable": None if type(flag) is bool else "exact_Event_bool_unavailable"}
++    epoch = dict.get(values, "epoch")
++    registry = frame.f_globals.get("_SESSIONS")
++    valid = type(epoch) is str and len(epoch.encode("utf-8")) <= 1024 and type(registry) is dict
++    snapshot["registry_id"] = id(registry) if type(registry) is dict else None
++    snapshot["registry_maps_epoch_to_session"] = dict.get(registry, epoch) is session if valid else None
++    return snapshot
++
++
++def stack_locations(frame):
++    rows, current = [], frame
++    try:
++        while current is not None and len(rows) < 12:
++            code = current.f_code
++            rows.append({"filename": bounded(code.co_filename), "name": bounded(code.co_name),
++                         "firstlineno": code.co_firstlineno, "current_lineno": current.f_lineno})
++            current = current.f_back
++        return {"locations": rows, "omitted_more_frames": current is not None}
++    finally:
++        current = None
++        frame = None
++
++
++def exception_fields(error):
++    rows, pending, seen = [], [(error, None, None)], set()
++    try:
++        while pending and len(rows) < 4:
++            value, relation, parent = pending.pop(0)
++            if id(value) in seen:
++                continue
++            seen.add(id(value))
++            ordinal = len(rows)
++            args = BaseException.__dict__["args"].__get__(value, type(value))
++            rows.append({"ordinal": ordinal, "relation": relation, "parent": parent,
++                         "type": typename(value), "primitive_args": primitive(args)})
++            for name in ("__cause__", "__context__"):
++                linked = BaseException.__dict__[name].__get__(value, type(value))
++                if linked is not None and id(linked) not in seen:
++                    pending.append((linked, name, ordinal))
++                linked = None
++            value = None
++        return {"exceptions": rows, "additional_chain_unavailable": bool(pending)}
++    finally:
++        pending.clear()
++        error = None
++
++
++def append_record(row, session_row=None):
++    size = upper_json_bytes(row)
++    if _STATE["estimated_record_bytes"] + size > 98304:
++        drop("reserved_128KiB_budget")
++        return
++    if session_row is not None and session_row["event_count"] >= 64:
++        drop("events_per_session64")
++        return
++    row["ordinal"] = len(_STATE["records"])
++    _STATE["records"].append(row)
++    _STATE["estimated_record_bytes"] += size + 32
++    if session_row is not None:
++        session_row["event_count"] += 1
++        category = row["category"]
++        session_row["first_observed"].setdefault(category, row["ordinal"])
++        if category == "invalidate:call":
++            session_row.setdefault("first_observed_invalidate", {
++                "ordinal": row["ordinal"], "original_reason": row["original_reason"]})
++
++
++def record_event(frame, event, arg):
++    found = target(frame)
++    if found is None:
++        return
++    spec, session = found
++    category = "line" + str(frame.f_lineno) if event == "line" else event
++    if category not in spec[1]:
++        return
++    sid = id(session)
++    sessions = _STATE["sessions"]
++    if sid not in sessions:
++        if len(sessions) >= 6:
++            drop("sessions6")
++            return
++        sessions[sid] = {"session_id": sid, "event_count": 0, "epoch": None, "first_observed": {}}
++    session_row = sessions[sid]
++    snapshot = session_snapshot(frame, session)
++    epoch = snapshot.get("epoch")
++    if type(epoch) is str:
++        if session_row["epoch"] is not None and session_row["epoch"] != epoch:
++            drop("session_identity_reused")
++            return
++        session_row["epoch"] = epoch
++    tid, native = threading.get_ident(), threading.get_native_id()
++    _STATE["observed_threads"].add(tid)
++    row = {"category": frame.f_code.co_name + ":" + category, "trace_event": event,
++           "trace_lineno": frame.f_lineno, "code_filename": frame.f_code.co_filename,
++           "code_name": frame.f_code.co_name, "code_firstlineno": frame.f_code.co_firstlineno,
++           "pid": os.getpid(), "thread_id": tid, "native_thread_id": native,
++           "snapshot": snapshot, "stack": stack_locations(frame),
++           "original_reason": primitive(frame.f_locals.get("reason")),
++           "profile_ids_during_event": [None if x is None else id(x)
++                                       for x in (sys.getprofile(), threading.getprofile())]}
++    if event == "exception":
++        row["exception"] = exception_fields(arg[1])
++        tb = arg[2]
++        row["actual_tb_lineno_at_trace_event"] = tb.tb_lineno if tb is not None else None
++        tb = None
++    append_record(row, session_row)
++    session = None
++    found = None
++
++
++def local_trace(frame, event, arg):
++    try:
++        record_event(frame, event, arg)
++    except BaseException as error:
++        error_record("target trace callback", error)
++    return local_trace
++
++
++def global_dispatch(frame, event, arg):
++    try:
++        if event == "call" and target(frame) is not None:
++            record_event(frame, event, arg)
++            return local_trace
++    except BaseException as error:
++        error_record("global trace binding", error)
++    return None
++
++
++def live_thread_ids():
++    rows = []
++    for thread in threading.enumerate():
++        values = dictionary(thread)
++        ident = dict.get(values, "_ident") if values is not None else None
++        rows.append(ident if type(ident) is int else None)
++    return rows
++
++
++def pytest_configure(config):
++    global _STATE
++    if _STATE is not None:
++        raise RuntimeError("R285 observer configured twice")
++    command = os.environ["BIGSMALL_R285_COMMAND"]
++    directory = Path(os.environ["BIGSMALL_R285_OBSERVATION_DIR"])
++    if command != KEY or directory != D / "implementation" / KEY / "passive":
++        raise RuntimeError("exact R285 diagnostic identity/sink required")
++    if not directory.is_dir() or directory.is_symlink():
++        raise RuntimeError("existing exclusive R285 passive directory required")
++    if float(config.getini("faulthandler_timeout") or 0.0) != 540:
++        raise RuntimeError("native faulthandler540 required")
++    sources = {"lease": pin(Path(LEASE)), "test": pin(TEST), "plugin": pin(Path(__file__)),
++               "plan": pin(D / "plan.json"), "source_gate": pin(D / "source-gate.json")}
++    if (sources["lease"]["sha256"] != LEASE_SHA or sources["test"]["sha256"] != TEST_SHA
++            or sources["plan"]["sha256"] != PLAN_SHA):
++        raise RuntimeError("frozen R285 source generation differs")
++    gate = json.loads((D / "source-gate.json").read_bytes())
++    if gate["round"] != "R285" or gate["sources"]["plugin"] != sources["plugin"]:
++        raise RuntimeError("ROOT source gate does not bind this complete plugin")
++    _STATE = {"directory": directory, "sources": sources, "records": [], "sessions": {},
++              "estimated_record_bytes": 0, "dropped_events": 0, "drops_by_reason": {},
++              "observer_errors": [], "omitted_observer_errors": 0, "incomplete": False,
++              "observed_threads": set(), "call_started": False, "call_finally_observed": False,
++              "hooks_before": None, "hooks_after": None, "hooks_equal": None,
++              "new_threads_still_live": None, "handles": [], "normal_finish": False}
++
++
++@pytest.hookimpl(hookwrapper=True, tryfirst=True)
++def pytest_runtest_call(item):
++    if _STATE is None or item.nodeid != NODE:
++        raise RuntimeError("one exact R285 dual call required")
++    before = hook_values()
++    if before[0] is not None or before[1] is not None:
++        error_record("unknown preexisting trace", RuntimeError())
++        raise RuntimeError("R285 refuses unknown preexisting trace")
++    _STATE["hooks_before"] = hook_records(before)
++    _STATE["call_started"] = True
++    baseline = set(live_thread_ids())
++    installed = False
++    try:
++        threading.settrace(global_dispatch)
++        installed = True
++        sys.settrace(global_dispatch)
++        yield
++    finally:
++        observed_hooks = hook_values()
++        _STATE["hooks_before_restoration"] = hook_records(observed_hooks)
++        if installed and (observed_hooks[0] is not global_dispatch
++                          or observed_hooks[1] is not global_dispatch):
++            _STATE["incomplete"] = True
++        for setter, value, label in ((sys.settrace, before[0], "sys"),
++                                     (threading.settrace, before[1], "threading")):
++            try:
++                setter(value)
++            except BaseException as error:
++                error_record(label + " trace restoration", error)
++        after = hook_values()
++        _STATE["hooks_after"] = hook_records(after)
++        _STATE["hooks_equal"] = all(a is b for a, b in zip(before, after))
++        _STATE["call_finally_observed"] = True
++        _STATE["trace_install_attempted"] = installed
++        remaining = sorted((_STATE["observed_threads"] - baseline) & set(live_thread_ids()))
++        _STATE["new_threads_still_live"] = remaining
++        _STATE["per_thread_trace_restoration"] = (
++            "ORIGINAL_THREADS_TERMINATED" if not remaining else "UNAVAILABLE_FOR_STILL_LIVE_THREADS")
++        if remaining or not _STATE["hooks_equal"]:
++            _STATE["incomplete"] = True
++
++
++@pytest.hookimpl(tryfirst=True)
++def pytest_runtest_makereport(item, call):
++    if _STATE is None or item.nodeid != NODE or call.excinfo is None:
++        return None
++    try:
++        error = call.excinfo.value
++        tb = BaseException.__dict__["__traceback__"].__get__(error, type(error))
++        rows, examined = [], 0
++        try:
++            while tb is not None and examined < 64:
++                frame = tb.tb_frame
++                try:
++                    if target(frame) is not None and len(rows) < 12:
++                        rows.append({"tb_lineno": tb.tb_lineno, "tb_lasti": tb.tb_lasti,
++                                     "post_unwind_frame_lineno": frame.f_lineno,
++                                     "code_name": frame.f_code.co_name,
++                                     "code_firstlineno": frame.f_code.co_firstlineno,
++                                     "code_filename": frame.f_code.co_filename})
++                finally:
++                    frame = None
++                tb = tb.tb_next
++                examined += 1
++            append_record({"category": "post_unwind_original_exception", "phase": call.when,
++                           "exception": exception_fields(error), "actual_target_tracebacks": rows,
++                           "more_traceback_unexamined": tb is not None,
++                           "post_unwind_non_atomic": True})
++        finally:
++            tb = None
++            error = None
++    except BaseException as error:
++        error_record("post-unwind original traceback", error)
++    return None
++
++
++def pytest_sessionfinish(session, exitstatus):
++    if _STATE is None:
++        return
++    state = _STATE
++    state["normal_finish"] = True
++    metadata = {"round": "R285", "command_id": KEY, "nodeid": NODE, "pid": os.getpid(),
++                "sources": state["sources"], "bounds": BOUNDS,
++                "events_count": len(state["records"]), "dropped_events": state["dropped_events"],
++                "first_observed": list(state["sessions"].values()),
++                "hooks_before": state["hooks_before"], "hooks_after": state["hooks_after"],
++                "hooks_equal": state["hooks_equal"],
++                "hooks_before_restoration": state.get("hooks_before_restoration"),
++                "observer_errors": state["observer_errors"],
++                "omitted_observer_errors": state["omitted_observer_errors"],
++                "cap_hit": bool(state["dropped_events"]), "incomplete": state["incomplete"],
++                "snapshot_boundary": "Non-atomic target-event fields; no audit of unobserved registry mutations.",
++                "legal_RED": False, "GREEN": False}
++    events = {**metadata, "schema_version": "bigsmall.r285.session-events.v1",
++              "records": state["records"], "drops_by_reason": state["drops_by_reason"]}
++    summary = {**metadata, "schema_version": "bigsmall.r285.session-summary.v1",
++               "normal_sessionfinish_observed": True,
++               "exitstatus": int(exitstatus) if type(exitstatus) is int else None,
++               "call_started": state["call_started"],
++               "call_finally_observed": state["call_finally_observed"],
++               "new_threads_still_live": state["new_threads_still_live"],
++               "per_thread_trace_restoration": state.get("per_thread_trace_restoration"),
++               "first_cause": "UNKNOWN_REQUIRES_ROOT_EVENT_INTERPRETATION",
++               "native_watchdog_identity": None, "native_watchdog_cancellation_observed": None,
++               "own_new_Python_threads": 0, "own_new_Events": 0,
++               "own_handles": state["handles"], "summary_handle_close_observation": None}
++    try:
++        event_raw = (json.dumps(events, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
++        summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
++        if len(event_raw) + len(summary_raw) + 4096 > 131072:
++            raise ValueError("R285 persisted evidence would exceed128KiB; no oversized write")
++        with (state["directory"] / "events.json").open("xb") as handle:
++            descriptor = handle.fileno()
++            if handle.write(event_raw) != len(event_raw):
++                raise OSError("partial R285 events write")
++        state["handles"].append({"path": str(state["directory"] / "events.json"),
++                                 "fd": descriptor, "closed_observed": handle.closed})
++        summary["own_handles"] = state["handles"]
++        summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
++        if len(event_raw) + len(summary_raw) > 131072:
++            raise ValueError("R285 final128KiB bound")
++        with (state["directory"] / "summary.json").open("xb") as handle:
++            summary["own_handles"] = state["handles"] + [{
++                "path": str(state["directory"] / "summary.json"), "fd": handle.fileno(),
++                "closed_observed": None,
++                "limitation": "Own final close follows this payload; not observable in it."}]
++            summary_raw = (json.dumps(summary, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode()
++            if len(event_raw) + len(summary_raw) > 131072:
++                raise ValueError("R285 handle metadata exceeds128KiB")
++            if handle.write(summary_raw) != len(summary_raw):
++                raise OSError("partial R285 summary write")
++    except BaseException as error:
++        error_record("exclusive post-restoration persistence", error)
+*** End Patch
