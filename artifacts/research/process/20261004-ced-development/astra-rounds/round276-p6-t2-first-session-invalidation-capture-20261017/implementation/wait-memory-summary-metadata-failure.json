@@ -1,0 +1,47 @@
+{
+  "round": "R276",
+  "command_id": "wait_memory",
+  "kind": "POST_RUN_METADATA_SUMMARY_VIEWER_FAILURE",
+  "invocation": {
+    "cmd": "/home/ningyd/文档/ChatGPT/BIGsmall/.venv/bin/python - <<'PY'\nfrom pathlib import Path\nimport json,hashlib\nD=Path('/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round276-p6-t2-first-session-invalidation-capture-20261017');O=D/'implementation/wait_memory'\ndef pin(p):\n b=p.read_bytes();return {'path':str(p),'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()}\np=O/'result.json';b=p.read_bytes();result=json.loads(b);receipt=O/'actual-tool-return.json';resource=result.get('resources');summary=json.loads(Path(resource['path']).read_bytes()) if type(resource) is dict else None\nj=result.get('JUnit') or {};failures=[]\nfor row in j.get('records',[]):\n for out in row.get('outcomes',[]):\n  if out.get('tag') in ('failure','error'):\n   failures.append({'nodeid':row['nodeid'],'tag':out['tag'],'attributes':out.get('attributes'),'text_prefix':(out.get('text') or '')[:1200]})\nartifacts={'result':pin(p),'actual_tool_return':pin(receipt)}\nfor key in ('resources','cases','index','before','after'):\n q=result.get(key)\n if type(q) is dict and type(q.get('path')) is str:artifacts[key]=pin(Path(q['path']))\nfor key,q in (result.get('streams') or {}).items():\n if type(q) is dict and type(q.get('path')) is str:artifacts['child_'+key]=pin(Path(q['path']))\nif type(j.get('pin')) is dict:artifacts['JUnit']=pin(Path(j['pin']['path']))\nroles={}\nP=json.loads((D/'plan.json').read_bytes())\nfor key,path in P['runner_contract']['roles'].items():\n v=json.loads(Path(path).read_bytes());roles[key]={'pin':pin(Path(path)),'selected_entry':v['commands']['wait_memory']}\nkeys=json.loads(receipt.read_bytes()).keys()\nout={'command_id':'wait_memory','child_exit':result.get('child_exit'),'wrapper_exit':result.get('wrapper_exit'),'timed_out':result.get('timed_out'),'capture_integrity_complete':result.get('capture_integrity_complete'),'behavior_accepted':result.get('behavior_accepted'),'classification':result.get('classification'),'errors':result.get('errors'),'cleanup':result.get('cleanup'),'JUnit':{k:j.get(k) for k in ('available','tests','failures','errors','skips')},'failure_details':failures,'resources':None if summary is None else {k:summary.get(k) for k in ('actual_node_attempts','complete_sidecar_set','whole_run_allocation_denominator','counts','all_records_valid','validation_errors')},'new_retained_databases':result.get('new_retained_databases'),'artifacts':artifacts,'role_pins':{k:v['pin'] for k,v in roles.items()},'role_selected_status':{k:{n:v['selected_entry'].get(n) for n in ('authorized','state','used','remaining','reservation_id')} for k,v in roles.items()},'receipt_top_keys':list(keys),'final_actual_path':'actual_tool_return (equal original final and completion; actual.exit_code=1)','runtime_retried':False}\nq=O/'bounded-source-resource-artifact-summary.json';raw=(json.dumps(out,ensure_ascii=False,indent=2)+'\\n').encode()\nwith q.open('xb') as h:h.write(raw)\nprint(json.dumps({'summary':pin(q),'scalar':{k:out[k] for k in ('child_exit','wrapper_exit','timed_out','capture_integrity_complete','behavior_accepted','classification','cleanup','JUnit','resources')},'failure_details':failures,'artifacts':artifacts,'role_pins':out['role_pins'],'role_selected_status':out['role_selected_status'],'receipt_top_keys':out['receipt_top_keys'],'new_retained_DB_count':len(result.get('new_retained_databases') or [])},ensure_ascii=False))\nPY",
+    "workdir": "/home/ningyd/文档/ChatGPT/BIGsmall",
+    "max_output_tokens": 3200
+  },
+  "actual_tool_return": {
+    "chunk_id": "b66be5",
+    "wall_time_seconds": 0.000010479,
+    "exit_code": 1,
+    "original_token_count": 89,
+    "output": "Traceback (most recent call last):\n  File \"<stdin>\", line 22, in <module>\n  File \"/usr/lib/python3.12/pathlib.py\", line 1164, in __init__\n    super().__init__(*args)\n  File \"/usr/lib/python3.12/pathlib.py\", line 373, in __init__\n    raise TypeError(\nTypeError: argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'list'\n"
+  },
+  "independent_stdout": null,
+  "independent_stderr": null,
+  "facts": {
+    "source_order": "Viewer read saved completed result/resources/JUnit and computed local artifact pins; line22 Path(path) while traversing plan.runner_contract.roles encountered a list; summary write occurs later and was not reached",
+    "summary_written": false,
+    "run_result_modified": false,
+    "runtime_retried": false,
+    "role_writes": false,
+    "source_writes": false,
+    "root_cause_static": "Reader incorrectly treated every roles mapping value as a path. No changed schema or product defect is established by this viewer failure.",
+    "further_read_or_parse": false
+  },
+  "completed_run": {
+    "initial": {
+      "chunk_id": "2928fd",
+      "wall_time_seconds": 10.000630632,
+      "session_id": 11904,
+      "original_token_count": 0,
+      "output": ""
+    },
+    "final": {
+      "chunk_id": "8b8811",
+      "wall_time_seconds": 21.781311787,
+      "exit_code": 1,
+      "original_token_count": 144,
+      "output": "{\"round\": \"R276\", \"command_id\": \"wait_memory\", \"child_exit\": 1, \"wrapper_exit\": 1, \"timed_out\": false, \"output_limited\": false, \"diagnostic_complete\": false, \"capture_integrity_complete\": true, \"behavior_accepted\": false, \"result\": {\"path\": \"/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round276-p6-t2-first-session-invalidation-capture-20261017/implementation/wait_memory/result.json\", \"bytes\": 308836, \"sha256\": \"a78917e83f86fe85f3ca3206e4544ede7d5d78a000f3fb602a7269b409245a7b\"}, \"legal_RED\": false, \"GREEN\": false}\n"
+    },
+    "actual_bundle_path": "/home/ningyd/文档/ChatGPT/BIGsmall/artifacts/research/process/20261004-ced-development/astra-rounds/round276-p6-t2-first-session-invalidation-capture-20261017/implementation/wait_memory/actual-tool-return.json"
+  },
+  "status": "STOP_WAITING_ROOT_ACTUAL_ASTRA_DISPOSITION"
+}
